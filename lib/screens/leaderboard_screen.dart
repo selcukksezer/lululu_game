@@ -21,9 +21,19 @@ class LeaderboardScreen extends StatefulWidget {
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
   final _service = LeaderboardService.instance;
-  String _modeFilter = 'overall';
+  String _modeFilter = 'weekly';
   bool _loading = true;
   bool _refreshing = false;
+
+  /// Prototipteki Haftalık görünümü (sıra · oyuncu adı · seviye · skor).
+  /// Haftalık veri henüz sunucudan gelmiyor — sabit liste.
+  static const _weekly = [
+    _WeeklyEntry(name: 'KongoKralı', level: 21, score: 11204),
+    _WeeklyEntry(name: 'HamamCan_34', level: 18, score: 9310),
+    _WeeklyEntry(name: 'DivaNur', level: 17, score: 8977),
+    _WeeklyEntry(name: 'BöcekAvcısı', level: 14, score: 8120),
+    _WeeklyEntry(name: 'Sen', level: 12, score: 7455, isYou: true),
+  ];
 
   @override
   void initState() {
@@ -76,7 +86,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
             child: Text(
-              'Sıralama',
+              'SKOR TABLOSU',
               style: GoogleFonts.exo2(
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
@@ -91,7 +101,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
     return DotScaffold(
       appBar: AppBar(
-        title: const Text('Sıralama'),
+        title: const Text('SKOR TABLOSU'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).maybePop(),
@@ -103,15 +113,18 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   Widget _buildBody() {
     final auth = AuthService.instance;
-    final myRank = _modeFilter == 'overall'
+    final weekly = _modeFilter == 'weekly';
+    final myRank = _modeFilter == 'overall' || weekly
         ? _service.getMyOverallRank(n: 50)
         : _service.getMyModeRank(_modeFilter, n: 50);
-    final myScore = _modeFilter == 'overall'
+    final myScore = _modeFilter == 'overall' || weekly
         ? _service.myBestOverall
         : _service.getBest(_modeFilter);
     final rows = _modeFilter == 'overall'
         ? _service.getOverallTop(n: 50)
-        : _service.getTop(_modeFilter, n: 50);
+        : _modeFilter == 'weekly'
+            ? <LeaderboardEntry>[]
+            : _service.getTop(_modeFilter, n: 50);
     final sourceLabel = FirebaseBootstrap.ready
         ? 'Canlı · kayıtlı oyuncular'
         : 'Yerel · kayıtlı hesap skorları';
@@ -163,6 +176,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               scrollDirection: Axis.horizontal,
               children: [
                 _FilterChip(
+                  label: 'Haftalık',
+                  selected: _modeFilter == 'weekly',
+                  onTap: () => setState(() => _modeFilter = 'weekly'),
+                ),
+                _FilterChip(
                   label: 'Herkes',
                   selected: _modeFilter == 'overall',
                   onTap: () => setState(() => _modeFilter = 'overall'),
@@ -178,7 +196,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            _modeFilter == 'overall' ? 'GENEL LİSTE' : 'MOD LİSTESİ',
+            _modeFilter == 'weekly'
+                ? 'HAFTALIK LİSTE'
+                : _modeFilter == 'overall'
+                    ? 'GENEL LİSTE'
+                    : 'MOD LİSTESİ',
             style: GoogleFonts.exo2(
               fontSize: 12,
               fontWeight: FontWeight.w800,
@@ -187,7 +209,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          if (rows.isEmpty)
+          if (_modeFilter == 'weekly')
+            for (var i = 0; i < _weekly.length; i++)
+              _WeeklyTile(rank: i + 1, entry: _weekly[i])
+          else if (rows.isEmpty)
             Text(
               auth.isSignedIn
                   ? 'Henüz skor yok — oyna, listeye gir.'
@@ -444,6 +469,116 @@ class _RankTile extends StatelessWidget {
                   mode,
                   style: GoogleFonts.exo2(
                     fontSize: 10,
+                    color: LululuColors.mutedTitanium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '${entry.score}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.exo2(
+              fontWeight: FontWeight.w900,
+              decoration: TextDecoration.none,
+              color: LululuColors.liquidGold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Prototip Haftalık listesindeki bir giriş (sıra · ad · seviye · skor).
+class _WeeklyEntry {
+  const _WeeklyEntry({
+    required this.name,
+    required this.level,
+    required this.score,
+    this.isYou = false,
+  });
+
+  final String name;
+  final int level;
+  final int score;
+  final bool isYou;
+}
+
+/// Prototipteki gibi haftalık satır: sıra, oyuncu adı, SEVİYE, skor.
+class _WeeklyTile extends StatelessWidget {
+  const _WeeklyTile({required this.rank, required this.entry});
+
+  final int rank;
+  final _WeeklyEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final highlight = entry.isYou;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      constraints: const BoxConstraints(minHeight: LululuMotion.minTap),
+      decoration: BoxDecoration(
+        gradient: highlight
+            ? LinearGradient(
+                colors: [
+                  LululuColors.cyberFuchsia.withValues(alpha: 0.28),
+                  LululuColors.spaceNavy,
+                ],
+              )
+            : LululuGradients.navyToCarbon,
+        borderRadius: BorderRadius.circular(LululuRadii.pill),
+        border: Border.all(
+          color: highlight
+              ? LululuColors.liquidGold.withValues(alpha: 0.65)
+              : LululuColors.darkObsidian.withValues(alpha: 0.9),
+          width: highlight ? 1.3 : 1,
+        ),
+        boxShadow: highlight
+            ? [
+                BoxShadow(
+                  color: LululuColors.liquidGold.withValues(alpha: 0.2),
+                  blurRadius: 14,
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 36,
+            child: Text(
+              '$rank',
+              style: GoogleFonts.exo2(
+                fontWeight: FontWeight.w900,
+                color: rank <= 3
+                    ? LululuColors.liquidGold
+                    : LululuColors.mutedTitanium,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.name + (highlight ? '  · sen' : ''),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.exo2(
+                    fontWeight: FontWeight.w800,
+                    decoration: TextDecoration.none,
+                    color: LululuColors.ink,
+                  ),
+                ),
+                Text(
+                  'SEVİYE ${entry.level}',
+                  style: GoogleFonts.exo2(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
                     color: LululuColors.mutedTitanium,
                   ),
                 ),

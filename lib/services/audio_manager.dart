@@ -17,14 +17,14 @@ abstract final class GameAudio {
   static const sfxSlipper = 'sfx_slipper.mp3';
   static const sfxSpray = 'sfx_spray.mp3';
   static const voiceAydinlat = 'voice_aydinlat.mp3';
-  static const voiceTier1 = 'voice_tier1.mp3';
-  static const voiceTier2 = 'voice_tier2.mp3';
-  static const voiceTier3 = 'voice_tier3.mp3';
-  static const voiceTier4 = 'voice_tier4.mp3';
-  static const voiceTier5 = 'voice_tier5.mp3';
-  static const voiceTier6 = 'voice_tier6.mp3';
-  static const voiceTier7 = 'voice_tier7.mp3';
-  static const voiceTier8 = 'voice_tier8.mp3';
+  static const voiceTier1 = 'design/sounds/tier1_ses.mp3';
+  static const voiceTier2 = 'design/sounds/tier2_ses.mp3';
+  static const voiceTier3 = 'design/sounds/tier3_ses.mp3';
+  static const voiceTier4 = 'design/sounds/tier4_ses.mp3';
+  static const voiceTier5 = 'design/sounds/tier5_ses.mp3';
+  static const voiceTier6 = 'design/sounds/tier6_ses.mp3';
+  static const voiceTier7 = 'design/sounds/tier7_ses.mp3';
+  static const voiceTier8 = 'design/sounds/tier8_ses.mp3';
 
   /// Dedicated Osmantuş person lines — not on disk yet; map falls back below.
   static const voiceOsmanA = 'voice_osman_a.mp3';
@@ -111,6 +111,10 @@ abstract final class GameAudio {
 }
 
 class AudioManager {
+  /// `design/` ile başlayanlar assets/design altından birebir,
+  /// diğerleri assets/audio altından çalınır.
+  static String _resolveAsset(String assetName) =>
+      assetName.startsWith('design/') ? assetName : 'audio/$assetName';
   static final AudioManager _instance = AudioManager._internal();
   factory AudioManager() => _instance;
   AudioManager._internal();
@@ -148,7 +152,7 @@ class AudioManager {
     final preloader = AudioPlayer();
     try {
       for (final assetName in GameAudio.allAssets) {
-        await preloader.setSource(AssetSource('audio/$assetName'));
+        await preloader.setSource(AssetSource(_resolveAsset(assetName)));
       }
     } catch (_) {
       // Web / missing asset — runtime play still attempts fallback
@@ -205,7 +209,7 @@ class AudioManager {
       await player.setVolume(volume);
       await player.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
       if (gen != _playGeneration) return;
-      await player.play(AssetSource('audio/$assetName'));
+      await player.play(AssetSource(_resolveAsset(assetName)));
       if (gen != _playGeneration) {
         try {
           await player.stop();
@@ -266,7 +270,7 @@ class AudioManager {
         _exclusiveOnComplete = null;
         return false;
       }
-      await player.play(AssetSource('audio/$assetName'));
+      await player.play(AssetSource(_resolveAsset(assetName)));
       if (gen != _playGeneration) {
         try {
           await player.stop();

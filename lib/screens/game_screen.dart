@@ -557,9 +557,52 @@ class _GameScreenState extends State<GameScreen>
     AudioManager().triggerHaptic();
   }
 
-  void _togglePause() {
+  /// OYUNU BİTİR: duraklatmayı kapatıp mevcut yenilgi akışıyla bitir
+  /// (skor işlenir, sonuç ekranı açılır).
+  void _finishGame() {
     if (_isFinished) return;
-    setState(() => _paused = !_paused);
+    if (_paused) _togglePause();
+    _triggerDefeat();
+  }
+
+  /// Duraklatma kartı butonu — parlak çizgi-film stili, min 52dp yükseklik.
+  Widget _pauseMenuButton({
+    required String label,
+    required VoidCallback onPressed,
+    required Color background,
+    required Color foreground,
+    bool ghost = false,
+  }) {
+    return SizedBox(
+      height: 52,
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: background,
+          foregroundColor: foreground,
+          elevation: ghost ? 0 : 5,
+          shadowColor: background.withValues(alpha: 0.5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: ghost
+                ? BorderSide(
+                    color: LululuColors.mutedTitanium.withValues(alpha: 0.55),
+                    width: 2,
+                  )
+                : BorderSide.none,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.exo2(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+          ),
+        ),
+      ),
+    );
   }
 
   void _showMilestone(InsectTier tier) {
@@ -773,30 +816,73 @@ class _GameScreenState extends State<GameScreen>
             if (_paused && !_isFinished)
               Positioned.fill(
                 child: ColoredBox(
-                  color: LululuColors.carbonVoid.withValues(alpha: 0.72),
+                  color: LululuColors.carbonVoid.withValues(alpha: 0.78),
                   child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'DURAKLATILDI',
-                          style: GoogleFonts.exo2(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            color: LululuColors.liquidGold,
-                          ),
+                    child: Container(
+                      width: 268,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 24,
+                      ),
+                      decoration: BoxDecoration(
+                        color: LululuColors.spaceNavy,
+                        borderRadius: BorderRadius.circular(26),
+                        border: Border.all(
+                          color: LululuColors.liquidGold
+                              .withValues(alpha: 0.4),
+                          width: 2,
                         ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _togglePause,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: LululuColors.liquidGold,
-                            foregroundColor: LululuColors.carbonVoid,
-                            minimumSize: const Size(48, 48),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            blurRadius: 24,
+                            offset: const Offset(0, 10),
                           ),
-                          child: const Text('DEVAM'),
-                        ),
-                      ],
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Duraklatıldı',
+                            style: GoogleFonts.exo2(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                              color: LululuColors.liquidGold,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          _pauseMenuButton(
+                            label: 'DEVAM ET',
+                            onPressed: _togglePause,
+                            background: LululuColors.liquidGold,
+                            foreground: LululuColors.carbonVoid,
+                          ),
+                          const SizedBox(height: 10),
+                          _pauseMenuButton(
+                            label: 'YENİDEN BAŞLA',
+                            onPressed: () => _restartLevel(_currentLevel),
+                            background: LululuColors.darkObsidian,
+                            foreground: LululuColors.paper,
+                          ),
+                          const SizedBox(height: 10),
+                          _pauseMenuButton(
+                            label: 'OYUNU BİTİR',
+                            onPressed: _finishGame,
+                            background: LululuColors.spaceNavy,
+                            foreground: LululuColors.paper,
+                            ghost: true,
+                          ),
+                          const SizedBox(height: 10),
+                          _pauseMenuButton(
+                            label: 'ANA SAYFA',
+                            onPressed: () => Navigator.pop(context),
+                            background: LululuColors.darkObsidian,
+                            foreground: LululuColors.mutedTitanium,
+                            ghost: true,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

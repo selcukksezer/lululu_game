@@ -485,7 +485,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
             child: Opacity(
               opacity: 0.18,
               child: Image.asset(
-                'assets/images/bg_kitchen_counter.png',
+                'assets/design/backgrounds/2048_casino.webp',
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => const SizedBox(),
               ),

@@ -48,9 +48,9 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     switch (chapter) {
       case 2:
       case 3:
-        return 'assets/images/bg_diva_mansion.png';
+        return 'assets/design/backgrounds/osmantus_mansion.webp';
       default:
-        return 'assets/images/bg_kitchen_counter.png';
+        return 'assets/design/backgrounds/suika_kitchen.webp';
     }
   }
 
@@ -190,7 +190,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
         children: [
           Row(
             children: [
-              Image.asset('assets/images/tier_1_cone.png', width: 34, height: 34),
+              Image.asset('assets/design/bugs_hd/tier1_hd.png', width: 34, height: 34),
               const SizedBox(width: 8),
               const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

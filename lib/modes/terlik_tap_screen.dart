@@ -100,12 +100,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   static const _osmanA = (
     id: 'osman_a',
-    asset: 'assets/images/stickers/osman_1.png',
+    asset: 'assets/design/osman/osman_1.png',
     replik: 'Osmantuş A — şılapp!',
   );
   static const _osmanB = (
     id: 'osman_b',
-    asset: 'assets/images/stickers/osman_2.png',
+    asset: 'assets/design/osman/osman_2.png',
     replik: 'Osmantuş B — dıkkış!',
   );
 

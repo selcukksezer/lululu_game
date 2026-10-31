@@ -4,7 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/progress_manager.dart';
+import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
+import '../widgets/ad_mock.dart';
 
 /// Oyun sonu sonuç ekranı (tam sayfa, dialog değil).
 ///
@@ -71,9 +76,15 @@ class _GameResultPageState extends State<_GameResultPage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
+  /// 2X ALTIN ödülüyle katlanabilen altın sayacı.
+  late int _coins;
+  bool _continueRewardUsed = false;
+  bool _doubleRewardUsed = false;
+
   @override
   void initState() {
     super.initState();
+    _coins = widget.coins;
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2300),
@@ -100,10 +111,14 @@ class _GameResultPageState extends State<_GameResultPage>
         ),
         child: Stack(
           children: [
-            // Ahşap plank çizgileri.
+            // Gerçek ahşap arka plan (assets/design).
             Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(painter: _PlankPainter()),
+                child: Image.asset(
+                  'assets/design/backgrounds/result_wood_bg.webp',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox(),
+                ),
               ),
             ),
             // Konfeti yağmuru.
@@ -233,7 +248,7 @@ class _GameResultPageState extends State<_GameResultPage>
     final w = MediaQuery.sizeOf(context).width;
     const zoneH = 216.0;
     const chestW = 120.0;
-    const chestH = 92.0;
+    const chestH = 110.0;
     final chestCx = w / 2;
     final chestCy = zoneH - 40;
     final t = _ctrl.value;
@@ -274,7 +289,7 @@ class _GameResultPageState extends State<_GameResultPage>
       );
     }
     final chestScale = 1 + 0.20 * bounce.clamp(0.0, 1.4);
-    final shownCoins = (widget.coins * landed / 10).round();
+    final shownCoins = (_coins * landed / 10).round();
 
     return Stack(
       children: [
@@ -388,9 +403,14 @@ class _GameResultPageState extends State<_GameResultPage>
     );
   }
 
-  /// Dans eden böcek.
+  /// Dans eden böcek — gerçek tasarım dosyası.
   Widget _buildDancer() {
-    return const Text('🪳', style: TextStyle(fontSize: 72))
+    return Image.asset(
+      'assets/design/bugs_hd/tier1_hd.png',
+      height: 96,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => const SizedBox(),
+    )
         .animate(onPlay: (c) => c.repeat(reverse: true))
         .moveY(
           begin: 0,
@@ -406,34 +426,200 @@ class _GameResultPageState extends State<_GameResultPage>
         );
   }
 
+  /// REKLAM İZLE, DEVAM ET — ad izletir, +1 can verir, oyuna devam
+  /// (çağıran için replay sinyali) olarak kapatır.
+  Future<void> _watchContinueAd() async {
+    if (_continueRewardUsed) return;
+    final watched = await showRewardedAdMock(
+      context,
+      rewardLabel: '+1 CAN / EKSTRA HAMLE',
+    );
+    if (!watched || !mounted) return;
+    setState(() => _continueRewardUsed = true);
+    AudioManager().playWin();
+    EnergyService.instance.addEnergy(1);
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
+  }
+
+  /// REKLAM İZLE, 2X ALTIN KAZAN — ad izletir, altını ikiye katlar.
+  /// Taban altın recordLevelResult ile zaten işlendi; farkı ekler.
+  Future<void> _watchDoubleGoldAd() async {
+    if (_doubleRewardUsed) return;
+    final watched = await showRewardedAdMock(
+      context,
+      rewardLabel: '2X ALTIN',
+    );
+    if (!watched || !mounted) return;
+    setState(() {
+      _doubleRewardUsed = true;
+      _coins = _coins * 2;
+    });
+    AudioManager().playWin();
+    await ProgressManager().addCoins(widget.coins);
+  }
+
+  /// PAYLAŞ — skor kartını share_plus üzerinden paylaşır.
+  Future<void> _shareScore() async {
+    await ScoreShareCard.instance.share(
+      modeTitle: 'LÜLÜLÜ',
+      score: widget.score,
+      line: 'Kazanılan altın: $_coins',
+    );
+  }
+
+  /// Reklam butonu — prototip ad-btn: koyu zemin, altın çerçeve, REKLAM çipi.
+  Widget _adButton({
+    required String label,
+    required bool used,
+    required VoidCallback onPressed,
+  }) {
+    return Opacity(
+      opacity: used ? 0.45 : 1,
+      child: SizedBox(
+        height: 54,
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: used ? null : onPressed,
+          style: OutlinedButton.styleFrom(
+            backgroundColor: LululuColors.carbonVoid.withValues(alpha: 0.55),
+            foregroundColor: LululuColors.paper,
+            side: const BorderSide(color: LululuColors.liquidGold, width: 2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: LululuColors.cyberFuchsia,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'REKLAM',
+                  style: GoogleFonts.exo2(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                    color: LululuColors.paper,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.play_arrow_rounded, size: 20),
+              const SizedBox(width: 2),
+              Flexible(
+                child: Text(
+                  used ? 'KULLANILDI' : label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.exo2(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildButtons() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: 54,
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: LululuColors.liquidGold,
-                foregroundColor: _woodEdge,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 0,
-              ),
-              child: Text(
-                'TEKRAR OYNA',
-                style: GoogleFonts.exo2(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.2,
-                ),
+          _adButton(
+            label: 'REKLAM İZLE, DEVAM ET',
+            used: _continueRewardUsed,
+            onPressed: _watchContinueAd,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 10),
+            child: Text(
+              'Kaldığın yerden devam: +1 can / ekstra hamle',
+              style: GoogleFonts.exo2(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: _woodEdge,
               ),
             ),
+          ),
+          _adButton(
+            label: 'REKLAM İZLE, 2X ALTIN KAZAN',
+            used: _doubleRewardUsed,
+            onPressed: _watchDoubleGoldAd,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LululuColors.liquidGold,
+                      foregroundColor: _woodEdge,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      'TEKRAR OYNA',
+                      style: GoogleFonts.exo2(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SizedBox(
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _shareScore,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LululuColors.cyberFuchsia,
+                      foregroundColor: LululuColors.paper,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 4,
+                      shadowColor: LululuColors.cyberFuchsia
+                          .withValues(alpha: 0.5),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.share_rounded, size: 18),
+                        const SizedBox(width: 6),
+                        Text(
+                          'PAYLAŞ',
+                          style: GoogleFonts.exo2(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -464,135 +650,43 @@ class _GameResultPageState extends State<_GameResultPage>
   }
 }
 
-/// Uçan altın coin.
+/// Uçan altın coin — gerçek tasarım dosyası.
 class _CoinDot extends StatelessWidget {
   const _CoinDot();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Image.asset(
+      'assets/design/ui/icon_coin.png',
       width: 30,
       height: 30,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const RadialGradient(
-          colors: [Color(0xFFFFE066), LululuColors.liquidGold],
-        ),
-        border: Border.all(color: _woodEdge, width: 2.5),
-        boxShadow: const [
-          BoxShadow(
-            color: LululuColors.warningSolar,
-            blurRadius: 10,
-          ),
-        ],
-      ),
-      child: const Center(
-        child: Text(
-          '★',
-          style: TextStyle(fontSize: 14, color: _woodEdge),
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Container(
+        width: 30,
+        height: 30,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: LululuColors.liquidGold,
         ),
       ),
     );
   }
 }
 
-/// Ahşap kasa.
+/// Ahşap kasa — gerçek tasarım dosyası.
 class _Chest extends StatelessWidget {
   const _Chest();
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return Image.asset(
+      'assets/design/backgrounds/chest_wood.png',
       width: 120,
-      height: 92,
-      child: Stack(
-        children: [
-          // Gövde.
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [_woodLight, _wood],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _woodEdge, width: 3),
-              ),
-            ),
-          ),
-          // Kapak çizgisi.
-          Positioned(
-            top: 26,
-            left: 6,
-            right: 6,
-            child: Container(height: 4, color: _woodEdge.withValues(alpha: 0.6)),
-          ),
-          // Metal kuşaklar.
-          for (final dx in [18.0, 86.0])
-            Positioned(
-              top: 6,
-              bottom: 6,
-              left: dx,
-              child: Container(
-                width: 14,
-                decoration: BoxDecoration(
-                  color: _woodEdge.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
-          // Kilit.
-          Positioned(
-            top: 34,
-            left: 47,
-            child: Container(
-              width: 26,
-              height: 30,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [
-                    LululuColors.warningSolar,
-                    LululuColors.liquidGold,
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(color: _woodEdge, width: 2.5),
-              ),
-              child: const Center(
-                child: Icon(Icons.key_rounded, size: 15, color: _woodEdge),
-              ),
-            ),
-          ),
-        ],
-      ),
+      height: 110,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => const SizedBox(width: 120, height: 110),
     );
   }
-}
-
-/// Ahşap plank dokusu.
-class _PlankPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final line = Paint()
-      ..color = _woodEdge.withValues(alpha: 0.35)
-      ..strokeWidth = 2.5;
-    for (double y = 90; y < size.height; y += 120) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
-    }
-    final grain = Paint()
-      ..color = _woodEdge.withValues(alpha: 0.12)
-      ..strokeWidth = 1.2;
-    final rng = Random(11);
-    for (int i = 0; i < 14; i++) {
-      final y = rng.nextDouble() * size.height;
-      final x = rng.nextDouble() * size.width * 0.7;
-      canvas.drawLine(Offset(x, y), Offset(x + 40 + rng.nextDouble() * 60, y), grain);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Konfeti yağmuru.

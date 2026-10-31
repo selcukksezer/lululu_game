@@ -38,7 +38,7 @@ class CampaignLevel {
     required this.star1Score,
     required this.star2Score,
     required this.star3Score,
-    this.backgroundPath = 'assets/images/bg_kitchen_counter.png',
+    this.backgroundPath = 'assets/design/backgrounds/suika_kitchen.webp',
     this.hasObstacles = false,
     this.squareArena = false,
   });
@@ -83,10 +83,10 @@ class CampaignDatabase {
   static List<CampaignLevel> _generateAllLevels() {
     final List<CampaignLevel> list = [];
     final chapters = [
-      (1, 'Mutfak Tezgahı', 'assets/images/bg_kitchen_counter.png'),
-      (2, 'Diva Malikanesi', 'assets/images/bg_diva_mansion.png'),
-      (3, 'Pikomotions Sahnesi', 'assets/images/bg_diva_mansion.png'),
-      (4, 'Kongo İstilası', 'assets/images/bg_kitchen_counter.png'),
+      (1, 'Mutfak Tezgahı', 'assets/design/backgrounds/suika_kitchen.webp'),
+      (2, 'Diva Malikanesi', 'assets/design/backgrounds/osmantus_mansion.webp'),
+      (3, 'Pikomotions Sahnesi', 'assets/design/backgrounds/osmantus_mansion.webp'),
+      (4, 'Kongo İstilası', 'assets/design/backgrounds/suika_kitchen.webp'),
     ];
 
     int levelId = 1;

@@ -30,17 +30,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     (
       'LÜLÜLÜ',
       'Viral hamamböceği. Merge, ritm, çığlık.',
-      'assets/images/stickers/sticker_tier1_cone.png',
+      'assets/design/bugs_hd/tier1_hd.png',
     ),
     (
       'OYNA',
       'Suika + 8 arcade mod. Kampanya 80 seviye.',
-      'assets/images/stickers/sticker_tier6_can.png',
+      'assets/design/bugs_hd/tier6_hd.png',
     ),
     (
       'PAYLAŞ',
       'Skor kartı, GIF, böcek videosu. Stories’e at.',
-      'assets/images/stickers/sticker_tier3_fan.png',
+      'assets/design/bugs_hd/tier3_hd.png',
     ),
   ];
 
