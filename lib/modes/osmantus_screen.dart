@@ -9,6 +9,7 @@ import '../models/osmantus_cast.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
+import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -36,6 +37,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   int _lives = 3;
   int _dayStreak = 0;
   bool _alive = true;
+  bool _resultShown = false;
   String _callout = 'OSMAN TUŞ!';
   String _hint = 'İki kişi — yeşil halkada dokun, dıkkış dıkkış!';
   DateTime _nextBeat = DateTime.now().add(const Duration(milliseconds: 1400));
@@ -185,20 +187,47 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   String _statsLine() =>
       'Max combo x$_maxCombo · Günlük streak $_dayStreak · tempo ${_beatBaseMs}ms';
 
+  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
+  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  Future<void> _presentResult() async {
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: ResultScoring.coinsFor(_score),
+      stars: ResultScoring.starsFor(score: _score, best: _best),
+    );
+    if (!mounted) return;
+    _resultShown = false;
+    if (replay) {
+      _restart();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _edgeShowResult() {
+    if (_resultShown) return;
+    _resultShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _presentResult();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_alive && !_resultShown) _edgeShowResult();
     final until = _nextBeat.difference(DateTime.now()).inMilliseconds;
     final inWindow = until.abs() <= _windowMs;
 
     return ArcadeScreen(
-      title: 'Osmantuş',
+      title: 'OSMANTUŞ',
       score: _score,
       best: _best,
       hint: _hint,
       statLabel: 'STREAK',
       statValue: '$_dayStreak',
       onRestart: _restart,
-      overlay: !_alive
+      overlay: (!_alive && !_resultShown)
           ? ArcadeResultOverlay(
               title: 'İKİLİ YENDİ',
               message: _statsLine(),

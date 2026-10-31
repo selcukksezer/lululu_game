@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
+import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -47,6 +48,7 @@ class _StackDropScreenState extends State<StackDropScreen>
   final List<_Slab> _stack = [];
 
   _Phase _phase = _Phase.ready;
+  bool _resultShown = false;
   bool _laidOut = false;
   bool _paused = false;
   double _arenaW = 320;
@@ -338,17 +340,44 @@ class _StackDropScreenState extends State<StackDropScreen>
   String _statsLine() =>
       'Kat $_floors · Perfect $_perfects · Near $_nears · Max combo x$_maxCombo';
 
+  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
+  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  Future<void> _presentResult() async {
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: ResultScoring.coinsFor(_score),
+      stars: ResultScoring.starsFor(score: _score, best: _best),
+    );
+    if (!mounted) return;
+    _resultShown = false;
+    if (replay) {
+      _restart();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _edgeShowResult() {
+    if (_resultShown) return;
+    _resultShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _presentResult();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_phase == _Phase.failed && !_resultShown) _edgeShowResult();
     return ArcadeScreen(
-      title: 'Stack Drop',
+      title: 'STACK DROP',
       hint: _paused ? 'DURAKLATILDI' : _hint,
       score: _score,
       best: _best,
       statLabel: _combo > 0 ? 'COMBO' : 'KAT',
       statValue: _combo > 0 ? 'x$_combo' : '$_floors',
       onRestart: _restart,
-      overlay: _phase == _Phase.failed
+      overlay: (_phase == _Phase.failed && !_resultShown)
           ? ArcadeResultOverlay(
               title: 'KULE DÜŞTÜ',
               message: _statsLine(),

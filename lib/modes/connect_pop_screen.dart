@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
+import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -40,6 +41,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   bool _busy = false;
   bool _won = false;
   bool _lost = false;
+  bool _resultShown = false;
   bool _paused = false;
   bool _loop = false;
   int _paint = 0;
@@ -495,17 +497,44 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   String _statsLine() =>
       'Temiz $_clearTotal · Kare $_loopCount · Max streak x$_maxStreak · En uzun $_longestPath';
 
+  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
+  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  Future<void> _presentResult() async {
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: ResultScoring.coinsFor(_score),
+      stars: ResultScoring.starsFor(score: _score, best: _best),
+    );
+    if (!mounted) return;
+    _resultShown = false;
+    if (replay) {
+      _newGame();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _edgeShowResult() {
+    if (_resultShown) return;
+    _resultShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _presentResult();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_ended && !_resultShown) _edgeShowResult();
     return ArcadeScreen(
-      title: 'Bağla Patlat',
+      title: 'BAĞLA PATLAT',
       hint: _paused ? 'DURAKLATILDI' : _hint,
       score: _score,
       best: _best,
       statLabel: _streak > 0 ? 'STREAK' : 'ÇİZGİ',
       statValue: _streak > 0 ? 'x$_streak' : '$_lines',
       onRestart: _newGame,
-      overlay: _ended
+      overlay: (_ended && !_resultShown)
           ? ArcadeResultOverlay(
               title: _won ? 'BAĞLANDI' : 'HAK BİTTİ',
               message: _statsLine(),

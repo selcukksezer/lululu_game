@@ -9,6 +9,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
+import '../screens/result_screen.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
@@ -88,6 +89,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   int _slipperEarned = 0;
   int _sprayEarned = 0;
   bool _alive = true;
+  bool _resultShown = false;
   String _hint = 'Uçan böceği terlikle ez!';
   double _spawnAcc = 0;
   double _shake = 0;
@@ -500,8 +502,35 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       'Ezilen $_smashed · Kaçan $_missed · Max combo x$_maxCombo\n'
       '+$_coinsEarned coin · terlik +$_slipperEarned · sprey +$_sprayEarned';
 
+  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
+  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  Future<void> _presentResult() async {
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: _coinsEarned,
+      stars: ResultScoring.starsFor(score: _score, best: _best),
+    );
+    if (!mounted) return;
+    _resultShown = false;
+    if (replay) {
+      _restart();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _edgeShowResult() {
+    if (_resultShown) return;
+    _resultShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _presentResult();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_alive && !_resultShown) _edgeShowResult();
     final shakeX = _shake > 0
         ? (sin(_pulse.value * pi * 18) * _shake * 10)
         : 0.0;
@@ -510,14 +539,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         : 0.0;
 
     return ArcadeScreen(
-      title: 'Terlik Tap',
+      title: 'TERLİK TAP',
       hint: _hint,
       score: _score,
       best: _best,
       statLabel: _combo > 0 ? 'COMBO' : 'CAN',
       statValue: _combo > 0 ? 'x$_combo' : '$_lives',
       onRestart: _restart,
-      overlay: !_alive
+      overlay: (!_alive && !_resultShown)
           ? ArcadeResultOverlay(
               title: 'TERLİK BİTTİ',
               message: _stats(),

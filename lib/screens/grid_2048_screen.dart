@@ -9,6 +9,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
 import '../services/score_share_card.dart';
+import 'result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/kenney_button.dart';
 import '../widgets/kenney_panel.dart';
@@ -28,6 +29,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   int _score = 0;
   int _bestScore = 0;
   bool _isGameOver = false;
+  bool _resultShown = false;
   bool _isWon = false;
   bool _hasContinuedAfterWin = false;
   bool _paused = false;
@@ -442,9 +444,37 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     );
   }
 
+  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" tahtayı sıfırlar,
+  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  /// Not: _isWon (2048'e ulaşıp DEVAM) akışına dokunulmadı.
+  Future<void> _presentResult() async {
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: ResultScoring.coinsFor(_score),
+      stars: _sessionStarCount(),
+    );
+    if (!mounted) return;
+    _resultShown = false;
+    if (replay) {
+      _initBoard();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _edgeShowResult() {
+    if (_resultShown) return;
+    _resultShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _presentResult();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final canPop = Navigator.canPop(context);
+    if (_isGameOver && !_resultShown) _edgeShowResult();
 
     // Material required — without it Flutter paints yellow debug underlines on Text.
     return Scaffold(
@@ -701,7 +731,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                 ),
               ],
             ),
-          if (_isGameOver)
+          if (_isGameOver && !_resultShown)
             _buildOverlayModal(
               palette: KenneyPalette.red,
               title: 'DUKTURU ARAYIN!',
@@ -822,7 +852,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
             child: Column(
               children: [
                 Text(
-                  '2048 Grid',
+                  '2048 GRID',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w900,
                         color: LululuColors.liquidGold,

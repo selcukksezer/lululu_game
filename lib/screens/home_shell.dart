@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/dot_scaffold.dart';
+import '../theme/lululu_theme.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 import '../widgets/shop_dialog.dart';
-import 'auth_screen.dart';
-import 'campaign_map_screen.dart';
-import 'chat_screen.dart';
 import 'game_selector_screen.dart';
 import 'leaderboard_screen.dart';
+import 'modes_screen.dart';
+import 'tiers_screen.dart';
 
-/// Root shell: Vault home + sıralama + sohbet + harita + dükkan.
+/// Root shell: 5 sekme — ANA SAYFA / MODLAR / AİLEM / MAĞAZA / SKORLAR.
+///
+/// Floating dock, Scaffold'un bottomNavigationBar'ı yerine
+/// `extendBody: true` + Stack ile içeriğin ÜSTÜNE konur; içerik dock'un
+/// altından kayar. ANA SAYFA açık tema (paper), diğer sekmeler koyu.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -18,62 +21,48 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  LululuDockTab _dock = LululuDockTab.home;
+  LululuDockTab _tab = LululuDockTab.home;
 
-  @override
-  void initState() {
-    super.initState();
-    _dock = LululuDockTab.home;
+  int get _index => _tab.index;
+
+  bool get _lightHome => _tab == LululuDockTab.home;
+
+  void _select(LululuDockTab tab) {
+    if (tab == _tab) return;
+    setState(() => _tab = tab);
   }
-
-  void _onDockSelect(LululuDockTab tab) {
-    setState(() => _dock = tab);
-  }
-
-  void openMapTab() => setState(() => _dock = LululuDockTab.map);
-  void openBoardTab() => setState(() => _dock = LululuDockTab.board);
-  void openChatTab() => setState(() => _dock = LululuDockTab.chat);
-  void openShopTab() => setState(() => _dock = LululuDockTab.shop);
-  void openAuth() => AuthScreen.open(context);
-
-  bool get _lightHome => _dock == LululuDockTab.home;
 
   @override
   Widget build(BuildContext context) {
-    return DotScaffold(
-      light: _lightHome,
-      safeArea: _dock != LululuDockTab.map,
-      body: IndexedStack(
-        index: _stackIndex(_dock),
+    return Scaffold(
+      extendBody: true,
+      backgroundColor:
+          _lightHome ? LululuColors.paper : LululuColors.carbonVoid,
+      body: Stack(
         children: [
-          GameSelectorScreen(
-            onOpenMap: openMapTab,
-            onOpenBoard: openBoardTab,
-            onOpenChat: openChatTab,
-            onOpenShop: openShopTab,
-            onOpenAuth: openAuth,
+          // İçerik: dock'un altından kayar.
+          IndexedStack(
+            index: _index,
+            children: const [
+              GameSelectorScreen(),
+              ModesScreen(),
+              TiersScreen(),
+              ShopScreen(),
+              LeaderboardScreen(embedded: true),
+            ],
           ),
-          const LeaderboardScreen(embedded: true),
-          const ChatScreen(embedded: true),
-          const CampaignMapScreen(),
-          const ShopScreen(),
+          // Floating dock: içeriğin üstünde.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: LululuDockBar(
+              selected: _tab,
+              onSelect: _select,
+            ),
+          ),
         ],
       ),
-      bottomNavigationBar: LululuDockBar(
-        selected: _dock,
-        onSelect: _onDockSelect,
-        light: _lightHome,
-      ),
     );
-  }
-
-  int _stackIndex(LululuDockTab tab) {
-    return switch (tab) {
-      LululuDockTab.home => 0,
-      LululuDockTab.board => 1,
-      LululuDockTab.chat => 2,
-      LululuDockTab.map => 3,
-      LululuDockTab.shop => 4,
-    };
   }
 }

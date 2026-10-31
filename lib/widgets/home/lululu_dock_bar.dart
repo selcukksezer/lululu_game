@@ -1,193 +1,196 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../theme/lululu_theme.dart';
 
-enum LululuDockTab { home, board, chat, map, shop }
+/// Sözleşme: bu isimler değişmez.
+enum LululuDockTab { home, modes, family, shop, scores }
 
-/// Floating dock. [light] = white hub companion bar.
+/// Floating hap dock.
+/// - Arkası tamamen şeffaf: altında beyaz zemin bandı yok; home_shell
+///   `extendBody: true` + Stack ile bunu içeriğin üstüne yerleştirir.
+/// - Aktif sekmede altın→mercan→fuşya gradyanlı kayan gösterge.
+/// - Aktif ikon yukarı zıplar (flutter_animate).
 class LululuDockBar extends StatelessWidget {
   const LululuDockBar({
     super.key,
     required this.selected,
     required this.onSelect,
-    this.light = false,
   });
 
   final LululuDockTab selected;
   final ValueChanged<LululuDockTab> onSelect;
-  final bool light;
+
+  static const _tabs = LululuDockTab.values;
+
+  static String _label(LululuDockTab tab) => switch (tab) {
+        LululuDockTab.home => 'ANA SAYFA',
+        LululuDockTab.modes => 'MODLAR',
+        LululuDockTab.family => 'AİLEM',
+        LululuDockTab.shop => 'MAĞAZA',
+        LululuDockTab.scores => 'SKORLAR',
+      };
+
+  static IconData _icon(LululuDockTab tab) => switch (tab) {
+        LululuDockTab.home => Icons.home_rounded,
+        LululuDockTab.modes => Icons.videogame_asset_rounded,
+        LululuDockTab.family => Icons.bug_report_rounded,
+        LululuDockTab.shop => Icons.shopping_bag_rounded,
+        LululuDockTab.scores => Icons.emoji_events_rounded,
+      };
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Container(
-        decoration: BoxDecoration(
-          color: light ? LululuColors.paper : LululuColors.spaceNavy,
-          borderRadius: BorderRadius.circular(LululuRadii.dock),
-          border: Border.all(
-            color: light
-                ? LululuColors.cyberFuchsia.withValues(alpha: 0.35)
-                : LululuColors.liquidGold.withValues(alpha: 0.32),
-            width: 1.4,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: (light
-                      ? LululuColors.cyberFuchsia
-                      : LululuColors.carbonVoid)
-                  .withValues(alpha: light ? 0.12 : 0.35),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+    return SafeArea(
+      top: false,
+      // Arkada beyaz band YOK — sadece floating hap, dışı şeffaf.
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final tabWidth = constraints.maxWidth / _tabs.length;
+            return Stack(
               children: [
-                _DockItem(
-                  tab: LululuDockTab.home,
-                  selected: selected,
-                  icon: Icons.home_rounded,
-                  label: 'Ana',
-                  activeGlow: LululuColors.toxicNeon,
-                  light: light,
-                  onTap: () => onSelect(LululuDockTab.home),
+                // Dock gövdesi: yüzen koyu hap.
+                Container(
+                  height: 68,
+                  decoration: BoxDecoration(
+                    color: LululuColors.spaceNavy
+                        .withValues(alpha: 0.92),
+                    borderRadius:
+                        BorderRadius.circular(LululuRadii.dock),
+                    border: Border.all(
+                      color: LululuColors.liquidGold
+                          .withValues(alpha: 0.35),
+                      width: 1.4,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: LululuColors.carbonVoid
+                            .withValues(alpha: 0.45),
+                        blurRadius: 22,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
                 ),
-                _DockItem(
-                  tab: LululuDockTab.board,
-                  selected: selected,
-                  icon: Icons.emoji_events_rounded,
-                  label: 'Sıralama',
-                  activeGlow: LululuColors.liquidGold,
-                  light: light,
-                  onTap: () => onSelect(LululuDockTab.board),
+                // Kayan gradyan gösterge (altın→mercan→fuşya).
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutBack,
+                  left: tabWidth * selected.index + 6,
+                  top: 8,
+                  bottom: 8,
+                  width: tabWidth - 12,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          LululuColors.liquidGold,
+                          LululuColors.coralFlare,
+                          LululuColors.cyberFuchsia,
+                        ],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: LululuColors.cyberFuchsia
+                              .withValues(alpha: 0.45),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                _DockItem(
-                  tab: LululuDockTab.chat,
-                  selected: selected,
-                  icon: Icons.chat_bubble_rounded,
-                  label: 'Sohbet',
-                  activeGlow: LululuColors.cyberFuchsia,
-                  light: light,
-                  onTap: () => onSelect(LululuDockTab.chat),
-                ),
-                _DockItem(
-                  tab: LululuDockTab.map,
-                  selected: selected,
-                  icon: Icons.map_rounded,
-                  label: 'Harita',
-                  activeGlow: LululuColors.coralFlare,
-                  light: light,
-                  onTap: () => onSelect(LululuDockTab.map),
-                ),
-                _DockItem(
-                  tab: LululuDockTab.shop,
-                  selected: selected,
-                  icon: Icons.shopping_bag_rounded,
-                  label: 'Dükkan',
-                  activeGlow: LululuColors.warningSolar,
-                  light: light,
-                  onTap: () => onSelect(LululuDockTab.shop),
+                // Sekmeler.
+                SizedBox(
+                  height: 68,
+                  child: Row(
+                    children: [
+                      for (final tab in _tabs)
+                        _DockItem(
+                          tab: tab,
+                          active: tab == selected,
+                          width: tabWidth,
+                          onTap: () => onSelect(tab),
+                        ),
+                    ],
+                  ),
                 ),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
   }
 }
 
-class _DockItem extends StatefulWidget {
+class _DockItem extends StatelessWidget {
   const _DockItem({
     required this.tab,
-    required this.selected,
-    required this.icon,
-    required this.label,
+    required this.active,
+    required this.width,
     required this.onTap,
-    required this.activeGlow,
-    required this.light,
   });
 
   final LululuDockTab tab;
-  final LululuDockTab selected;
-  final IconData icon;
-  final String label;
+  final bool active;
+  final double width;
   final VoidCallback onTap;
-  final Color activeGlow;
-  final bool light;
-
-  @override
-  State<_DockItem> createState() => _DockItemState();
-}
-
-class _DockItemState extends State<_DockItem> {
-  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    final active = widget.tab == widget.selected;
-    final idle = widget.light
-        ? LululuColors.mutedTitanium
-        : LululuColors.mutedTitanium;
-    final glow = active ? widget.activeGlow : idle;
+    final label = LululuDockBar._label(tab);
+    final icon = LululuDockBar._icon(tab);
+
+    Widget iconWidget = Icon(
+      icon,
+      size: 24,
+      color: active ? LululuColors.carbonVoid : LululuColors.mutedTitanium,
+    );
+
+    // Aktif ikon yukarı zıplar (seçim değişince animasyon tekrar oynar).
+    if (active) {
+      iconWidget = iconWidget
+          .animate(key: ValueKey('dock-jump-$tab'))
+          .moveY(
+            begin: 8,
+            end: -2,
+            duration: 220.ms,
+            curve: Curves.easeOutBack,
+          );
+    }
 
     return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTap: widget.onTap,
+      onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedScale(
-        scale: _pressed ? LululuMotion.pressScale : 1,
-        duration: LululuMotion.pressDuration,
-        curve: Curves.easeOutCubic,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            minWidth: LululuMotion.minTap,
-            minHeight: LululuMotion.minTap,
-          ),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              color: active
-                  ? widget.activeGlow.withValues(alpha: widget.light ? 0.14 : 0.2)
-                  : Colors.transparent,
-              border: Border.all(
+      child: SizedBox(
+        width: width,
+        height: 68,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            iconWidget,
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.visible,
+              style: GoogleFonts.exo2(
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.4,
                 color: active
-                    ? glow.withValues(alpha: 0.9)
-                    : Colors.transparent,
-                width: 1.2,
+                    ? LululuColors.carbonVoid
+                    : LululuColors.mutedTitanium,
               ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(widget.icon, color: glow, size: 22),
-                const SizedBox(height: 2),
-                Text(
-                  widget.label,
-                  style: GoogleFonts.exo2(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    color: active
-                        ? (widget.light
-                            ? LululuColors.inkDark
-                            : glow)
-                        : idle,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ),
       ),
     );

@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
+import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -38,6 +39,7 @@ class _MakarayizScreenState extends State<MakarayizScreen>
   int _lives = 3;
   int _beatIndex = 0;
   bool _alive = true;
+  bool _resultShown = false;
   _Lane _target = _Lane.mid;
   _Lane _player = _Lane.mid;
   InsectTier _bug = InsectTier.fan;
@@ -161,13 +163,40 @@ class _MakarayizScreenState extends State<MakarayizScreen>
     });
   }
 
+  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
+  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  Future<void> _presentResult() async {
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: ResultScoring.coinsFor(_score),
+      stars: ResultScoring.starsFor(score: _score, best: _best),
+    );
+    if (!mounted) return;
+    _resultShown = false;
+    if (replay) {
+      _restart();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _edgeShowResult() {
+    if (_resultShown) return;
+    _resultShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _presentResult();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_alive && !_resultShown) _edgeShowResult();
     final until = _nextBeat.difference(DateTime.now()).inMilliseconds;
     final inWindow = until.abs() <= _hitWindowMs;
 
     return ArcadeScreen(
-      title: 'Makarayız',
+      title: 'MAKARAYIZ',
       score: _score,
       best: _best,
       hint: _hint,
@@ -273,7 +302,7 @@ class _MakarayizScreenState extends State<MakarayizScreen>
           ],
         ),
       ),
-      overlay: !_alive
+      overlay: (!_alive && !_resultShown)
           ? ArcadeResultOverlay(
               title: 'MAKARA BİTTİ',
               message: _hint,

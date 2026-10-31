@@ -16,9 +16,11 @@ import '../services/progress_manager.dart';
 import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arena_prop_glb.dart';
+import '../widgets/bonus_fx.dart';
 import '../widgets/evolution_roadmap_bar.dart';
 import '../widgets/game_arena_painter.dart';
 import '../widgets/sticker_image.dart';
+import 'result_screen.dart';
 
 class _MergeJuicePopup {
   final int id;
@@ -75,6 +77,12 @@ class _GameScreenState extends State<GameScreen>
   String _activeSpeechBubble = '';
   Timer? _speechTimer;
   bool _isAydinlatActive = false;
+
+  // Bonus buton efekt kökenleri + tüketim nabzı (görsel katman).
+  final GlobalKey _aydinlatKey = GlobalKey();
+  final GlobalKey _terlikKey = GlobalKey();
+  final GlobalKey _spreyKey = GlobalKey();
+  final Set<String> _bonusPulse = {};
 
   final Map<String, ImageInfo?> _insectImages = {};
 
@@ -569,7 +577,7 @@ class _GameScreenState extends State<GameScreen>
     return 0;
   }
 
-  void _triggerVictory() {
+  Future<void> _triggerVictory() async {
     if (_isFinished) return;
     _isFinished = true;
 
@@ -582,16 +590,40 @@ class _GameScreenState extends State<GameScreen>
 
     AudioManager().playWin();
     unawaited(_submitSuikaScore());
-    _showVictoryModal(stars);
+    // Önce yeni sonuç ekranı; "ANA SAYFA"da eski zafer akışı devam eder.
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: stars * 50,
+      stars: stars,
+    );
+    if (!mounted) return;
+    if (replay) {
+      _restartLevel(_currentLevel);
+    } else {
+      _showVictoryModal(stars);
+    }
   }
 
-  void _triggerDefeat() {
+  Future<void> _triggerDefeat() async {
     if (_isFinished) return;
     _isFinished = true;
 
     AudioManager().playLose();
     unawaited(_submitSuikaScore());
-    _showDefeatModal();
+    // Önce yeni sonuç ekranı; "ANA SAYFA"da eski yenilgi akışı devam eder.
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: 0,
+      stars: _calculateStars(),
+    );
+    if (!mounted) return;
+    if (replay) {
+      _restartLevel(_currentLevel);
+    } else {
+      _showDefeatModal();
+    }
   }
 
   Future<void> _submitSuikaScore() async {
@@ -603,6 +635,25 @@ class _GameScreenState extends State<GameScreen>
     if (mounted && best > _bestScore) {
       setState(() => _bestScore = best);
     }
+  }
+
+  /// Bonus butonu sarma: önce kullanım efekti (bloklamaz), sonra mevcut
+  /// bonus mantığı. Buton tüketim nabzıyla söner/küçülür (görsel).
+  void _useBonusWithFx({
+    required String bonusId,
+    required GlobalKey key,
+    required VoidCallback run,
+  }) {
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    final origin = box != null
+        ? box.localToGlobal(box.size.center(Offset.zero))
+        : MediaQuery.of(context).size.center(Offset.zero);
+    unawaited(playBonusFx(context, bonusId: bonusId, origin: origin));
+    setState(() => _bonusPulse.add(bonusId));
+    Timer(const Duration(milliseconds: 380), () {
+      if (mounted) setState(() => _bonusPulse.remove(bonusId));
+    });
+    run();
   }
 
   // Mega Booster: Aydınlat Hele! — full grayscale then airstrike.
@@ -969,31 +1020,49 @@ class _GameScreenState extends State<GameScreen>
             children: [
               Expanded(
                 child: _buildBoosterButton(
+                  key: _aydinlatKey,
                   icon: '💡',
                   label: compact ? 'Aydınlat' : 'Aydınlat Hele!',
                   count: progress.aydinlatCount,
                   color: LululuColors.liquidGold,
-                  onPressed: _useAydinlatMegaBonus,
+                  pulse: _bonusPulse.contains('Aydınlat Hele!'),
+                  onPressed: () => _useBonusWithFx(
+                    bonusId: 'Aydınlat Hele!',
+                    key: _aydinlatKey,
+                    run: _useAydinlatMegaBonus,
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: _buildBoosterButton(
+                  key: _terlikKey,
                   icon: '🩴',
                   label: 'Terlik',
                   count: progress.slipperCount,
                   color: LululuColors.mysticRuby,
-                  onPressed: _useSlipperPowerup,
+                  pulse: _bonusPulse.contains('Terlik'),
+                  onPressed: () => _useBonusWithFx(
+                    bonusId: 'Terlik',
+                    key: _terlikKey,
+                    run: _useSlipperPowerup,
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: _buildBoosterButton(
+                  key: _spreyKey,
                   icon: '💨',
                   label: compact ? 'Raid' : 'Raid Sprey',
                   count: progress.sprayCount,
                   color: LululuColors.cyberFuchsia,
-                  onPressed: _useSprayPowerup,
+                  pulse: _bonusPulse.contains('Raid Sprey'),
+                  onPressed: () => _useBonusWithFx(
+                    bonusId: 'Raid Sprey',
+                    key: _spreyKey,
+                    run: _useSprayPowerup,
+                  ),
                 ),
               ),
             ],
@@ -1019,7 +1088,7 @@ class _GameScreenState extends State<GameScreen>
         Column(
           children: [
             Text(
-              widget.arcade ? 'Suika Arena' : 'BÖLÜM ${_currentLevel.id}',
+              widget.arcade ? 'SUİKA ARENA' : 'BÖLÜM ${_currentLevel.id}',
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
@@ -1153,27 +1222,43 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildBoosterButton({
+    Key? key,
     required String icon,
     required String label,
     required int count,
     required Color color,
     required VoidCallback onPressed,
+    bool pulse = false,
   }) {
-    return SizedBox(
-      height: 52,
-      child: ElevatedButton(
-        onPressed: count > 0 ? onPressed : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: LululuColors.ink,
-          disabledBackgroundColor: color.withValues(alpha: 0.35),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-          minimumSize: const Size(48, 48),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
+    return AnimatedOpacity(
+      opacity: pulse ? 0.35 : 1,
+      duration: const Duration(milliseconds: 180),
+      child: AnimatedScale(
+        scale: pulse ? 0.82 : 1,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        child: SizedBox(
+          height: 52,
+          child: ElevatedButton(
+            key: key,
+            onPressed: count > 0 ? onPressed : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: color,
+              foregroundColor: LululuColors.ink,
+              disabledBackgroundColor: color.withValues(alpha: 0.35),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                  color: LululuColors.warningSolar.withValues(alpha: 0.85),
+                  width: 2,
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              minimumSize: const Size(48, 48),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              elevation: 6,
+              shadowColor: color.withValues(alpha: 0.55),
+            ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -1205,6 +1290,8 @@ class _GameScreenState extends State<GameScreen>
               ),
             ),
           ],
+        ),
+        ),
         ),
       ),
     );

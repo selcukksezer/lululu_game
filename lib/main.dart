@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/splash_screen.dart';
 import 'services/adaptive_quality_scaler.dart';
 import 'services/audio_manager.dart';
 import 'services/auth_service.dart';
 import 'services/chat_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/daily_challenge_service.dart';
+import 'services/energy_service.dart';
 import 'services/firebase_bootstrap.dart';
 import 'services/iap_service.dart';
 import 'services/leaderboard_service.dart';
@@ -49,10 +51,16 @@ class _BootApp extends StatefulWidget {
 class _BootAppState extends State<_BootApp> {
   Widget? _home;
   String? _bootError;
+  bool _splashDone = false;
 
   @override
   void initState() {
     super.initState();
+    // Splash önce gösterilir; onDone → mevcut _boot akışı başlar.
+  }
+
+  void _onSplashDone() {
+    setState(() => _splashDone = true);
     unawaited(_boot());
   }
 
@@ -62,6 +70,7 @@ class _BootAppState extends State<_BootApp> {
       await FirebaseBootstrap.ensureInitialized()
           .timeout(const Duration(seconds: 4));
       await AuthService.instance.load().timeout(const Duration(seconds: 3));
+      unawaited(EnergyService.instance.load());
       unawaited(ChatService.instance.ensureLoaded());
       unawaited(LeaderboardService.instance.ensureLoaded());
       unawaited(DailyChallengeService.instance.ensureLoaded());
@@ -87,6 +96,15 @@ class _BootAppState extends State<_BootApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Önce animasyonlu açılış; bitince mevcut boot akışı.
+    if (!_splashDone) {
+      return MaterialApp(
+        title: 'Lülülü Hamamböceği',
+        debugShowCheckedModeBanner: false,
+        theme: buildLululuTheme(),
+        home: SplashScreen(onDone: _onSplashDone),
+      );
+    }
     return MaterialApp(
       title: 'Lülülü Hamamböceği',
       debugShowCheckedModeBanner: false,

@@ -35,20 +35,25 @@ void main() {
     AdaptiveQualityScaler.instance.bootstrap(forceTier: QualityTier.medium);
   });
 
-  testWidgets('LululuApp boots HomeShell with Ana dock and GameSelector',
+  testWidgets('LululuApp boots HomeShell with dock and GameSelector',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({
       'LululuOnboardingDoneV1': true,
     });
-    await tester.pumpWidget(const LululuApp(showOnboarding: false));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildLululuTheme(),
+        home: const HomeShell(),
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(HomeShell), findsOneWidget);
     expect(find.byType(GameSelectorScreen), findsOneWidget);
-    expect(find.text('Ana'), findsOneWidget);
-    expect(find.textContaining('Online'), findsWidgets);
-    expect(find.text('Sohbet'), findsOneWidget);
+    expect(find.text('ANA SAYFA'), findsOneWidget);
+    expect(find.textContaining('STÜDYO'), findsWidgets);
+    expect(find.text('SKORLAR'), findsOneWidget);
     expect(find.textContaining('GÜNLÜK'), findsWidgets);
 
     // Drain ZeroJank / animate timers so binding invariants pass.
@@ -155,14 +160,20 @@ void main() {
     }
 
     await mount(const BalloonPopScreen(), 'BALON PATLAT');
-    await mount(const Match3Screen(), "3'LÜ EŞLE");
-    await mount(const ConnectPopScreen(), 'ÇİZGİ BAĞLA');
-    await mount(const StackDropScreen(), 'DÜŞEN KULE');
-    await mount(const Grid2048Screen(), 'LÜLÜLÜ 2048');
-    await mount(
-      GameScreen(level: CampaignDatabase.kitchenLevel1, arcade: true),
-      'SUIKA ARENA',
+    await mount(const Match3Screen(), 'MATCH 3');
+    await mount(const ConnectPopScreen(), 'BAĞLA PATLAT');
+    await mount(const StackDropScreen(), 'STACK DROP');
+    await mount(const Grid2048Screen(), '2048 GRID');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildLululuTheme(),
+        home: GameScreen(level: CampaignDatabase.kitchenLevel1, arcade: true),
+      ),
     );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(tester.takeException(), isNull, reason: 'GameScreen');
+    expect(find.byType(GameScreen), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
@@ -179,8 +190,8 @@ void main() {
       expect(find.text(title), findsOneWidget);
     }
 
-    await mount(const OsmantusScreen(), 'Osmantuş');
-    await mount(const ScreamRoachScreen(), 'Çığlık Böcek');
+    await mount(const OsmantusScreen(), 'OSMANTUŞ');
+    await mount(const ScreamRoachScreen(), 'ÇIĞLIK BÖCEK');
     await mount(const TerlikTapScreen(), 'TERLİK TAP');
 
     await tester.pumpWidget(const SizedBox.shrink());

@@ -10,6 +10,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
+import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -49,6 +50,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   int _dayStreak = 0;
   int _gatesPassed = 0;
   bool _alive = true;
+  bool _resultShown = false;
   bool _layoutReady = false;
   bool _layoutBootstrapping = false;
   double _groundIdle = 0;
@@ -358,17 +360,44 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   String _statsLine() =>
       'Kapı $_gatesPassed · Max spam x$_maxScreamStreak · Streak $_dayStreak';
 
+  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
+  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  Future<void> _presentResult() async {
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: ResultScoring.coinsFor(_score),
+      stars: ResultScoring.starsFor(score: _score, best: _best),
+    );
+    if (!mounted) return;
+    _resultShown = false;
+    if (replay) {
+      _restart();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _edgeShowResult() {
+    if (_resultShown) return;
+    _resultShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _presentResult();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_alive && !_resultShown) _edgeShowResult();
     return ArcadeScreen(
-      title: 'Çığlık Böcek',
+      title: 'ÇIĞLIK BÖCEK',
       score: _score,
       best: _best,
       hint: _hint,
       statLabel: 'KAPI',
       statValue: '$_gatesPassed',
       onRestart: _restart,
-      overlay: !_alive
+      overlay: (!_alive && !_resultShown)
           ? ArcadeResultOverlay(
               title: 'EZİLDİN',
               message: _statsLine(),

@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
+import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -41,6 +42,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   int? _hold;
   bool _flying = false;
   bool _over = false;
+  bool _resultShown = false;
   bool _paused = false;
   bool _shotArmed = false;
   Offset? _fly;
@@ -577,18 +579,45 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     return dots;
   }
 
+  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" aynı turu başlatır,
+  /// "ANA SAYFA"da eski TAŞTI akışı devam eder (bozulmadı).
+  Future<void> _presentResult() async {
+    final replay = await showGameResult(
+      context,
+      score: _score,
+      coins: ResultScoring.coinsFor(_score),
+      stars: ResultScoring.starsFor(score: _score, best: _best),
+    );
+    if (!mounted) return;
+    _resultShown = false;
+    if (replay) {
+      setState(_boot);
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _edgeShowResult() {
+    if (_resultShown) return;
+    _resultShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _presentResult();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final until = descendEvery - (_shots % descendEvery);
+    if (_over && !_resultShown) _edgeShowResult();
     return ArcadeScreen(
-      title: 'Balon Patlat',
+      title: 'BALON PATLAT',
       hint: _paused ? 'DURAKLATILDI' : _hint,
       score: _score,
       best: _best,
       statLabel: _streak > 0 ? 'STREAK' : 'TAVAN',
       statValue: _streak > 0 ? 'x$_streak' : '$until',
       onRestart: () => setState(_boot),
-      overlay: _over
+      overlay: (_over && !_resultShown)
           ? ArcadeResultOverlay(
               title: 'TAŞTI',
               message: _statsLine(),

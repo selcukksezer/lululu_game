@@ -13,6 +13,8 @@ import '../modes/terlik_tap_screen.dart';
 import '../screens/game_screen.dart';
 import '../screens/grid_2048_screen.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../widgets/energy_empty_popup.dart';
 
 /// Stops game SFX/voice when the pushed game route leaves the tree.
 class GameAudioGate extends StatefulWidget {
@@ -36,7 +38,14 @@ class _GameAudioGateState extends State<GameAudioGate> {
   Widget build(BuildContext context) => widget.child;
 }
 
-Future<void> openGameMode(BuildContext context, GameModeKind kind) {
+Future<void> openGameMode(BuildContext context, GameModeKind kind) async {
+  // Enerji yoksa oyun açılmasın — popup göster, geri dön.
+  final ok = await EnergyService.instance.tryConsume();
+  if (!ok) {
+    await showEnergyEmptyPopup(context);
+    return;
+  }
+
   final child = switch (kind) {
     GameModeKind.suika => GameScreen(
         level: CampaignDatabase.kitchenLevel1,
@@ -53,7 +62,7 @@ Future<void> openGameMode(BuildContext context, GameModeKind kind) {
     GameModeKind.terlikTap => const TerlikTapScreen(),
   };
 
-  return Navigator.of(context).push(
+  await Navigator.of(context).push(
     PageRouteBuilder<void>(
       transitionDuration: const Duration(milliseconds: 420),
       reverseTransitionDuration: const Duration(milliseconds: 260),
