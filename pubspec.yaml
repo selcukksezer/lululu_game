@@ -78,6 +78,7 @@ flutter:
     - assets/ui/kenney/
     - assets/audio/
     - assets/models/
+    - assets/design/
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

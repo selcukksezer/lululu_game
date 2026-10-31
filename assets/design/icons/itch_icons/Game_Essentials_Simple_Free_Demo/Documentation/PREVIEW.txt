@@ -1,0 +1,75 @@
+Game Essentials Simple: Universal UI Icons - Free Demo
+
+20 unique transparent 256 x 256 pixel, 8-bit RGBA PNG icons across 20 categories.
+Simplified colorful, rounded UI graphics with navy outlines for navigation,
+actions, currency counters, shops, rewards, inventories, stats and notifications.
+
+This Free Demo contains one approved icon from each of the 20 categories. These are the same PNG images included in the full pack, not alternate variants.
+
+Category folders and included files
+
+01_main_navigation: Main Navigation
+  home.png
+
+02_play_controls: Play Controls
+  play.png
+
+03_common_actions: Common Actions
+  confirm.png
+
+04_directions: Directions
+  arrow_up.png
+
+05_search_sorting: Search and Sorting
+  search.png
+
+06_currencies: Currencies
+  coin.png
+
+07_shopping_trading: Shopping and Trading
+  shopping_cart.png
+
+08_rewards: Rewards
+  gift.png
+
+09_progression: Progression
+  level_up.png
+
+10_achievements: Achievements
+  trophy.png
+
+11_inventory_storage: Inventory and Storage
+  storage_box.png
+
+12_item_actions: Item Actions
+  equip.png
+
+13_player_stats: Player Stats
+  health.png
+
+14_social: Social
+  friends.png
+
+15_multiplayer: Multiplayer
+  party.png
+
+16_world_navigation: World Navigation
+  location_pin.png
+
+17_time_calendar: Time and Calendar
+  clock.png
+
+18_audio: Audio
+  sound_on.png
+
+19_settings_preferences: Settings and Preferences
+  settings_gear.png
+
+20_alerts_status: Alerts and Status
+  notification.png
+
+All_Icons/ and Icons_By_Category/ are two views of the same 20 icons.
+They contain 40 byte-identical PNG copies, not 40 unique icons.
+Documentation/ contains README.txt, PREVIEW.txt and LICENSE.txt.
+For usage, see README.txt. For terms, read Documentation/LICENSE.txt.
+These images require your own interface controls and actions.
