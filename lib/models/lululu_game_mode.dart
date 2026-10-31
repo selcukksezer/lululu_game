@@ -38,7 +38,7 @@ class LululuGameMode {
     LululuGameMode(
       kind: GameModeKind.suika,
       title: 'Suika Arena',
-      subtitle: 'Aynı böceği bırak, birleşsin. Taşarsa biter.',
+      subtitle: 'Aynı böcekleri çarpıştır, Pembe Bornozlu\'ya kadar evrimleştir!',
       stickerAsset: 'assets/design/bugs_hd/tier6_hd.png',
       accent: LululuColors.cyberFuchsia,
       badge: 'HOT',

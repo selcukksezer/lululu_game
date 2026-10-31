@@ -80,6 +80,16 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 
+  void _nextPage() {
+    if (_pageIndex < 2) {
+      _pageController.animateToPage(
+        _pageIndex + 1,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   void _startLoading() {
     if (_loading) return;
     setState(() {
@@ -167,6 +177,28 @@ class _SplashScreenState extends State<SplashScreen> {
                     ),
                     child: Text(
                       'GEÇ ›',
+                      style: GoogleFonts.exo2(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: LululuColors.carbonVoid,
+                      ),
+                    ),
+                  ),
+                ),
+              // DEVAM butonu (prototip): sonraki sayfaya geçer.
+              if (_pageIndex < 2)
+                Positioned(
+                  right: 12,
+                  bottom: 20,
+                  child: TextButton(
+                    onPressed: _nextPage,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(
+                          LululuMotion.minTap,
+                          LululuMotion.minTap),
+                    ),
+                    child: Text(
+                      'DEVAM ›',
                       style: GoogleFonts.exo2(
                         fontSize: 15,
                         fontWeight: FontWeight.w900,

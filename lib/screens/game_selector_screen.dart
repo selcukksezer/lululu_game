@@ -303,7 +303,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                 child: LululuSectionHeader(
                   title: 'GÜNLÜK GÖREVLER',
                   subtitle: 'Görevleri bitir, ödülü kap!',
-                  actionLabel: 'Tümü →',
+                  actionLabel: 'TÜMÜNÜ GÖR',
                   onAction: _openTasks,
                 ),
               ),
@@ -335,7 +335,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
                 child: LululuSectionHeader(
                   title: 'OYUN MODLARI',
-                  actionLabel: 'TÜMÜ',
+                  actionLabel: 'Tümü →',
                   onAction: _openModes,
                 ),
               ),

@@ -327,6 +327,17 @@ class _AuthForm extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        // Prototip: form açıklaması.
+        Text(
+          'Kullanıcı adı + şifre ile gerçek hesap. Skorlar sıralamaya bağlanır.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.exo2(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: LululuColors.mutedTitanium,
+          ),
+        ),
+        const SizedBox(height: 12),
         _Field(
           controller: userCtrl,
           hint: 'Kullanıcı adı',
