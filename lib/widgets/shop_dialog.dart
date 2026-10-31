@@ -214,7 +214,7 @@ class _ShopScreenState extends State<ShopScreen> {
             fallbackIcon: Icons.favorite_rounded,
             accent: LululuColors.cyberFuchsia,
             title: 'ENERJİ DEPOSU',
-            subtitle: 'Kalbi 30/30 fulle',
+            subtitle: 'Kalbi 30/30 fulle · tek seferde tam enerji',
             badge: 'EN İYİ',
             badgeColor: LululuColors.liquidGold,
             action: _BuyButton(
@@ -224,6 +224,20 @@ class _ShopScreenState extends State<ShopScreen> {
           ),
           const SizedBox(height: 20),
           _SectionTitle(title: 'GÜÇLENDİRİCİLER'),
+          _ProductCard(
+            imagePath: '$_icons/energy_boost.png',
+            fallbackIcon: Icons.bolt_rounded,
+            accent: LululuColors.cyberFuchsia,
+            title: 'GÜÇLENDİRİCİLER',
+            subtitle: 'Moda özel · 30 çeşit',
+            badge: 'FIRSAT',
+            badgeColor: LululuColors.toxicNeon,
+            action: _BuyButton(
+              label: '₺149,99',
+              onTap: () => _mockPay('Güçlendiriciler'),
+            ),
+          ),
+          const SizedBox(height: 10),
           _ProductCard(
             imagePath: '$_icons/xp_star.png',
             fallbackIcon: Icons.star_rounded,
@@ -297,7 +311,7 @@ class _ShopScreenState extends State<ShopScreen> {
             fallbackIcon: Icons.workspace_premium_rounded,
             accent: LululuColors.liquidGold,
             title: 'ALTIN SANDIK',
-            subtitle: 'Garantili nadir ödül',
+            subtitle: 'Garantili nadir ödül içerir',
             badge: 'ŞANSLI',
             badgeColor: LululuColors.cyberFuchsia,
             action: _BuyButton(
@@ -312,7 +326,7 @@ class _ShopScreenState extends State<ShopScreen> {
             fallbackIcon: Icons.timer_rounded,
             accent: LululuColors.toxicNeon,
             title: 'ÇİFTE COİN',
-            subtitle: '30 dk 2× coin',
+            subtitle: '30 dakika boyunca 2× coin',
             action: _BuyButton(
               label: '400',
               coinIcon: true,

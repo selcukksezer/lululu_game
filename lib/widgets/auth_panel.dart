@@ -157,7 +157,62 @@ class _SignedInCard extends StatelessWidget {
               color: LululuColors.paper,
             ),
           ),
+          const SizedBox(height: 10),
+          // Prototip: "Oturum açık" rozeti.
+          Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: LululuColors.toxicNeon.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: LululuColors.toxicNeon,
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 16,
+                  color: LululuColors.toxicNeon,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Oturum açık',
+                  style: GoogleFonts.exo2(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: LululuColors.toxicNeon,
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
+          // Prototip: OYUNA DEVAM ET — ayarlar/hesap ekranını kapatır.
+          LululuPress(
+            onTap: () => Navigator.of(context).maybePop(),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 52),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: LululuGradients.fuchsiaToGold,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                'OYUNA DEVAM ET',
+                style: GoogleFonts.exo2(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  color: LululuColors.carbonVoid,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           LululuPress(
             onTap: busy ? () {} : onSignOut,
             child: Container(

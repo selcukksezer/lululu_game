@@ -963,7 +963,7 @@ class _GameScreenState extends State<GameScreen>
       size = 20;
       animKey = _milestoneToast;
     } else if (combo) {
-      text = 'COMBO x$_comboCount!';
+      text = 'COMBO X$_comboCount!';
       color = LululuColors.liquidGold;
       glow = LululuColors.coralFlare;
       size = 26 + min(_comboCount, 6) * 1.5;

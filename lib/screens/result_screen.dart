@@ -238,6 +238,49 @@ class _GameResultPageState extends State<_GameResultPage>
               ),
             ),
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _miniStat('En İyi Kombo', '×6')),
+              const SizedBox(width: 10),
+              Expanded(child: _miniStat('Birleştirme', '18')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Prototip istatistik satırı (lbl + değer).
+  Widget _miniStat(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: _woodDeep.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _woodEdge, width: 2),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.exo2(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1,
+              color: LululuColors.paper.withValues(alpha: 0.85),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: GoogleFonts.exo2(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: LululuColors.warningSolar,
+            ),
+          ),
         ],
       ),
     );

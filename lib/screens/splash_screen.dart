@@ -189,6 +189,15 @@ class _SplashScreenState extends State<SplashScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Text(
+            'YENİ MACERA',
+            style: GoogleFonts.bangers(
+              fontSize: 44,
+              color: LululuColors.paper,
+              letterSpacing: 1.8,
+            ),
+          ).animate().fadeIn(duration: 350.ms),
+          const SizedBox(height: 16),
           Image.asset(
             'assets/design/ui/logo_lululu.png',
             height: 150,
@@ -363,6 +372,15 @@ class _SplashScreenState extends State<SplashScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Text(
+            'SON ADIM',
+            style: GoogleFonts.bangers(
+              fontSize: 44,
+              color: LululuColors.paper,
+              letterSpacing: 1.8,
+            ),
+          ).animate().fadeIn(duration: 350.ms),
+          const SizedBox(height: 10),
           Text(
             'MACERAYA HAZIR MISIN?',
             textAlign: TextAlign.center,

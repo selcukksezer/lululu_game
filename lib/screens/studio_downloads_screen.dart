@@ -6,27 +6,34 @@ import '../widgets/lululu_press.dart';
 
 /// STÜDYO → İNDİRİLENLER — prototip mock'u (scr-studio-downloads).
 ///
-/// Depolama özeti + 4 öğelik liste. Tamamen mock içerik.
-class StudioDownloadsScreen extends StatelessWidget {
+/// Depolama özeti + liste. Liste boşken prototipteki boş-durum
+/// metinleri gösterilir.
+class StudioDownloadsScreen extends StatefulWidget {
   const StudioDownloadsScreen({super.key});
 
-  static const _items = <_DownloadItem>[
-    _DownloadItem(
+  @override
+  State<StudioDownloadsScreen> createState() =>
+      _StudioDownloadsScreenState();
+}
+
+class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
+  final _items = <_DownloadItem>[
+    const _DownloadItem(
       name: 'birlesme_rekoru.mp4',
       meta: '84,2 MB · Bugün 09:12',
       isGif: false,
     ),
-    _DownloadItem(
+    const _DownloadItem(
       name: 'kapi7_rehberi.mp4',
       meta: '156,8 MB · Dün 21:40',
       isGif: false,
     ),
-    _DownloadItem(
+    const _DownloadItem(
       name: 'dans_zamani.gif',
       meta: '6,4 MB · 28 Ekim',
       isGif: true,
     ),
-    _DownloadItem(
+    const _DownloadItem(
       name: 'hamam_diva_klip.mp4',
       meta: '42,1 MB · 25 Ekim',
       isGif: false,
@@ -111,10 +118,13 @@ class StudioDownloadsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          for (final item in _items) ...[
-            _DownloadRow(item: item),
-            const SizedBox(height: 10),
-          ],
+          if (_items.isEmpty)
+            _EmptyState(onBrowse: () {})
+          else
+            for (final item in _items) ...[
+              _DownloadRow(item: item),
+              const SizedBox(height: 10),
+            ],
           const SizedBox(height: 32),
         ],
       ),
@@ -132,6 +142,79 @@ class _DownloadItem {
   final String name;
   final String meta;
   final bool isGif;
+}
+
+/// Liste boşken prototipteki boş-durum (prototip metinleri birebir).
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.onBrowse});
+
+  final VoidCallback onBrowse;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+      decoration: BoxDecoration(
+        color: LululuColors.paper,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: LululuColors.mutedTitanium.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.download_rounded,
+            size: 56,
+            color: LululuColors.mutedTitanium,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'İndirilen öğe kalmadı.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.exo2(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: LululuColors.inkDark,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "Video İzle'den yeni klipler indirebilirsin.",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.exo2(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: LululuColors.mutedTitanium,
+            ),
+          ),
+          const SizedBox(height: 16),
+          LululuPress(
+            onTap: onBrowse,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: LululuColors.liquidGold,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                'VİDEO İZLE',
+                style: GoogleFonts.exo2(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                  color: LululuColors.carbonVoid,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _DownloadRow extends StatelessWidget {
