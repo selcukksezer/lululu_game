@@ -356,7 +356,6 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     }
 
     // ~8% Hışır özel hedefi (tier dışı; sesi 'hisir' kimliğiyle husur_aday).
-    // Görsel GEÇİCİ: tier1 görseli ödünç (bkz. HisirCharacter).
     if (_rng.nextDouble() < 0.08) {
       _bugs.add(
         _Bug(

@@ -9,8 +9,8 @@
 /// diye geçti, "hışır" olduğu kulakla teyit edilmedi. Teyit gelince ya da
 /// gerçek "hışır" klibi kesilince ses dosyası/sabit değişir, bu dosya değişmez.
 ///
-/// Görsel GEÇİCİ: Hışır'a özel çizim yok; tier1 (Bebek Huni) görseli ödünç
-/// alınır. Özel görsel gelince yalnız [assetPath] değiştirilecek.
+/// Görsel: Hışır'a özel üretildi (`assets/design/bugs_hd/hisir_hd.png`,
+/// yaprak başlıklı/pelerinli, fısıltı pozunda, şeffaf zeminli).
 class HisirCharacter {
   HisirCharacter._();
 
@@ -21,8 +21,8 @@ class HisirCharacter {
 
   static const replik = 'Hışır hışır!';
 
-  /// GEÇİCİ görsel (tier1 ödünç). Özel çizim gelince değiştirilecek.
-  static const assetPath = 'assets/design/bugs_hd/tier1_hd.png';
+  /// Hışır'a özel görsel (şeffaf zeminli).
+  static const assetPath = 'assets/design/bugs_hd/hisir_hd.png';
 
   static const lines = <String>['Hışır hışır!', 'Hışır!'];
 }
