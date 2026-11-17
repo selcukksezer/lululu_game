@@ -9,6 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import 'chat_service.dart';
 import 'cloud_sync_service.dart';
 import 'firebase_bootstrap.dart';
 import 'leaderboard_service.dart';
@@ -206,6 +207,10 @@ class AuthService extends ChangeNotifier {
 
   AuthUser? _user;
   bool _loaded = false;
+
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
   bool _googleReady = false;
   final Map<String, RegisteredAccount> _accounts = {};
   final Map<String, int> _failedLoginAttempts = {};
@@ -255,7 +260,22 @@ class AuthService extends ChangeNotifier {
     await load();
   }
 
+  /// Kalıcı oturumu yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     resetLoginRateLimit();
     final prefs = await SharedPreferences.getInstance();
     await _loadAccounts(prefs);
@@ -1344,12 +1364,11 @@ class AuthService extends ChangeNotifier {
   /// sürümde bulut kopyaları silinmez; aynı e-postayla yeniden kayıt,
   /// Firebase'te `email-already-in-use` ile reddedilebilir.
   ///
-  /// TODO(hesap-silme, yerel-temizlik): ProgressManager, LeaderboardService,
-  /// ChatService ve CloudSyncService'te herkese açık bir temizleme/sıfırlama
-  /// API'si YOK (2026-11-18, salt okuma: reset/clear/deleteAll araması 0
-  /// sonuç verdi). Bu servisler temizleme API'si kazanınca bu metot o
-  /// API'leri çağırmalıdır; o güne kadar cihaz içi ilerleme/liderlik/sohbet
-  /// kayıtları ayrıca "İlerlemeyi Sıfırla" ile temizlenebilir.
+  /// Yerel temizlik: [ProgressManager.clearLocalData],
+  /// [LeaderboardService.clearLocalData], [ChatService.clearLocalData] ve
+  /// [CloudSyncService.clearLocalData] bu metotta çağrılır; silinen
+  /// hesabın cihazdaki ilerleme / liderlik / sohbet / senkron kuyruğu
+  /// kayıtları temizlenir.
   ///
   /// Oturum açık değilse veya oturum misafir oturumuysa [StateError] fırlatır
   /// (misafirlerin silinecek hesap kaydı yoktur).
@@ -1380,6 +1399,12 @@ class AuthService extends ChangeNotifier {
       await _persistAccounts();
     }
     await signOut();
+    // Yerel temizlik: silinen hesabın cihazdaki ilerleme / liderlik /
+    // sohbet / senkron kuyruğu kayıtları temizlenir.
+    await ProgressManager.instance.clearLocalData();
+    await LeaderboardService.instance.clearLocalData();
+    await ChatService.instance.clearLocalData();
+    await CloudSyncService.instance.clearLocalData();
     await CloudSyncService.instance.enableOnlineWhenSignedIn();
   }
 

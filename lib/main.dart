@@ -14,6 +14,7 @@ import 'services/adaptive_quality_scaler.dart';
 import 'services/app_lifecycle_guard.dart';
 import 'services/audio_manager.dart';
 import 'services/auth_service.dart';
+import 'services/campaign_progression_service.dart';
 import 'services/chat_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/daily_challenge_service.dart';
@@ -162,7 +163,16 @@ class _BootAppState extends State<_BootApp> {
 
   void _onFirebaseAvailabilityChanged() {
     if (!FirebaseBootstrap.availableNotifier.value) return;
-    unawaited(CloudSyncService.instance.flushPending());
+    unawaited(_flushQueueAfterLoad());
+  }
+
+  /// Dinleyici tetikli flush kuyruk yüklenmeden çalışmasın: önce
+  /// `ensureLoaded()` (paylaşımlı; `_boot()`'taki çağrıyla aynı
+  /// yükleme), sonra flush. Kuyruk yüklenmeden yapılan flush boş
+  /// kuyrukla çalışır ve `ensureLoaded()` ile yarışırdı (R5).
+  Future<void> _flushQueueAfterLoad() async {
+    await CloudSyncService.instance.ensureLoaded();
+    await CloudSyncService.instance.flushPending();
   }
 
   void _onSplashDone() {
@@ -207,9 +217,16 @@ class _BootAppState extends State<_BootApp> {
     }
     try {
       await ProgressManager().load().timeout(const Duration(seconds: 3));
+      // Kampanya ilerlemesi (sandık/boss kayıtları) PM senkronu gerektirir:
+      // PM yüklenmeden önce çağrılmamalı (W55-4 / R1).
+      await CampaignProgressionService.instance
+          .load()
+          .timeout(const Duration(seconds: 3));
       final firebaseReady = await _ensureFirebaseWithRetry();
       await AuthService.instance.load().timeout(const Duration(seconds: 3));
-      unawaited(EnergyService.instance.load());
+      // Yükleme yarışı (şüphe 1): enerji boot'ta beklenir; bekletilmeyen
+      // load() bulut birleştirmenin erken yazısını ezebilirdi.
+      await EnergyService.instance.load();
       unawaited(ChatService.instance.ensureLoaded());
       unawaited(LeaderboardService.instance.ensureLoaded());
       unawaited(DailyChallengeService.instance.ensureLoaded());

@@ -140,6 +140,12 @@ class ChatService extends ChangeNotifier {
 
   static const _prefsKey = 'LululuChatLobbyV1';
   static const _channelsPrefsKey = 'LululuChatChannelsV2';
+
+  /// Kanal başına görülen en yeni mesaj zamanı (utcTicks) — kalıcı
+  /// (S2#19): [markChannelRead] ve bulut akışı ilerlettikçe yazılır,
+  /// [load] başlangıçta önbellekten türetilen değerle birleştirilir
+  /// (büyük olan kazanır).
+  static const _lastSeenPrefsKey = 'LululuChatLastSeenV1';
   static const maxMessages = 200;
 
   /// Okunmamış yoklamasının pencere boyutu (S2#19): aktif olmayan her
@@ -267,6 +273,10 @@ class ChatService extends ChangeNotifier {
 
   ChatChannel _currentChannel = ChatChannel.lobby;
   bool _loaded = false;
+
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
   String _lastSentText = '';
   int _lastSentAtMs = 0;
   final List<int> _recentSendTimestampsMs = <int>[];
@@ -287,11 +297,10 @@ class ChatService extends ChangeNotifier {
 
   /// Kanal başına görülen en yeni mesaj zamanı (utcTicks). Okunmamış
   /// sayımı, bu zamandan yeni + başkasına ait mesajları sayar. Başlangıç
-  /// değeri yerelde önbellekli mesajlardan alınır.
-  ///
-  /// TODO (S2#19): Yalnız bellekte tutulur; yeniden başlatmada önbelleğe
-  /// girmemiş okunmamışlar sıfırlanır. Kalıcı olması istenirse
-  /// SharedPreferences'a yazılmalıdır.
+  /// değeri yerelde önbellekli mesajlardan alınır ve kalıcı
+  /// [_lastSeenPrefsKey] kaydıyla birleştirilir (büyük olan kazanır),
+  /// böylece yeniden başlatmada önbelleğe girmemiş okunmamışlar
+  /// sıfırlanmaz (S2#19 notu çözüldü).
   final Map<ChatChannel, int> _lastSeenTicks = {};
 
   /// Buluta yazımı başarısız olup yalnız yerelde kalan mesaj kimlikleri.
@@ -326,7 +335,19 @@ class ChatService extends ChangeNotifier {
     final advanced = latest != (_lastSeenTicks[channel] ?? 0);
     _lastSeenTicks[channel] = latest;
     _unreadCounts[channel] = 0;
+    if (advanced) unawaited(_persistLastSeenTicks());
     if (hadUnread || advanced) notifyListeners();
+  }
+
+  /// Görülen zamanları kalıcı kayda yazar (S2#19).
+  Future<void> _persistLastSeenTicks() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _lastSeenPrefsKey,
+      jsonEncode({
+        for (final entry in _lastSeenTicks.entries) entry.key.id: entry.value,
+      }),
+    );
   }
 
   /// Buluta gönderilemeyip yalnız yerelde kalan mesajların kimlikleri.
@@ -460,7 +481,22 @@ class ChatService extends ChangeNotifier {
     await load();
   }
 
+  /// Kalıcı sohbeti yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKey);
     _messages.clear();
@@ -508,8 +544,58 @@ class ChatService extends ChangeNotifier {
       _unreadCounts[c] = 0;
     }
 
+    // Kalıcı görülen zamanlar: önbelleğe girmemiş ama okunmuş sayılan
+    // mesajlar yeniden başlatmada okunmamış sayılmaz (S2#19). Her
+    // kanalda büyük olan kazanır — görülen zaman yalnız ilerler.
+    final lastSeenRaw = prefs.getString(_lastSeenPrefsKey);
+    if (lastSeenRaw != null && lastSeenRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(lastSeenRaw) as Map<String, dynamic>;
+        decoded.forEach((key, value) {
+          if (value is num) {
+            final channel = ChatChannel.fromId(key);
+            final stored = value.toInt();
+            if (stored > (_lastSeenTicks[channel] ?? 0)) {
+              _lastSeenTicks[channel] = stored;
+            }
+          }
+        });
+      } catch (_) {}
+    }
+
     _loaded = true;
     _bindCloudStreamIfReady();
+    _streamController.add(messages);
+    notifyListeners();
+  }
+
+  /// Hesap silme için yerel sohbet verisini temizler (hesap-silme,
+  /// yerel-temizlik): mesajlar, kanal önbellekleri, okunmamış sayaçlar
+  /// ve görülen zamanlar (kalıcı anahtarları dahil) silinir; bulut
+  /// abonelikleri kapatılır. Bulut mesajları silinmez (sunucu tarafı
+  /// silme işi [AuthService.deleteAccount] dokümantasyonundadır).
+  Future<void> clearLocalData() async {
+    await _cloudSub?.cancel();
+    _cloudSub = null;
+    for (final sub in _unreadSubs.values) {
+      sub.cancel();
+    }
+    _unreadSubs.clear();
+    _messages.clear();
+    for (final c in ChatChannel.values) {
+      _byChannel[c] = <ChatMessage>[];
+      _unreadCounts[c] = 0;
+    }
+    _lastSeenTicks.clear();
+    _cloudFailedIds.clear();
+    _lastSentText = '';
+    _lastSentAtMs = 0;
+    _recentSendTimestampsMs.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsKey);
+    await prefs.remove(_channelsPrefsKey);
+    await prefs.remove(_lastSeenPrefsKey);
+    _loaded = false;
     _streamController.add(messages);
     notifyListeners();
   }
@@ -617,7 +703,9 @@ class ChatService extends ChangeNotifier {
           for (final m in list) {
             if (m.utcTicks > latest) latest = m.utcTicks;
           }
+          final advanced = latest != (_lastSeenTicks[_currentChannel] ?? 0);
           _lastSeenTicks[_currentChannel] = latest;
+          if (advanced) unawaited(_persistLastSeenTicks());
           _streamController.add(messages);
           notifyListeners();
         }

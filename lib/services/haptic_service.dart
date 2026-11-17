@@ -119,26 +119,6 @@ class HapticService {
     }
   }
 
-  /// Zincirleme kombo (`x2`, `x4`, `x8+`) vurgu titreşimi.
-  Future<void> onCombo(int combo) async {
-    if (combo <= 1 || !_canTrigger()) return;
-    try {
-      if (await _supportsCustomVibration()) {
-        final pulses = combo >= 5 ? 3 : 2;
-        for (var i = 0; i < pulses; i++) {
-          if (!isEnabled || _isTestEnvironment) return;
-          await Vibration.vibrate(duration: math.min(90, 26 + combo * 9));
-          if (i + 1 < pulses) {
-            await Future<void>.delayed(const Duration(milliseconds: 45));
-          }
-        }
-        return;
-      }
-    } catch (_) {}
-
-    await HapticFeedback.heavyImpact();
-  }
-
   /// Anne Terliği şaplağı (`ŞAK!`) — keskin darbe hissi.
   Future<void> onSlipperSlap({int combo = 1, bool golden = false}) async {
     if (!_canTrigger()) return;

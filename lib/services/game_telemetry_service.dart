@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/scheduler.dart';
 
 /// Tekil bir frame çizim süresini (build + raster) ve jank durumunu temsil eder.
 @immutable
@@ -178,7 +177,6 @@ class GameTelemetryService extends ChangeNotifier {
   int _totalJank120HzCount = 0;
   int _totalJank60HzCount = 0;
   int _totalBreadcrumbsRecorded = 0;
-  bool _schedulerAttached = false;
 
   /// Oturum başlangıcından itibaren kaydedilen toplam frame sayısı.
   int get totalFramesRecorded => _totalFramesRecorded;
@@ -241,35 +239,6 @@ class GameTelemetryService extends ChangeNotifier {
     if (sample.isJank60Hz) {
       _totalJank60HzCount++;
     }
-  }
-
-  /// Flutter `SchedulerBinding` üzerinden gelen [FrameTiming] listesini işler.
-  void recordSchedulerFrameTimings(List<FrameTiming> timings) {
-    for (final timing in timings) {
-      recordFrameTiming(timing.buildDuration, timing.rasterDuration);
-    }
-  }
-
-  /// `SchedulerBinding.instance` frame timing dinleyicisini etkinleştirir.
-  void attachSchedulerListener() {
-    if (_schedulerAttached) return;
-    try {
-      SchedulerBinding.instance.addTimingsCallback(recordSchedulerFrameTimings);
-      _schedulerAttached = true;
-    } catch (_) {
-      // Widget binding henüz başlatılmamışsa güvenli şekilde yoksay.
-    }
-  }
-
-  /// `SchedulerBinding.instance` frame timing dinleyicisini kaldırır.
-  void detachSchedulerListener() {
-    if (!_schedulerAttached) return;
-    try {
-      SchedulerBinding.instance.removeTimingsCallback(
-        recordSchedulerFrameTimings,
-      );
-    } catch (_) {}
-    _schedulerAttached = false;
   }
 
   /// Tampondaki örneklerin ortalama toplam frame süresi (ms).

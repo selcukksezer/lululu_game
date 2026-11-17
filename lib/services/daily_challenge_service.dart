@@ -35,6 +35,10 @@ class DailyChallengeService extends ChangeNotifier {
   static const _prefsKey = 'LululuDailyV1';
 
   bool _loaded = false;
+
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
   String _dayKey = '';
   String modeId = LeaderboardService.modeOsmantus;
   String modeLabel = 'Osmantuş';
@@ -127,7 +131,22 @@ class DailyChallengeService extends ChangeNotifier {
     await load();
   }
 
+  /// Kalıcı günlük görevi yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     final today = _todayKey();
     _dayKey = prefs.getString('${_prefsKey}_day') ?? '';

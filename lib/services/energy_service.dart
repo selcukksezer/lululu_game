@@ -52,13 +52,33 @@ class EnergyService extends ChangeNotifier {
   bool _loaded = false;
   Timer? _autoRegenTimer;
 
+  /// Yükleme tamamlanmadan gelen yazmaların kuyruğu (şüphe 1 yarış
+  /// koruması). `addEnergy`, `energy` setter ve `refillFull`, `_loaded`
+  /// yanlışken değişimi bellekte iyimser uygular ve buraya sırayla
+  /// kaydeder; [load] prefs değerini okuduktan sonra kuyruğu aynen
+  /// tekrar oynatır. Kayıt ([_save]) yüklemeye bırakılır, böylece geç
+  /// tamamlanan `load()` bağışı ezemez.
+  final List<void Function()> _pendingWrites = [];
+
+  /// Devam eden `load()` çağrısı (şüphe 1 uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
+
   int get energy => _energy;
   int get current => _energy;
   set energy(int value) {
     final wasFull = _energy >= maxEnergy;
     final next = value.clamp(0, maxEnergy);
+    if (!_loaded) {
+      // Yükleme yarışı (şüphe 1): kalıcı değer henüz okunmadı; setter
+      // değeri bekleyen yazmaya alınır, load() prefs değerine uygular.
+      // Çapa ve kayıt yüklemeye bırakılır.
+      _pendingWrites.add(() {
+        _energy = next;
+      });
+    }
     _energy = next;
-    if (_energy >= maxEnergy || wasFull) {
+    if (_loaded && (_energy >= maxEnergy || wasFull)) {
       // Dolu depodan kısmi duruma düşüşte de (tryConsume'daki wasFull
       // dalıyla aynı) sayım bu andan başlar: bayat çapa bir sonraki
       // _refill'de anında +1 vermesin.
@@ -66,7 +86,7 @@ class EnergyService extends ChangeNotifier {
     }
     energyNotifier.value = _energy;
     timeToNextNotifier.value = timeToNext;
-    unawaited(_save());
+    if (_loaded) unawaited(_save());
     notifyListeners();
     ProgressManager.instance.notifyListeners();
     _ensureAutoTimer();
@@ -150,7 +170,22 @@ class EnergyService extends ChangeNotifier {
     await load();
   }
 
+  /// Kalıcı enerjiyi yükler. Eşzamanlı çağrılar aynı yüklemeyi paylaşır
+  /// (şüphe 1 uçuş koruması); yükleme bittikten sonra yeniden çağrılırsa
+  /// prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     // Kalıcı değer aralığa kelepçelenir: eski/bozuk bir kayıt tavanı
     // aşarsa _refill erken dönüş dalı değeri aynen bırakır ve tavan
@@ -167,6 +202,12 @@ class EnergyService extends ChangeNotifier {
     _lastRefill = lastMs == null
         ? _effectiveNow()
         : DateTime.fromMillisecondsSinceEpoch(lastMs);
+    // Yükleme öncesi gelen bağışlar (şüphe 1): prefs değerine geliş
+    // sırasıyla uygulanır, sonra kuyruk temizlenir.
+    for (final apply in _pendingWrites) {
+      apply();
+    }
+    _pendingWrites.clear();
     _refill();
     _loaded = true;
     energyNotifier.value = _energy;
@@ -220,7 +261,7 @@ class EnergyService extends ChangeNotifier {
   Future<bool> tryConsume([int amount = 1]) async {
     if (amount <= 0) return true;
     // Yükleme yarışı: kalıcı enerji yüklenmeden tüketim yapılmaz;
-    // main'deki unawaited load() beklenmese bile bu çağrı yüklemeyi bekler.
+    // bu çağrı yüklemeyi bekler.
     await ensureLoaded();
     final safeAmount = amount.clamp(1, maxEnergy);
     _refill();
@@ -242,15 +283,23 @@ class EnergyService extends ChangeNotifier {
   /// `amount` enerji ekler (negatif/taşan değerlere karşı korumalı, `ProgressManager.instance` ve `energyNotifier` ile senkronize).
   void addEnergy(int amount) {
     if (amount <= 0) return;
-    _refill();
     final safeAmount = amount.clamp(1, maxEnergy);
+    if (!_loaded) {
+      // Yükleme yarışı (şüphe 1): bağış bekleyen yazmaya alınır, load()
+      // prefs değerine uygular. Dolum ve kayıt yüklemeye bırakılır.
+      _pendingWrites.add(() {
+        _energy = (_energy + safeAmount).clamp(0, maxEnergy);
+      });
+    } else {
+      _refill();
+    }
     _energy = (_energy + safeAmount).clamp(0, maxEnergy);
-    if (_energy >= maxEnergy) {
+    if (_loaded && _energy >= maxEnergy) {
       _lastRefill = _effectiveNow();
     }
     energyNotifier.value = _energy;
     timeToNextNotifier.value = timeToNext;
-    unawaited(_save());
+    if (_loaded) unawaited(_save());
     notifyListeners();
     ProgressManager.instance.notifyListeners();
     _ensureAutoTimer();
@@ -259,11 +308,22 @@ class EnergyService extends ChangeNotifier {
   /// Enerjiyi tamamen doldurur (varsayılan olarak [maxEnergy], veya [target] değerine).
   Future<void> refillFull({int? target}) async {
     final cap = (target ?? maxEnergy).clamp(defaultEnergy, maxEnergy);
+    if (!_loaded) {
+      // Yükleme yarışı (şüphe 1): doldurma bekleyen yazmaya alınır,
+      // load() prefs değerine uygular. Çapa ve kayıt yüklemeye bırakılır.
+      _pendingWrites.add(() {
+        if (_energy < cap) {
+          _energy = cap;
+        }
+      });
+    }
     if (_energy < cap) {
       _energy = cap;
     }
-    _lastRefill = _effectiveNow();
-    await _save();
+    if (_loaded) {
+      _lastRefill = _effectiveNow();
+      await _save();
+    }
     energyNotifier.value = _energy;
     timeToNextNotifier.value = timeToNext;
     notifyListeners();
@@ -275,7 +335,11 @@ class EnergyService extends ChangeNotifier {
   Future<void> grantFull([int? amount]) async {
     if (amount != null && amount > 0) {
       addEnergy(amount);
-      await _save();
+      // Yükleme öncesi: addEnergy bağışı bekleyen yazmaya aldı; bu ek
+      // kayıt iyimser (varsayılan tabanlı) değeri kalıcılaştırıp load()
+      // yarışını geri getirirdi — kayıt load() sonundaki kayda bırakılır.
+      // Yüklüyken davranış aynen korunur (ek kayıt kalır).
+      if (_loaded) await _save();
       return;
     }
     await refillFull();

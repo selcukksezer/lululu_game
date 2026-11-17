@@ -125,6 +125,10 @@ class LeaderboardService extends ChangeNotifier {
   LeaderboardData _data = LeaderboardData(modes: []);
   bool _loaded = false;
 
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
+
   /// Bulut üst-sıralama önbelleğinin tazelik süresi (mod başına). Süre
   /// içinde tekrar istenen mod buluta sorulmaz; tahtadaki (yerel +
   /// kalıcı) eski sonuç kullanılır. `force: true` önbelleği atlar.
@@ -148,7 +152,22 @@ class LeaderboardService extends ChangeNotifier {
     await load();
   }
 
+  /// Kalıcı tahtayı yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     final json = prefs.getString(prefsKey);
     if (json == null || json.isEmpty) {
@@ -178,6 +197,20 @@ class LeaderboardService extends ChangeNotifier {
     }
     _rebindCurrentUserBests();
     _loaded = true;
+    notifyListeners();
+  }
+
+  /// Hesap silme için yerel liderlik önbelleğini temizler (hesap-silme,
+  /// yerel-temizlik): tahtalar + bulut çekme zamanları bellekten
+  /// silinir, kalıcı anahtarlar (güncel + eski) kaldırılır. Bulut
+  /// skorları silinmez (sunucu tarafı silme işi AuthService.deleteAccount
+  /// dokümantasyonundadır).
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(prefsKey);
+    await prefs.remove(legacyPrefsKey);
+    _data = LeaderboardData(modes: []);
+    _lastCloudFetchAt.clear();
     notifyListeners();
   }
 

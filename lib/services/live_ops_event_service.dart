@@ -294,10 +294,6 @@ class LiveOpsEventService {
         .toList(growable: false);
   }
 
-  /// Belirli bir etkinlik türünün tanımını döndürür.
-  LiveOpsEventDefinition getEventDefinition(LiveOpsEventType type) =>
-      eventCatalog[type]!;
-
   /// Belirtilen oyun modu ve zaman (veya manuel verilen etkinlik listesi) için
   /// geçerli tüm LiveOps çarpanlarını hesaplar.
   LiveOpsModeModifiers getModifiersForMode(
@@ -358,27 +354,6 @@ class LiveOpsEventService {
     // Tier 1 -> 1.0, Tier 2 -> 1.45, ..., Tier 9 -> 4.6, Tier 10+ -> 5.0 (tavan kırpması)
     final rate = 1.0 + ((safeTier - 1) * 0.45);
     return rate.clamp(1.0, 5.0);
-  }
-
-  /// Geçen çevrimdışı süre ve `highestUnlockedTier` bilgisine göre şu an
-  /// kavanozda birikmiş altın miktarını (maksimum 8 saat / 2.400 altın tavanlı)
-  /// hesaplar.
-  int previewIdleJarCoins({
-    required int highestUnlockedTier,
-    required DateTime lastActiveAt,
-    DateTime? now,
-  }) {
-    final currentTime = now ?? DateTime.now();
-    final elapsedMs =
-        currentTime.millisecondsSinceEpoch - lastActiveAt.millisecondsSinceEpoch;
-    if (elapsedMs <= 0) return 0;
-
-    final elapsedMinutes = (elapsedMs ~/ 60000).clamp(0, maxIdleMinutes);
-    if (elapsedMinutes < minClaimableMinutes) return 0;
-
-    final rate = coinsPerMinuteForTier(highestUnlockedTier);
-    final rawCoins = (elapsedMinutes * rate).floor();
-    return rawCoins.clamp(0, maxJarCoins);
   }
 
   /// Oyuncu oyundan çıkarken veya arka plana geçerken kavanoz zaman damgasını

@@ -146,6 +146,18 @@ class CloudSyncService extends ChangeNotifier {
   String status = 'Yerel · bulut kuyruğu hazır';
   final List<String> pending = [];
 
+  /// Kuyruk belleğe yüklendi mi ([ensureLoaded] kapısı).
+  bool _loaded = false;
+
+  /// Devam eden `ensureLoaded()` çağrısı (uçuş koruması): eşzamanlı
+  /// çağrılar aynı yüklemeyi paylaşır, ikinci çağrı kuyruğu silip
+  /// yeniden doldurmaz.
+  Future<void>? _loadFuture;
+
+  /// Devam eden `flushPendingDetailed()` çağrısı (tek-uçuş koruması):
+  /// eşzamanlı flush'lar aynı sonucu paylaşır.
+  Future<CloudSyncFlushResult>? _flushFuture;
+
   CloudSyncFailure? _lastFailure;
 
   /// Son senkron reddinin tipli hatası (`null` ise son flush başarılı ya da
@@ -727,7 +739,23 @@ class CloudSyncService extends ChangeNotifier {
     return envelope;
   }
 
+  /// Kuyruğu prefs'ten bir kez yükler. Eşzamanlı çağrılar aynı
+  /// yüklemeyi paylaşır; yükleme tamamlanmışsa tekrar okumaz
+  /// (bellekteki kuyruk silinip yeniden doldurulmaz).
   Future<void> ensureLoaded() async {
+    if (_loaded) return;
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_queueKey) ?? const [];
     final signedRaw = prefs.getStringList(_signedQueueKey) ?? const [];
@@ -769,6 +797,22 @@ class CloudSyncService extends ChangeNotifier {
     status = FirebaseBootstrap.ready
         ? 'Online hazır · ${pending.length} bekleyen'
         : FirebaseBootstrap.playerStatus;
+    _loaded = true;
+    notifyListeners();
+  }
+
+  /// Hesap silme için çevrimdışı senkron kuyruğunu temizler
+  /// (hesap-silme, yerel-temizlik): bekleyen paketler + imzalı kuyruk,
+  /// kalıcı anahtarlarıyla birlikte silinir; silinen hesabın verisi
+  /// buluta gönderilmez.
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_queueKey);
+    await prefs.remove(_signedQueueKey);
+    pending.clear();
+    _loaded = false;
+    _lastFailure = null;
+    status = 'Yerel · bulut kuyruğu hazır';
     notifyListeners();
   }
 
@@ -890,7 +934,22 @@ class CloudSyncService extends ChangeNotifier {
   /// `unavailable` hatası döner (S2#17); [status] "kuyrukta bekliyor"
   /// der. Eski "Yerel flush" davranışı paketleri hiç yazmadan temizleyip
   /// başarı izlenimi veriyordu.
+  ///
+  /// Eşzamanlı çağrılar devam eden flush'u paylaşır (tek-uçuş
+  /// koruması); iki flush aynı anda `pending`'i okuyup temizleyemez.
   Future<CloudSyncFlushResult> flushPendingDetailed() async {
+    final inFlight = _flushFuture;
+    if (inFlight != null) return inFlight;
+    final future = _flushPendingDetailedAsync();
+    _flushFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_flushFuture, future)) _flushFuture = null;
+    }
+  }
+
+  Future<CloudSyncFlushResult> _flushPendingDetailedAsync() async {
     if (!onlineEnabled) return const CloudSyncFlushResult.success(0);
     await AuthService.instance.ensureLoaded();
     await _reconcileOfflineSignedQueue();

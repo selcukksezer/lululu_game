@@ -12,6 +12,13 @@ class ProgressManager extends ChangeNotifier {
   static ProgressManager get instance => _instance;
   ProgressManager._internal();
 
+  /// Yükleme tamamlandı mı ([ensureLoaded] kapısı).
+  bool _loaded = false;
+
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
+
   static const int defaultCoins = 1240;
   static const int maxCampaignLevels = 80;
   static const int maxSingleCoinGrant = 100000;
@@ -56,6 +63,42 @@ class ProgressManager extends ChangeNotifier {
   };
   static const String _integrityPrefKey = 'lululu_state_integrity_sig';
   static const String _integritySalt = 'LululuVaultSig_2026_v4';
+
+  /// [load] tarafından okunan yerel ilerleme anahtarları — "İlerlemeyi
+  /// Sıfırla" (SettingsScreen.resetAll) ile aynı küme; hesap silme
+  /// temizliği ([clearLocalData]) de bu kümeyi kaldırır. Ses/titreşim
+  /// ayar anahtarları (`lululu_music_enabled` vb.) bilinçli olarak
+  /// dışarıda bırakılır — sıfırlama ayarları değiştirmez.
+  static const List<String> _localProgressKeys = <String>[
+    'lululu_unlocked_level',
+    'lululu_coins',
+    'LululuCoinBalance',
+    'lululu_spray',
+    'lululu_raid',
+    'lululu_slipper',
+    'lululu_terlik',
+    'lululu_aydinlat',
+    'lululu_f16',
+    'lululu_shop_chest_day',
+    'lululu_limited_drop_day',
+    'lululu_royal_cape',
+    'lululu_owned_cosmetics',
+    'lululu_unlocked_tiers',
+    'lululu_mode_high_scores',
+    'lululu_daily_tasks_day',
+    'lululu_daily_tasks_progress',
+    'lululu_daily_tasks_claimed',
+    'lululu_daily_streak',
+    'lululu_last_streak_claim_day',
+    'lululu_extra_powers',
+    'lululu_level_stars',
+    'lululu_level_scores',
+    'lululu_power_seed_v1',
+    'lululu_daily_free_energy_day',
+    'lululu_daily_free_energy_claims',
+    'lululu_last_free_energy_epoch_ms',
+    'lululu_state_integrity_sig',
+  ];
 
   /// 11 oyun modundaki 33 güçlendiricinin tam anahtar listesi (11 × 3 = 33).
   static const List<String> all33PowerKeys = [
@@ -394,7 +437,29 @@ class ProgressManager extends ChangeNotifier {
     return midnight.difference(now).inSeconds.clamp(0, 86400);
   }
 
+  /// Yükleme tamamlanmışsa hemen döner; yoksa [load] ile aynı
+  /// paylaşımlı yüklemeyi bekler.
+  Future<void> ensureLoaded() async {
+    if (_loaded) return;
+    await load();
+  }
+
+  /// Kalıcı ilerlemeyi yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     unlockedLevel =
         (prefs.getInt('lululu_unlocked_level') ?? 1).clamp(1, maxCampaignLevels);
@@ -584,7 +649,20 @@ class ProgressManager extends ChangeNotifier {
       await prefs.setString(_integrityPrefKey, _stateIntegritySig);
     }
 
+    _loaded = true;
     notifyListeners();
+  }
+
+  /// Hesap silme için yerel ilerlemenin tamamını temizler (hesap-silme,
+  /// yerel-temizlik): [_localProgressKeys] kaldırılır, ardından [load]
+  /// varsayılanlarla yeniden yüklenir (güç tohumları dahil). Ses/
+  /// titreşim ayarlarına dokunulmaz.
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in _localProgressKeys) {
+      await prefs.remove(key);
+    }
+    await load();
   }
 
   /// 33 oyun modu güçlendiricisinin anahtarlarını ve Türkçe mağaza adlarını kanonikleştirir.
