@@ -349,7 +349,7 @@ void main() {
     );
 
     test(
-      'IapService initializes catalog, processes sandbox purchases, coin purchases, rewarded ads, and restore',
+      'IapService initializes catalog, processes sandbox purchases, coin purchases, rewarded ads unavailable without SDK, and restore',
       () async {
         final iap = IapService.instance;
         final pm = ProgressManager.instance;
@@ -376,11 +376,14 @@ void main() {
         final failedBuy = await iap.buyWithCoins('mega_starter_pack');
         expect(failedBuy, isFalse);
 
-        // Rewarded ad claim
+        // Rewarded ad claim: reklam SDK'sı kurulu değil
+        // (IapService.rewardedAdsAvailable == false), bu yüzden
+        // claimWithRewardedAd ödül vermez ve false döner.
         final terlikBefore = pm.terlikCount;
+        expect(IapService.rewardedAdsAvailable, isFalse);
         final adClaimed = await iap.claimWithRewardedAd('terlik_x5');
-        expect(adClaimed, isTrue);
-        expect(pm.terlikCount, terlikBefore + 5);
+        expect(adClaimed, isFalse);
+        expect(pm.terlikCount, terlikBefore);
 
         // Restore purchases safe in offline/sandbox mode
         await iap.restorePurchases();
@@ -669,7 +672,13 @@ void main() {
       }
 
       // Required Activity / Play Store Android 12+ exported attribute & Flutter v2 embedding
-      expect(content, contains('android:label="LÜLÜLÜ: Böcek Birleştirme Maniası"'));
+      // S3#45: marka adı tek biçim 'LÜLÜLÜ' — eski Türkçe uzun ad kilitlenmez.
+      expect(content, contains('android:label="LÜLÜLÜ"'));
+      expect(
+        content,
+        isNot(contains('Böcek Birleştirme Maniası')),
+        reason: 'AndroidManifest.xml must not lock the old Turkish long name',
+      );
       expect(content, contains('android:exported="true"'));
       expect(content, contains('android.intent.action.MAIN'));
       expect(content, contains('android.intent.category.LAUNCHER'));
@@ -689,6 +698,132 @@ void main() {
         versionMatch,
         isNotNull,
         reason: 'pubspec.yaml must declare version: X.Y.Z+BUILD',
+      );
+    });
+
+    test('S3#44: launcher icons exist and are non-empty on Android, iOS and web', () {
+      // Android: all 5 density buckets must ship a launcher icon.
+      for (final density in const <String>[
+        'mdpi',
+        'hdpi',
+        'xhdpi',
+        'xxhdpi',
+        'xxxhdpi',
+      ]) {
+        final icon = File(
+          '${projectRoot.path}/android/app/src/main/res/mipmap-$density/ic_launcher.png',
+        );
+        expect(
+          icon.existsSync(),
+          isTrue,
+          reason: 'missing Android launcher icon: mipmap-$density',
+        );
+        expect(
+          icon.lengthSync(),
+          greaterThan(0),
+          reason: 'empty Android launcher icon: mipmap-$density',
+        );
+      }
+
+      // iOS: 1024px App Store icon must exist and be non-empty.
+      final iosIcon = File(
+        '${projectRoot.path}/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png',
+      );
+      expect(iosIcon.existsSync(), isTrue);
+      expect(iosIcon.lengthSync(), greaterThan(0));
+
+      // Web: 512px PWA icon must exist and be non-empty.
+      final webIcon = File('${projectRoot.path}/web/icons/Icon-512.png');
+      expect(webIcon.existsSync(), isTrue);
+      expect(webIcon.lengthSync(), greaterThan(0));
+
+      // S3#44 scope note: no screenshot check — no store screenshots are
+      // committed yet, so asserting them would only paint the suite red.
+    });
+
+    test('S3#44: privacy policy screen exists and is reachable from Settings', () {
+      // No named route exists for privacy (LululuRoutes carries no privacy
+      // entry); navigation is a MaterialPageRoute pushed from Settings, so
+      // the check asserts the screen plus its Settings wiring, not a route.
+      final privacyFile = File(
+        '${projectRoot.path}/lib/screens/privacy_policy_screen.dart',
+      );
+      expect(privacyFile.existsSync(), isTrue);
+      final privacyContent = privacyFile.readAsStringSync();
+      expect(privacyContent, contains('class PrivacyPolicyScreen'));
+      expect(privacyContent, contains('GİZLİLİK POLİTİKASI'));
+
+      final settingsFile = File(
+        '${projectRoot.path}/lib/screens/settings_screen.dart',
+      );
+      expect(settingsFile.existsSync(), isTrue);
+      final settingsContent = settingsFile.readAsStringSync();
+      expect(settingsContent, contains('PrivacyPolicyScreen'));
+      expect(settingsContent, contains('_openPrivacyPolicy'));
+    });
+
+    test('S3#44: pubspec.yaml description is real copy, not the Flutter template', () {
+      // Depends on W10-1 replacing the template description; red until that
+      // lands, by design — this test exists to reject the template text.
+      final pubspecFile = File('${projectRoot.path}/pubspec.yaml');
+      expect(pubspecFile.existsSync(), isTrue);
+      final pubspec = pubspecFile.readAsStringSync();
+      final descriptionMatch = RegExp(
+        r'^description:\s*(.+?)\s*$',
+        multiLine: true,
+      ).firstMatch(pubspec);
+      expect(
+        descriptionMatch,
+        isNotNull,
+        reason: 'pubspec.yaml must declare a description',
+      );
+      var description = descriptionMatch!.group(1)!.trim();
+      if ((description.startsWith('"') && description.endsWith('"')) ||
+          (description.startsWith("'") && description.endsWith("'"))) {
+        description = description.substring(1, description.length - 1).trim();
+      }
+      expect(description, isNotEmpty);
+      expect(
+        description.toLowerCase(),
+        isNot(contains('a new flutter project')),
+        reason: 'pubspec.yaml description must not be the Flutter template text',
+      );
+      expect(
+        description.length,
+        greaterThanOrEqualTo(10),
+        reason: 'pubspec.yaml description must be real store-facing copy',
+      );
+    });
+
+    test('S3#45: brand name is exactly LÜLÜLÜ in manifest, plist, web title and MaterialApp title', () {
+      final manifest = File(
+        '${projectRoot.path}/android/app/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+      expect(manifest, contains('android:label="LÜLÜLÜ"'));
+
+      final plist = File(
+        '${projectRoot.path}/ios/Runner/Info.plist',
+      ).readAsStringSync();
+      expect(plist, contains('<key>CFBundleDisplayName</key>'));
+      expect(
+        plist,
+        contains('<string>LÜLÜLÜ</string>'),
+        reason: 'CFBundleDisplayName/CFBundleName must be exactly LÜLÜLÜ',
+      );
+
+      final webIndex = File(
+        '${projectRoot.path}/web/index.html',
+      ).readAsStringSync();
+      expect(webIndex, contains('<title>LÜLÜLÜ</title>'));
+
+      final mainDart = File(
+        '${projectRoot.path}/lib/main.dart',
+      ).readAsStringSync();
+      expect(mainDart, contains("title: 'LÜLÜLÜ'"));
+      expect(
+        mainDart,
+        isNot(contains('Lülülü Hamamböceği')),
+        reason: 'MaterialApp title must not use the old Turkish long name',
       );
     });
   });

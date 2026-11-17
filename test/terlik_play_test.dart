@@ -69,7 +69,9 @@ void main() {
     }
     expect(find.textContaining('BOŞA VURDUN'), findsOneWidget);
     expect(find.textContaining('KOMBO KIRILDI'), findsWidgets);
-    expect(find.textContaining('-1 CAN'), findsOneWidget);
+    // Boş vuruş artık can götürmüyor (yalnızca kombo kırıyor):
+    // 3 boş vuruştan sonra '-1 CAN' görünmemeli.
+    expect(find.textContaining('-1 CAN'), findsNothing);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());

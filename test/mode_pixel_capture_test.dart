@@ -143,6 +143,15 @@ void main() {
             .writeAsBytesSync(Uint8List.sublistView(bytes));
         image.dispose();
       });
+      // Madde 99: yakalama dosyası doğrulanır (varlık + boyut + PNG imzası).
+      final captureFile = File('/tmp/lululu-mode-${entry.key}-current.png');
+      expect(captureFile.existsSync(), isTrue);
+      final captureBytes = captureFile.readAsBytesSync();
+      expect(captureBytes.length, greaterThan(8));
+      expect(
+        captureBytes.sublist(0, 8),
+        const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     });

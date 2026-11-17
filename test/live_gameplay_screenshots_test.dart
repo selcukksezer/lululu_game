@@ -117,6 +117,15 @@ void main() {
       file.writeAsBytesSync(pngBytes);
       image.dispose();
     });
+    // Madde 99: yazılan yakalama dosyası doğrulanır (varlık + PNG imzası).
+    final writtenFile = File(outputPath);
+    expect(writtenFile.existsSync(), isTrue, reason: outputPath);
+    final writtenBytes = writtenFile.readAsBytesSync();
+    expect(writtenBytes.length, greaterThan(8));
+    expect(
+      writtenBytes.sublist(0, 8),
+      const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 200));

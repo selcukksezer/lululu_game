@@ -645,6 +645,21 @@ void main() {
       image.dispose();
       debugPrint('>>> Written $outputPath: ${pngBytes.length} bytes');
     });
+    // Madde 99: yazılan yakalama dosyası doğrulanır (varlık + PNG imzası).
+    // Bu helper'daki tüm Capture testleri bu doğrulamayı paylaşır.
+    final writtenFile = File(outputPath);
+    expect(writtenFile.existsSync(), isTrue, reason: outputPath);
+    final writtenBytes = writtenFile.readAsBytesSync();
+    expect(writtenBytes.length, greaterThan(8));
+    expect(
+      writtenBytes.sublist(0, 8),
+      const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    );
+    if (extraOutputPath != null) {
+      final extraFile = File(extraOutputPath);
+      expect(extraFile.existsSync(), isTrue, reason: extraOutputPath);
+      expect(extraFile.lengthSync(), greaterThan(8));
+    }
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 200));
   }

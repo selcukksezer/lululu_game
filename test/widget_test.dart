@@ -220,7 +220,8 @@ void main() {
     );
 
     expect(engine.arenaBounds, const Rect.fromLTRB(0, 10, 200, 490));
-    expect(engine.dangerY, 20);
+    // Tehlike çizgisi: arena tepesinin %12 altı → 10 + 480 * 0.12 = 67.6.
+    expect(engine.dangerY, closeTo(67.6, 0.001));
     expect(engine.predictRestY(100, 12), 474);
   });
 
