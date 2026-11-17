@@ -20,7 +20,7 @@ class OsmantusCast {
   static const kisiA = OsmantusPerson(
     id: 'osman',
     displayName: 'Osman',
-    assetPath: 'assets/images/stickers/osmantus_kisi_a.png',
+    assetPath: 'assets/design/osman/osmantus_kisi_a.png',
     lines: [
       'OSMAN TUŞ!',
       'DIKKIŞ DIKKIŞ!',
@@ -32,7 +32,7 @@ class OsmantusCast {
   static const kisiB = OsmantusPerson(
     id: 'tus',
     displayName: 'Tuş',
-    assetPath: 'assets/images/stickers/osmantus_kisi_b.png',
+    assetPath: 'assets/design/osman/osmantus_kisi_b.png',
     lines: [
       'ARMUT PİŞ!',
       'LÜLÜLÜ!',
@@ -42,5 +42,5 @@ class OsmantusCast {
 
   static const duo = <OsmantusPerson>[kisiA, kisiB];
 
-  static const hubSticker = 'assets/images/stickers/osmantus_kisi_a.png';
+  static const hubSticker = 'assets/design/osman/osmantus_kisi_a.png';
 }

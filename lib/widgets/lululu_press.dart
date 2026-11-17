@@ -47,43 +47,62 @@ class LululuSectionHeader extends StatelessWidget {
   const LululuSectionHeader({
     super.key,
     required this.title,
+    this.subtitle,
     this.actionLabel,
     this.onAction,
   });
 
   final String title;
+  final String? subtitle;
   final String? actionLabel;
   final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Text(
-            title,
-            style: GoogleFonts.exo2(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.5,
-              color: LululuColors.inkDark,
-            ),
-          ),
-        ),
-        if (actionLabel != null)
-          LululuPress(
-            onTap: onAction ?? () {},
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 48),
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+        Row(
+          children: [
+            Expanded(
               child: Text(
-                actionLabel!,
+                title,
                 style: GoogleFonts.exo2(
-                  fontSize: 13,
+                  fontSize: 20,
                   fontWeight: FontWeight.w900,
-                  color: LululuColors.cyberFuchsia,
+                  letterSpacing: 0.5,
+                  color: LululuColors.inkDark,
                 ),
+              ),
+            ),
+            if (actionLabel != null)
+              LululuPress(
+                onTap: onAction ?? () {},
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    actionLabel!,
+                    style: GoogleFonts.exo2(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: LululuColors.cyberFuchsia,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (subtitle != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              subtitle!,
+              style: GoogleFonts.exo2(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: LululuColors.mutedTitanium,
               ),
             ),
           ),
