@@ -9,8 +9,9 @@
 /// diye geçti, "hışır" olduğu kulakla teyit edilmedi. Teyit gelince ya da
 /// gerçek "hışır" klibi kesilince ses dosyası/sabit değişir, bu dosya değişmez.
 ///
-/// Görsel: Hışır'a özel üretildi (`assets/design/bugs_hd/hisir_hd.png`,
-/// yaprak başlıklı/pelerinli, fısıltı pozunda, şeffaf zeminli).
+/// Görsel: Hışır'a özel üretildi (`assets/design/bugs_hd/hisir_hd.png`) —
+/// videodaki sarı-lacivert çubuklu formalı taraftar böcek (armasız düz
+/// forma, yumruk havada sevinç pozu), şeffaf zeminli.
 class HisirCharacter {
   HisirCharacter._();
 
