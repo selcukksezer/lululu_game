@@ -12,7 +12,7 @@ import '../services/energy_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
-import '../widgets/daily_reward_dialog.dart';
+import '../widgets/hb_overlay.dart';
 import '../widgets/top_bar.dart';
 import 'chat_screen.dart';
 import 'modes_screen.dart';
@@ -807,17 +807,31 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                           ),
                         ),
                         const SizedBox(height: 26.3),
-                        Text(
-                          l10n.dailyRewardSubtitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.nunito(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.0,
-                            color: Colors.white.withValues(alpha: 0.9),
-                            height: 1.55,
-                          ),
+                        ListenableBuilder(
+                          listenable: ProgressManager.instance,
+                          builder: (context, _) {
+                            // l10n.dailyRewardSubtitle parametresizdir
+                            // ('3. gün · ...' / 'Day 3 · ...'); yeni anahtar
+                            // eklenmeden yalnız gün sayısı gerçek seriden
+                            // (ProgressManager.dailyStreak) yazılır.
+                            final streak =
+                                ProgressManager.instance.dailyStreak;
+                            final subtitle = l10n.dailyRewardSubtitle
+                                .replaceFirst('3. gün', '$streak. gün')
+                                .replaceFirst('Day 3', 'Day $streak');
+                            return Text(
+                              subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.nunito(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.0,
+                                color: Colors.white.withValues(alpha: 0.9),
+                                height: 1.55,
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),

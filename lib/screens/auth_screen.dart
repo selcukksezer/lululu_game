@@ -389,7 +389,12 @@ class _AuthScreenState extends State<AuthScreen> {
                       controller: _passCtl,
                       hintText: context.l10n.passwordHint,
                       obscureText: _obscurePassword,
-                      suffix: GestureDetector(
+                      suffix: Semantics(
+                        button: true,
+                        label: _obscurePassword
+                            ? context.l10n.showPasswordLabel
+                            : context.l10n.hidePasswordLabel,
+                        child: GestureDetector(
                         onTap: () {
                           setState(() => _obscurePassword = !_obscurePassword);
                         },
@@ -405,6 +410,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             painter: _AuthEyeIconPainter(),
                           ),
                         ),
+                      ),
                       ),
                     ),
                     if (_error != null) ...[
@@ -1541,7 +1547,11 @@ class _AccountFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(context, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: DecoratedBox(
@@ -1694,6 +1704,7 @@ class _AccountFloatingDock extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                            ),
                             ),
                           ),
                       ],

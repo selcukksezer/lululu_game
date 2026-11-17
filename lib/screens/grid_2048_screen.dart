@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -873,7 +874,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // .back-btn (`[12, 41.4, 48, 48]`)
-        GestureDetector(
+        Semantics(
+          button: true,
+          label: context.l10n.goBackLabel,
+          child: GestureDetector(
           onTap: _handleBack,
           child: Container(
             width: 48,
@@ -896,6 +900,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               fit: BoxFit.contain,
             ),
           ),
+        ),
         ),
         const SizedBox(width: 10),
 
@@ -1012,7 +1017,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         const SizedBox(width: 10),
 
         // .info-btn (`[370, 41.4, 48, 48]`)
-        GestureDetector(
+        Semantics(
+          button: true,
+          label: context.l10n.helpButtonLabel,
+          child: GestureDetector(
           onTap: () => setState(() => _showHelpModal = true),
           child: Container(
             width: 48,
@@ -1043,6 +1051,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               ),
             ),
           ),
+        ),
         ),
       ],
     );

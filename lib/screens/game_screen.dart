@@ -1131,7 +1131,10 @@ class _GameScreenState extends State<GameScreen>
       child: Row(
         children: [
           // Duraklat butonu
-          GestureDetector(
+          Semantics(
+            button: true,
+            label: context.l10n.pause,
+            child: GestureDetector(
             onTap: _togglePause,
             child: Container(
               width: 42,
@@ -1147,6 +1150,7 @@ class _GameScreenState extends State<GameScreen>
                 size: 22,
               ),
             ),
+          ),
           ),
           const SizedBox(width: 8),
 
@@ -1261,7 +1265,10 @@ class _GameScreenState extends State<GameScreen>
           const SizedBox(width: 8),
 
           // Info (?) butonu
-          GestureDetector(
+          Semantics(
+            button: true,
+            label: context.l10n.helpButtonLabel,
+            child: GestureDetector(
             onTap: _showInfoDialog,
             child: Container(
               width: 38,
@@ -1281,6 +1288,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
             ),
+          ),
           ),
         ],
       ),
@@ -1368,7 +1376,10 @@ class _GameScreenState extends State<GameScreen>
           ),
         ),
         const SizedBox(width: 8),
-        GestureDetector(
+        Semantics(
+          button: true,
+          label: context.l10n.helpButtonLabel,
+          child: GestureDetector(
           onTap: _showInfoDialog,
           behavior: HitTestBehavior.opaque,
           child: Container(
@@ -1397,6 +1408,7 @@ class _GameScreenState extends State<GameScreen>
               ),
             ),
           ),
+        ),
         ),
       ],
     );
@@ -1493,7 +1505,10 @@ class _GameScreenState extends State<GameScreen>
           SizedBox(
             width: 48,
             height: 48,
-            child: GestureDetector(
+            child: Semantics(
+              button: true,
+              label: context.l10n.pause,
+              child: GestureDetector(
               onTap: _togglePause,
               behavior: HitTestBehavior.opaque,
               child: Center(
@@ -1514,6 +1529,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                 ),
               ),
+            ),
             ),
           ),
           const SizedBox(width: 4),

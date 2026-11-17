@@ -40,9 +40,14 @@ class _SplashScreenState extends State<SplashScreen>
   Timer? _loadTimer;
   Timer? _msgTimer;
   Timer? _soundTimer;
+  Timer? _finishTimer;
   double _progress = 0;
   bool _loading = false;
   bool _done = false;
+  // `_done` yükleme-bitti arayüz durumudur; `onDone` tek-atımlık
+  // koruması ayrı bayraktadır — eskiden `_finish` her iki dalda da
+  // `onDone()` çağırıyor, çift boot'a yol açıyordu (R2).
+  bool _notified = false;
   int _msgIndex = 0;
 
   // S2#10: web otomatik-oynatma politikası — 650 ms zamanlayıcısının
@@ -138,6 +143,7 @@ class _SplashScreenState extends State<SplashScreen>
     _loadTimer?.cancel();
     _msgTimer?.cancel();
     _soundTimer?.cancel();
+    _finishTimer?.cancel();
     super.dispose();
   }
 
@@ -196,16 +202,21 @@ class _SplashScreenState extends State<SplashScreen>
         t.cancel();
         _msgTimer?.cancel();
         setState(() => _done = true);
-        Future.delayed(const Duration(milliseconds: 700), _finish);
+        // İptal edilebilir Timer: dispose'da iptal edilir, `mounted`
+        // değilse ateşlenmez; GEÇ ile yarışan gecikmeli `_finish`
+        // `_notified` korumasına takılır.
+        _finishTimer?.cancel();
+        _finishTimer = Timer(const Duration(milliseconds: 700), () {
+          if (!mounted) return;
+          _finish();
+        });
       }
     });
   }
 
   void _finish() {
-    if (_done) {
-      widget.onDone();
-      return;
-    }
+    if (_notified) return;
+    _notified = true;
     _done = true;
     widget.onDone();
   }

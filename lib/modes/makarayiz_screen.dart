@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -1218,6 +1219,7 @@ class _MakarayizChrome extends StatelessWidget {
           child: Row(
             children: [
               _RoundButton(
+                semanticLabel: context.l10n.goBackLabel,
                 child: Image.asset(
                   'assets/icons2/back-prototype.png',
                   width: 29,
@@ -1338,6 +1340,7 @@ class _MakarayizChrome extends StatelessWidget {
                 const SizedBox(width: 10),
               ],
               _RoundButton(
+                semanticLabel: context.l10n.helpButtonLabel,
                 circular: true,
                 borderColor: const Color(0xB3FFB800),
                 child: Text(
@@ -1375,6 +1378,7 @@ class _MakarayizChrome extends StatelessWidget {
         child: Row(
           children: [
             _RoundButton(
+              semanticLabel: context.l10n.goBackLabel,
               child: Image.asset(
                 'assets/icons2/back-prototype.png',
                 width: 29,
@@ -1490,6 +1494,7 @@ class _MakarayizChrome extends StatelessWidget {
               const SizedBox(width: 4),
             ],
             _RoundButton(
+              semanticLabel: context.l10n.helpButtonLabel,
               circular: true,
               borderColor: const Color(0xB3FFB800),
               child: Text(
@@ -1815,6 +1820,7 @@ class _RoundButton extends StatelessWidget {
     required this.onTap,
     this.circular = false,
     this.borderColor,
+    this.semanticLabel,
   });
 
   final Widget child;
@@ -1822,9 +1828,13 @@ class _RoundButton extends StatelessWidget {
   final bool circular;
   final Color? borderColor;
 
+  /// Ekran okuyucu etiketi (örn. 'Geri', 'Nasıl oynanır'); `null` ise
+  /// `Semantics` sarması eklenmez (arcade_chrome'daki _ChromeRound deseni).
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    Widget button = GestureDetector(
       onTap: onTap,
       child: Container(
         width: 48,
@@ -1843,6 +1853,15 @@ class _RoundButton extends StatelessWidget {
         child: child,
       ),
     );
+    final label = semanticLabel;
+    if (label != null) {
+      button = Semantics(
+        button: true,
+        label: label,
+        child: button,
+      );
+    }
+    return button;
   }
 }
 

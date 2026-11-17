@@ -280,6 +280,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
               ),
               const SizedBox(width: 8),
               IconButton(
+                tooltip: context.l10n.navShop,
                 icon: const Icon(
                   Icons.storefront,
                   color: LululuColors.liquidGold,

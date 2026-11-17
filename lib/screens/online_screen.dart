@@ -162,7 +162,10 @@ class _OnlineScreenState extends State<OnlineScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          GestureDetector(
+          Semantics(
+            button: true,
+            label: context.l10n.goBackLabel,
+            child: GestureDetector(
             onTap: _closeOrPop,
             child: Container(
               width: 48,
@@ -191,6 +194,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ),
               ),
             ),
+          ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -812,7 +816,11 @@ class _OnlineFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(context.l10n, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: DecoratedBox(
@@ -965,6 +973,7 @@ class _OnlineFloatingDock extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                            ),
                             ),
                           ),
                       ],

@@ -159,7 +159,7 @@ class MockStatusBarWidget extends StatelessWidget {
 }
 
 const List<String> _kAllPrecacheAssets = [
-  // Dock & Bottom Navigation Icons (LululuDockBar, PrototypeBottomDock, etc.)
+  // Dock & Bottom Navigation Icons (LululuDockBar, etc.)
   'assets/design/ui/icons2/home.png',
   'assets/design/ui/icons2/target.png',
   'assets/design/ui/icons2/paw.png',

@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/osmantus_cast.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -726,7 +727,10 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
         child: Row(
           children: [
-            GestureDetector(
+            Semantics(
+              button: true,
+              label: context.l10n.goBackLabel,
+              child: GestureDetector(
               onTap: () => Navigator.maybePop(context),
               child: Container(
                 width: wideScreen ? 48 : 41.42,
@@ -750,6 +754,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   ),
                 ),
               ),
+            ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -867,7 +872,10 @@ class _OsmantusScreenState extends State<OsmantusScreen>
               _pauseButton(),
             ],
             const SizedBox(width: 10),
-            GestureDetector(
+            Semantics(
+              button: true,
+              label: context.l10n.helpButtonLabel,
+              child: GestureDetector(
               onTap: () => showDialog<void>(
                 context: context,
                 builder: (context) => AlertDialog(
@@ -908,6 +916,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   ),
                 ),
               ),
+            ),
             ),
           ],
         ),

@@ -436,7 +436,10 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          GestureDetector(
+          Semantics(
+            button: true,
+            label: context.l10n.goBackLabel,
+            child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _closeOrPop,
             child: Container(
@@ -466,6 +469,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
+          ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -819,7 +823,11 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            GestureDetector(
+            Semantics(
+              button: true,
+              label: context.l10n.sendMessageLabel,
+              onLongPressHint: context.l10n.sendStickerHint,
+              child: GestureDetector(
               onTap: _sendMessage,
               onLongPress: _openStickerSheet,
               child: Container(
@@ -851,6 +859,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   painter: _ChatSendPlanePainter(),
                 ),
               ),
+            ),
             ),
           ],
         ),
@@ -1089,7 +1098,11 @@ class _ChatFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(context.l10n, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: DecoratedBox(
@@ -1242,6 +1255,7 @@ class _ChatFloatingDock extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                            ),
                             ),
                           ),
                       ],

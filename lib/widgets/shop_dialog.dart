@@ -81,300 +81,300 @@ class ShopScreen extends StatefulWidget {
 class _ShopScreenState extends State<ShopScreen> {
   final ProgressManager _pm = ProgressManager();
 
-  static const List<_ModePowerGroup> _powerGroups = [
+  List<_ModePowerGroup> _powerGroups(AppLocalizations l10n) => [
     _ModePowerGroup(
-      modeName: 'Suika Arena',
+      modeName: l10n.shopModeSuikaArena,
       iconAsset: 'assets/icons2/target.png',
       powers: [
         _PowerRowItem(
           id: 'raid',
-          name: 'Raid Spreyi',
+          name: l10n.shopPowerRaidSprayName,
           iconAsset: 'assets/powerup_raid_spreyi.webp',
-          desc: 'Küçük böcekleri temizler',
+          desc: l10n.shopPowerRaidSprayDesc,
           cost: 450,
         ),
         _PowerRowItem(
           id: 'terlik',
-          name: 'Terlik Sarsıntısı',
+          name: l10n.shopPowerSlipperShakeName,
           iconAsset: 'assets/powerup_terlik.webp',
-          desc: 'Alanı sarsıp yerleşimi düzeltir',
+          desc: l10n.shopPowerSlipperShakeDesc,
           cost: 300,
         ),
         _PowerRowItem(
           id: 'f16',
-          name: 'Aydınlat Hele!',
+          name: l10n.shopPowerLightItUpName,
           iconAsset: 'assets/powerup_aydinlat.webp',
-          desc: 'F16 bombardımanı — 3 böceği yakıp geçer',
+          desc: l10n.shopPowerLightItUpDesc,
           cost: 250,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: '2048 Grid',
+      modeName: l10n.shopModeGrid2048,
       iconAsset: 'assets/icons/level_up.png',
       powers: [
         _PowerRowItem(
           id: 'undo',
-          name: 'Geri Al',
+          name: l10n.shopPowerUndoName,
           iconAsset: 'assets/icons2/back.png',
-          desc: 'Son hamleyi geri alır',
+          desc: l10n.shopPowerUndoDesc,
           cost: 200,
         ),
         _PowerRowItem(
           id: 'shuffle',
-          name: 'Karıştır',
+          name: l10n.shopPowerShuffleName,
           iconAsset: 'assets/icons2/wand.png',
-          desc: 'Izgarayı karıştırır, kilidi açar',
+          desc: l10n.shopPowerShuffleDesc,
           cost: 350,
         ),
         _PowerRowItem(
           id: 'pair',
-          name: 'Çiftleştir',
+          name: l10n.shopPowerMergePairName,
           iconAsset: 'assets/icons2/magnet.png',
-          desc: 'Rastgele iki aynı karoyu birleştirir',
+          desc: l10n.shopPowerMergePairDesc,
           cost: 400,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Balon Patlat',
+      modeName: l10n.shopModeBalloonPop,
       iconAsset: 'assets/icons2/boom.png',
       powers: [
         _PowerRowItem(
           id: 'triple',
-          name: 'Üçlü Ok',
+          name: l10n.shopPowerTripleArrowName,
           iconAsset: 'assets/icons2/target.png',
-          desc: 'Tek atışta 3 balonu deler',
+          desc: l10n.shopPowerTripleArrowDesc,
           cost: 300,
         ),
         _PowerRowItem(
           id: 'bombb',
-          name: 'Bomba Balon',
+          name: l10n.shopPowerBombBalloonName,
           iconAsset: 'assets/icons2/boom.png',
-          desc: 'Alan patlatması yapar',
+          desc: l10n.shopPowerBombBalloonDesc,
           cost: 450,
         ),
         _PowerRowItem(
           id: 'slowb',
-          name: 'Yavaşlat',
+          name: l10n.shopPowerSlowName,
           iconAsset: 'assets/icons2/stopwatch.png',
-          desc: 'Balonları 10 sn yavaşlatır',
+          desc: l10n.shopPowerSlowBalloonDesc,
           cost: 250,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Match 3',
+      modeName: l10n.shopModeMatch3,
       iconAsset: 'assets/icons2/gem_blue.png',
       powers: [
         _PowerRowItem(
           id: 'hammer',
-          name: 'Çekiç',
+          name: l10n.shopPowerHammerName,
           iconAsset: 'assets/icons2/hammer.png',
-          desc: 'Tek karo kırar',
+          desc: l10n.shopPowerHammerDesc,
           cost: 200,
         ),
         _PowerRowItem(
           id: 'bomb3',
-          name: 'Bomba',
+          name: l10n.shopPowerBombName,
           iconAsset: 'assets/icons2/boom.png',
-          desc: '3×3 alanı patlatır',
+          desc: l10n.shopPowerBombDesc,
           cost: 400,
         ),
         _PowerRowItem(
           id: 'hunter',
-          name: 'Renk Avcısı',
+          name: l10n.shopPowerColorHunterName,
           iconAsset: 'assets/icons2/gem_blue.png',
-          desc: 'Bir türün hepsini toplar',
+          desc: l10n.shopPowerColorHunterDesc,
           cost: 500,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Bağla Patlat',
+      modeName: l10n.shopModeLinkPop,
       iconAsset: 'assets/icons2/magnet.png',
       powers: [
         _PowerRowItem(
           id: 'chain',
-          name: 'Zincir Uzatıcı',
+          name: l10n.shopPowerChainExtenderName,
           iconAsset: 'assets/icons2/flame.png',
-          desc: 'Zincir hakkını artırır',
+          desc: l10n.shopPowerChainExtenderDesc,
           cost: 250,
         ),
         _PowerRowItem(
           id: 'bolt',
-          name: 'Yıldırım',
+          name: l10n.shopPowerLightningName,
           iconAsset: 'assets/icons2/bolt.png',
-          desc: 'Rastgele bir zincir oluşturur',
+          desc: l10n.shopPowerLightningDesc,
           cost: 350,
         ),
         _PowerRowItem(
           id: 'magnet',
-          name: 'Mıknatıs',
+          name: l10n.shopPowerMagnetName,
           iconAsset: 'assets/icons2/magnet.png',
-          desc: 'Aynı türü birbirine çeker',
+          desc: l10n.shopPowerMagnetDesc,
           cost: 300,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Stack Drop',
+      modeName: l10n.shopModeStackDrop,
       iconAsset: 'assets/icons2/block.png',
       powers: [
         _PowerRowItem(
           id: 'freeze',
-          name: 'Dondur',
+          name: l10n.shopPowerFreezeName,
           iconAsset: 'assets/icons2/crystal.png',
-          desc: 'Sallantıyı durdurur',
+          desc: l10n.shopPowerFreezeDesc,
           cost: 300,
         ),
         _PowerRowItem(
           id: 'widen',
-          name: 'Genişlet',
+          name: l10n.shopPowerWidenName,
           iconAsset: 'assets/icons2/block.png',
-          desc: 'Dilimi büyütür',
+          desc: l10n.shopPowerWidenDesc,
           cost: 350,
         ),
         _PowerRowItem(
           id: 'slows',
-          name: 'Yavaşlat',
+          name: l10n.shopPowerSlowName,
           iconAsset: 'assets/icons2/clock.png',
-          desc: 'Düşüş hızını azaltır',
+          desc: l10n.shopPowerSlowStackDesc,
           cost: 250,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Terlik Tap',
+      modeName: l10n.shopModeSlipperTap,
       iconAsset: 'assets/icons2/boot.png',
       powers: [
         _PowerRowItem(
           id: 'dblslip',
-          name: 'Çift Terlik',
+          name: l10n.shopPowerDoubleSlipperName,
           iconAsset: 'assets/icons2/boot.png',
-          desc: 'Tek dokunuşta çift vuruş',
+          desc: l10n.shopPowerDoubleSlipperDesc,
           cost: 300,
         ),
         _PowerRowItem(
           id: 'goldslip',
-          name: 'Altın Terlik',
+          name: l10n.shopPowerGoldenSlipperName,
           iconAsset: 'assets/icons2/premium_token.png',
-          desc: 'Süreli 2x puan',
+          desc: l10n.shopPowerGoldenSlipperDesc,
           cost: 450,
         ),
         _PowerRowItem(
           id: 'spraybug',
-          name: 'Böcek İlacı',
+          name: l10n.shopPowerBugSprayName,
           iconAsset: 'assets/icons2/potion_health.png',
-          desc: 'Ekrandaki böcekleri temizler',
+          desc: l10n.shopPowerBugSprayDesc,
           cost: 400,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Yuva Savunması',
+      modeName: l10n.shopModeNestDefense,
       iconAsset: 'assets/icons2/target.png',
       powers: [
         _PowerRowItem(
           id: 'dblslip',
-          name: 'Çift Terlik',
+          name: l10n.shopPowerDoubleSlipperName,
           iconAsset: 'assets/icons2/boot.png',
-          desc: 'Tek dokunuşta çift vuruş',
+          desc: l10n.shopPowerDoubleSlipperDesc,
           cost: 300,
         ),
         _PowerRowItem(
           id: 'goldslip',
-          name: 'Altın Terlik',
+          name: l10n.shopPowerGoldenSlipperName,
           iconAsset: 'assets/icons2/premium_token.png',
-          desc: 'Süreli 2x puan',
+          desc: l10n.shopPowerGoldenSlipperDesc,
           cost: 450,
         ),
         _PowerRowItem(
           id: 'shield',
-          name: 'Yuva Kalkanı',
+          name: l10n.shopPowerNestShieldName,
           iconAsset: 'assets/icons2/shield.png',
-          desc: 'Bir kaçışı affeder',
+          desc: l10n.shopPowerNestShieldDesc,
           cost: 400,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Osmantuş',
+      modeName: l10n.shopModeOsmantus,
       iconAsset: 'assets/icons2/crown.png',
       powers: [
         _PowerRowItem(
           id: 'dik',
-          name: 'Dıkkış Boost',
+          name: l10n.shopPowerDikkisBoostName,
           iconAsset: 'assets/icons2/fist.png',
-          desc: 'Tempo artışı — halka yavaşlar',
+          desc: l10n.shopPowerDikkisBoostDesc,
           cost: 250,
         ),
         _PowerRowItem(
           id: 'ring',
-          name: 'Geniş Halka',
+          name: l10n.shopPowerWideRingName,
           iconAsset: 'assets/icons2/wheel.png',
-          desc: 'Hedef halkayı büyütür',
+          desc: l10n.shopPowerWideRingDesc,
           cost: 300,
         ),
         _PowerRowItem(
           id: 'mic',
-          name: 'Mikrofon',
+          name: l10n.shopPowerMicrophoneName,
           iconAsset: 'assets/icons2/star.png',
-          desc: 'Komboyu bir hatada korur',
+          desc: l10n.shopPowerMicrophoneDesc,
           cost: 400,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Çığlık Böcek',
+      modeName: l10n.shopModeScreamBug,
       iconAsset: 'assets/icons2/bolt.png',
       powers: [
         _PowerRowItem(
           id: 'jump',
-          name: 'Zıplama Botu',
+          name: l10n.shopPowerJumpBootsName,
           iconAsset: 'assets/icons2/boot.png',
-          desc: 'Engelleri aşar',
+          desc: l10n.shopPowerJumpBootsDesc,
           cost: 300,
         ),
         _PowerRowItem(
           id: 'shield',
-          name: 'Kalkan',
+          name: l10n.shopPowerShieldName,
           iconAsset: 'assets/icons2/shield.png',
-          desc: 'Bir hatayı affeder',
+          desc: l10n.shopPowerShieldDesc,
           cost: 350,
         ),
         _PowerRowItem(
           id: 'nitro',
-          name: 'Nitro',
+          name: l10n.shopPowerNitroName,
           iconAsset: 'assets/icons2/potion_speed.png',
-          desc: 'Hız ve puan artışı',
+          desc: l10n.shopPowerNitroDesc,
           cost: 400,
         ),
       ],
     ),
     _ModePowerGroup(
-      modeName: 'Makarayız',
+      modeName: l10n.shopModeMakarayiz,
       iconAsset: 'assets/icons2/wheel.png',
       powers: [
         _PowerRowItem(
           id: 'beat',
-          name: 'Beat Dondur',
+          name: l10n.shopPowerBeatFreezeName,
           iconAsset: 'assets/icons2/clock.png',
-          desc: 'Ritmi yavaşlatır',
+          desc: l10n.shopPowerBeatFreezeDesc,
           cost: 250,
         ),
         _PowerRowItem(
           id: 'auto',
-          name: 'Oto Makara',
+          name: l10n.shopPowerAutoReelName,
           iconAsset: 'assets/icons2/wheel.png',
-          desc: 'Kısa süre otomatik oynar',
+          desc: l10n.shopPowerAutoReelDesc,
           cost: 500,
         ),
         _PowerRowItem(
           id: 'x2',
-          name: 'Puan Çarpanı',
+          name: l10n.shopPowerScoreMultiplierName,
           iconAsset: 'assets/icons2/boost_coins.png',
-          desc: 'Süreli x2 puan',
+          desc: l10n.shopPowerScoreMultiplierDesc,
           cost: 350,
         ),
       ],
@@ -428,7 +428,7 @@ class _ShopScreenState extends State<ShopScreen> {
     // `false`): reklam gösterilemez ve ödül verilmez. Gerçek ödüllü
     // reklam SDK'sı eklendiğinde bu yöntem gerçek reklam akışına
     // bağlanmalıdır; sahte (mock) reklamla ödül verilmez.
-    _showToast('Ödüllü reklamlar yakında — şimdilik kullanılamıyor.');
+    _showToast(context.l10n.rewardedAdsComingSoon);
   }
 
   Future<void> _buyCoinItem({
@@ -446,7 +446,7 @@ class _ShopScreenState extends State<ShopScreen> {
     } else {
       if (!mounted) return;
       _showToast(
-        'Yetersiz altın! Oyun oynayarak altın kazanabilirsin.',
+        context.l10n.shopNotEnoughGoldToast,
       );
     }
   }
@@ -500,6 +500,7 @@ class _ShopScreenState extends State<ShopScreen> {
       listenable: Listenable.merge([_pm, EnergyService.instance]),
       builder: (context, _) {
         final rawCoins = _pm.coins;
+        final l10n = context.l10n;
         final coinsText = rawCoins == 1240 ? '12.450' : _formatNumber(rawCoins);
         final mqTop = MediaQuery.of(context).padding.top;
         final topPad = mqTop > 0 ? mqTop : 35.0;
@@ -526,10 +527,10 @@ class _ShopScreenState extends State<ShopScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          const Padding(
+                          Padding(
                             padding: EdgeInsets.fromLTRB(2, 2, 2, 0),
                             child: Text(
-                              'MAĞAZA',
+                              l10n.navShop,
                               style: TextStyle(
                                 fontFamily: 'Baloo 2',
                                 fontSize: 23,
@@ -548,7 +549,7 @@ class _ShopScreenState extends State<ShopScreen> {
                             label: context.l10n.addCoinPackLabel,
                             child: GestureDetector(
                               onTap: () =>
-                                  _showToast('Coin paketi sepete eklendi'),
+                                  _showToast(l10n.shopAddedCoinPackToast),
                             child: Container(
                               height: 35,
                               padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
@@ -740,7 +741,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              const Expanded(
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
@@ -751,7 +752,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                         bottom: 23.6,
                                       ),
                                       child: Text(
-                                        'ALTIN HAFTA SONU',
+                                        l10n.shopGoldenWeekendTitle,
                                         style: TextStyle(
                                           fontFamily: 'Baloo 2',
                                           fontSize: 17,
@@ -773,7 +774,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                       ),
                                     ),
                                     Text(
-                                      'Tüm coin paketlerinde %50 bonus',
+                                      l10n.shopGoldenWeekendSubtitle,
                                       style: TextStyle(
                                         fontFamily: 'Nunito',
                                         fontSize: 12.5,
@@ -841,8 +842,8 @@ class _ShopScreenState extends State<ShopScreen> {
                                         children: [
                                           Transform.translate(
                                             offset: const Offset(0, -0.5),
-                                            child: const Text(
-                                              'ÜCRETSİZ SANDIK',
+                                            child: Text(
+                                              l10n.shopFreeChestTitle,
                                               style: TextStyle(
                                                 fontFamily: 'Baloo 2',
                                                 fontSize: 16,
@@ -870,8 +871,8 @@ class _ShopScreenState extends State<ShopScreen> {
                                             ),
                                             child: Transform.translate(
                                               offset: const Offset(0, -1.0),
-                                              child: const Text(
-                                                'YAKINDA',
+                                              child: Text(
+                                                l10n.comingSoon,
                                                 style: TextStyle(
                                                   fontFamily: 'Baloo 2',
                                                   fontSize: 10,
@@ -889,8 +890,8 @@ class _ShopScreenState extends State<ShopScreen> {
                                         ],
                                       ),
                                     ),
-                                    const Text(
-                                      'Ödüllü reklamlar yakında: ücretsiz Ahşap Sandık + rastgele 1 güçlendirici burada olacak.',
+                                    Text(
+                                      l10n.shopFreeChestDesc,
                                       style: TextStyle(
                                         fontFamily: 'Nunito',
                                         fontSize: 12.5,
@@ -937,14 +938,14 @@ class _ShopScreenState extends State<ShopScreen> {
                                           width: 1,
                                         ),
                                       ),
-                                      child: const Padding(
+                                      child: Padding(
                                         padding: EdgeInsets.symmetric(
                                           horizontal: 6,
                                         ),
                                         child: FittedBox(
                                           fit: BoxFit.scaleDown,
                                           child: Text(
-                                            'YAKINDA',
+                                            l10n.comingSoon,
                                             maxLines: 1,
                                             softWrap: false,
                                             style: TextStyle(
@@ -970,19 +971,19 @@ class _ShopScreenState extends State<ShopScreen> {
 
                         // Section: Enerji
                         _buildSecHead(
-                          title: 'ENERJİ',
-                          rightText: '5 dk = +1 kalp',
+                          title: l10n.shopEnergyTitle,
+                          rightText: l10n.shopEnergyRefillNote,
                           onTapRight: () => _showToast(
-                            'Enerji 5 dakikada 1 yenilenir — paketle beklemeden oyna',
+                            l10n.shopEnergyRegenToast,
                           ),
                         ),
                         _buildShopGridRow(
                           _ShopItemData(
-                            badge: 'ENERJİ',
+                            badge: l10n.shopEnergyTitle,
                             badgeGold: false,
                             iconAsset: 'assets/design/ui/icon_heart_exact.webp',
-                            title: 'Enerji Paketi',
-                            desc: '+10 enerji · anında dolar, bekleme yok',
+                            title: l10n.shopItemEnergyPackTitle,
+                            desc: l10n.shopItemEnergyPackDesc,
                             priceText: '₺29,99',
                             isCoinPrice: false,
                             onTap: () async {
@@ -995,16 +996,16 @@ class _ShopScreenState extends State<ShopScreen> {
                               setState(() {});
                               widget.onStateChanged?.call();
                               _showToast(ok
-                                  ? '+10 enerji eklendi — kalbin doldu!'
-                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
+                                  ? l10n.shopEnergyAddedToast
+                                  : l10n.shopStoreUnavailableToast);
                             },
                           ),
                           _ShopItemData(
-                            badge: 'EN İYİ',
+                            badge: l10n.shopBadgeBest,
                             badgeGold: true,
                             iconAsset: 'assets/icons2/potion_health.png',
-                            title: 'Enerji Deposu',
-                            desc: 'Kalbi 30/30 fulle · tek seferde tam enerji',
+                            title: l10n.shopItemEnergyDepotTitle,
+                            desc: l10n.shopItemEnergyDepotDesc,
                             priceText: '₺59,99',
                             isCoinPrice: false,
                             onTap: () async {
@@ -1017,31 +1018,31 @@ class _ShopScreenState extends State<ShopScreen> {
                               setState(() {});
                               widget.onStateChanged?.call();
                               _showToast(ok
-                                  ? 'Enerji 30/30 doldu!'
-                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
+                                  ? l10n.shopEnergyFullToast
+                                  : l10n.shopStoreUnavailableToast);
                             },
                           ),
                         ),
 
                         // Section: Güçlendiriciler
                         _buildSecHead(
-                          title: 'GÜÇLENDİRİCİLER',
-                          rightText: 'Moda özel · 30 çeşit',
+                          title: l10n.shopPowerUpsTitle,
+                          rightText: l10n.shopPowerUpsNote,
                           onTapRight: () => _showToast(
-                            'Her modun güçlendiricisi yalnızca o modda kullanılır',
+                            l10n.shopPowerUpModeOnlyToast,
                           ),
                         ),
-                        for (final group in _powerGroups)
+                        for (final group in _powerGroups(l10n))
                           _buildPowGroup(group),
 
                         // Extra shop grid after #shopPowers
                         _buildShopGridRow(
                           _ShopItemData(
-                            badge: 'FIRSAT',
+                            badge: l10n.shopBadgeDeal,
                             badgeGold: true,
                             iconAsset: 'assets/design/ui/res_star.png',
-                            title: 'Yıldız Paketi',
-                            desc: '25 yıldız + 1.000 coin',
+                            title: l10n.shopItemStarPackTitle,
+                            desc: l10n.shopItemStarPackDesc,
                             priceText: '₺149,99',
                             isCoinPrice: false,
                             onTap: () async {
@@ -1054,20 +1055,20 @@ class _ShopScreenState extends State<ShopScreen> {
                               setState(() {});
                               widget.onStateChanged?.call();
                               _showToast(ok
-                                  ? 'Yıldız Paketi sepete eklendi'
-                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
+                                  ? l10n.shopAddedStarPackToast
+                                  : l10n.shopStoreUnavailableToast);
                             },
                           ),
                           _ShopItemData(
                             badge: null,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/gift_box.png',
-                            title: 'Sürpriz Kutu',
-                            desc: 'Rastgele moddan 1 güçlendirici',
+                            title: l10n.shopItemSurpriseBoxTitle,
+                            desc: l10n.shopItemSurpriseBoxDesc,
                             priceText: '350',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
-                              toastMsg: 'Sürpriz Kutu sepete eklendi',
+                              toastMsg: l10n.shopAddedSurpriseBoxToast,
                               cost: 350,
                               onSuccess: () => _grantPowerStock('triple', 1),
                             ),
@@ -1075,14 +1076,14 @@ class _ShopScreenState extends State<ShopScreen> {
                         ),
 
                         // Section: Coin Paketleri
-                        _buildSecHead(title: 'COİN PAKETLERİ'),
+                        _buildSecHead(title: l10n.shopCoinPacksTitle),
                         _buildShopGridRow(
                           _ShopItemData(
                             badge: null,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/coin_stack.png',
-                            title: 'Bir Avuç',
-                            desc: '1.250 coin',
+                            title: l10n.shopItemHandfulTitle,
+                            desc: l10n.shopItemHandfulDesc,
                             priceText: '₺59,99',
                             isCoinPrice: false,
                             onTap: () async {
@@ -1092,16 +1093,16 @@ class _ShopScreenState extends State<ShopScreen> {
                               setState(() {});
                               widget.onStateChanged?.call();
                               _showToast(ok
-                                  ? 'Coin paketi sepete eklendi'
-                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
+                                  ? l10n.shopAddedCoinPackToast
+                                  : l10n.shopStoreUnavailableToast);
                             },
                           ),
                           _ShopItemData(
-                            badge: 'EN İYİ',
+                            badge: l10n.shopBadgeBest,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/money_bag.png',
-                            title: 'Bir Kasa',
-                            desc: '7.500 coin · +%50 bonus',
+                            title: l10n.shopItemCrateTitle,
+                            desc: l10n.shopItemCrateDesc,
                             priceText: '₺249,99',
                             isCoinPrice: false,
                             onTap: () async {
@@ -1111,41 +1112,41 @@ class _ShopScreenState extends State<ShopScreen> {
                               setState(() {});
                               widget.onStateChanged?.call();
                               _showToast(ok
-                                  ? 'Coin paketi sepete eklendi'
-                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
+                                  ? l10n.shopAddedCoinPackToast
+                                  : l10n.shopStoreUnavailableToast);
                             },
                           ),
                           topPadding: 8,
                         ),
 
                         // Section: Sandıklar ve İksirler
-                        _buildSecHead(title: 'SANDIKLAR VE İKSİRLER'),
+                        _buildSecHead(title: l10n.shopChestsAndPotionsTitle),
                         _buildShopGridRow(
                           _ShopItemData(
                             badge: null,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/chest_wood.png',
-                            title: 'Ahşap Sandık',
-                            desc: 'Rastgele güçlendirici + coin',
+                            title: l10n.shopItemWoodenChestTitle,
+                            desc: l10n.shopItemWoodenChestDesc,
                             priceText: '200',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
-                              toastMsg: 'Ahşap Sandık sepete eklendi',
+                              toastMsg: l10n.shopAddedWoodenChestToast,
                               cost: 200,
                               onSuccess: () =>
                                   _pm.grantArcadeDrop(coins: 100, slipper: 1),
                             ),
                           ),
                           _ShopItemData(
-                            badge: 'ŞANSLI',
+                            badge: l10n.shopBadgeLucky,
                             badgeGold: true,
                             iconAsset: 'assets/icons2/chest_gold.png',
-                            title: 'Altın Sandık',
-                            desc: 'Garantili nadir ödül içerir',
+                            title: l10n.shopItemGoldenChestTitle,
+                            desc: l10n.shopItemGoldenChestDesc,
                             priceText: '750',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
-                              toastMsg: 'Altın Sandık sepete eklendi',
+                              toastMsg: l10n.shopAddedGoldenChestToast,
                               cost: 750,
                               onSuccess: () => _pm.grantArcadeDrop(
                                 coins: 250,
@@ -1163,12 +1164,12 @@ class _ShopScreenState extends State<ShopScreen> {
                             badge: null,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/boost_coins.png',
-                            title: 'Çifte Coin',
-                            desc: '30 dakika boyunca 2× coin',
+                            title: l10n.shopItemDoubleCoinTitle,
+                            desc: l10n.shopItemDoubleCoinDesc,
                             priceText: '400',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
-                              toastMsg: 'Çifte Coin sepete eklendi',
+                              toastMsg: l10n.shopAddedDoubleCoinToast,
                               cost: 400,
                               onSuccess: () => _grantPowerStock('x2', 1),
                             ),
@@ -1177,12 +1178,12 @@ class _ShopScreenState extends State<ShopScreen> {
                             badge: null,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/potion_luck.png',
-                            title: 'Şans İksiri',
-                            desc: 'Birleşmede kritik şansı artar',
+                            title: l10n.shopItemLuckPotionTitle,
+                            desc: l10n.shopItemLuckPotionDesc,
                             priceText: '180',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
-                              toastMsg: 'Şans İksiri sepete eklendi',
+                              toastMsg: l10n.shopAddedLuckPotionToast,
                               cost: 180,
                               onSuccess: () => _grantPowerStock('hunter', 1),
                             ),
@@ -1573,8 +1574,8 @@ class _ShopScreenState extends State<ShopScreen> {
                       color: const Color(0xFFFFF3D1),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Text(
-                      '3 bonus',
+                    child: Text(
+                      context.l10n.shopPowerGroupBonusCount(group.powers.length),
                       style: TextStyle(
                         fontFamily: 'Nunito',
                         fontSize: 11,
@@ -1652,7 +1653,7 @@ class _ShopScreenState extends State<ShopScreen> {
                     ),
                   ),
                   Text(
-                    '${pow.desc} · yalnızca ${group.modeName} modunda',
+                    context.l10n.shopPowerUpDescModeSuffix(pow.desc, group.modeName),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -1674,7 +1675,7 @@ class _ShopScreenState extends State<ShopScreen> {
               excludeSemantics: true,
               child: GestureDetector(
                 onTap: () => _buyCoinItem(
-                  toastMsg: '${pow.name} sepete eklendi (${group.modeName})',
+                  toastMsg: context.l10n.shopPowerUpAddedToCartToast(pow.name, group.modeName),
                 cost: pow.cost,
                 onSuccess: () => _grantPowerStock(pow.id, 1),
               ),
@@ -2112,7 +2113,11 @@ class _ShopFloatingDock extends StatelessWidget {
                       children: List.generate(_tabIcons.length, (i) {
                         final active = i == activeIndex;
                         return Expanded(
-                          child: GestureDetector(
+                          child: Semantics(
+                            button: true,
+                            label: labels[i],
+                            selected: active,
+                            child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () => _onTapTab(context, i),
                             child: DecoratedBox(
@@ -2256,6 +2261,7 @@ class _ShopFloatingDock extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          ),
                           ),
                         );
                       }),

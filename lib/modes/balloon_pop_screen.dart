@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -1368,7 +1369,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         top: 7.1,
                         width: 44.4,
                         height: 48,
-                        child: GestureDetector(
+                        child: Semantics(
+                          button: true,
+                          label: context.l10n.goBackLabel,
+                          child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () => Navigator.of(context).maybePop(),
                           child: CustomPaint(
@@ -1388,6 +1392,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                               ),
                             ),
                           ),
+                        ),
                         ),
                       ),
                       Positioned(

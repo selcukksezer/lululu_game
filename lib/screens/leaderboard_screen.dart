@@ -174,7 +174,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                           if (!widget.embedded &&
                               (widget.showBackButton ||
                                   widget.onClose != null)) ...[
-                            GestureDetector(
+                            Semantics(
+                              button: true,
+                              label: context.l10n.goBackLabel,
+                              child: GestureDetector(
                               onTap: _handleBack,
                               child: Container(
                                 width: 35,
@@ -198,6 +201,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                   fit: BoxFit.contain,
                                 ),
                               ),
+                            ),
                             ),
                             const SizedBox(width: 8),
                           ],
@@ -1106,7 +1110,11 @@ class _ScoresFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(context.l10n, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: SizedBox(
@@ -1253,6 +1261,7 @@ class _ScoresFloatingDock extends StatelessWidget {
                                 ],
                               ),
                             ),
+                          ),
                           ),
                         ),
                       ],

@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:noise_meter/noise_meter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
@@ -1397,7 +1398,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
         child: Row(
           children: [
-            GestureDetector(
+            Semantics(
+              button: true,
+              label: context.l10n.goBackLabel,
+              child: GestureDetector(
               onTap: () => Navigator.maybePop(context),
               child: Container(
                 width: 45.9,
@@ -1421,6 +1425,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ),
                 ),
               ),
+            ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1534,7 +1539,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               _pauseButton(),
             ],
             const SizedBox(width: 10),
-            GestureDetector(
+            Semantics(
+              button: true,
+              label: context.l10n.helpButtonLabel,
+              child: GestureDetector(
               onTap: () => showDialog<void>(
                 context: context,
                 builder: (context) => AlertDialog(
@@ -1569,6 +1577,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ),
                 ),
               ),
+            ),
             ),
           ],
         ),

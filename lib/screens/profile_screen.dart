@@ -251,7 +251,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          GestureDetector(
+                          Semantics(
+                            button: true,
+                            label: context.l10n.goBackLabel,
+                            child: GestureDetector(
                             onTap: widget.onClose ??
                                 () => Navigator.of(context).maybePop(),
                             child: Container(
@@ -277,6 +280,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 filterQuality: FilterQuality.medium,
                               ),
                             ),
+                          ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -1394,7 +1398,11 @@ class _ProfileFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(l10n, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: DecoratedBox(
@@ -1547,6 +1555,7 @@ class _ProfileFloatingDock extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          ),
                           ),
                         ),
                       ],

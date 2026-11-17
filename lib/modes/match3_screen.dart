@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -1467,7 +1468,10 @@ class _Match3ScreenState extends State<Match3Screen> {
                           top: 6,
                           width: 48,
                           height: 48,
-                          child: GestureDetector(
+                          child: Semantics(
+                            button: true,
+                            label: context.l10n.goBackLabel,
+                            child: GestureDetector(
                             onTap: () => Navigator.maybePop(context),
                             behavior: HitTestBehavior.opaque,
                             child: Container(
@@ -1489,6 +1493,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 fit: BoxFit.contain,
                               ),
                             ),
+                          ),
                           ),
                         ),
                         Positioned(
@@ -1602,7 +1607,10 @@ class _Match3ScreenState extends State<Match3Screen> {
                           top: 6,
                           width: 48,
                           height: 48,
-                          child: GestureDetector(
+                          child: Semantics(
+                            button: true,
+                            label: context.l10n.helpButtonLabel,
+                            child: GestureDetector(
                             onTap: () => _showHelpModal(context),
                             behavior: HitTestBehavior.opaque,
                             child: Container(
@@ -1631,6 +1639,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 ),
                               ),
                             ),
+                          ),
                           ),
                         ),
                       ],

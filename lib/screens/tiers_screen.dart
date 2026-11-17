@@ -213,7 +213,10 @@ class _TiersScreenState extends State<TiersScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      GestureDetector(
+                      Semantics(
+                        button: true,
+                        label: context.l10n.goBackLabel,
+                        child: GestureDetector(
                         onTap: () {
                           AudioManager().playPop();
                           if (widget.onBack != null) {
@@ -245,6 +248,7 @@ class _TiersScreenState extends State<TiersScreen> {
                             ),
                           ),
                         ),
+                      ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -940,7 +944,11 @@ class _TiersFloatingDock extends StatelessWidget {
                     children: List.generate(_tabIcons.length, (i) {
                       final active = i == activeIndex;
                       return Expanded(
-                        child: GestureDetector(
+                        child: Semantics(
+                          button: true,
+                          label: labels[i],
+                          selected: active,
+                          child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () => _onTapTab(context, i),
                           child: SizedBox(
@@ -1058,6 +1066,7 @@ class _TiersFloatingDock extends StatelessWidget {
                               ],
                             ),
                           ),
+                        ),
                         ),
                       );
                     }),

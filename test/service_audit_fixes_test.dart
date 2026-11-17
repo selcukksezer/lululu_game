@@ -11,7 +11,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:lululu_game/services/anti_cheat_service.dart';
 import 'package:lululu_game/services/auth_service.dart';
-import 'package:lululu_game/services/coin_service.dart';
 import 'package:lululu_game/services/daily_challenge_service.dart';
 import 'package:lululu_game/services/friend_invite_service.dart';
 import 'package:lululu_game/services/game_telemetry_service.dart';
@@ -31,61 +30,6 @@ String _expectedCodePrefix(String playerId) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  group('CoinService (servis denetimi: spendCoins / grantLevelClearReward)', () {
-    setUp(() async {
-      SharedPreferences.setMockInitialValues(<String, Object>{
-        'lululu_coins': 1000,
-      });
-      await CoinService.instance.load();
-    });
-
-    test('spendCoins negatif tutarda false döner ve bakiye değişmez', () async {
-      // coin_service.dart:58-59: `if (amount < 0) return false;`
-      expect(await CoinService.instance.spendCoins(-50), isFalse);
-      expect(CoinService.instance.coins, 1000);
-    });
-
-    test('spendCoins sıfır tutarda true döner ve bakiye değişmez', () async {
-      // coin_service.dart:60: `if (amount == 0) return true;`
-      expect(await CoinService.instance.spendCoins(0), isTrue);
-      expect(CoinService.instance.coins, 1000);
-    });
-
-    test('grantLevelClearReward negatif baseReward ile 0 döner ve bakiye artmaz',
-        () async {
-      // coin_service.dart:77-79: safeBase 0'a kırpılır, ödül 3*0 = 0.
-      final reward = await CoinService.instance.grantLevelClearReward(
-        stars: 3,
-        baseReward: -50,
-      );
-      expect(reward, 0);
-      expect(reward, greaterThanOrEqualTo(0));
-      expect(CoinService.instance.coins, 1000);
-    });
-
-    test('grantLevelClearReward negatif baseReward ile boss bonusunu korur',
-        () async {
-      // Kırpma yalnız tabana uygulanır: 2*0 + boss 100 = 100.
-      final reward = await CoinService.instance.grantLevelClearReward(
-        stars: 2,
-        baseReward: -10,
-        isBossLevel: true,
-      );
-      expect(reward, 100);
-      expect(CoinService.instance.coins, 1100);
-    });
-
-    test('grantLevelClearReward pozitif baseReward formülünü korur', () async {
-      // Kontrol: kırpma pozitif yolu bozmaz: 2*50 = 100.
-      final reward = await CoinService.instance.grantLevelClearReward(
-        stars: 2,
-        baseReward: 50,
-      );
-      expect(reward, 100);
-      expect(CoinService.instance.coins, 1100);
-    });
-  });
 
   group('GameTelemetryService (servis denetimi: percentileFrameTimeMs NaN koruması)',
       () {

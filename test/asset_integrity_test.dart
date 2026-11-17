@@ -266,11 +266,10 @@ void main() {
       for (final p in ZeroJankPreloader.criticalFontAssets) {
         expectValidAsset(p, context: 'ZeroJankPreloader.criticalFontAssets');
       }
-      // NOTE (madde 17, kısmen): this audits the preloader manifest
-      // verbatim; it still lists `assets/design/sounds/` paths
-      // (zero_jank_preloader.dart, owned by another agent). It flips to
-      // `assets/audio/` when that manifest migrates; until then the
-      // on-disk duplicates keep this green.
+      // NOTE: this audits the preloader manifest verbatim; the manifest
+      // lists canonical `assets/audio/` paths (zero_jank_preloader.dart).
+      // The legacy `assets/design/sounds/` duplicates on disk are not
+      // listed in the manifest and are not asserted here.
       for (final p in ZeroJankPreloader.criticalSoundAssets) {
         expectValidAsset(p, context: 'ZeroJankPreloader.criticalSoundAssets');
       }

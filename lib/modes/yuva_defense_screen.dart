@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
@@ -949,6 +950,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                         child: Row(
                           children: [
                             _RoundAction(
+                              semanticLabel: context.l10n.goBackLabel,
                               icon: Icons.arrow_back_rounded,
                               asset: 'assets/icons2/back-prototype.png',
                               onTap: () => Navigator.maybePop(context),
@@ -1123,6 +1125,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                             ],
                             const SizedBox(width: 10),
                             _RoundAction(
+                              semanticLabel: context.l10n.helpButtonLabel,
                               icon: Icons.help_outline_rounded,
                               text: '?',
                               color: _gold,
@@ -1981,6 +1984,7 @@ class _RoundAction extends StatelessWidget {
     this.circular = false,
     this.asset,
     this.text,
+    this.semanticLabel,
   });
 
   final IconData icon;
@@ -1990,10 +1994,14 @@ class _RoundAction extends StatelessWidget {
   final String? asset;
   final String? text;
 
+  /// Ekran okuyucu etiketi (örn. 'Geri', 'Nasıl oynanır'); `null` ise
+  /// `Semantics` sarması eklenmez (arcade_chrome'daki _ChromeRound deseni).
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 400;
-    return GestureDetector(
+    Widget button = GestureDetector(
       onTap: onTap,
       child: Container(
         width: circular ? 48 : (wide ? 42.9 : 37),
@@ -2027,6 +2035,15 @@ class _RoundAction extends StatelessWidget {
           : Icon(icon, size: 20, color: color),
       ),
     );
+    final label = semanticLabel;
+    if (label != null) {
+      button = Semantics(
+        button: true,
+        label: label,
+        child: button,
+      );
+    }
+    return button;
   }
 }
 
