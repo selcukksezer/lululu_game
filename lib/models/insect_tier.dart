@@ -227,18 +227,6 @@ enum InsectTier {
     required this.color,
   });
 
-  /// Prototype design sound filename (`tier1_ses.mp3`..`tier13_ses.mp3`).
-  String get sesFile => soundFile;
-
-  /// Full verified sound asset path under `assets/design/sounds/`.
-  String get soundAssetPath => 'assets/design/sounds/$soundFile';
-
-  /// Merge points alias for UI/HUD consumers.
-  int get mergePoints => scoreValue;
-
-  /// Primary 8 prototype evolution tiers (Bebek Huni .. Hasta Bilge).
-  static List<InsectTier> get coreTiers => values.take(8).toList(growable: false);
-
   /// Safe lookup by 1-based tier number (clamped to 1..13).
   static InsectTier fromTier(int tierNumber) {
     final idx = (tierNumber - 1).clamp(0, values.length - 1);
@@ -275,6 +263,115 @@ enum InsectTier {
         return 'Zirvedeyim!';
     }
   }
+
+  // --- English (EN) counterparts: pure additions, TR defaults untouched. ---
+  // `viralReplik` deliberately has NO English counterpart: the catchphrases
+  // are character identity and stay Turkish in every locale. `name`/`title`/
+  // `rarity` keep returning Turkish; screens migrate to the `*For(Locale)`
+  // accessors in a later wave. Proper names (Diva, Kongo, Makarayız, Lülülü,
+  // Can) stay identical inside the EN strings. No AppLocalizations import:
+  // these are pure `Locale`-parameterized accessors, so no import cycle.
+  String get nameEn {
+    switch (this) {
+      case InsectTier.cone:
+        return 'Baby Funnel';
+      case InsectTier.helmet:
+        return 'Pot-Wearing Apprentice';
+      case InsectTier.fan:
+        return 'Reel Fan';
+      case InsectTier.dancer:
+        return 'Pajama Dancer';
+      case InsectTier.diva:
+        return 'Bathhouse Diva';
+      case InsectTier.can:
+        return 'Bathhouse Can';
+      case InsectTier.kongo:
+        return 'Kongo Leader';
+      case InsectTier.bed:
+        return 'Ailing Sage';
+      case InsectTier.milli:
+        return 'National Jersey Bug';
+      case InsectTier.pinkJacket:
+        return 'Pink Jacket Bug';
+      case InsectTier.whiteGhost:
+        return 'White Ghost';
+      case InsectTier.greyShirt:
+        return 'Gray T-Shirt Bug';
+      case InsectTier.pinkRobe:
+        return 'Pink Robe Bug';
+    }
+  }
+
+  String nameFor(Locale locale) =>
+      locale.languageCode == 'en' ? nameEn : name;
+
+  String get titleEn {
+    switch (this) {
+      case InsectTier.cone:
+        return 'Lülülü Baby';
+      case InsectTier.helmet:
+        return 'Helmeted Bug';
+      case InsectTier.fan:
+        return 'Makarayız Bro';
+      case InsectTier.dancer:
+        return 'Hoppa, Sweetheart';
+      case InsectTier.diva:
+        return "I'm a Diva, Honey!";
+      case InsectTier.can:
+        return 'Dear Viewers';
+      case InsectTier.kongo:
+        return 'My Dearest One';
+      case InsectTier.bed:
+        return 'Call the Doctor!';
+      case InsectTier.milli:
+        return 'Striker Bug';
+      case InsectTier.pinkJacket:
+        return "You've Got Style!";
+      case InsectTier.whiteGhost:
+        return 'Invisible Knight';
+      case InsectTier.greyShirt:
+        return 'Quiet Strength';
+      case InsectTier.pinkRobe:
+        return 'Pinnacle of Evolution';
+    }
+  }
+
+  String titleFor(Locale locale) =>
+      locale.languageCode == 'en' ? titleEn : title;
+
+  String get rarityEn {
+    switch (this) {
+      case InsectTier.cone:
+        return 'Common';
+      case InsectTier.helmet:
+        return 'Uncommon';
+      case InsectTier.fan:
+        return 'Rare';
+      case InsectTier.dancer:
+        return 'Epic';
+      case InsectTier.diva:
+        return 'Legendary';
+      case InsectTier.can:
+        return 'Mythic';
+      case InsectTier.kongo:
+        return 'Secret';
+      case InsectTier.bed:
+        return 'Evolution Crystal';
+      case InsectTier.milli:
+        return 'Super';
+      case InsectTier.pinkJacket:
+        return 'Ultra';
+      case InsectTier.whiteGhost:
+        return 'Cosmic';
+      case InsectTier.greyShirt:
+        return 'Ancient';
+      case InsectTier.pinkRobe:
+        return 'Absolute';
+    }
+  }
+
+  String rarityFor(Locale locale) =>
+      locale.languageCode == 'en' ? rarityEn : rarity;
 
   InsectTier? get nextTier {
     final nextIdx = index + 1;

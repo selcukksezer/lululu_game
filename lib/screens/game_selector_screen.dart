@@ -3,14 +3,15 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/chat_service.dart';
 import '../services/energy_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
-import '../widgets/ad_mock.dart';
 import '../widgets/daily_reward_dialog.dart';
 import '../widgets/top_bar.dart';
 import 'chat_screen.dart';
@@ -64,6 +65,8 @@ class GameSelectorScreen extends StatefulWidget {
 }
 
 class _GameSelectorScreenState extends State<GameSelectorScreen> {
+  // Yalnız oturum-içi/uçuş-sırası koruma: kalıcı talep durumu
+  // ProgressManager.canClaimDailyGiftBox'tan türetilir.
   bool _dailyRewardClaimed = false;
   bool _dailyEnergyClaimed = false;
 
@@ -107,38 +110,37 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
   }
 
   Future<void> _claimDailyReward() async {
-    if (_dailyRewardClaimed) return;
-    setState(() => _dailyRewardClaimed = true);
     final pm = ProgressManager.instance;
-    if (pm.canClaimDailyGiftBox) {
-      await pm.claimDailyGiftBox();
-    } else {
-      await pm.addCoins(500);
-    }
+    // Kalıcı koruma: bugün zaten talep edildiyse dokunma hiçbir şey
+    // yapmaz — ödeme yok, ses yok, snackbar yok. _dailyRewardClaimed
+    // yalnız oturum-içi/uçuş-sırası korumadır.
+    if (_dailyRewardClaimed || !pm.canClaimDailyGiftBox) return;
+    setState(() => _dailyRewardClaimed = true);
+    final reward = await pm.claimDailyGiftBox();
+    // claimDailyGiftBox aynı gün tekrarında null döner: yarış
+    // durumunda da ses/snackbar verilmez.
+    if (reward == null) return;
     AudioManager().playWin();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Günlük ödül alındı: +500 coin')),
+        SnackBar(content: Text(context.l10n.dailyRewardClaimedSnack)),
       );
     }
   }
 
+  /// Ödüllü reklam SDK'sı kurulu değil: reklam gösterilemez, ödül
+  /// verilmez. Gerçek SDK eklendiğinde reklam dalları gerçek reklam
+  /// akışına bağlanmalıdır; sahte (mock) reklamla ödül verilmez (madde 4).
+  void _showRewardsComingSoon() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.l10n.rewardedAdsComingSoon),
+      ),
+    );
+  }
+
   Future<void> _claimDoubleDailyReward() async {
-    final ok = await showRewardedAdMock(context, rewardLabel: '1.000 COİN');
-    if (!mounted || !ok) return;
-    setState(() => _dailyRewardClaimed = true);
-    final pm = ProgressManager.instance;
-    if (pm.canClaimDailyGiftBox) {
-      await pm.claimDailyGiftBox(doubled: true);
-    } else {
-      await pm.addCoins(1000);
-    }
-    AudioManager().playWin();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reklam izlendi: +1.000 coin alındı!')),
-      );
-    }
+    _showRewardsComingSoon();
   }
 
   Future<void> _claimDailyEnergy() async {
@@ -152,36 +154,22 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       AudioManager().playWin();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Günlük enerji alındı: +5 enerji eklendi!'),
+          SnackBar(
+            content: Text(context.l10n.dailyEnergyClaimedSnack),
           ),
         );
       }
       return;
     }
 
-    final ok = await showRewardedAdMock(context, rewardLabel: '+5 ENERJİ');
-    if (!mounted || !ok) return;
-    setState(() => _dailyEnergyClaimed = true);
-    final granted = await pm.claimDailyFreeEnergy(
-      amount: 5,
-      fromRewardedAd: true,
-    );
-    if (!granted) {
-      EnergyService.instance.addEnergy(5);
-    }
-    AudioManager().playWin();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reklam izlendi: +5 enerji eklendi!'),
-        ),
-      );
-    }
+    // Ücretsiz hak tükendi: reklam dalı ödül vermez, bilgi gösterir.
+    if (!mounted) return;
+    _showRewardsComingSoon();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final topPad = MediaQuery.paddingOf(context).top;
     final hasHostStatusBar = topPad > 0;
     final statusBarHeight = hasHostStatusBar ? topPad : 35.4;
@@ -267,7 +255,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            'OYUN MODLARI',
+                            l10n.modesTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.baloo2(
@@ -282,7 +270,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                           onTap: _openModes,
                           behavior: HitTestBehavior.opaque,
                           child: Text(
-                            'Tümü →',
+                            l10n.seeAllArrow,
                             style: GoogleFonts.nunito(
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -309,7 +297,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
                     child: Text(
-                      'STÜDYO',
+                      l10n.studioTitle,
                       style: GoogleFonts.baloo2(
                         fontSize: 19,
                         fontWeight: FontWeight.w800,
@@ -329,8 +317,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
                       children: [
                         _buildStudioCard(
-                          title: 'VİDEO İZLE',
-                          subtitle: 'Böcek klipleri ve rekorlar',
+                          title: l10n.studioWatchTitle,
+                          subtitle: l10n.studioWatchSubtitle,
                           icon: Icons.play_arrow_rounded,
                           gradient: const [
                             Color(0xFFF4538B),
@@ -345,8 +333,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ),
                         const SizedBox(width: 10),
                         _buildStudioCard(
-                          title: 'VİDEO YAP',
-                          subtitle: 'Kırp, yazı ve sticker ekle',
+                          title: l10n.studioCreateTitle,
+                          subtitle: l10n.studioCreateSubtitle,
                           icon: Icons.edit_rounded,
                           gradient: const [
                             Color(0xFF9B5DE5),
@@ -361,8 +349,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ),
                         const SizedBox(width: 10),
                         _buildStudioCard(
-                          title: 'YÜKLE',
-                          subtitle: 'Klibini herkesle paylaş',
+                          title: l10n.studioUploadTitle,
+                          subtitle: l10n.studioUploadSubtitle,
                           icon: Icons.upload_rounded,
                           gradient: const [
                             Color(0xFFFF8A5C),
@@ -377,8 +365,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ),
                         const SizedBox(width: 10),
                         _buildStudioCard(
-                          title: 'GIF OLUŞTUR',
-                          subtitle: 'Böceğini hareketlendir',
+                          title: l10n.studioGifTitle,
+                          subtitle: l10n.studioGifSubtitle,
                           icon: Icons.gif_box_outlined,
                           gradient: const [
                             Color(0xFF37E08B),
@@ -393,8 +381,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ),
                         const SizedBox(width: 10),
                         _buildStudioCard(
-                          title: 'İNDİRİLENLER',
-                          subtitle: 'Çevrimdışı arşivin',
+                          title: l10n.studioDownloadsTitle,
+                          subtitle: l10n.studioDownloadsSubtitle,
                           icon: Icons.download_rounded,
                           iconColor: const Color(0xFF4A2E00),
                           gradient: const [
@@ -448,9 +436,21 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     );
   }
 
-  // Hero Card (Suika Arena) — .hub-hero (x:12, y:101.4, w:406, h:373.6)
+  // Hero Card (Suika Arena) — .hub-hero (x:12, y:101.4, w:406).
+  // Yükseklik sabit değil: kullanılabilir genişlikten prototip oranıyla
+  // (406 genişlikte 373.6 yükseklik) türetilir ve tam piksele yuvarlanır.
+  // Maskot yüksekliği de bu toplamdan içerik payları çıkarılarak hesaplanır.
   Widget _buildHeroCard() {
-    return CustomPaint(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final l10n = context.l10n;
+        final cardWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 406.0;
+        final cardHeight = (cardWidth * 3736 / 4060).roundToDouble();
+        // İçerik payları: üst+alt padding 16+16, ara boşluk 12, OYNA düğmesi 52.
+        final mascotHeight = cardHeight - 96;
+        return CustomPaint(
       painter: const _RealBoxShadowPainter(
         radius: 26,
         shadows: [
@@ -462,7 +462,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
         ],
       ),
       child: Container(
-        height: 373.6,
+        height: cardHeight,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(26),
@@ -519,7 +519,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      'HOT',
+                      l10n.badgeHot,
                       style: GoogleFonts.baloo2(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
@@ -547,7 +547,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                           right: 0,
                           bottom: 0,
                           width: 104,
-                          height: 277.6,
+                          height: mascotHeight,
                           child: Stack(
                             clipBehavior: Clip.none,
                             children: [
@@ -602,7 +602,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                               Transform.translate(
                                 offset: const Offset(0.5, -1.0),
                                 child: Text(
-                                  'SUİKA ARENA',
+                                  l10n.suikaArenaTitle,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.baloo2(
@@ -623,10 +623,10 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Aynı böcekleri çarpıştır, Pembe',
+                                l10n.heroSubtitleLine1,
                                 maxLines: 1,
                                 softWrap: false,
-                                overflow: TextOverflow.visible,
+                                overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.nunito(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -636,10 +636,10 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                                 ),
                               ),
                               Text(
-                                "Bornozlu'ya kadar evrimleştir!",
+                                l10n.heroSubtitleLine2,
                                 maxLines: 1,
                                 softWrap: false,
-                                overflow: TextOverflow.visible,
+                                overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.nunito(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -709,7 +709,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'HEMEN OYNA',
+                            l10n.playNow,
                             style: GoogleFonts.baloo2(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -737,10 +737,13 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       ),
       ),
     );
+      },
+    );
   }
 
-  // Daily Card — .daily (x:12, y:483, w:406, h:250.1)
+  // Daily Card — .daily (x:12, y:483, w:406)
   Widget _buildDailyCard() {
+    final l10n = context.l10n;
     return CustomPaint(
       painter: const _RealBoxShadowPainter(
         radius: 22,
@@ -752,8 +755,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
           ),
         ],
       ),
+      // Yükseklik sabiti yok: kart, içerik (üst bölüm + boşluklar +
+      // düğmeler) kadar yer kaplar; Column kısıttan türetir.
       child: Container(
-        height: 250.1,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
@@ -767,9 +771,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // .daily-top (height: 100.1)
+            // .daily-top (height: 120.4 — altyazı 2 satıra sarabilir)
             SizedBox(
-              height: 100.1,
+              height: 120.4,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -791,7 +795,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       children: [
                         const SizedBox(height: 24.3),
                         Text(
-                          'GÜNLÜK ÖDÜL',
+                          l10n.dailyRewardTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.baloo2(
@@ -804,8 +808,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ),
                         const SizedBox(height: 26.3),
                         Text(
-                          '3. gün · 500 coin seni bekliyor',
-                          maxLines: 1,
+                          l10n.dailyRewardSubtitle,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.nunito(
                             fontSize: 13,
@@ -827,8 +831,18 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
               children: [
                 Expanded(
                   flex: 180,
-                  child: GestureDetector(
-                    onTap: _dailyRewardClaimed ? null : _claimDailyReward,
+                  child: ListenableBuilder(
+                    listenable: ProgressManager.instance,
+                    builder: (context, _) {
+                      // Talep durumu kalıcı kaynaktan türetilir: prefs'teki
+                      // lastStreakClaimDay bugünse düğme talep-edilmiş
+                      // görünür (yeniden başlatmada da). Dosyadaki görev
+                      // kartıyla aynı yerel ListenableBuilder deseni.
+                      final claimed =
+                          _dailyRewardClaimed ||
+                          !ProgressManager.instance.canClaimDailyGiftBox;
+                      return GestureDetector(
+                        onTap: claimed ? null : _claimDailyReward,
                     child: CustomPaint(
                       painter: const _RealBoxShadowPainter(
                         radius: 14,
@@ -848,7 +862,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       child: Container(
                         height: 48,
                         decoration: BoxDecoration(
-                          gradient: _dailyRewardClaimed
+                          gradient: claimed
                               ? null
                               : const LinearGradient(
                                   begin: Alignment.topCenter,
@@ -860,7 +874,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                                   ],
                                   stops: [0.0, 0.55, 1.0],
                                 ),
-                          color: _dailyRewardClaimed
+                          color: claimed
                               ? const Color(0xFFE2E6EE)
                               : null,
                           borderRadius: BorderRadius.circular(14),
@@ -872,15 +886,15 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       child: Transform.translate(
                         offset: const Offset(0, -1),
                         child: Text(
-                          _dailyRewardClaimed ? 'ALINDI' : 'AL · 500',
+                          claimed ? l10n.claimedShort : l10n.claim500,
                           style: GoogleFonts.baloo2(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.45,
-                            color: _dailyRewardClaimed
+                            color: claimed
                                 ? const Color(0xFF8E9CAE)
                                 : Colors.white,
-                            shadows: _dailyRewardClaimed
+                            shadows: claimed
                                 ? null
                                 : const [
                                     Shadow(
@@ -895,7 +909,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     ),
                   ),
                 ),
-              ),
+                    );
+                  },
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -938,20 +954,25 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                               color: const Color(0xFF7C3AED),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: Text(
-                              'REKLAM',
-                              style: GoogleFonts.baloo2(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 0.6,
-                                height: 1.3,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                l10n.comingSoon,
+                                maxLines: 1,
+                                softWrap: false,
+                                style: GoogleFonts.baloo2(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                  letterSpacing: 0.6,
+                                  height: 1.3,
+                                ),
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '2X · 1.000',
+                            '2X · ${l10n.comingSoon}',
                             style: GoogleFonts.baloo2(
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
@@ -1024,7 +1045,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'ENERJİ AL · +5',
+                        l10n.claimEnergy5,
                         style: GoogleFonts.baloo2(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
@@ -1053,6 +1074,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
 
   // Online Mod Card — .online-card (x:12, y:741.1, w:406, h:183.5)
   Widget _buildOnlineCard() {
+    final l10n = context.l10n;
     return GestureDetector(
       onTap: () {
         Navigator.of(
@@ -1167,23 +1189,22 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
+                                // Sabit 110px kaldırıldı: başlık, rozetle kalan
+                                // alanı paylaşır; EN/TR başlık kesilmez.
                                 Flexible(
-                                  child: SizedBox(
-                                    width: 110.0,
-                                    child: Transform.translate(
-                                      offset: const Offset(0, -1),
-                                      child: Text(
-                                        'ONLİNE MOD',
-                                        maxLines: 1,
-                                        softWrap: false,
-                                        overflow: TextOverflow.visible,
-                                        style: GoogleFonts.baloo2(
-                                          fontSize: 19,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.05,
-                                          color: const Color(0xFF141B2A),
-                                          height: 1.05,
-                                        ),
+                                  child: Transform.translate(
+                                    offset: const Offset(0, -1),
+                                    child: Text(
+                                      l10n.onlineModeTitle,
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.baloo2(
+                                        fontSize: 19,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.05,
+                                        color: const Color(0xFF141B2A),
+                                        height: 1.05,
                                       ),
                                     ),
                                   ),
@@ -1212,7 +1233,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                                         borderRadius: BorderRadius.circular(999),
                                       ),
                                       child: Text(
-                                        'YAKINDA',
+                                        l10n.comingSoon,
                                         style: GoogleFonts.baloo2(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w800,
@@ -1230,7 +1251,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                           Transform.translate(
                             offset: const Offset(0, 3.8),
                             child: Text(
-                              'Çok yakında arkadaşlarınla çevrimiçi oyna!',
+                              l10n.onlineModeSubtitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.nunito(
@@ -1254,7 +1275,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        'Kaydın alındı! Online mod açılır açılmaz sana haber vereceğiz.',
+                        l10n.onlineNotifySignupSnack,
                         style: GoogleFonts.nunito(fontWeight: FontWeight.w700),
                       ),
                       backgroundColor: const Color(0xFF141B2A),
@@ -1308,7 +1329,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'HABERDAR ET',
+                        l10n.notifyMe,
                         style: GoogleFonts.baloo2(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -1329,16 +1350,46 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     );
   }
 
+  // Sohbet kartı rozet etiketi; null ise rozet gizlidir (W14-1).
+  //
+  // Sayaç kanal başına ChatService.unreadProbeLimit (10) ile sınırlı
+  // olduğundan, herhangi bir kanal sınırdaysa toplam bir alt sınırdır
+  // ve "N+" gösterilir; aksi hâlde kesin toplam yazılır. LululuDockBar
+  // rozetiyle aynı kural — oradaki rozet görünmez katmanda kalır.
+  static String? _chatUnreadBadgeLabel() {
+    final total = ChatService.instance.totalUnreadCount;
+    if (total <= 0) return null;
+    final capped = ChatService.instance.unreadCounts.values
+        .any((count) => count >= ChatService.unreadProbeLimit);
+    return capped ? '$total+' : '$total';
+  }
+
   // Chat Card — .chat-card (x:12, y:932.6, w:406, h:126.5)
+  //
+  // W14-1: kartın sağ üst köşesinde toplam okunmamış rozeti. Rozet
+  // kartın üstüne binen bir katmandır (Stack + Clip.none); kartın
+  // ölçüsü/yerleşimi değişmez, sayı 0 ise hiç çizilmez. Karta
+  // dokununca açılan ChatScreen initState'te okundu işaretler; burada
+  // tekrar işaretleme yapılmaz.
   Widget _buildChatCard() {
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute<void>(builder: (_) => const ChatScreen()));
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Container(
+    final l10n = context.l10n;
+    return ListenableBuilder(
+      listenable: ChatService.instance,
+      builder: (context, _) {
+        final badgeLabel = _chatUnreadBadgeLabel();
+        return GestureDetector(
+          onTap: () {
+            Navigator.of(
+              context,
+            ).push(
+              MaterialPageRoute<void>(builder: (_) => const ChatScreen()),
+            );
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
         height: 126.5,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -1382,7 +1433,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     children: [
                       Flexible(
                         child: Text(
-                          'SOHBET',
+                          l10n.chatTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.baloo2(
@@ -1422,7 +1473,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              '5 ÇEVRİMİÇİ',
+                              l10n.onlineCount5,
                               style: GoogleFonts.baloo2(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
@@ -1438,7 +1489,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Lonca muhabbet et, rekorları konuş',
+                  l10n.chatSubtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.nunito(
@@ -1453,11 +1504,51 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
           ],
         ),
       ),
+              if (badgeLabel != null)
+                Positioned(
+                  right: -6,
+                  top: -6,
+                  child: Semantics(
+                    label: '$badgeLabel okunmamış mesaj',
+                    child: Container(
+                      height: 22,
+                      constraints: const BoxConstraints(minWidth: 22),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE52E2E),
+                        borderRadius: BorderRadius.circular(11),
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x40000000),
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        badgeLabel,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          height: 1.0,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   // Daily Tasks Preview Card — .hub-tasks
   Widget _buildTasksCard() {
+    final l10n = context.l10n;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 7),
       decoration: BoxDecoration(
@@ -1501,7 +1592,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'GÜNLÜK GÖREVLER',
+                        l10n.dailyTasksTitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.baloo2(
@@ -1513,7 +1604,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Görevleri bitir, ödülü kap!',
+                        l10n.hubTasksSubtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.nunito(
@@ -1548,7 +1639,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     ),
                     alignment: Alignment.center,
                     child: Text(
-                      'TÜMÜNÜ GÖR',
+                      l10n.seeAllButton,
                       style: GoogleFonts.baloo2(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
@@ -1568,25 +1659,25 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildTaskItem(
-                    title: '3 OYUN OYNA',
+                    title: l10n.taskPlay3Games,
                     current: pm.getTaskProgress('play').clamp(0, 3),
                     target: 3,
                     iconAsset: 'assets/design/ui/hub_13_img.webp',
                   ),
                   _buildTaskItem(
-                    title: '5 BİRLEŞTİRME YAP',
+                    title: l10n.taskMerge5,
                     current: pm.getTaskProgress('merge').clamp(0, 5),
                     target: 5,
                     iconAsset: 'assets/design/ui/hub_14_img.webp',
                   ),
                   _buildTaskItem(
-                    title: '1 VİDEO İZLE',
+                    title: l10n.taskWatch1Video,
                     current: pm.getTaskProgress('video').clamp(0, 1),
                     target: 1,
                     iconAsset: 'assets/design/ui/hub_15_img.webp',
                   ),
                   _buildTaskItem(
-                    title: 'X4 KOMBO YAP',
+                    title: l10n.taskCombo4,
                     current: pm.getTaskProgress('combo').clamp(0, 4),
                     target: 4,
                     iconAsset: 'assets/design/ui/hub_16_img.webp',
@@ -1714,13 +1805,14 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
 
   // 2x2 Mode Grid (#hubModes) matching reference-spec.json
   Widget _buildModeGrid() {
+    final l10n = context.l10n;
     final modes = LululuGameMode.catalog;
     final items = <_HubModeData>[
       _HubModeData(
         mode: modes[0],
-        title: 'SUİKA ARENA',
-        subtitle: 'Birleştirme klasiği',
-        badge: 'HOT',
+        title: l10n.suikaArenaTitle,
+        subtitle: l10n.suikaArenaSubtitle,
+        badge: l10n.badgeHot,
         badgeBg: const Color(0xFFE01E5A),
         badgeFg: Colors.white,
         artBg: const Color(0xFFFFE9C9),
@@ -1729,8 +1821,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       ),
       _HubModeData(
         mode: modes[1],
-        title: '2048 GRİD',
-        subtitle: 'Kaydır, birleştir, 2048 yap',
+        title: l10n.grid2048Title,
+        subtitle: l10n.grid2048Subtitle,
         badge: '2048',
         badgeBg: const Color(0xFFFFB800),
         badgeFg: const Color(0xFF4A2E00),
@@ -1740,9 +1832,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       ),
       _HubModeData(
         mode: modes[2],
-        title: 'BALON PATLAT',
-        subtitle: 'Nişan al, 3 aynı balonu patlat',
-        badge: 'BONUS',
+        title: l10n.balloonPopTitle,
+        subtitle: l10n.balloonPopSubtitle,
+        badge: l10n.badgeBonus,
         badgeBg: const Color(0xFFFF6B35),
         badgeFg: Colors.white,
         artBg: const Color(0xFFFFE3D6),
@@ -1751,9 +1843,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       ),
       _HubModeData(
         mode: modes[3],
-        title: 'MATCH 3',
-        subtitle: 'Komşuyu kaydır, 3\'lü patlat',
-        badge: 'NEON',
+        title: l10n.match3Title,
+        subtitle: l10n.match3Subtitle,
+        badge: l10n.badgeNeon,
         badgeBg: const Color(0xFF00C853),
         badgeFg: const Color(0xFF04140A),
         artBg: const Color(0xFFDFF7EA),
@@ -1784,6 +1876,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
   }
 
   Widget _buildModeCard(_HubModeData item) {
+    final l10n = context.l10n;
     final kind = LululuRoutes.fromModeId(item.mode.id);
     final bestVal = LeaderboardService.instance.getBest(
       _leaderboardIdFor(kind),
@@ -1895,7 +1988,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     const SizedBox(width: 5),
                     Flexible(
                       child: Text(
-                        'Rekor: $bestText',
+                        l10n.recordWithValue(bestText),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.nunito(
@@ -2003,16 +2096,19 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
               child: Icon(icon, color: iconColor, size: 29),
             ),
             const SizedBox(height: 7),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.baloo2(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF141B2A),
-                height: 1.05,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.baloo2(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF141B2A),
+                  height: 1.05,
+                ),
               ),
             ),
             const SizedBox(height: 5),

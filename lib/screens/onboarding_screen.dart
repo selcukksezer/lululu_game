@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/lululu_theme.dart';
 import 'home_shell.dart';
 
@@ -64,8 +65,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // WebP ikizi (283 KB, 3.2 MB PNG ile piksel-birebir aynı kare;
+          // S2#34): preloader da bu dosyayı ısıtıyor.
           Image.asset(
-            'assets/design/splash/bg_splash.png',
+            'assets/design/splash/bg_splash.webp',
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) =>
                 const ColoredBox(color: LululuColors.carbonVoid),
@@ -133,14 +136,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         SizedBox(
           height: isCompact ? 68 : 92,
           child: Image.asset(
-            'assets/design/splash/splash_logo.png',
+            // WebP ikizi (81 KB, PNG ile piksel-birebir aynı; S2#34).
+            'assets/design/splash/splash_logo.webp',
             fit: BoxFit.contain,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          'LÜLÜLÜ',
+          context.l10n.appName,
           style: GoogleFonts.bangers(
             fontSize: isCompact ? 32 : 38,
             letterSpacing: 2.0,
@@ -157,7 +161,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
         const SizedBox(height: 2),
         Text(
-          'COCKROACH MERGE MANIA',
+          context.l10n.onboardingTagline,
           style: GoogleFonts.nunito(
             fontSize: 12,
             fontWeight: FontWeight.w900,
@@ -214,8 +218,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(3, (i) {
               final active = i == _index;
-              return GestureDetector(
-                onTap: () => _page.animateToPage(
+              return Semantics(
+                button: true,
+                selected: active,
+                label: context.l10n.onboardingPageLabel(i + 1),
+                excludeSemantics: true,
+                child: GestureDetector(
+                  onTap: () => _page.animateToPage(
                   i,
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeOutCubic,
@@ -232,6 +241,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
+                ),
               );
             }),
           ),
@@ -241,8 +251,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             children: [
               Expanded(
                 flex: 3,
-                child: GestureDetector(
-                  onTap: _nextSlide,
+                child: Semantics(
+                  button: true,
+                  label: context.l10n.onboardingNextLabel,
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    onTap: _nextSlide,
                   child: Container(
                     height: 48,
                     constraints: const BoxConstraints(
@@ -268,7 +282,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'SONRAKİ ADIM →',
+                        context.l10n.onboardingNextStep,
                         style: GoogleFonts.baloo2(
                           fontSize: 14.5,
                           fontWeight: FontWeight.w800,
@@ -279,12 +293,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
                 ),
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 flex: 2,
-                child: GestureDetector(
-                  onTap: _finish,
+                child: Semantics(
+                  button: true,
+                  label: context.l10n.onboardingSkipLabel,
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    onTap: _finish,
                   child: Container(
                     height: 48,
                     constraints: const BoxConstraints(
@@ -304,7 +323,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'Atla',
+                        context.l10n.skip,
                         style: GoogleFonts.nunito(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
@@ -313,6 +332,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                     ),
                   ),
+                ),
                 ),
               ),
             ],
@@ -330,7 +350,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _buildStepBadge('1 / 3'),
         const SizedBox(height: 8),
         Text(
-          'Böcekleri Birleştir, Evrimleştir!',
+          context.l10n.onboardingSlide1Title,
           textAlign: TextAlign.center,
           style: GoogleFonts.baloo2(
             fontSize: 19,
@@ -343,7 +363,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildTierBox('assets/design/bugs_hd/tier1_hd.png', 'Tier 1'),
+            _buildTierBox('assets/design/bugs_hd/tier1_hd.png', context.l10n.tierLabel(1)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: Text(
@@ -355,7 +375,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
               ),
             ),
-            _buildTierBox('assets/design/bugs_hd/tier2_hd.png', 'Tier 2'),
+            _buildTierBox('assets/design/bugs_hd/tier2_hd.png', context.l10n.tierLabel(2)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: Text(
@@ -369,14 +389,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             _buildTierBox(
               'assets/design/bugs_hd/tier8_hd.png',
-              'Tier 8',
+              context.l10n.tierLabel(8),
               highlight: true,
             ),
           ],
         ),
         const SizedBox(height: 12),
         Text(
-          "Aynı seviyedeki böcekleri çarpıştırarak 13 aşamalı evrim zincirinde efsanevi Pembe Bornozlu'ya ulaş!",
+          context.l10n.onboardingSlide1Body,
           textAlign: TextAlign.center,
           style: GoogleFonts.nunito(
             fontSize: 13,
@@ -397,7 +417,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _buildStepBadge('2 / 3'),
         const SizedBox(height: 8),
         Text(
-          "11 Farklı Oyun Modu & 3'er Bonus!",
+          context.l10n.onboardingSlide2Title,
           textAlign: TextAlign.center,
           style: GoogleFonts.baloo2(
             fontSize: 19,
@@ -410,16 +430,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildBoosterMiniCard('✈️', 'F16', 'Hava Saldırısı'),
+            _buildBoosterMiniCard('✈️', 'F16', context.l10n.boosterF16Sub),
             const SizedBox(width: 8),
-            _buildBoosterMiniCard('🧴', 'Raid', 'Sprey Fırtınası'),
+            _buildBoosterMiniCard('🧴', 'Raid', context.l10n.boosterRaidSub),
             const SizedBox(width: 8),
-            _buildBoosterMiniCard('🩴', 'Terlik', 'Anne Terliği'),
+            _buildBoosterMiniCard(
+              '🩴',
+              context.l10n.boosterSlipperTitle,
+              context.l10n.boosterSlipperSub,
+            ),
           ],
         ),
         const SizedBox(height: 12),
         Text(
-          'Suika, 2048, Match-3, Balon Patlat ve daha fazlası! Sıkıştığında F16, Raid ve Anne Terliği güçlendiricilerini ateşle.',
+          context.l10n.onboardingSlide2Body,
           textAlign: TextAlign.center,
           style: GoogleFonts.nunito(
             fontSize: 13,
@@ -440,7 +464,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _buildStepBadge('3 / 3'),
         const SizedBox(height: 8),
         Text(
-          'Böcek Stüdyo, GIF & Liderlik!',
+          context.l10n.onboardingSlide3Title,
           textAlign: TextAlign.center,
           style: GoogleFonts.baloo2(
             fontSize: 19,
@@ -453,16 +477,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildBoosterMiniCard('🎨', 'Stüdyo', 'Böcek Tasarla'),
+            _buildBoosterMiniCard(
+              '🎨',
+              context.l10n.onboardingStudioTitle,
+              context.l10n.onboardingStudioSub,
+            ),
             const SizedBox(width: 8),
-            _buildBoosterMiniCard('🎬', 'GIF Üret', 'Stories Paylaş'),
+            _buildBoosterMiniCard(
+              '🎬',
+              context.l10n.onboardingGifTitle,
+              context.l10n.onboardingGifSub,
+            ),
             const SizedBox(width: 8),
-            _buildBoosterMiniCard('🏆', 'Liderlik', 'Haftalık Lig'),
+            _buildBoosterMiniCard(
+              '🏆',
+              context.l10n.onboardingLeaderboardTitle,
+              context.l10n.onboardingLeaderboardSub,
+            ),
           ],
         ),
         const SizedBox(height: 12),
         Text(
-          'Kendi böceğini giydir, komik GIF ve çıkartmalar üret, arkadaşlarınla paylaş ve liderlik tablosunda zirveye çık!',
+          context.l10n.onboardingSlide3Body,
           textAlign: TextAlign.center,
           style: GoogleFonts.nunito(
             fontSize: 13,
@@ -511,13 +547,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         children: [
           Image.asset(
             asset,
-            width: 44,
-            height: 44,
+            width: 48,
+            height: 48,
             fit: BoxFit.contain,
             errorBuilder: (_, _, _) => const Icon(
               Icons.bug_report_rounded,
               color: Colors.white,
-              size: 36,
+              size: 40,
             ),
           ),
           const SizedBox(height: 4),
@@ -599,7 +635,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Böcek sesleri ve 11 oyun sahnesi hazırlanıyor...',
+                      context.l10n.onboardingLoadingText,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.nunito(
                         fontSize: 11.5,
@@ -651,11 +687,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(height: 12),
 
         // DOKUN VE BAŞLA! (btn-green)
-        GestureDetector(
-          onTap: () {
-            setState(() => _progress = 1.0);
-            _finish();
-          },
+        Semantics(
+          button: true,
+          label: context.l10n.onboardingTapToStartLabel,
+          excludeSemantics: true,
+          child: GestureDetector(
+            onTap: () {
+              setState(() => _progress = 1.0);
+              _finish();
+            },
           child: Container(
             width: double.infinity,
             height: 54,
@@ -684,7 +724,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ],
             ),
             child: Text(
-              'DOKUN VE BAŞLA!',
+              context.l10n.onboardingTapToStart,
               style: GoogleFonts.baloo2(
                 fontSize: 19,
                 fontWeight: FontWeight.w800,
@@ -694,11 +734,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ),
         ),
+        ),
         const SizedBox(height: 10),
 
         // Version text
         Text(
-          'v3.0 · Mobil & Masaüstü Dokunmatik Uyumlu',
+          context.l10n.onboardingVersionLine,
           textAlign: TextAlign.center,
           style: GoogleFonts.nunito(
             fontSize: 11,

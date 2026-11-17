@@ -12,9 +12,10 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
-import '../screens/result_screen.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
 
@@ -22,8 +23,15 @@ import '../widgets/mode_bonus_bar.dart';
 class ScreamRoachScreen extends StatefulWidget {
   const ScreamRoachScreen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika `GameScreen` deseni). Doğrudan rota girişlerinde
+  /// `false` kalır.
+  final bool energyConsumed;
 
   @visibleForTesting
   final bool prototypeVisualState;
@@ -33,7 +41,7 @@ class ScreamRoachScreen extends StatefulWidget {
 }
 
 class _ScreamRoachScreenState extends State<ScreamRoachScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _bugSize = 48.0;
   static const _bugRenderHeight = 56.0;
   static const _gateW = 58.0;
@@ -62,7 +70,26 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   int _dayStreak = 0;
   int _gatesPassed = 0;
   bool _alive = true;
+  // S1#48: ölüm anı — ölüm sonrası ilk 500 ms içindeki dokunuş
+  // yeniden başlatmaz.
+  DateTime? _diedAt;
   bool _resultShown = false;
+
+  /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk zıplama
+  /// (`_scream`, dokunuş veya ses) veya tur tamamlanması (`_die`)
+  /// ile `true` olur; TEKRAR/yeniden başlatmada SIFIRLANMAZ (Suika
+  /// `_dropsMade` deseni — oturum ömrü).
+  bool _moveMade = false;
+
+  /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+
+  // Duraklatma (madde 37): Osmantuş deseni — arka planda ticker durur,
+  // elle duraklatmada da aynı ticker durdurulur; nitro gibi duvar-saati
+  // süreleri duraklatma süresi kadar ötelenir.
+  bool _paused = false;
+  bool _pausedByLifecycle = false;
+  DateTime? _pauseStartedAt;
   bool _layoutReady = false;
   bool _layoutBootstrapping = false;
   double _groundIdle = 0;
@@ -98,6 +125,13 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // KASITLI günlük tohum: aynı takvim gününde aynı başlangıç kapı
+    // düzeni ve kapı aralığı üretilir (günlük meydan okuma tutarlılığı;
+    // Terlik Tap'teki aynı desenle paralel). _rng initState'te bir kez
+    // kurulur ve tur içinde ilerler; _restart tohumu yenilemez, o
+    // yüzden aynı gündeki sonraki turlar dizinin devamını kullanır,
+    // birebir tekrar etmez. Tohumsuz Random() bilinçli yapılmadı.
     final day = DateTime.now();
     final seed = day.year * 10000 + day.month * 100 + day.day;
     _rng = Random(seed ^ 0x5C12);
@@ -119,16 +153,72 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _best = LeaderboardService.instance.getBest(
         LeaderboardService.modeScream,
       );
-      _dayStreak = DailyChallengeService.instance.streak;
+      _dayStreak = ProgressManager().dailyStreak;
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _noiseSubscription?.cancel();
     _ticker.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Osmantuş deseni: arka planda ticker dursun; dönüşte _last
+        // sıfırlanır, dt kısması da ikinci korumadır.
+        if (_ticker.isActive) {
+          _ticker.stop();
+          _pausedByLifecycle = true;
+          _pauseStartedAt ??= DateTime.now();
+        }
+        break;
+      case AppLifecycleState.resumed:
+        // Elle duraklatılmışsa dönüşte kendiliğinden başlamasın.
+        if (_pausedByLifecycle && !_paused) {
+          _pausedByLifecycle = false;
+          _shiftPauseDeadlines();
+          _last = Duration.zero;
+          if (_alive && !_ticker.isActive) _ticker.start();
+        }
+        break;
+    }
+  }
+
+  /// Duraklatma süresince duvar-saati süreleri (nitro) işlemesin.
+  void _shiftPauseDeadlines() {
+    final started = _pauseStartedAt;
+    _pauseStartedAt = null;
+    if (started == null) return;
+    final pausedFor = DateTime.now().difference(started);
+    if (pausedFor <= Duration.zero) return;
+    if (_nitroUntil != null) _nitroUntil = _nitroUntil!.add(pausedFor);
+  }
+
+  /// Elle duraklatma / devam (madde 37): ticker durur, fizik ve kapılar donar.
+  void _togglePause() {
+    if (widget.prototypeVisualState || !_alive) return;
+    if (_paused) {
+      _paused = false;
+      _pausedByLifecycle = false;
+      _shiftPauseDeadlines();
+      _last = Duration.zero;
+      if (!_ticker.isActive) _ticker.start();
+    } else {
+      _paused = true;
+      _pauseStartedAt ??= DateTime.now();
+      _ticker.stop();
+    }
+    setState(() {});
   }
 
   void _applyLayout(double w, double h) {
@@ -173,7 +263,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   void _onTick(Duration elapsed) {
-    if (widget.prototypeVisualState || !_alive || !_layoutReady) return;
+    if (widget.prototypeVisualState || !_alive || !_layoutReady || _paused) {
+      return;
+    }
     if (_last == Duration.zero) {
       _last = elapsed;
       return;
@@ -324,6 +416,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       return;
     }
     _alive = false;
+    _diedAt = DateTime.now();
+    // Tur tamamlandı: iade hakkı biter (dokunmadan uyuyup ölen tur
+    // da turdur; bayrak oturum ömründe kalır).
+    _moveMade = true;
     _screamStreak = 0;
     _hint =
         reason ?? 'Ezildin! Kapı $_gatesPassed · max spam x$_maxScreamStreak';
@@ -367,7 +463,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   void _scream() {
+    if (_paused) return;
     if (!_alive) {
+      // S1#48: ölüm sonrası 500 ms dokunuş yoksayma.
+      if (_diedAt != null &&
+          DateTime.now().difference(_diedAt!) <
+              const Duration(milliseconds: 500)) {
+        return;
+      }
       _restart();
       return;
     }
@@ -376,6 +479,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _lastScreamAt = now;
 
     // Jump / power every tap — voice + character are gated separately.
+    // Enerji iadesi sayacı: zıplama anında sayılır (Suika deseni).
+    _moveMade = true;
     _screamStreak++;
     if (_screamStreak > _maxScreamStreak) _maxScreamStreak = _screamStreak;
     _groundIdle = 0;
@@ -461,6 +566,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     unawaited(AudioManager().stopAll());
     setState(() {
       _alive = true;
+      _diedAt = null;
+      _paused = false;
+      _pausedByLifecycle = false;
+      _pauseStartedAt = null;
       _layoutReady = _arenaW > 0 && _arenaH > 0;
       _score = 0;
       _gatesPassed = 0;
@@ -483,6 +592,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _last = Duration.zero;
       if (_layoutReady) _spawnGate(initial: true);
     });
+    // Duraklatılmışken yeniden başlatılırsa ticker dursun kalmasın.
+    if (!_ticker.isActive) _ticker.start();
   }
 
   String _statsLine() =>
@@ -491,7 +602,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useJump() {
-    if (!_alive) return false;
+    if (!_alive || _paused) return false;
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
@@ -504,7 +615,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   bool _useShield() {
-    if (!_alive || _shield) return false;
+    if (!_alive || _paused || _shield) return false;
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
@@ -516,7 +627,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   bool _useNitro() {
-    if (!_alive) return false;
+    if (!_alive || _paused) return false;
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
@@ -529,19 +640,13 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   Future<void> _presentResult() async {
-    final coins = ResultScoring.coinsFor(_score);
-    await ProgressManager.instance.addCoins(coins);
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeScream,
-      _score,
-    );
-    await ProgressManager.instance.recordTaskProgress('play');
-    if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
+    // üzerinden (tek-ödeme korunur).
+    final replay = await finishRun(
       context,
       score: _score,
-      coins: coins,
-      stars: ResultScoring.starsFor(score: _score, best: _best),
+      best: _best,
+      leaderboardMode: LeaderboardService.modeScream,
     );
     if (!mounted) return;
     _resultShown = false;
@@ -550,6 +655,20 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       return;
     }
     _restart();
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
+  ///
+  /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
+  /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
+  /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  void _maybeRefundEnergy() {
+    if (_energyRefunded) return;
+    if (!widget.energyConsumed || _moveMade || !_alive || _resultShown) {
+      return;
+    }
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   void _edgeShowResult() {
@@ -566,31 +685,34 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     final wideScreen = MediaQuery.sizeOf(context).width >= 400;
     final hasShellStatusBar = MediaQuery.paddingOf(context).top > 0;
     final bonuses = [
-      stockBonus(
+      stockBonusWithResult(
         id: 'jump',
         label: 'ZIPLAMA',
         asset: 'assets/icons2/boot.png',
         effect: () {
-          _useJump();
+          final applied = _useJump();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'shield',
         label: 'KALKAN',
         asset: 'assets/icons2/shield.png',
         effect: () {
-          _useShield();
+          final applied = _useShield();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'nitro',
         label: 'NİTRO',
         asset: 'assets/icons2/potion_speed.png',
         effect: () {
-          _useNitro();
+          final applied = _useNitro();
           setState(() {});
+          return applied;
         },
       ),
     ];
@@ -908,6 +1030,27 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                               ),
                             ),
                           ),
+                        // Dar ekranda başlık satırına düğme sığmadığı için
+                        // duraklatma düğmesi sahnede, mikrofonun yanındadır
+                        // (madde 37). Geniş ekranda başlık satırındadır.
+                        if (!widget.prototypeVisualState && !wideScreen)
+                          Positioned(
+                            right: 56,
+                            top: 4,
+                            child: SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: IconButton(
+                                tooltip: 'Duraklat',
+                                onPressed: _togglePause,
+                                icon: const Icon(
+                                  Icons.pause_rounded,
+                                  size: 22,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -1002,7 +1145,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     );
 
     if (!wideScreen) {
-      return ArcadeScreen(
+      return PopScope(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) _maybeRefundEnergy();
+        },
+        child: ArcadeScreen(
         backgroundAsset: 'assets/scream_sky.webp',
         title: 'ÇIĞLIK BÖCEK',
         score: _score,
@@ -1030,7 +1178,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                 retryLabel: 'YENİDEN',
                 onRetry: _restart,
               )
-            : null,
+            : (_paused
+                ? _pauseOverlay()
+                : null),
         footer: Center(
           child: SizedBox(
             width: 285,
@@ -1038,10 +1188,16 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           ),
         ),
         child: stageChild,
+        ),
       );
     }
 
-    return MediaQuery.removePadding(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _maybeRefundEnergy();
+      },
+      child: MediaQuery.removePadding(
       context: context,
       removeTop: true,
       removeBottom: true,
@@ -1127,7 +1283,80 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   onRetry: _restart,
                 ),
               ),
+            if (_paused && _alive && !widget.prototypeVisualState)
+              _pauseOverlay(),
           ],
+        ),
+      ),
+      ),
+    );
+  }
+
+  /// Küçük duraklatma düğmesi (madde 37, geniş ekran): başlık satırında
+  /// '?' düğmesinin yanında, HUD düzenini kaydırmadan durur.
+  Widget _pauseButton() {
+    return Semantics(
+      button: true,
+      label: 'Duraklat',
+      child: GestureDetector(
+        onTap: _togglePause,
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xDB080B12),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xB3FFB800), width: 1.5),
+            boxShadow: const [
+              BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+            ],
+          ),
+          child: const Icon(
+            Icons.pause_rounded,
+            size: 20,
+            color: Color(0xFFFFB800),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Görünür "duraklatıldı" durumu (madde 37): tam ekran kaplama dokunuşları
+  /// yutar, DEVAM düğmesi oyunu kaldığı yerden başlatır.
+  Widget _pauseOverlay() {
+    return Positioned.fill(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        child: ColoredBox(
+          color: const Color(0xFF080B12).withValues(alpha: 0.72),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'DURAKLATILDI',
+                  style: GoogleFonts.baloo2(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFFFB800),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Skor $_score · Kapı $_gatesPassed',
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1300,6 +1529,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                 ],
               ),
             ),
+            if (!widget.prototypeVisualState) ...[
+              const SizedBox(width: 10),
+              _pauseButton(),
+            ],
             const SizedBox(width: 10),
             GestureDetector(
               onTap: () => showDialog<void>(

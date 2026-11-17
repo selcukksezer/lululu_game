@@ -32,7 +32,6 @@ import '../screens/tasks_screen.dart';
 import '../screens/tiers_screen.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
-import '../services/progress_manager.dart';
 import '../services/zero_jank_preloader.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/energy_empty_popup.dart';
@@ -160,28 +159,74 @@ abstract final class LululuRoutes {
   };
 
   /// Builds the widget for any of the 11 [GameModeKind] arcade modes.
-  static Widget buildGameModeWidget(GameModeKind kind) {
+  ///
+  /// [energyConsumed] yalnız [openGameMode] tarafından `true` geçilir:
+  /// giriş enerjisi gerçekten tüketildi demektir. Bayrak, 11 mod
+  /// ekranının tümüne geçirilir; bu ekranlar hiç hamle yapılmadan
+  /// çıkılırsa enerjiyi iade eder. Doğrudan rota çözümleme
+  /// ([resolveScreen]) enerji tüketmez, varsayılan `false` kalır.
+  static Widget buildGameModeWidget(
+    GameModeKind kind, {
+    bool energyConsumed = false,
+  }) {
+    // `energyConsumed` çalışma anı değeri olduğu için hiçbir dal
+    // `const` kurulamaz; `const` kalkması derleme gereğidir,
+    // davranış değişikliği değildir.
     return switch (kind) {
       GameModeKind.suika => GameScreen(
         level: CampaignDatabase.kitchenLevel1,
         arcade: true,
+        energyConsumed: energyConsumed,
       ),
-      GameModeKind.grid2048 => const Grid2048Screen(),
-      GameModeKind.balloon => const BalloonPopScreen(),
-      GameModeKind.match3 => const Match3Screen(),
-      GameModeKind.connect => const ConnectPopScreen(),
-      GameModeKind.stack => const StackDropScreen(),
-      GameModeKind.osmantus => const OsmantusScreen(),
-      GameModeKind.screamRoach => const ScreamRoachScreen(),
-      GameModeKind.makarayiz => const MakarayizScreen(),
-      GameModeKind.terlikTap => const TerlikTapScreen(),
-      GameModeKind.yuvaDefense => const YuvaDefenseScreen(),
+      GameModeKind.grid2048 =>
+        Grid2048Screen(energyConsumed: energyConsumed),
+      GameModeKind.balloon =>
+        BalloonPopScreen(energyConsumed: energyConsumed),
+      GameModeKind.match3 => Match3Screen(energyConsumed: energyConsumed),
+      GameModeKind.connect =>
+        ConnectPopScreen(energyConsumed: energyConsumed),
+      GameModeKind.stack => StackDropScreen(energyConsumed: energyConsumed),
+      GameModeKind.osmantus => OsmantusScreen(energyConsumed: energyConsumed),
+      GameModeKind.screamRoach =>
+        ScreamRoachScreen(energyConsumed: energyConsumed),
+      GameModeKind.makarayiz =>
+        MakarayizScreen(energyConsumed: energyConsumed),
+      GameModeKind.terlikTap =>
+        TerlikTapScreen(energyConsumed: energyConsumed),
+      GameModeKind.yuvaDefense =>
+        YuvaDefenseScreen(energyConsumed: energyConsumed),
     };
   }
 
+  /// Rota adını tek biçimde normalize eder: boşlukları atar, baştaki
+  /// `#` ve `/` karakterlerinin herhangi bir karışımını tek seferde
+  /// düşürür (`/game`, `#/game`, `/#/game`, `///game` hepsi `game`
+  /// olur), sorgu/parça eklerini (`game?level=1`, `game#...`) ve
+  /// sondaki eğik çizgileri (`game/`) temizler; böylece derin
+  /// bağlantı varyantları (`/#/game/`, `/#/game?level=1`) tam `game`
+  /// ile aynı çözülür. Büyük/küçük harf korunur: `terlikTap` gibi
+  /// takma adlar büyük/küçük harfe duyarlıdır.
+  static String _normalizeRouteName(String rawName) {
+    var normalized = rawName.trim();
+    normalized = normalized.replaceFirst(RegExp(r'^[#/]+'), '');
+    final queryIndex = normalized.indexOf('?');
+    if (queryIndex >= 0) normalized = normalized.substring(0, queryIndex);
+    final fragmentIndex = normalized.indexOf('#');
+    if (fragmentIndex >= 0) {
+      normalized = normalized.substring(0, fragmentIndex);
+    }
+    while (normalized.endsWith('/')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized.trim();
+  }
+
   /// Resolves any of the 18 main screens or 11 game modes by route name.
+  ///
+  /// Bilinmeyen isimlerde `null` döner; bilinmeyen-rota yedeği
+  /// (ana sayfaya düşme) [onGenerateRoute] içindedir.
   static Widget? resolveScreen(String rawName, {BuildContext? context}) {
-    final normalized = rawName.trim().replaceFirst(RegExp(r'^/+'), '');
+    final normalized = _normalizeRouteName(rawName);
     switch (normalized) {
       case splash:
         return SplashScreen(
@@ -299,11 +344,24 @@ abstract final class LululuRoutes {
   }
 
   /// Hook for `MaterialApp.onGenerateRoute` supporting all 18 screens & 11 modes.
+  ///
+  /// Bilinmeyen rota yedeği: [resolveScreen] tanımsız bir isim için
+  /// `null` dönerse boş sayfa / çökme yerine ana sayfa ([HomeShell])
+  /// açılır ve debug kaydı düşülür. `main.dart` yalnızca
+  /// `onGenerateRoute` bağladığı için yedek burada uygulanır;
+  /// [onUnknownRoute] aynı yedeği `MaterialApp.onUnknownRoute`
+  /// bağlanırsa da sunar.
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     final name = settings.name ?? hub;
     final screen = resolveScreen(name);
-    if (screen == null) return null;
-    final normalized = name.trim().replaceFirst(RegExp(r'^/+'), '');
+    if (screen == null) {
+      debugPrint('[LululuRoutes] bilinmeyen rota: "$name" -> ana sayfa (hub)');
+      return buildZeroJankRoute<dynamic>(
+        child: const HomeShell(),
+        routeName: hub,
+      );
+    }
+    final normalized = _normalizeRouteName(name);
     final isMode = modeAliases.containsKey(normalized);
     return buildZeroJankRoute<dynamic>(
       child: screen,
@@ -313,6 +371,21 @@ abstract final class LululuRoutes {
           : LululuMotion.screenTransitionDuration,
       reverseDuration: LululuMotion.screenReverseDuration,
       scaleTransition: isMode,
+    );
+  }
+
+  /// Hook for `MaterialApp.onUnknownRoute`: tanımsız rota gelirse ana
+  /// sayfayı ([HomeShell]) açar ve debug kaydı düşer. [onGenerateRoute]
+  /// zaten aynı yedeği uyguladığı için bağlanması zorunlu değildir;
+  /// bağlanırsa davranış aynıdır.
+  static Route<dynamic> onUnknownRoute(RouteSettings settings) {
+    debugPrint(
+      '[LululuRoutes] bilinmeyen rota (onUnknownRoute): '
+      '"${settings.name}" -> ana sayfa (hub)',
+    );
+    return buildZeroJankRoute<dynamic>(
+      child: const HomeShell(),
+      routeName: hub,
     );
   }
 }
@@ -326,7 +399,7 @@ Future<void> goTo(
   bool checkEnergyForModes = false,
 }) async {
   ZeroJankPreloader.instance.notePointerDown();
-  final normalized = target.trim().replaceFirst(RegExp(r'^/+'), '');
+  final normalized = LululuRoutes._normalizeRouteName(target);
 
   if (normalized == 'settings') {
     await SettingsScreen.show(context);
@@ -340,7 +413,12 @@ Future<void> goTo(
   }
 
   final widget = LululuRoutes.resolveScreen(normalized, context: context);
-  if (widget == null || !context.mounted) return;
+  if (widget == null) {
+    // Bilinmeyen isim: gezinme yok (mevcut davranış), yalnız debug kaydı.
+    debugPrint('[LululuRoutes] goTo: bilinmeyen rota "$target" (yok sayıldı)');
+    return;
+  }
+  if (!context.mounted) return;
 
   final route = LululuRoutes.buildZeroJankRoute<void>(
     child: widget,
@@ -367,11 +445,11 @@ Future<void> openGameMode(BuildContext context, GameModeKind kind) async {
     return;
   }
 
-  try {
-    unawaited(ProgressManager.instance.recordTaskProgress('play'));
-  } catch (_) {}
-
-  final child = LululuRoutes.buildGameModeWidget(kind);
+  // 'play' görevi GİRİŞTE kaydedilmez: her mod bitirme noktasında (sonuç
+  // sunumu) zaten kaydediyor — girişteki kayıt çift sayımdı (madde 35).
+  // Girişte tüketilen enerji, hiç hamle yapmadan çıkan oyuncuya bayrağı
+  // kabul eden mod ekranı tarafından iade edilir (energyConsumed bayrağı).
+  final child = LululuRoutes.buildGameModeWidget(kind, energyConsumed: true);
 
   if (!context.mounted) return;
   await Navigator.of(context).push(

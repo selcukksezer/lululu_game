@@ -1,3 +1,5 @@
+import 'dart:ui' show Locale;
+
 import 'insect_tier.dart';
 
 enum ObjectiveType {
@@ -33,6 +35,91 @@ class CampaignThemedChapter {
     required this.firstClearBonusCoins,
     required this.backgroundPath,
   });
+
+  // --- English (EN) counterparts: pure additions, TR defaults untouched. ---
+  // `title`/`bossName`/`bossSpecialHazard` keep returning Turkish; screens
+  // migrate to the `*For(Locale)` accessors in a later wave. Proper names
+  // (Osman, Muzaffer, Diva) stay identical inside the EN strings. Unknown
+  // chapter indexes fall back to the Turkish value. No AppLocalizations
+  // import: these are pure `Locale`-parameterized accessors, so no cycle.
+  String get titleEn {
+    switch (chapterIndex) {
+      case 1:
+        return 'Kitchen Counter Raid';
+      case 2:
+        return 'Pantry and Provisions Jar';
+      case 3:
+        return 'Bathroom Drain Labyrinth';
+      case 4:
+        return 'Basement Darkness';
+      case 5:
+        return 'Oven-Fire Square';
+      case 6:
+        return 'Attic Storm';
+      case 7:
+        return 'Sewer Kingdom';
+      case 8:
+        return "Osman's Golden Palace";
+      default:
+        return title;
+    }
+  }
+
+  String titleFor(Locale locale) =>
+      locale.languageCode == 'en' ? titleEn : title;
+
+  String get bossNameEn {
+    switch (chapterIndex) {
+      case 1:
+        return 'Slippered Chef Muzaffer';
+      case 2:
+        return 'Pickle King Mr. Jar';
+      case 3:
+        return 'Foam Diva Shampooella';
+      case 4:
+        return 'Dark Coal-Cellar Baron';
+      case 5:
+        return 'Scorching Coil Dragon';
+      case 6:
+        return 'Roof-Tile Storm Captain';
+      case 7:
+        return 'Toxic Manhole Marshal';
+      case 8:
+        return 'Emperor Golden Osman';
+      default:
+        return bossName;
+    }
+  }
+
+  String bossNameFor(Locale locale) =>
+      locale.languageCode == 'en' ? bossNameEn : bossName;
+
+  String get bossSpecialHazardEn {
+    switch (chapterIndex) {
+      case 1:
+        return 'Boiling Kettle Steam & Rolling-Pin Barrier';
+      case 2:
+        return 'Sticky Jam Drops & Salt-Shaker Trap';
+      case 3:
+        return 'Slippery Soap Foam & Drain Vortex';
+      case 4:
+        return 'Pitch-Black Fog Curtain & Rusty Pipe Barrier';
+      case 5:
+        return 'Flaming Tray Wave & Thermal Air Current';
+      case 6:
+        return 'Lightning Strikes & Reverse-Wind Drift';
+      case 7:
+        return 'Radioactive Neon Wave & Iron Grate Trap';
+      case 8:
+        return 'Royal Golden Slipper Rain & Laser Shield';
+      default:
+        return bossSpecialHazard;
+    }
+  }
+
+  String bossSpecialHazardFor(Locale locale) => locale.languageCode == 'en'
+      ? bossSpecialHazardEn
+      : bossSpecialHazard;
 }
 
 class CampaignLevel {
@@ -99,6 +186,14 @@ class CampaignLevel {
 
   bool get isSurvival => objectiveType == ObjectiveType.survivalTimer;
 
+  /// Zorluk arttıkça üst kademe (fan/dansçı) düşürme olasılığını kısan
+  /// ölçek: zorluk 1'de 1.0 (taban dağılım), zorluk 10'da 0.55.
+  /// Kampanya düşürme dağılımı bu ölçeği okur; arcade kullanmaz.
+  double get highTierDropScale {
+    final d = difficulty.isNaN ? 1.0 : difficulty.clamp(1.0, 10.0).toDouble();
+    return 1.0 - ((d - 1.0) / 9.0) * 0.45;
+  }
+
   String get obstacleLabel =>
       hasObstacles ? 'Arena engelleri aktif' : 'Açık arena';
 
@@ -112,6 +207,75 @@ class CampaignLevel {
         return '$timeLimitSeconds saniye boyunca taşmadan hayatta kal!';
     }
   }
+
+  // --- English (EN) counterparts: pure additions, TR defaults untouched. ---
+  // `chapterName`/`title`/`objectiveDescription`/`obstacleLabel` keep
+  // returning Turkish; screens migrate to the `*For(Locale)` accessors in a
+  // later wave. `titleEn` mirrors the generator: 'Level <id>: <subtitle>' with
+  // the subtitle taken from the EN subtitle map by legacy chapter (1..4) and
+  // slot inside the chapter. `objectiveDescriptionEn` uses the target tier's
+  // EN name. Boss EN values resolve through the themed chapter and stay null
+  // exactly when the Turkish value is null. No AppLocalizations import.
+  String get chapterNameEn =>
+      CampaignDatabase.getThemedChapter(chapterIndex).titleEn;
+
+  String chapterNameFor(Locale locale) =>
+      locale.languageCode == 'en' ? chapterNameEn : chapterName;
+
+  String get themedChapterTitleEn => chapterNameEn;
+
+  String themedChapterTitleFor(Locale locale) => locale.languageCode == 'en'
+      ? themedChapterTitleEn
+      : themedChapterTitle;
+
+  String get titleEn {
+    final subtitlesEn =
+        CampaignDatabase._chapterSubtitlesEn[chapter] ?? const <String>[];
+    final slot = (id - 1) % CampaignDatabase.levelsPerChapter;
+    final subtitleEn = slot < subtitlesEn.length
+        ? subtitlesEn[slot]
+        : '$chapterNameEn #${slot + 1}';
+    return 'Level $id: $subtitleEn';
+  }
+
+  String titleFor(Locale locale) =>
+      locale.languageCode == 'en' ? titleEn : title;
+
+  String get objectiveDescriptionEn {
+    switch (objectiveType) {
+      case ObjectiveType.mergeTargetTier:
+        return 'Hatch a ${targetTier?.nameEn ?? "Bug"} in $allowedMoves shots!';
+      case ObjectiveType.reachScore:
+        return 'Reach $targetScore points in $allowedMoves shots!';
+      case ObjectiveType.survivalTimer:
+        return 'Survive $timeLimitSeconds seconds without overflowing!';
+    }
+  }
+
+  String objectiveDescriptionFor(Locale locale) => locale.languageCode == 'en'
+      ? objectiveDescriptionEn
+      : objectiveDescription;
+
+  String get obstacleLabelEn =>
+      hasObstacles ? 'Arena obstacles active' : 'Open arena';
+
+  String obstacleLabelFor(Locale locale) =>
+      locale.languageCode == 'en' ? obstacleLabelEn : obstacleLabel;
+
+  String? get bossNameEn => bossName == null
+      ? null
+      : CampaignDatabase.getThemedChapter(chapterIndex).bossNameEn;
+
+  String? bossNameFor(Locale locale) =>
+      locale.languageCode == 'en' ? bossNameEn : bossName;
+
+  String? get bossSpecialHazardEn => bossSpecialHazard == null
+      ? null
+      : CampaignDatabase.getThemedChapter(chapterIndex).bossSpecialHazardEn;
+
+  String? bossSpecialHazardFor(Locale locale) => locale.languageCode == 'en'
+      ? bossSpecialHazardEn
+      : bossSpecialHazard;
 }
 
 class CampaignDatabase {
@@ -323,6 +487,100 @@ class CampaignDatabase {
     ],
   };
 
+  /// English counterparts of [_chapterSubtitles], same keys and same order
+  /// (4 legacy chapters x 20 level subtitles). Proper names (Diva, Kongo,
+  /// Pikomotions) stay identical. Read only by [CampaignLevel.titleEn].
+  static const Map<int, List<String>> _chapterSubtitlesEn = {
+    1: [
+      'Counter Warm-Up',
+      'Crumb Hunt',
+      'Pot Clatter',
+      'Jar Siege',
+      'Kettle Storm',
+      'Bread Basket Raid',
+      'Dish Foam',
+      'Spice Rack',
+      'Cutting Board Duel',
+      'Head Chef Trial',
+      'Midnight Snack',
+      'Fridge Shadow',
+      'Oven Heat',
+      'Pan Slide',
+      'Sink Vortex',
+      'Rolling-Pin Barrier',
+      'Pantry Labyrinth',
+      'Salt-Shaker Trap',
+      'Counter Derby',
+      'Kitchen King Finale',
+    ],
+    2: [
+      'Mansion Entrance',
+      'Golden Chandelier',
+      'Red Carpet',
+      'Diamond Mirror',
+      'Silk Curtain',
+      'VIP Steam Room',
+      'Marble Pool',
+      'Foam Party',
+      'Stage Lights',
+      'Diva Crown Trial',
+      'Velvet Armchair',
+      'Crystal Candelabra',
+      'Jacuzzi Wave',
+      'Perfume Cloud',
+      'Robe Fashion Show',
+      'Silver Tray',
+      'Terrace Gala',
+      'Backstage Chaos',
+      'Royal Suite',
+      'Diva Mansion Finale',
+    ],
+    3: [
+      'Camera Rolling',
+      'First Reel Shoot',
+      'Mic Check',
+      'Ring Light',
+      'Trend Alert',
+      'Livestream Raid',
+      'Editing Desk',
+      'Green Screen',
+      'Studio Spotlights',
+      'Viral Explosion',
+      'Remix Booth',
+      'Comment Rain',
+      'Algorithm Master',
+      'Dance Choreography',
+      'Studio Marathon',
+      'Grand Premiere',
+      'Million Views',
+      'Backstage Storm',
+      'Golden Plaque',
+      'Pikomotions Season Finale',
+    ],
+    4: [
+      'Invasion Begins',
+      'Kongo Vanguard',
+      'Heat Wave',
+      'Workshop Raid',
+      'Night Siege',
+      'Siren Sounds',
+      'Armored Line',
+      'Great Migration',
+      'Lightning Line',
+      'Commander Headquarters',
+      'Dark Corridor',
+      'Steel Barricade',
+      'Chaos Circle',
+      'Elite Guards',
+      'Last Stand',
+      'Eye of the Storm',
+      'Kongo Victory',
+      'Sage Council',
+      'Evolution Summit',
+      'Great Kongo Emperor',
+    ],
+  };
+
   static final List<CampaignLevel> allLevels = _generateAllLevels();
 
   /// Chapter 1 (Mutfak Tezgahı Baskını), first level — default Suika / hub entry.
@@ -371,30 +629,40 @@ class CampaignDatabase {
         final int themedIdx = ((levelId - 1) ~/ levelsPerThemedChapter) + 1;
         final CampaignThemedChapter themedMeta = getThemedChapter(themedIdx);
 
-        final ObjectiveType type = _objectiveForSlot(i);
+        final bool isBoss = levelId % 10 == 0;
+        // Boss seviyesi gerçek bir boss hedefidir: hayatta kalma değil,
+        // yükseltilmiş yıldız eşikli skor hedefi + HUD'da boss göstergesi.
+        final ObjectiveType type = isBoss
+            ? ObjectiveType.reachScore
+            : _objectiveForSlot(i);
         final InsectTier? targetTier = type == ObjectiveType.mergeTargetTier
             ? _mergeTierForChapter(ch.$1, i)
             : null;
 
         final int targetScore = 1000 + (levelId * 125) + (ch.$1 * 220);
-        final int moves = type == ObjectiveType.survivalTimer
+        final int moves = type == ObjectiveType.survivalTimer || isBoss
             ? 40 + (i ~/ 2)
             : 18 + (i % 10) + ch.$1;
         final int timeLimit = type == ObjectiveType.survivalTimer
             ? 45 + (i * 3) + (ch.$1 * 5)
             : 0;
         final bool obstacles = i >= 12 || i == 10 || (i % 7 == 0 && i > 5);
-        final bool isBoss = levelId % 10 == 0;
 
-        final int s1 = type == ObjectiveType.survivalTimer
-            ? (timeLimit * 12)
-            : (targetScore * 0.7).round();
-        final int s2 = type == ObjectiveType.survivalTimer
-            ? (timeLimit * 18)
-            : targetScore;
-        final int s3 = type == ObjectiveType.survivalTimer
-            ? (timeLimit * 26)
-            : (targetScore * 1.4).round();
+        final int s1 = isBoss
+            ? targetScore
+            : type == ObjectiveType.survivalTimer
+                ? (timeLimit * 12)
+                : (targetScore * 0.7).round();
+        final int s2 = isBoss
+            ? (targetScore * 1.3).round()
+            : type == ObjectiveType.survivalTimer
+                ? (timeLimit * 18)
+                : targetScore;
+        final int s3 = isBoss
+            ? (targetScore * 1.7).round()
+            : type == ObjectiveType.survivalTimer
+                ? (timeLimit * 26)
+                : (targetScore * 1.4).round();
 
         final int rewardCoins =
             60 + (levelId * 8) + (ch.$1 * 25) + (isBoss ? 120 : 0);

@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../screens/result_screen.dart';
@@ -19,9 +21,16 @@ import '../widgets/mode_bonus_bar.dart';
 class ConnectPopScreen extends StatefulWidget {
   const ConnectPopScreen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
     @visibleForTesting this.gameplayTestState = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika `GameScreen` deseni). Doğrudan rota girişlerinde
+  /// `false` kalır.
+  final bool energyConsumed;
 
   final bool prototypeVisualState;
   final bool gameplayTestState;
@@ -62,6 +71,16 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   bool _lost = false;
   bool _resultShown = false;
   bool _paused = false;
+
+  /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk geçerli zincir
+  /// (`_commit`, en az `minLen` hücre) veya tur tamamlanması
+  /// (`_endCheck`) ile `true` olur; TEKRAR/yeniden başlatmada
+  /// SIFIRLANMAZ (Suika `_dropsMade` deseni — oturum ömrü).
+  bool _moveMade = false;
+
+  /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+
   bool _loop = false;
   int _paint = 0;
   final List<Point<int>> _path = [];
@@ -107,15 +126,23 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     }
   }
 
+  // Varsayılan stok YALNIZ ilk kurulumda verilir. ProgressManager.load()
+  // 'lululu_power_seed_v1' bayrağıyla 33 gücü bir kez tohumlar; tohumlanan
+  // anahtarlar extraPowers'ta kalıcı olur, takePower() ise anahtarı silmez,
+  // 0'a düşürür. "Hiç tohumlanmadı" bu yüzden anahtar yokluğuyla anlaşılır;
+  // eski "üçü de 0 ise doldur" koşulu her girişte bedava stok veriyordu.
+  // Tohumlama persistBoosters() ile kalıcı kaydedilir.
   void _ensureDefaultPowers() {
     final pm = ProgressManager();
-    if (pm.powerCount('chain') == 0 &&
-        pm.powerCount('bolt') == 0 &&
-        pm.powerCount('magnet') == 0) {
-      pm.extraPowers['chain'] = 3;
-      pm.extraPowers['bolt'] = 1;
-      pm.extraPowers['magnet'] = 1;
+    const defaults = <String, int>{'chain': 3, 'bolt': 1, 'magnet': 1};
+    var seeded = false;
+    for (final entry in defaults.entries) {
+      if (!pm.extraPowers.containsKey(entry.key)) {
+        pm.extraPowers[entry.key] = entry.value;
+        seeded = true;
+      }
     }
+    if (seeded) unawaited(pm.persistBoosters());
   }
 
   void _applyGameplayTestState() {
@@ -398,6 +425,11 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       setState(() => _hint = 'Seçili ${_path.length}');
       return;
     }
+    // Kare kapandıktan sonra yol kilitlidir: yeni hücre kabul edilmez, kare
+    // bayrağı korunur. Kareyi açmanın tek yolu geri adım atmaktır (yukarıdaki
+    // dal). Eskiden yeni hücre _loop=false yapıp kare temizliğini sessizce
+    // iptal ediyordu.
+    if (_loop) return;
     if (_pathSet.contains(p)) {
       if (p == _path.first && _path.length >= 4 && _ortho(p, _path.last)) {
         _loop = true;
@@ -410,7 +442,6 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     if (!_ortho(p, _path.last)) return;
     _path.add(p);
     _pathSet.add(p);
-    _loop = false;
     final len = _path.length;
     setState(() {
       if (len >= 6) {
@@ -433,6 +464,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       return;
     }
 
+    // Enerji iadesi sayacı: geçerli zincir bırakma anında sayılır
+    // (en az minLen kontrolü yukarıda geçti; kısa çizgi hamle sayılmaz).
+    _moveMade = true;
     final epoch = _epoch;
 
     final group = List<Point<int>>.from(_path);
@@ -594,12 +628,15 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   Future<void> _endCheck(int epoch) async {
     if (!mounted || epoch != _epoch) return;
     if (_score >= target) {
+      // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
+      _moveMade = true;
       _won = true;
       _hint = 'Hedef tuttu.';
       HapticFeedback.heavyImpact();
       AudioManager().playWin();
       await _persist();
     } else if (_lines <= 0) {
+      _moveMade = true;
       _lost = true;
       _hint = 'Çizgi hakkın bitti.';
       HapticFeedback.heavyImpact();
@@ -645,6 +682,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     });
   }
 
+  /// Zincir Uzatıcı skor vermez; etkisi +3 çizgidir. Çizgi bedeli yoktur
+  /// (bedel, kalıcı stoktan harcanan 1 adettir); bedel koymak "+3" metnini
+  /// boşa çıkarırdı.
   bool _useChain() {
     if (_ended || _paused) return false;
     HapticFeedback.mediumImpact();
@@ -658,6 +698,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     return true;
   }
 
+  /// Yıldırım skoru bedava değildir: kalıcı stoktan 1 adet
+  /// (stockBonus/takePower) + 1 çizgi harcar. Çizgi bedeli, güç sonrası
+  /// çalışan _endCheck tarafından görülür.
   bool _useBolt() {
     if (_ended || _paused || _busy) return false;
     var best = <Point<int>>[];
@@ -677,6 +720,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       for (final p in best) {
         _grid[p.x][p.y] = 0;
       }
+      _lines--;
       _score += gained;
       if (_score > _best) _best = _score;
       _clearTotal += best.length;
@@ -690,6 +734,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     return true;
   }
 
+  /// Mıknatıs skor vermez; yalnızca tahtada kare zinciri kurar. Skor,
+  /// oyuncunun kurulan kareyi çizmesiyle gelir ve o çizgi _commit'te 1 çizgi
+  /// harcar. Bu yüzden ayrıca çizgi bedeli yoktur; bedel stoktan 1 adettir.
   bool _useMagnet() {
     if (_ended || _paused || _busy) return false;
     final counts = List<int>.filled(maxKinds + 1, 0);
@@ -724,23 +771,15 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
 
   Future<void> _presentResult() async {
     final coins = _score > 0 ? max(1, ResultScoring.coinsFor(_score)) : 0;
-    final stars = ResultScoring.starsFor(score: _score, best: _best);
-    if (coins > 0) {
-      await ProgressManager.instance.addCoins(coins);
-    }
-    if (_score > 0) {
-      await LeaderboardService.instance.submitScore(
-        LeaderboardService.modeConnect,
-        _score,
-      );
-    }
-    await ProgressManager.instance.recordTaskProgress('play');
-    if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + liderlik (yalnız skor > 0) + görev kaydı + sonuç
+    // ekranı finishRun() üzerinden (tek-ödeme korunur).
+    final replay = await finishRun(
       context,
       score: _score,
+      best: _best,
       coins: coins,
-      stars: stars,
+      leaderboardMode: LeaderboardService.modeConnect,
+      leaderboardOnlyIfPositiveScore: true,
     );
     if (!mounted) return;
     if (!replay) {
@@ -749,6 +788,20 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     }
     _resultShown = false;
     _newGame();
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
+  ///
+  /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
+  /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
+  /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  void _maybeRefundEnergy() {
+    if (_energyRefunded) return;
+    if (!widget.energyConsumed || _moveMade || _ended || _resultShown) {
+      return;
+    }
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   void _edgeShowResult() {
@@ -762,7 +815,12 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   @override
   Widget build(BuildContext context) {
     if (_ended && !_resultShown) _edgeShowResult();
-    return ArcadeScreen(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _maybeRefundEnergy();
+      },
+      child: ArcadeScreen(
       backgroundAsset: 'assets/design/backgrounds/connect_workshop.webp',
       title: 'Bağla Patlat',
       tag: 'ZİNCİR',
@@ -824,31 +882,34 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
           : null,
       footer: ModeBonusBar(
         items: [
-          stockBonus(
+          stockBonusWithResult(
             id: 'chain',
             label: 'ZİNCİR +',
             asset: 'assets/icons2/flame.png',
             effect: () {
-              _useChain();
+              final applied = _useChain();
               setState(() {});
+              return applied;
             },
           ),
-          stockBonus(
+          stockBonusWithResult(
             id: 'bolt',
             label: 'YILDIRIM',
             asset: 'assets/icons2/bolt.png',
             effect: () {
-              _useBolt();
+              final applied = _useBolt();
               setState(() {});
+              return applied;
             },
           ),
-          stockBonus(
+          stockBonusWithResult(
             id: 'magnet',
             label: 'MIKNATIS',
             asset: 'assets/icons2/magnet.png',
             effect: () {
-              _useMagnet();
+              final applied = _useMagnet();
               setState(() {});
+              return applied;
             },
           ),
         ],
@@ -1075,6 +1136,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
             ],
           );
         },
+      ),
       ),
     );
   }

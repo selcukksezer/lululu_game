@@ -9,8 +9,9 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
-import '../screens/result_screen.dart';
 import '../services/progress_manager.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -47,8 +48,15 @@ class _Note {
 class MakarayizScreen extends StatefulWidget {
   const MakarayizScreen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika `GameScreen` deseni). Doğrudan rota girişlerinde
+  /// `false` kalır.
+  final bool energyConsumed;
 
   final bool prototypeVisualState;
 
@@ -57,7 +65,7 @@ class MakarayizScreen extends StatefulWidget {
 }
 
 class MakarayizScreenState extends State<MakarayizScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const tutorialMs = 15000;
   static const _noteSize = 45.0;
   static const _beatInset = 44.0; // beat çizgisi şerit tabanından yukarıda
@@ -79,6 +87,20 @@ class MakarayizScreenState extends State<MakarayizScreen>
   double _nextPulseMs = 1800;
   bool _alive = true;
   bool _resultShown = false;
+
+  /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk şerit dokunuşu
+  /// (`tryHit`, ıska da dahil), oto-vuruş isabeti (`_hit`) veya tur
+  /// tamamlanması (`_gameOver`) ile `true` olur; TEKRAR/yeniden
+  /// başlatmada SIFIRLANMAZ (Suika `_dropsMade` deseni — oturum ömrü).
+  bool _moveMade = false;
+
+  /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+
+  // Duraklatma (madde 37): Osmantuş deseni — arka planda ticker durur,
+  // elle duraklatmada da aynı ticker durdurulur; oyun saati (_now) donar.
+  bool _paused = false;
+  bool _pausedByLifecycle = false;
   String _hint = 'Nota beat çizgisine gelince şeride dokun ya da kaydır.';
   String? _comboText;
   String? _breakText;
@@ -129,6 +151,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.prototypeVisualState) {
       _score = 1105;
       _best = 1760;
@@ -158,6 +181,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _reel = 0;
     _nextPulseMs = _nextHit;
     _alive = true;
+    _paused = false;
+    _pausedByLifecycle = false;
+    _lastElapsed = null;
     _comboText = null;
     _breakText = null;
     _gainText = null;
@@ -177,6 +203,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (!widget.prototypeVisualState) {
       AudioManager().stopAll();
       _ticker.dispose();
@@ -184,13 +211,58 @@ class MakarayizScreenState extends State<MakarayizScreen>
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Osmantuş deseni: arka planda ticker dursun; dönüşte _lastElapsed
+        // sıfırlanır, dt kısması da ikinci korumadır.
+        if (_ticker.isActive) {
+          _ticker.stop();
+          _pausedByLifecycle = true;
+        }
+        break;
+      case AppLifecycleState.resumed:
+        // Elle duraklatılmışsa dönüşte kendiliğinden başlamasın.
+        if (_pausedByLifecycle && !_paused) {
+          _pausedByLifecycle = false;
+          _lastElapsed = null;
+          if (_alive && !_ticker.isActive) _ticker.start();
+        }
+        break;
+    }
+  }
+
+  /// Elle duraklatma / devam (madde 37): ticker durur, oyun saati donar.
+  void _togglePause() {
+    if (widget.prototypeVisualState || !_alive) return;
+    if (_paused) {
+      _paused = false;
+      _pausedByLifecycle = false;
+      _lastElapsed = null;
+      if (!_ticker.isActive) _ticker.start();
+    } else {
+      _paused = true;
+      _ticker.stop();
+    }
+    setState(() {});
+  }
+
   Duration? _lastElapsed;
   void _onTick(Duration elapsed) {
-    final dt = _lastElapsed == null
+    var dt = _lastElapsed == null
         ? 0.0
         : (elapsed - _lastElapsed!).inMicroseconds / 1000.0;
     _lastElapsed = elapsed;
     if (!_alive) return;
+    if (_paused) return;
+    // Kare süresi kısması: arka plan dönüşü / takılma sonrası dev dt,
+    // oyun saatini ileri fırlatıp birikmiş notaları toplu kaçırmasın.
+    dt = dt.clamp(0.0, 33.0).toDouble();
     // Opening grace in live ticker mode so the very first note before the
     // player's first tap doesn't immediately deduct a life at 1.9s.
     if (_hits == 0 && _now + dt < 4200) {
@@ -232,10 +304,15 @@ class MakarayizScreenState extends State<MakarayizScreen>
         if (!n.done && _now >= n.hitMs) _hit(n);
       }
     }
+    // Kare başına en fazla 1 can kaybı: aynı karede birden çok nota
+    // kaçsa bile diğerleri yalnız kombo/ıska sayar, can almaz.
+    var lifeLost = false;
     for (final n in _notes) {
       if (!n.done && _now - n.hitMs > windowMs) {
         n.done = true;
-        _breakCombo('KAÇIRDIN', loseLife: true);
+        final loseLife = !lifeLost;
+        lifeLost = true;
+        _breakCombo('KAÇIRDIN', loseLife: loseLife);
       }
     }
     _notes.removeWhere((n) => n.done && _now - n.hitMs > 400);
@@ -272,6 +349,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   void _gameOver() {
+    // Tur tamamlandı: iade hakkı biter (dokunmadan can kaybedip
+    // biten tur da turdur; bayrak oturum ömründe kalır).
+    _moveMade = true;
     _alive = false;
     _hint = 'Makara bitti. Yeniden çek!';
     unawaited(AudioManager().playLose());
@@ -285,6 +365,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   void _hit(_Note n) {
+    // Oto-vuruş (OTO MAKARA) da buradan geçer: isabet hamle sayılır.
+    _moveMade = true;
     final d = (_now - n.hitMs).abs();
     n.done = true;
     _combo += 1;
@@ -318,7 +400,10 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   /// Şerit vuruşu: pencere içindeki en yakın nota, çizgiye bağlıdır.
   void tryHit(int lane) {
-    if (!_alive) return;
+    if (!_alive || _paused) return;
+    // Enerji iadesi sayacı: şerit dokunuşu anında sayılır (ıska,
+    // erken veya yanlış şerit de hamle sayılır — Suika deseni).
+    _moveMade = true;
     _Note? best;
     double bestD = windowMs + 1;
     for (final n in _notes) {
@@ -355,10 +440,13 @@ class MakarayizScreenState extends State<MakarayizScreen>
     setState(() {});
   }
 
-  void _restart() => setState(_boot);
+  void _restart() {
+    setState(_boot);
+    if (!widget.prototypeVisualState && !_ticker.isActive) _ticker.start();
+  }
 
   bool _useBeatFreeze() {
-    if (!_alive) return false;
+    if (!_alive || _paused) return false;
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
@@ -370,7 +458,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   bool _useAuto() {
-    if (!_alive) return false;
+    if (!_alive || _paused) return false;
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
@@ -382,7 +470,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   bool _useX2() {
-    if (!_alive) return false;
+    if (!_alive || _paused) return false;
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
@@ -394,19 +482,14 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   Future<void> _presentResult() async {
-    final coins = ResultScoring.coinsFor(_score);
-    await ProgressManager.instance.addCoins(coins);
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeMakarayiz,
-      _score,
-    );
-    await ProgressManager.instance.recordTaskProgress('play');
-    if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
+    // üzerinden (tek-ödeme korunur). _gameOver'daki liderlik gönderimi
+    // ayrıca durur (eski çift-gönderim davranışı aynen korunur).
+    final replay = await finishRun(
       context,
       score: _score,
-      coins: coins,
-      stars: ResultScoring.starsFor(score: _score, best: _best),
+      best: _best,
+      leaderboardMode: LeaderboardService.modeMakarayiz,
     );
     if (!mounted) return;
     _resultShown = false;
@@ -415,6 +498,20 @@ class MakarayizScreenState extends State<MakarayizScreen>
       return;
     }
     _restart();
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
+  ///
+  /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
+  /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
+  /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  void _maybeRefundEnergy() {
+    if (_energyRefunded) return;
+    if (!widget.energyConsumed || _moveMade || !_alive || _resultShown) {
+      return;
+    }
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   void _edgeShowResult() {
@@ -565,13 +662,20 @@ class MakarayizScreenState extends State<MakarayizScreen>
     final pct = (_reel * 100).round();
     final hero = InsectTier.values[proto ? 2 : _bubbleTier];
 
-    return _MakarayizChrome(
-      score: _score,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _maybeRefundEnergy();
+      },
+      child: _MakarayizChrome(
+        score: _score,
       best: _best,
       combo: _combo,
       hint: _hint,
       onRestart: _restart,
       prototypeVisualState: proto,
+      showPauseButton: !proto,
+      onPausePressed: _togglePause,
       overlay: (!_alive && !_resultShown)
           ? ArcadeResultOverlay(
               title: 'MAKARA BİTTİ',
@@ -585,21 +689,23 @@ class MakarayizScreenState extends State<MakarayizScreen>
               retryLabel: 'YENİDEN',
               onRetry: _restart,
             )
-          : null,
+          : (_paused
+              ? _pauseOverlay()
+              : null),
       bonuses: [
-        stockBonus(
+        stockBonusWithResult(
           id: 'beat',
           label: 'BEAT DONDUR',
           asset: 'assets/icons2/clock.png',
           effect: _useBeatFreeze,
         ),
-        stockBonus(
+        stockBonusWithResult(
           id: 'auto',
           label: 'OTO MAKARA',
           asset: 'assets/icons2/wheel.png',
           effect: _useAuto,
         ),
-        stockBonus(
+        stockBonusWithResult(
           id: 'x2',
           label: 'PUAN X2',
           asset: 'assets/icons2/boost_coins.png',
@@ -759,6 +865,47 @@ class MakarayizScreenState extends State<MakarayizScreen>
           ],
         ),
       ),
+      ),
+    );
+  }
+
+  /// Görünür "duraklatıldı" durumu (madde 37): tam ekran kaplama dokunuşları
+  /// yutar, DEVAM düğmesi oyunu kaldığı yerden başlatır.
+  Widget _pauseOverlay() {
+    return Positioned.fill(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        child: ColoredBox(
+          color: const Color(0xFF080B12).withValues(alpha: 0.72),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'DURAKLATILDI',
+                  style: GoogleFonts.baloo2(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFFFB800),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Skor $_score · Kombo x$_combo',
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -914,6 +1061,8 @@ class _MakarayizChrome extends StatelessWidget {
     required this.bonuses,
     required this.child,
     this.overlay,
+    this.showPauseButton = false,
+    this.onPausePressed,
   });
 
   final int score;
@@ -925,6 +1074,8 @@ class _MakarayizChrome extends StatelessWidget {
   final List<ModeBonus> bonuses;
   final Widget child;
   final Widget? overlay;
+  final bool showPauseButton;
+  final VoidCallback? onPausePressed;
 
   @override
   Widget build(BuildContext context) {
@@ -1182,6 +1333,10 @@ class _MakarayizChrome extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
+              if (showPauseButton) ...[
+                _PauseHeaderButton(onTap: onPausePressed),
+                const SizedBox(width: 10),
+              ],
               _RoundButton(
                 circular: true,
                 borderColor: const Color(0xB3FFB800),
@@ -1330,6 +1485,10 @@ class _MakarayizChrome extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
+            if (showPauseButton) ...[
+              _PauseHeaderButton(onTap: onPausePressed),
+              const SizedBox(width: 4),
+            ],
             _RoundButton(
               circular: true,
               borderColor: const Color(0xB3FFB800),
@@ -1611,6 +1770,43 @@ class _MakarayizChrome extends StatelessWidget {
     RegExp(r'\B(?=(\d{3})+(?!\d))'),
     (_) => '.',
   );
+}
+
+/// Küçük duraklatma düğmesi (madde 37): başlık satırında '?' düğmesinin
+/// yanında, HUD düzenini kaydırmadan durur; prototip vitrininde gizlidir.
+class _PauseHeaderButton extends StatelessWidget {
+  const _PauseHeaderButton({required this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Duraklat',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xDB080B12),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xB3FFB800), width: 1.5),
+            boxShadow: const [
+              BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+            ],
+          ),
+          child: const Icon(
+            Icons.pause_rounded,
+            size: 20,
+            color: Color(0xFFFFB800),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _RoundButton extends StatelessWidget {

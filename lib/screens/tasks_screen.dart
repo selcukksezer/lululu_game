@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
@@ -26,8 +27,6 @@ class _TasksScreenState extends State<TasksScreen> {
     _TaskItem(
       id: 'play3',
       pmKey: 'play',
-      title: '3 OYUN OYNA',
-      rewardText: 'Ödül: +150 COIN',
       rewardType: 'coin',
       rewardAmount: 150,
       max: 3,
@@ -39,8 +38,6 @@ class _TasksScreenState extends State<TasksScreen> {
     _TaskItem(
       id: 'merge5',
       pmKey: 'merge',
-      title: '5 BİRLEŞTİRME YAP',
-      rewardText: 'Ödül: +100 COIN',
       rewardType: 'coin',
       rewardAmount: 100,
       max: 5,
@@ -52,8 +49,6 @@ class _TasksScreenState extends State<TasksScreen> {
     _TaskItem(
       id: 'watch1',
       pmKey: 'video',
-      title: '1 VİDEO İZLE',
-      rewardText: 'Ödül: +3 ENERJİ',
       rewardType: 'energy',
       rewardAmount: 3,
       max: 1,
@@ -65,8 +60,6 @@ class _TasksScreenState extends State<TasksScreen> {
     _TaskItem(
       id: 'combo4',
       pmKey: 'combo',
-      title: 'X4 KOMBO YAP',
-      rewardText: 'Ödül: +200 COIN',
       rewardType: 'coin',
       rewardAmount: 200,
       max: 4,
@@ -149,6 +142,7 @@ class _TasksScreenState extends State<TasksScreen> {
       ]),
       builder: (context, _) {
         _syncFromProgressManager();
+        final l10n = context.l10n;
         final rawCoins = ProgressManager.instance.coins;
         final coinsText = (rawCoins == ProgressManager.defaultCoins ||
                 rawCoins == 300 ||
@@ -173,7 +167,10 @@ class _TasksScreenState extends State<TasksScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          GestureDetector(
+                          Semantics(
+                            button: true,
+                            label: l10n.goBackLabel,
+                            child: GestureDetector(
                             onTap: widget.onClose ??
                                 () => Navigator.of(context).maybePop(),
                             child: Container(
@@ -198,7 +195,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                 fit: BoxFit.contain,
                               ),
                             ),
-                          ),
+                          )),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Transform.translate(
@@ -207,8 +204,8 @@ class _TasksScreenState extends State<TasksScreen> {
                                 alignment: Alignment.centerLeft,
                                 scaleX: 0.98,
                                 scaleY: 1.0,
-                                child: const Text(
-                                  'GÜNLÜK GÖREVLER',
+                                child: Text(
+                                  l10n.dailyTasksTitle,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -248,24 +245,29 @@ class _TasksScreenState extends State<TasksScreen> {
                                   filterQuality: FilterQuality.medium,
                                 ),
                                 const SizedBox(width: 6),
-                                SizedBox(
-                                  width: coinsText == '12.450' ? 44.2 : null,
-                                  child: Transform.translate(
-                                    offset: const Offset(0, -0.5),
-                                    child: Transform.scale(
-                                      alignment: Alignment.centerLeft,
-                                      scaleX: 0.96,
-                                      scaleY: 1.0,
-                                      child: Text(
-                                        coinsText,
-                                        maxLines: 1,
-                                        softWrap: false,
-                                        style: const TextStyle(
-                                          fontFamily: 'Nunito',
-                                          fontSize: 13.5,
-                                          fontWeight: FontWeight.w900,
-                                          color: Colors.white,
-                                          height: 1.55,
+                                // Sabit genişlik yok: metin doğal
+                                // genişliğinde, sığmazsa küçülerek sığar.
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Transform.translate(
+                                      offset: const Offset(0, -0.5),
+                                      child: Transform.scale(
+                                        alignment: Alignment.centerLeft,
+                                        scaleX: 0.96,
+                                        scaleY: 1.0,
+                                        child: Text(
+                                          coinsText,
+                                          maxLines: 1,
+                                          softWrap: false,
+                                          style: const TextStyle(
+                                            fontFamily: 'Nunito',
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w900,
+                                            color: Colors.white,
+                                            height: 1.55,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -288,7 +290,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           Column(
                             verticalDirection: VerticalDirection.up,
                             children: [
-                              _buildTaskCard(_tasks[0]),
+                              _buildTaskCard(l10n, _tasks[0]),
                               // .tasks-hero (x=12, y=105.4, w=406, h=123.1, margin: 10px 12px 2px)
                               Padding(
                                 padding:
@@ -378,8 +380,8 @@ class _TasksScreenState extends State<TasksScreen> {
                                                         Alignment.centerLeft,
                                                     scaleX: 0.98,
                                                     scaleY: 1.0,
-                                                    child: const Text(
-                                                      'BUGÜNÜN GÖREVLERİ',
+                                                    child: Text(
+                                                      l10n.todaysTasks,
                                                       maxLines: 1,
                                                       overflow:
                                                           TextOverflow.ellipsis,
@@ -400,12 +402,12 @@ class _TasksScreenState extends State<TasksScreen> {
                                                   top: 75.7,
                                                   height: 19.4,
                                                   child: isNarrow
-                                                      ? const FittedBox(
+                                                      ? FittedBox(
                                                           fit: BoxFit.scaleDown,
                                                           alignment: Alignment
                                                               .centerLeft,
                                                           child: Text(
-                                                            'Görevleri bitir, ödülü kap — yarın yenileri gelir!',
+                                                            l10n.tasksHeroSubtitle,
                                                             maxLines: 1,
                                                             softWrap: false,
                                                             style: TextStyle(
@@ -431,8 +433,8 @@ class _TasksScreenState extends State<TasksScreen> {
                                                                 .centerLeft,
                                                             scaleX: 0.96,
                                                             scaleY: 1.0,
-                                                            child: const Text(
-                                                              'Görevleri bitir, ödülü kap — yarın yenileri gelir!',
+                                                            child: Text(
+                                                              l10n.tasksHeroSubtitle,
                                                               maxLines: 1,
                                                               softWrap: false,
                                                               style: TextStyle(
@@ -463,14 +465,14 @@ class _TasksScreenState extends State<TasksScreen> {
                           ),
 
                           for (int i = 1; i < _tasks.length; i++)
-                            _buildTaskCard(_tasks[i]),
+                            _buildTaskCard(l10n, _tasks[i]),
 
                           // .tasks-note (margin: 12px 16px 4px)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                             child: RichText(
                               textAlign: TextAlign.center,
-                              text: const TextSpan(
+                              text: TextSpan(
                                 style: TextStyle(
                                   fontFamily: 'Nunito',
                                   fontSize: 12.5,
@@ -480,11 +482,10 @@ class _TasksScreenState extends State<TasksScreen> {
                                 ),
                                 children: [
                                   TextSpan(
-                                    text:
-                                        'İlerleme bu oturumda oynadıkça dolar. Tamamlanan görevde ',
+                                    text: l10n.tasksNotePrefix,
                                   ),
                                   TextSpan(
-                                    text: 'ÖDÜLÜ AL',
+                                    text: l10n.claimReward,
                                     style: TextStyle(
                                       fontFamily: 'Nunito',
                                       fontSize: 12.5,
@@ -494,8 +495,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                     ),
                                   ),
                                   TextSpan(
-                                    text:
-                                        ' belirir; coin cüzdanına, enerji kalbine anında işler.',
+                                    text: l10n.tasksNoteSuffix,
                                   ),
                                 ],
                               ),
@@ -527,10 +527,29 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  Widget _buildTaskCard(_TaskItem t) {
+  // Görev başlığı/ödülü BuildContext gerektirdiği için _TaskItem
+  // alanında tutulamaz; id + ödül bilgisinden üretim anında çözülür.
+  // Başlık anahtarları ana sayfa görev özetiyle ortaktır (tek kaynak).
+  String _taskTitle(AppLocalizations l10n, _TaskItem task) =>
+      switch (task.id) {
+        'play3' => l10n.taskPlay3Games,
+        'merge5' => l10n.taskMerge5,
+        'watch1' => l10n.taskWatch1Video,
+        'combo4' => l10n.taskCombo4,
+        _ => task.id,
+      };
+
+  String _taskRewardText(AppLocalizations l10n, _TaskItem task) =>
+      task.rewardType == 'energy'
+          ? l10n.rewardEnergy(task.rewardAmount)
+          : l10n.rewardCoins(task.rewardAmount);
+
+  Widget _buildTaskCard(AppLocalizations l10n, _TaskItem t) {
     final pct = (t.cur / t.max).clamp(0.0, 1.0);
     final isDone = t.cur >= t.max;
     final isEnergy = t.rewardType == 'energy';
+    final title = _taskTitle(l10n, t);
+    final rewardText = _taskRewardText(l10n, t);
 
     return Opacity(
       opacity: t.claimed ? 0.68 : 1.0,
@@ -600,7 +619,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                 scaleX: 0.97,
                                 scaleY: 1.0,
                                 child: Text(
-                                  t.title,
+                                  title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   textHeightBehavior: const TextHeightBehavior(
@@ -641,7 +660,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                     scaleX: 0.96,
                                     scaleY: 1.0,
                                     child: Text(
-                                      t.rewardText,
+                                      rewardText,
                                       textHeightBehavior:
                                           const TextHeightBehavior(
                                         applyHeightToFirstAscent: true,
@@ -678,8 +697,8 @@ class _TasksScreenState extends State<TasksScreen> {
                         color: const Color(0xFFE8F8F0),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Text(
-                        '✓ ALINDI',
+                      child: Text(
+                        l10n.claimedWithCheck,
                         style: TextStyle(
                           fontFamily: 'Baloo 2',
                           fontSize: 13,
@@ -689,7 +708,10 @@ class _TasksScreenState extends State<TasksScreen> {
                       ),
                     )
                   else if (isDone)
-                    GestureDetector(
+                    Semantics(
+                      button: true,
+                      label: l10n.claimTaskLabel(title, rewardText),
+                      child: GestureDetector(
                       onTap: () => _claimTask(t),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -714,8 +736,8 @@ class _TasksScreenState extends State<TasksScreen> {
                             ),
                           ],
                         ),
-                        child: const Text(
-                          'ÖDÜLÜ AL',
+                        child: Text(
+                          l10n.claimReward,
                           style: TextStyle(
                             fontFamily: 'Baloo 2',
                             fontSize: 13.5,
@@ -724,7 +746,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           ),
                         ),
                       ),
-                    )
+                    ))
                   else
                     RichText(
                       text: TextSpan(
@@ -795,8 +817,6 @@ class _TasksScreenState extends State<TasksScreen> {
 class _TaskItem {
   final String id;
   final String pmKey;
-  final String title;
-  final String rewardText;
   final String rewardType;
   final int rewardAmount;
   final int max;
@@ -808,8 +828,6 @@ class _TaskItem {
   _TaskItem({
     required this.id,
     required this.pmKey,
-    required this.title,
-    required this.rewardText,
     required this.rewardType,
     required this.rewardAmount,
     required this.max,
@@ -831,12 +849,14 @@ class _TasksFloatingDock extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'ANA SAYFA',
-        LululuDockTab.modes => 'MODLAR',
-        LululuDockTab.family => 'AİLEM',
-        LululuDockTab.shop => 'MAĞAZA',
-        LululuDockTab.scores => 'SKORLAR',
+  // S3#27: dock etiketleri tek kaynaktan (nav* anahtarları).
+  static String _label(AppLocalizations l10n, LululuDockTab tab) =>
+      switch (tab) {
+        LululuDockTab.home => l10n.navHome,
+        LululuDockTab.modes => l10n.navModes,
+        LululuDockTab.family => l10n.navFamily,
+        LululuDockTab.shop => l10n.navShop,
+        LululuDockTab.scores => l10n.navScores,
       };
 
   static String _icon(LululuDockTab tab) => switch (tab) {
@@ -887,6 +907,7 @@ class _TasksFloatingDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return CustomPaint(
       painter: const _TasksBlurShadowPainter(
         color: Color(0x62080B12),
@@ -1022,7 +1043,11 @@ class _TasksFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(l10n, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: DecoratedBox(
@@ -1139,7 +1164,7 @@ class _TasksFloatingDock extends StatelessWidget {
                                       height: 16.0,
                                       child: Center(
                                         child: Text(
-                                          _label(tab),
+                                          _label(l10n, tab),
                                           maxLines: 1,
                                           style: TextStyle(
                                             fontFamily: 'Baloo 2',
@@ -1175,7 +1200,7 @@ class _TasksFloatingDock extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          ),
+                          )),
                         ),
                       ],
                     ),

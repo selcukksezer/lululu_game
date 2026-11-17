@@ -9,9 +9,10 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
-import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
@@ -21,8 +22,15 @@ import '../widgets/mode_bonus_bar.dart';
 class BalloonPopScreen extends StatefulWidget {
   const BalloonPopScreen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika `GameScreen` deseni). Doğrudan rota girişlerinde
+  /// `false` kalır.
+  final bool energyConsumed;
 
   final bool prototypeVisualState;
 
@@ -50,6 +58,16 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   bool _over = false;
   bool _resultShown = false;
   bool _paused = false;
+
+  /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk atış (`_fire`)
+  /// veya tur tamamlanması (`_lose`) ile `true` olur; TEKRAR/yeniden
+  /// başlatmada SIFIRLANMAZ (Suika `_dropsMade` deseni — oturum ömrü;
+  /// `_shots` `_boot` ile sıfırlanır, bu bayrak sıfırlanmaz).
+  bool _moveMade = false;
+
+  /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+
   bool _shotArmed = false;
   String _hint = 'balonlar süzülüyor · 3 aynı balon patlar';
   Offset? _fly;
@@ -113,15 +131,23 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _ticker = createTicker(_tick)..start();
   }
 
+  // Varsayılan stok YALNIZ ilk kurulumda verilir. ProgressManager.load()
+  // 'lululu_power_seed_v1' bayrağıyla 33 gücü bir kez tohumlar; tohumlanan
+  // anahtarlar extraPowers'ta kalıcı olur, takePower() ise anahtarı silmez,
+  // 0'a düşürür. "Hiç tohumlanmadı" bu yüzden anahtar yokluğuyla anlaşılır;
+  // eski "üçü de 0 ise doldur" koşulu her girişte bedava stok veriyordu.
+  // Tohumlama persistBoosters() ile kalıcı kaydedilir.
   void _ensureDefaultPowers() {
     final pm = ProgressManager();
-    if (pm.powerCount('triple') == 0 &&
-        pm.powerCount('bombb') == 0 &&
-        pm.powerCount('slowb') == 0) {
-      pm.extraPowers['triple'] = 3;
-      pm.extraPowers['bombb'] = 2;
-      pm.extraPowers['slowb'] = 1;
+    const defaults = <String, int>{'triple': 3, 'bombb': 2, 'slowb': 1};
+    var seeded = false;
+    for (final entry in defaults.entries) {
+      if (!pm.extraPowers.containsKey(entry.key)) {
+        pm.extraPowers[entry.key] = entry.value;
+        seeded = true;
+      }
     }
+    if (seeded) unawaited(pm.persistBoosters());
   }
 
   @override
@@ -272,6 +298,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   void _fire() {
     final hex = _hex;
     if (hex == null || _flying || _over || _paused || _shotArmed) return;
+    // Enerji iadesi sayacı: atış anında sayılır (Suika deseni).
+    _moveMade = true;
     _shotArmed = true;
     _fly = hex.shooter;
     _vel = _aim * shotSpeed;
@@ -370,19 +398,24 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     final (r, c) = spot;
     final shotTier = _current;
     _grid[r][c] = shotTier;
+    // Delici atış (r, c)'yi de siler; _popFrom(r, c) bu yüzden 0 döner.
+    // Komşu gruplar ayrıca denetlenir, seri korunur (bkz. _popNeighborGroups).
+    var pierced = 0;
     if (_pierce) {
       _pierce = false;
-      var torn = 0;
       for (final cell in <(int, int)>[(r, c), ..._neighbors(r, c)]) {
-        if (torn >= 3) break;
+        if (pierced >= 3) break;
         if (_grid[cell.$1][cell.$2] == 0) continue;
         _grid[cell.$1][cell.$2] = 0;
-        torn++;
+        pierced++;
       }
-      _score += torn * 40;
-      _popTotal += torn;
+      _score += pierced * 40;
+      _popTotal += pierced;
+      if (_score > _best) _best = _score;
+      _checkScoreMilestones();
     }
-    final popped = _popFrom(r, c);
+    var popped = _popFrom(r, c);
+    if (pierced > 0) popped += _popNeighborGroups(r, c);
     final fallen = _dropFloaters();
     var gained = 0;
     if (popped >= minPop) {
@@ -395,11 +428,13 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       gained += (popped * popped * 14 * shotTier * heat).round();
       _comboMeter = min(1.0, 0.35 + _streak * 0.14 + popped * 0.04);
       if (popped >= 6) _showMilestone('SÜPER PATLAMA · $popped');
-    } else {
+    } else if (pierced == 0) {
       if (_streak > 1) _showMilestone('KOMBO KIRILDI · ıskaladın');
       _streak = 0;
       _comboMeter = max(0, _comboMeter - 0.2);
     }
+    // pierced > 0 ve grup yoksa: delici atış balon temizledi, seri korunur
+    // (sıfırlanmaz, artmaz); "KOMBO KIRILDI" gösterilmez.
     if (fallen > 0) {
       _fallTotal += fallen;
       gained += (fallen * 50 * (1 + _streak * 0.1)).round();
@@ -429,6 +464,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _hint = fallen > 0
           ? '${insect.viralReplik} +$gained · x$_streak'
           : 'Patladı x$_streak · +$gained';
+    } else if (pierced > 0) {
+      HapticFeedback.selectionClick();
+      _hint = 'Delici atış $pierced balonu deldi · seri x$_streak korundu.';
     } else {
       HapticFeedback.selectionClick();
       _hint = 'Yapıştı. 3 aynı lazım.';
@@ -494,6 +532,17 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _grid[gr][gc] = 0;
     }
     return group.length;
+  }
+
+  /// Delici atış sonrası komşulardaki 3+ grupları patlatır. Her komşu
+  /// _popFrom ile denetlenir; aynı grup iki kez sayılmaz çünkü ilk patlama
+  /// hücreleri siler, sonraki denetim tier==0 görüp 0 döner.
+  int _popNeighborGroups(int r, int c) {
+    var total = 0;
+    for (final (nr, nc) in _neighbors(r, c)) {
+      total += _popFrom(nr, nc);
+    }
+    return total;
   }
 
   int _dropFloaters() {
@@ -620,6 +669,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   void _lose(String why) {
     if (_over) return;
+    // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
+    _moveMade = true;
     _over = true;
     _flying = false;
     _fly = null;
@@ -753,21 +804,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   Future<void> _presentResult() async {
-    final coins = ResultScoring.coinsFor(_score);
-    final stars = ResultScoring.starsFor(score: _score, best: _best);
-    await ProgressManager.instance.addCoins(coins);
-    await ProgressManager.instance.recordTaskProgress('play');
-    await ProgressManager.instance.recordModeScore('balloon_pop', _score);
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeBalloon,
-      _score,
-    );
-    if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + mod skoru + liderlik + görev kaydı + sonuç ekranı
+    // finishRun() üzerinden (tek-ödeme korunur).
+    final replay = await finishRun(
       context,
       score: _score,
-      coins: coins,
-      stars: stars,
+      best: _best,
+      leaderboardMode: LeaderboardService.modeBalloon,
+      modeScoreId: 'balloon_pop',
     );
     if (!mounted) return;
     if (!replay) {
@@ -776,6 +820,20 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     }
     _resultShown = false;
     setState(_boot);
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
+  ///
+  /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
+  /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
+  /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  void _maybeRefundEnergy() {
+    if (_energyRefunded) return;
+    if (!widget.energyConsumed || _moveMade || _over || _resultShown) {
+      return;
+    }
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   void _edgeShowResult() {
@@ -791,31 +849,34 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     final until = descendEvery - (_shots % descendEvery);
     if (_over && !_resultShown) _edgeShowResult();
     final bonusItems = [
-      stockBonus(
+      stockBonusWithResult(
         id: 'triple',
         label: 'ÜÇLÜ OK',
         asset: 'assets/icons2/target.png',
         effect: () {
-          _useTriple();
+          final applied = _useTriple();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'bombb',
         label: 'BOMBA',
         asset: 'assets/icons2/boom.png',
         effect: () {
-          _useBomb();
+          final applied = _useBomb();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'slowb',
         label: 'YAVAŞLAT',
         asset: 'assets/icons2/stopwatch.png',
         effect: () {
-          _useSlow();
+          final applied = _useSlow();
           setState(() {});
+          return applied;
         },
       ),
     ];
@@ -1171,13 +1232,19 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     final timeStr =
         '${_elapsed ~/ 60}:${(_elapsed.floor() % 60).toString().padLeft(2, '0')}';
 
-    return _buildBalloonPrototypeChrome(
-      context: context,
-      timeStr: timeStr,
-      stageChild: stageChild,
-      overlayWidget: overlayWidget,
-      bonusItems: bonusItems,
-      until: until,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _maybeRefundEnergy();
+      },
+      child: _buildBalloonPrototypeChrome(
+        context: context,
+        timeStr: timeStr,
+        stageChild: stageChild,
+        overlayWidget: overlayWidget,
+        bonusItems: bonusItems,
+        until: until,
+      ),
     );
   }
 

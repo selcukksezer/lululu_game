@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
@@ -619,12 +620,13 @@ class _OnlineFloatingDock extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'ANA SAYFA',
-        LululuDockTab.modes => 'MODLAR',
-        LululuDockTab.family => 'AİLEM',
-        LululuDockTab.shop => 'MAĞAZA',
-        LululuDockTab.scores => 'SKORLAR',
+  static String _label(AppLocalizations l10n, LululuDockTab tab) =>
+      switch (tab) {
+        LululuDockTab.home => l10n.navHome,
+        LululuDockTab.modes => l10n.navModes,
+        LululuDockTab.family => l10n.navFamily,
+        LululuDockTab.shop => l10n.navShop,
+        LululuDockTab.scores => l10n.navScores,
       };
 
   static String _icon(LululuDockTab tab) => switch (tab) {
@@ -928,7 +930,7 @@ class _OnlineFloatingDock extends StatelessWidget {
                                         right: -4,
                                         top: 49.0,
                                         child: Text(
-                                          _label(tab),
+                                          _label(context.l10n, tab),
                                           maxLines: 1,
                                           textAlign: TextAlign.center,
                                           style: _OnlineScreenState._baloo2(

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/chat_service.dart';
 import '../widgets/home/lululu_dock_bar.dart';
@@ -14,6 +16,7 @@ class _ChatItem {
     required this.avatarAsset,
     required this.isMe,
     this.stickerAsset,
+    this.messageId,
   });
 
   final String sender;
@@ -22,6 +25,9 @@ class _ChatItem {
   final String avatarAsset;
   final bool isMe;
   final String? stickerAsset;
+
+  /// ChatService mesaj kimliği; bulut gönderim durumu bununla sorgulanır.
+  final String? messageId;
 }
 
 /// 1:1 Pixel-Perfect ChatScreen matching HTML prototype `#scr-chat`
@@ -38,6 +44,8 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  String? _sendError;
+  bool _isSending = false;
 
   // Exact initial messages from `#scr-chat` (`reference-chat.png` & `reference-chat-spec.json`)
   final List<_ChatItem> _messages = <_ChatItem>[
@@ -135,6 +143,29 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Kanal görünümü açılırken okundu işaretle (S2#19): yükleme bitince
+    // çağrılır; aktif kanalın yoklama sayacı sıfırlanır. Odak dönüşünde
+    // tekrar gerekmez — aktif kanalın bulut akışı yeni mesajları
+    // geldiğinde okundu sayar (ChatService._bindCloudStreamIfReady).
+    unawaited(_markCurrentChannelRead());
+  }
+
+  Future<void> _markCurrentChannelRead() async {
+    try {
+      await ChatService.instance.ensureLoaded();
+    } catch (e) {
+      debugPrint('[lululu] Chat okundu işaretlenemedi: $e');
+      return;
+    }
+    if (!mounted) return;
+    ChatService.instance.markChannelRead(
+      ChatService.instance.currentChannel,
+    );
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
@@ -150,26 +181,41 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isSending) return;
     AudioManager().playPop();
-    final beforeCount = ChatService.instance.messages.length;
-    await ChatService.instance.sendText(text);
-    final latestList = ChatService.instance.messages;
-    final filteredText = latestList.length > beforeCount
-        ? latestList.last.body
-        : text;
+    setState(() {
+      _isSending = true;
+      _sendError = null;
+    });
+    // Bağlantı denetimi için yeni bağımlılık yok: gönderim hatası görünür
+    // duruma bağlanır, metin alanda kalır, tekrar dene düğmesi sunulur.
+    late final ChatMessage sent;
+    try {
+      sent = await ChatService.instance.sendText(text);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _sendError = e is StateError
+            ? e.message.toString()
+            : context.l10n.messageSendFailed;
+      });
+      return;
+    }
     if (!mounted) return;
     final now = DateTime.now();
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     setState(() {
+      _isSending = false;
       _messages.add(
         _ChatItem(
           sender: 'Sen · LülüSever',
-          text: filteredText,
+          text: sent.body,
           time: timeStr,
           avatarAsset: 'assets/design/bugs_hd/tier5_hd.png',
           isMe: true,
+          messageId: sent.id,
         ),
       );
       _controller.clear();
@@ -177,17 +223,36 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
   }
 
+  /// Buluta gönderilemeyen mesajların bulut yazımını yeniden dener.
+  Future<void> _retryCloudPushes() async {
+    await ChatService.instance.retryFailedCloudPushes();
+    if (!mounted) return;
+    setState(() {});
+  }
+
   Future<void> _sendSticker(
     int tier,
     ({String name, String line, String asset}) sticker,
   ) async {
     AudioManager().playPop();
-    await ChatService.instance.sendBugSticker(tier);
+    late final ChatMessage sent;
+    try {
+      sent = await ChatService.instance.sendBugSticker(tier);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sendError = e is StateError
+            ? e.message.toString()
+            : context.l10n.stickerSendFailed;
+      });
+      return;
+    }
     if (!mounted) return;
     final now = DateTime.now();
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     setState(() {
+      _sendError = null;
       _messages.add(
         _ChatItem(
           sender: 'Sen · LülüSever',
@@ -196,6 +261,7 @@ class _ChatScreenState extends State<ChatScreen> {
           avatarAsset: 'assets/design/bugs_hd/tier5_hd.png',
           isMe: true,
           stickerAsset: sticker.asset,
+          messageId: sent.id,
         ),
       );
     });
@@ -219,7 +285,7 @@ class _ChatScreenState extends State<ChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'HIZLI BÖCEK ÇIKARTMASI GÖNDER',
+                  ctx.l10n.quickStickerTitle,
                   style: _baloo2(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
@@ -261,7 +327,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              sticker.name,
+                              ChatService.bugStickerNameFor(
+                                entry.key,
+                                Localizations.localeOf(ctx),
+                              ),
                               style: _nunito(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
@@ -333,7 +402,15 @@ class _ChatScreenState extends State<ChatScreen> {
             left: 10,
             right: 10,
             bottom: widget.embedded ? 12 : 98,
-            child: _buildChatInput(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_sendError != null ||
+                    ChatService.instance.hasCloudFailures)
+                  _buildSendStatusBanner(),
+                _buildChatInput(),
+              ],
+            ),
           ),
           if (!widget.embedded)
             Positioned(
@@ -360,6 +437,7 @@ class _ChatScreenState extends State<ChatScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: _closeOrPop,
             child: Container(
               width: 48,
@@ -394,9 +472,9 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                'SOHBET',
+                context.l10n.chatTitle,
                 maxLines: 1,
-                overflow: TextOverflow.visible,
+                overflow: TextOverflow.ellipsis,
                 style: _baloo2(
                   fontSize: 23,
                   fontWeight: FontWeight.w800,
@@ -434,7 +512,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  '5 ÇEVRİMİÇİ',
+                  context.l10n.onlineCount5,
                   style: _baloo2(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -592,6 +670,24 @@ class _ChatScreenState extends State<ChatScreen> {
                     height: 16.275 / 10.5,
                   ),
                 ),
+                if (item.messageId != null &&
+                    ChatService.instance.isCloudFailed(item.messageId!))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      context.l10n.notSentLocalOnly,
+                      textAlign:
+                          item.isMe ? TextAlign.right : TextAlign.left,
+                      style: _nunito(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: item.isMe
+                            ? const Color(0xFFFFE27A)
+                            : const Color(0xFFB80F42),
+                        height: 16.275 / 10.5,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -606,6 +702,62 @@ class _ChatScreenState extends State<ChatScreen> {
       children: item.isMe
           ? [bubble, const SizedBox(width: 9), avatar]
           : [avatar, const SizedBox(width: 9), bubble],
+    );
+  }
+
+  /// Gönderim hatası / buluta gönderilememe durumu: görünür uyarı + tekrar dene.
+  Widget _buildSendStatusBanner() {
+    final isError = _sendError != null;
+    final message = isError
+        ? _sendError!
+        : context.l10n.cloudSendFailedNote;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isError ? const Color(0xFFFDECEA) : const Color(0xFFFFF4E0),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isError ? const Color(0xFFF5C6C2) : const Color(0xFFFFD98A),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                message,
+                style: _nunito(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF141B2A),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: isError ? _sendMessage : _retryCloudPushes,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF141B2A),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  context.l10n.retryCaps,
+                  style: _baloo2(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -655,7 +807,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     isDense: true,
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
-                    hintText: 'Loncaya mesaj yaz…',
+                    hintText: context.l10n.guildMessageHint,
                     hintStyle: _nunito(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -745,12 +897,13 @@ class _ChatFloatingDock extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'ANA SAYFA',
-        LululuDockTab.modes => 'MODLAR',
-        LululuDockTab.family => 'AİLEM',
-        LululuDockTab.shop => 'MAĞAZA',
-        LululuDockTab.scores => 'SKORLAR',
+  static String _label(AppLocalizations l10n, LululuDockTab tab) =>
+      switch (tab) {
+        LululuDockTab.home => l10n.navHome,
+        LululuDockTab.modes => l10n.navModes,
+        LululuDockTab.family => l10n.navFamily,
+        LululuDockTab.shop => l10n.navShop,
+        LululuDockTab.scores => l10n.navScores,
       };
 
   static String _icon(LululuDockTab tab) => switch (tab) {
@@ -1054,7 +1207,7 @@ class _ChatFloatingDock extends StatelessWidget {
                                         right: -4,
                                         top: 49.0,
                                         child: Text(
-                                          _label(tab),
+                                          _label(context.l10n, tab),
                                           maxLines: 1,
                                           textAlign: TextAlign.center,
                                           style: _ChatScreenState._baloo2(

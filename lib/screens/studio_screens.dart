@@ -1,15 +1,26 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/bug_video_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
-String _trUpper(String input) {
+/// Dile duyarlı büyük-harf dönüşümü.
+///
+/// TR locale'de Türkçe eşleme (i→İ, ı→I, ...) aynen korunur; EN locale'de
+/// düz [String.toUpperCase] kullanılır, aksi hâlde EN metindeki `i`
+/// yanlışlıkla `İ` olur. Bilinmeyen dillerde varsayılan TR'dir
+/// ([AppLocalizations.localeResolutionCallback] ile aynı kural).
+String _trUpper(String input, Locale locale) {
+  if (locale.languageCode == 'en') {
+    return input.toUpperCase();
+  }
   return input
       .replaceAll('i', 'İ')
       .replaceAll('ı', 'I')
@@ -20,6 +31,24 @@ String _trUpper(String input) {
       .replaceAll('ç', 'Ç')
       .toUpperCase();
 }
+
+/// Stüdyo kartlarının tasarım genişliği üst sınırı (430px tasarımda 402px içerik).
+const double _kStudioMaxWidth = 402.0;
+
+/// Stüdyo listelerinin yatay dolgusu (sol 14 + sağ 14).
+const double _kStudioHorizontalPadding = 28.0;
+
+/// LayoutBuilder kısıtından türetilmiş stüdyo içerik genişliği:
+/// dar ekranda kullanılabilir genişliğe iner, geniş ekranda 402px'te durur.
+double _studioContentWidth(BoxConstraints constraints) {
+  if (!constraints.maxWidth.isFinite) return _kStudioMaxWidth;
+  final available = constraints.maxWidth - _kStudioHorizontalPadding;
+  return math.min(_kStudioMaxWidth, math.max(0.0, available));
+}
+
+/// Tasarım genişliğine (402) göre oranlanmış genişlik.
+double _studioScaled(double designWidth, double studioWidth) =>
+    studioWidth * designWidth / _kStudioMaxWidth;
 
 // ============================================================================
 // 1. VİDEO İZLE (scr-studio-watch)
@@ -104,7 +133,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
   Future<void> _shareCurrent() async {
     unawaited(AudioManager().playButtonTap());
     unawaited(ProgressManager.instance.recordTaskProgress('video'));
-    _toast('Bağlantı kopyalandı — paylaşmaya hazır');
+    _toast(context.l10n.linkCopiedToast);
   }
 
   Future<void> _downloadCurrent() async {
@@ -127,7 +156,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
     );
     unawaited(BugVideoService.instance.downloadPost(post));
     unawaited(ProgressManager.instance.recordTaskProgress('video'));
-    _toast("Video İndirilenler'e eklendi");
+    _toast(context.l10n.videoAddedToDownloadsToast);
   }
 
   @override
@@ -142,9 +171,15 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
             bottom: false,
             child: Column(
               children: [
-                _buildAppBar(context, 'VİDEO İZLE'),
+                _buildAppBar(context, context.l10n.studioWatchTitle),
                 Expanded(
-                  child: ListView(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final studioWidth = _studioContentWidth(constraints);
+                      return Center(
+                        child: SizedBox(
+                          width: studioWidth + _kStudioHorizontalPadding,
+                          child: ListView(
                     padding: EdgeInsets.fromLTRB(
                       14,
                       12,
@@ -154,15 +189,15 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                     children: [
                       // Player (x: 14, y: 107.4, width: 402, height: 226.1)
                       _BlurredRRectShadow(
-                        width: 402,
-                        height: 226.125,
+                        width: studioWidth,
+                        height: studioWidth * 226.125 / _kStudioMaxWidth,
                         radius: 20,
                         offset: const Offset(0, 10),
                         sigma: 11,
                         color: const Color(0x40141B2A),
                         child: Container(
-                          width: 402,
-                          height: 226.125,
+                          width: studioWidth,
+                          height: studioWidth * 226.125 / _kStudioMaxWidth,
                           decoration: BoxDecoration(
                             color: Colors.black,
                             borderRadius: BorderRadius.circular(20),
@@ -175,8 +210,8 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                   opacity: 0.92,
                                   child: Image.asset(
                                     'assets/design/ui/studio_watch/video_thumb_0.png',
-                                    width: 402,
-                                    height: 226.125,
+                                    width: studioWidth,
+                                    height: studioWidth * 226.125 / _kStudioMaxWidth,
                                     fit: BoxFit.cover,
                                     errorBuilder: (c, e, s) => const ColoredBox(
                                       color: Color(0xFF1B2336),
@@ -185,10 +220,12 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                 ),
                               ),
                               // Big Play Button
-                              Positioned(
-                                left: 169,
-                                top: 75.9,
-                                child: GestureDetector(
+                              Align(
+                                alignment: Alignment.center,
+                                child: Semantics(
+                                  button: true,
+                                  label: context.l10n.videoPlayPauseLabel(_isPlaying, cur['title'] as String),
+                                  child: GestureDetector(
                                   onTap: () {
                                     setState(() => _isPlaying = !_isPlaying);
                                     unawaited(AudioManager().playButtonTap());
@@ -227,7 +264,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                             ),
                                     ),
                                   ),
-                                ),
+                                )),
                               ),
                             // Player Bar (bottom: 0, height: 36)
                             Positioned(
@@ -349,7 +386,10 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                           children: [
                             // Like
                             Expanded(
-                              child: GestureDetector(
+                              child: Semantics(
+                                button: true,
+                                label: context.l10n.likeLabel(_formatCount(_likes), _liked),
+                                child: GestureDetector(
                                 onTap: _toggleLikeCurrent,
                                 child: Container(
                                   height: 48,
@@ -392,12 +432,15 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                     ],
                                   ),
                                 ),
-                              ),
+                              )),
                             ),
                             const SizedBox(width: 8),
                             // Share
                             Expanded(
-                              child: GestureDetector(
+                              child: Semantics(
+                                button: true,
+                                label: context.l10n.shareLabel,
+                                child: GestureDetector(
                                 onTap: _shareCurrent,
                                 child: Container(
                                   height: 48,
@@ -423,7 +466,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                       ),
                                       const SizedBox(width: 6),
                                       Text(
-                                        'Paylaş',
+                                        context.l10n.shareLabel,
                                         style: GoogleFonts.nunito(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w900,
@@ -435,12 +478,15 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                     ],
                                   ),
                                 ),
-                              ),
+                              )),
                             ),
                             const SizedBox(width: 8),
                             // Download
                             Expanded(
-                              child: GestureDetector(
+                              child: Semantics(
+                                button: true,
+                                label: context.l10n.downloadLabel,
+                                child: GestureDetector(
                                 onTap: _downloadCurrent,
                                 child: Container(
                                   height: 48,
@@ -466,7 +512,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                       ),
                                       const SizedBox(width: 6),
                                       Text(
-                                        'İndir',
+                                        context.l10n.downloadLabel,
                                         style: GoogleFonts.nunito(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w900,
@@ -478,7 +524,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                     ],
                                   ),
                                 ),
-                              ),
+                              )),
                             ),
                           ],
                         ),
@@ -499,7 +545,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: Text(
-                                'SIRADAKİ VİDEOLAR',
+                                context.l10n.upNextVideosTitle,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
@@ -516,7 +562,11 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                       for (int i = 0; i < _videos.length; i++)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 9),
-                          child: GestureDetector(
+                          child: Semantics(
+                            button: true,
+                            label: context.l10n.playVideoLabel(_videos[i]['title'] as String, _videos[i]['meta'] as String),
+                            selected: _activeVideoIndex == i,
+                            child: GestureDetector(
                             onTap: () {
                               setState(() {
                                 _activeVideoIndex = i;
@@ -540,7 +590,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                     )
                                   : null,
                               child: Container(
-                                width: 402,
+                                width: studioWidth,
                                 height: i == 2 ? 98.0 : 99.0,
                                 decoration: BoxDecoration(
                                   color: Colors.white,
@@ -557,27 +607,27 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                   children: [
                                     // Thumbnail: x=+9, y=+19, 104x60
                                     Positioned(
-                                      left: 9,
+                                      left: _studioScaled(9, studioWidth),
                                       top: i == 1
                                           ? 20.0
                                           : (i == 2 ? 19.0 : 19.5),
-                                      width: 104,
-                                      height: 60,
+                                      width: _studioScaled(104, studioWidth),
+                                      height: _studioScaled(60, studioWidth),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(12),
                                         child: Stack(
                                           children: [
                                             Image.asset(
                                               _videos[i]['thumb'] as String,
-                                              width: 104,
-                                              height: 60,
+                                              width: _studioScaled(104, studioWidth),
+                                              height: _studioScaled(60, studioWidth),
                                               fit: BoxFit.cover,
                                               errorBuilder: (c, e, s) =>
-                                                  const ColoredBox(
+                                                  ColoredBox(
                                                 color: Color(0xFF1B2336),
                                                 child: SizedBox(
-                                                  width: 104,
-                                                  height: 60,
+                                                  width: _studioScaled(104, studioWidth),
+                                                  height: _studioScaled(60, studioWidth),
                                                 ),
                                               ),
                                             ),
@@ -614,7 +664,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                     ),
                                     // Title (h5): x=+124
                                     Positioned(
-                                      left: 124,
+                                      left: _studioScaled(124, studioWidth),
                                       right: 6,
                                       top: i == 1
                                           ? 32.6
@@ -636,7 +686,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                     ),
                                     // Meta (p): x=+124
                                     Positioned(
-                                      left: 124,
+                                      left: _studioScaled(124, studioWidth),
                                       right: 9,
                                       top: i == 2 ? 73.2 : 73.7,
                                       child: Text(
@@ -656,9 +706,13 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                 ),
                               ),
                             ),
-                          ),
+                          )),
                         ),
                     ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -735,9 +789,9 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
     );
     unawaited(ProgressManager.instance.recordTaskProgress('video'));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
-          'Taslak kaydedildi! Yükle ekranından paylaşabilirsin.',
+          context.l10n.draftSavedToast,
         ),
       ),
     );
@@ -755,9 +809,15 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
             bottom: false,
             child: Column(
               children: [
-                _buildAppBar(context, 'VİDEO YAP'),
+                _buildAppBar(context, context.l10n.studioCreateTitle),
                 Expanded(
-                  child: ListView(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final studioWidth = _studioContentWidth(constraints);
+                      return Center(
+                        child: SizedBox(
+                          width: studioWidth + _kStudioHorizontalPadding,
+                          child: ListView(
                     padding: EdgeInsets.fromLTRB(
                       14,
                       12,
@@ -767,8 +827,8 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                     children: [
                       // Editor Preview Box (402 x 301.5, y: 107.4..408.9)
                       Container(
-                        width: 402,
-                        height: 301.5,
+                        width: studioWidth,
+                        height: studioWidth * 301.5 / _kStudioMaxWidth,
                         decoration: BoxDecoration(
                           color: const Color(0xFF1B2336),
                           borderRadius: BorderRadius.circular(20),
@@ -786,27 +846,32 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                             Positioned.fill(
                               child: Image.asset(
                                 'assets/design/ui/studio_create/ebg.png',
-                                width: 402,
-                                height: 301.5,
+                                width: studioWidth,
+                                height: studioWidth * 301.5 / _kStudioMaxWidth,
                                 fit: BoxFit.cover,
                                 errorBuilder: (c, e, s) => const ColoredBox(
                                   color: Color(0xFF1B2336),
                                 ),
                               ),
                             ),
-                            // Sticker: right: 10, top: 151.0, 104x116.4
-                            Positioned(
-                              right: 10,
-                              top: 151.0,
-                              width: 104,
-                              height: 116.4,
-                              child: _DropShadowImage(
-                                assetPath: _stickers[_selectedSticker],
-                                width: 104,
-                                height: 116.4,
-                                shadowOffset: const Offset(0, 6),
-                                shadowBlur: 4,
-                                shadowColor: const Color(0x66000000),
+                            // Sticker: sağ kenara 10px, dikeyde tasarım oranıyla
+                            // (merkez 209.2/301.5 -> Alignment y ~0.39), boyut genişliğe oranlı.
+                            Align(
+                              alignment: const Alignment(1.0, 0.39),
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 10),
+                                child: SizedBox(
+                                  width: _studioScaled(104, studioWidth),
+                                  height: _studioScaled(116.4, studioWidth),
+                                  child: _DropShadowImage(
+                                    assetPath: _stickers[_selectedSticker],
+                                    width: _studioScaled(104, studioWidth),
+                                    height: _studioScaled(116.4, studioWidth),
+                                    shadowOffset: const Offset(0, 6),
+                                    shadowBlur: 4,
+                                    shadowColor: const Color(0x66000000),
+                                  ),
+                                ),
                               ),
                             ),
                             // Caption: bottom 10
@@ -847,11 +912,11 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                         height: 48,
                         child: Row(
                           children: [
-                            _buildToolTab(0, 'KIRP'),
+                            _buildToolTab(0, context.l10n.studioToolTrim),
                             const SizedBox(width: 8),
-                            _buildToolTab(1, 'YAZI'),
+                            _buildToolTab(1, context.l10n.studioToolText),
                             const SizedBox(width: 8),
-                            _buildToolTab(2, 'STİCKER'),
+                            _buildToolTab(2, context.l10n.studioToolSticker),
                           ],
                         ),
                       ),
@@ -861,7 +926,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                       if (_activeTab == 0)
                         // Trim panel (y: 480.9, height: 209.9)
                         Container(
-                          width: 402,
+                          width: studioWidth,
                           height: 209.9,
                           decoration: BoxDecoration(
                             color: Colors.white,
@@ -881,7 +946,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                 left: 14,
                                 top: 39.1,
                                 child: Text(
-                                  'KLİBİ KIRP',
+                                  context.l10n.trimClipTitle,
                                   style: GoogleFonts.baloo2(
                                     fontSize: 15.5,
                                     fontWeight: FontWeight.w800,
@@ -895,7 +960,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                               Positioned(
                                 left: 14,
                                 top: 66.6,
-                                width: 374,
+                                width: studioWidth - _kStudioHorizontalPadding,
                                 height: 34,
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(10),
@@ -904,7 +969,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                     child: Align(
                                       alignment: Alignment.centerLeft,
                                       child: Container(
-                                        width: 374 * (_trimPercent / 100.0),
+                                        width: (studioWidth - _kStudioHorizontalPadding) * (_trimPercent / 100.0),
                                         height: 34,
                                         decoration: BoxDecoration(
                                           color: const Color(0x59E01E5A),
@@ -924,36 +989,42 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                               Positioned(
                                 left: 14,
                                 top: 112.6,
-                                width: 374,
+                                width: studioWidth - _kStudioHorizontalPadding,
                                 height: 34,
-                                child: GestureDetector(
+                                child: Semantics(
+                                  slider: true,
+                                  label: context.l10n.trimEndLabel,
+                                  value: '0:00 – 0:$endSec',
+                                  onIncrease: () => setState(() => _trimPercent = math.min(100.0, _trimPercent + 5.0)),
+                                  onDecrease: () => setState(() => _trimPercent = math.max(20.0, _trimPercent - 5.0)),
+                                  child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
                                   onHorizontalDragUpdate: (d) {
                                     final localX = d.localPosition.dx.clamp(
                                       0.0,
-                                      374.0,
+                                      studioWidth - _kStudioHorizontalPadding,
                                     );
-                                    final pct = 20.0 + (localX / 374.0) * 80.0;
+                                    final pct = 20.0 + (localX / (studioWidth - _kStudioHorizontalPadding)) * 80.0;
                                     setState(() => _trimPercent = pct);
                                   },
                                   onTapDown: (d) {
                                     unawaited(AudioManager().playButtonTap());
                                     final localX = d.localPosition.dx.clamp(
                                       0.0,
-                                      374.0,
+                                      studioWidth - _kStudioHorizontalPadding,
                                     );
-                                    final pct = 20.0 + (localX / 374.0) * 80.0;
+                                    final pct = 20.0 + (localX / (studioWidth - _kStudioHorizontalPadding)) * 80.0;
                                     setState(() => _trimPercent = pct);
                                   },
                                   child: CustomPaint(
-                                    size: const Size(374, 34),
+                                    size: Size(studioWidth - _kStudioHorizontalPadding, 34),
                                     painter: _HtmlRangeSliderPainter(
                                       value: _trimPercent,
                                       min: 20,
                                       max: 100,
                                     ),
                                   ),
-                                ),
+                                )),
                               ),
                               // p.st-note: top=166.5
                               Positioned(
@@ -969,7 +1040,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                       color: const Color(0xFF66738A),
                                     ),
                                     children: [
-                                      const TextSpan(text: 'Seçili bölüm: '),
+                                      TextSpan(text: context.l10n.selectedSectionPrefix),
                                       TextSpan(
                                         text: '0:00 – 0:$endSec',
                                         style: GoogleFonts.nunito(
@@ -980,7 +1051,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                           color: const Color(0xFF66738A),
                                         ),
                                       ),
-                                      const TextSpan(text: ' · Toplam 0:47'),
+                                      TextSpan(text: context.l10n.totalDurationSuffix),
                                     ],
                                   ),
                                 ),
@@ -1007,7 +1078,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'YAZI EKLE',
+                                context.l10n.addTextTitle,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 15.5,
                                   fontWeight: FontWeight.w800,
@@ -1039,11 +1110,11 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                     fontWeight: FontWeight.w700,
                                     color: const Color(0xFF141B2A),
                                   ),
-                                  decoration: const InputDecoration(
+                                  decoration: InputDecoration(
                                     border: InputBorder.none,
                                     counterText: '',
                                     isDense: true,
-                                    hintText: 'Videona yazı yaz…',
+                                    hintText: context.l10n.videoCaptionHint,
                                   ),
                                   onChanged: (v) => setState(
                                     () => _caption = v.isEmpty ? 'LÜLÜLÜ!' : v,
@@ -1052,7 +1123,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Yazı, önizlemede anında görünür.',
+                                context.l10n.captionPreviewNote,
                                 style: GoogleFonts.nunito(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -1081,7 +1152,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'STİCKER SEÇ',
+                                context.l10n.chooseStickerTitle,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 15.5,
                                   fontWeight: FontWeight.w800,
@@ -1096,7 +1167,11 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   for (int i = 0; i < _stickers.length; i++)
-                                    GestureDetector(
+                                    Semantics(
+                                      button: true,
+                                      label: context.l10n.stickerLabel(i + 1),
+                                      selected: _selectedSticker == i,
+                                      child: GestureDetector(
                                       onTap: () {
                                         unawaited(
                                           AudioManager().playButtonTap(),
@@ -1130,7 +1205,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                           fit: BoxFit.contain,
                                         ),
                                       ),
-                                    ),
+                                    )),
                                 ],
                               ),
                             ],
@@ -1139,10 +1214,13 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
 
                       const SizedBox(height: 12),
                       // Save Button (#edSave, y: 702.8, height: 52)
-                      GestureDetector(
+                      Semantics(
+                        button: true,
+                        label: context.l10n.saveAndPreviewLabel,
+                        child: GestureDetector(
                         onTap: _save,
                         child: Container(
-                          width: 402,
+                          width: studioWidth,
                           height: 52,
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
@@ -1171,7 +1249,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            'KAYDET VE ÖNİZLE',
+                            context.l10n.saveAndPreviewButton,
                             style: GoogleFonts.baloo2(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -1181,11 +1259,11 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                             ),
                           ),
                         ),
-                      ),
+                      )),
                       const SizedBox(height: 10),
                       // Bottom note (y: 763.8)
                       Text(
-                        'Taslak, Yükle ekranından paylaşılabilir.',
+                        context.l10n.draftShareableNote,
                         textAlign: TextAlign.center,
                         style: GoogleFonts.nunito(
                           fontSize: 12,
@@ -1196,6 +1274,10 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                         ),
                       ),
                     ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -1225,7 +1307,11 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
     final active = _activeTab == index;
     final fg = active ? const Color(0xFF4A2E00) : const Color(0xFF141B2A);
     return Expanded(
-      child: GestureDetector(
+      child: Semantics(
+        button: true,
+        label: label,
+        selected: active,
+        child: GestureDetector(
         onTap: () {
           unawaited(AudioManager().playButtonTap());
           setState(() => _activeTab = index);
@@ -1266,7 +1352,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }
@@ -1302,7 +1388,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
     setState(() {
       _hasSelectedFile = true;
       if (_titleCtrl.text.isEmpty) {
-        _titleCtrl.text = 'Böcek Birleştirme Rekorum!';
+        _titleCtrl.text = context.l10n.uploadDefaultTitle;
       }
     });
     unawaited(AudioManager().playPop());
@@ -1319,7 +1405,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
     );
     unawaited(ProgressManager.instance.recordTaskProgress('video'));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Video başarıyla Stüdyo\'ya yüklendi!')),
+      SnackBar(content: Text(context.l10n.videoUploadedSnack)),
     );
   }
 
@@ -1333,9 +1419,15 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
             bottom: false,
             child: Column(
               children: [
-                _buildAppBar(context, 'YÜKLE'),
+                _buildAppBar(context, context.l10n.studioUploadTitle),
                 Expanded(
-                  child: ListView(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final studioWidth = _studioContentWidth(constraints);
+                      return Center(
+                        child: SizedBox(
+                          width: studioWidth + _kStudioHorizontalPadding,
+                          child: ListView(
                     padding: EdgeInsets.fromLTRB(
                       14,
                       12,
@@ -1344,7 +1436,10 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                     ),
                     children: [
                       // Dropzone Card (x: 14, y: 107.4, width: 402, height: 127)
-                      GestureDetector(
+                      Semantics(
+                        button: true,
+                        label: context.l10n.chooseFileLabel,
+                        child: GestureDetector(
                         onTap: _pickFile,
                         child: CustomPaint(
                           foregroundPainter: const _DashedRRectPainter(
@@ -1353,7 +1448,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                             radius: 20,
                           ),
                           child: Container(
-                            width: 402,
+                            width: studioWidth,
                             height: 127,
                             decoration: BoxDecoration(
                               color: const Color(0xFFF6F8FC),
@@ -1378,7 +1473,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                                 Positioned(
                                   top: 63,
                                   child: Text(
-                                    'DOSYA SEÇ',
+                                    context.l10n.chooseFileButton,
                                     style: GoogleFonts.baloo2(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w800,
@@ -1392,7 +1487,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                                 Positioned(
                                   top: 93,
                                   child: Text(
-                                    'MP4 veya MOV · en fazla 500 MB',
+                                    context.l10n.fileConstraintsNote,
                                     style: GoogleFonts.nunito(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
@@ -1406,12 +1501,12 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                             ),
                           ),
                         ),
-                      ),
+                      )),
                       const SizedBox(height: 12),
 
                       // Title Card (x: 14, y: 246.4, width: 402, height: 128.6)
                       Container(
-                        width: 402,
+                        width: studioWidth,
                         height: 128.6,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -1431,7 +1526,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                               left: 14,
                               top: 39.1,
                               child: Text(
-                                'VİDEO BAŞLIĞI',
+                                context.l10n.videoTitleLabel,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 15.5,
                                   fontWeight: FontWeight.w800,
@@ -1445,7 +1540,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                             Positioned(
                               left: 14,
                               top: 66.6,
-                              width: 374,
+                              width: studioWidth - _kStudioHorizontalPadding,
                               height: 48,
                               child: Container(
                                 height: 48,
@@ -1473,7 +1568,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                                     border: InputBorder.none,
                                     isDense: true,
                                     contentPadding: EdgeInsets.zero,
-                                    hintText: 'örn. Rekor birleştirme anım!',
+                                    hintText: context.l10n.videoTitleHint,
                                     hintStyle: GoogleFonts.nunito(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
@@ -1490,12 +1585,16 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                       const SizedBox(height: 12),
 
                       // Start Upload Button (#upStart, y: 387, width: 402, height: 52)
-                      GestureDetector(
+                      Semantics(
+                        button: true,
+                        label: context.l10n.startUploadLabel,
+                        enabled: _hasSelectedFile,
+                        child: GestureDetector(
                         onTap: _startUpload,
                         child: Opacity(
                           opacity: _hasSelectedFile ? 1.0 : 0.45,
                           child: Container(
-                            width: 402,
+                            width: studioWidth,
                             height: 52,
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
@@ -1524,7 +1623,7 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                             ),
                             alignment: Alignment.center,
                             child: Text(
-                              'YÜKLEMEYİ BAŞLAT',
+                              context.l10n.startUploadButton,
                               style: GoogleFonts.baloo2(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800,
@@ -1535,8 +1634,12 @@ class _StudioUploadScreenState extends State<StudioUploadScreen> {
                             ),
                           ),
                         ),
-                      ),
+                      )),
                     ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -1583,13 +1686,25 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
   final Set<int> _selectedFrames = {0, 1};
   int _activePreviewFrame = 0; // Frame 0 (Pijamalı Dansçı, gifImg.png) matches reference-studio-gif.png
   int _selectedSpeed = 1; // 1: NORMAL is active (.on) in reference spec
-  final _captionCtrl = TextEditingController(text: 'DANS ZAMANI!');
+  late final TextEditingController _captionCtrl;
+  bool _captionInitialized = false;
 
   final _frameAssets = [
     'assets/design/ui/studio_gif/gifImg.png',
     'assets/design/ui/studio_gif/img_3.png',
     'assets/design/ui/studio_gif/img_4.png',
   ];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_captionInitialized) {
+      _captionCtrl = TextEditingController(
+        text: context.l10n.gifDefaultCaption,
+      );
+      _captionInitialized = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -1609,7 +1724,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
     );
     unawaited(ProgressManager.instance.recordTaskProgress('video'));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('GIF oluşturuldu ve kaydedildi!')),
+      SnackBar(content: Text(context.l10n.gifCreatedSnack)),
     );
   }
 
@@ -1623,9 +1738,15 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
             bottom: false,
             child: Column(
               children: [
-                _buildAppBar(context, 'GIF OLUŞTUR'),
+                _buildAppBar(context, context.l10n.studioGifTitle),
                 Expanded(
-                  child: ListView(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final studioWidth = _studioContentWidth(constraints);
+                      return Center(
+                        child: SizedBox(
+                          width: studioWidth + _kStudioHorizontalPadding,
+                          child: ListView(
                     padding: EdgeInsets.fromLTRB(
                       14,
                       12,
@@ -1635,7 +1756,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                     children: [
                       // GIF Preview Box (x: 14, y: 107.4, width: 402, height: 300)
                       Container(
-                        width: 402,
+                        width: studioWidth,
                         height: 300,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(20),
@@ -1682,13 +1803,13 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                             ),
                             // #gifImg: width 72% (289.4), height 251.6, centered at (56.3, 35.5)
                             Positioned(
-                              left: 56.3,
+                              left: _studioScaled(56.3, studioWidth),
                               top: 35.5,
-                              width: 289.4,
+                              width: _studioScaled(289.4, studioWidth),
                               height: 251.6,
                               child: _DropShadowImage(
                                 assetPath: _frameAssets[_activePreviewFrame],
-                                width: 289.4,
+                                width: _studioScaled(289.4, studioWidth),
                                 height: 251.6,
                                 shadowOffset: const Offset(0, 10),
                                 shadowBlur: 7,
@@ -1702,7 +1823,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                               bottom: 12,
                               child: Text(
                                 _captionCtrl.text.isEmpty
-                                    ? 'DANS ZAMANI!'
+                                    ? context.l10n.gifDefaultCaption
                                     : _captionCtrl.text,
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.bangers(
@@ -1732,7 +1853,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
 
                       // Frames Card (y: 419.4, width: 402, height: 196.2)
                       Container(
-                        width: 402,
+                        width: studioWidth,
                         height: 196.2,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -1752,7 +1873,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                               left: 14,
                               top: 39.1,
                               child: Text(
-                                'KARELERİ SEÇ',
+                                context.l10n.chooseFramesTitle,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 15.5,
                                   fontWeight: FontWeight.w800,
@@ -1766,7 +1887,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                             Positioned(
                               left: 14,
                               top: 66.6,
-                              width: 374,
+                              width: studioWidth - _kStudioHorizontalPadding,
                               height: 77,
                               child: Row(
                                 children: [
@@ -1795,7 +1916,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                               left: 14,
                               top: 152.2,
                               child: Text(
-                                'Seçili kareler önizlemede sırayla oynar.',
+                                context.l10n.selectedFramesNote,
                                 style: GoogleFonts.nunito(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -1812,7 +1933,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
 
                       // Text & Speed Card (y: 627.6, width: 402, height: 186.6)
                       Container(
-                        width: 402,
+                        width: studioWidth,
                         height: 186.6,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -1832,7 +1953,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                               left: 14,
                               top: 39.1,
                               child: Text(
-                                'METİN & HIZ',
+                                context.l10n.textAndSpeedTitle,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 15.5,
                                   fontWeight: FontWeight.w800,
@@ -1846,7 +1967,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                             Positioned(
                               left: 14,
                               top: 66.6,
-                              width: 374,
+                              width: studioWidth - _kStudioHorizontalPadding,
                               height: 48,
                               child: Container(
                                 height: 48,
@@ -1883,15 +2004,15 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                             Positioned(
                               left: 14,
                               top: 124.6,
-                              width: 374,
+                              width: studioWidth - _kStudioHorizontalPadding,
                               height: 48,
                               child: Row(
                                 children: [
-                                  _buildSpeedBtn(0, 'YAVAŞ'),
+                                  _buildSpeedBtn(0, context.l10n.speedSlow),
                                   const SizedBox(width: 8),
-                                  _buildSpeedBtn(1, 'NORMAL'),
+                                  _buildSpeedBtn(1, context.l10n.speedNormal),
                                   const SizedBox(width: 8),
-                                  _buildSpeedBtn(2, 'HIZLI'),
+                                  _buildSpeedBtn(2, context.l10n.speedFast),
                                 ],
                               ),
                             ),
@@ -1901,10 +2022,13 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                       const SizedBox(height: 12),
 
                       // Generate Button (#gifMake, y: 826.2, width: 402, height: 52)
-                      GestureDetector(
+                      Semantics(
+                        button: true,
+                        label: context.l10n.createGifLabel,
+                        child: GestureDetector(
                         onTap: _generate,
                         child: Container(
-                          width: 402,
+                          width: studioWidth,
                           height: 52,
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
@@ -1933,7 +2057,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            'GIF OLUŞTUR',
+                            context.l10n.studioGifTitle,
                             style: GoogleFonts.baloo2(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -1943,8 +2067,12 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                             ),
                           ),
                         ),
-                      ),
+                      )),
                     ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -1973,7 +2101,11 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
   Widget _buildFrameBtn(int index, String label, String imagePath) {
     final on = _selectedFrames.contains(index);
     return Expanded(
-      child: GestureDetector(
+      child: Semantics(
+        button: true,
+        label: label,
+        selected: on,
+        child: GestureDetector(
         onTap: () {
           unawaited(AudioManager().playButtonTap());
           setState(() {
@@ -2019,14 +2151,18 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 
   Widget _buildSpeedBtn(int index, String label) {
     final on = _selectedSpeed == index;
     return Expanded(
-      child: GestureDetector(
+      child: Semantics(
+        button: true,
+        label: label,
+        selected: on,
+        child: GestureDetector(
         onTap: () {
           unawaited(AudioManager().playButtonTap());
           setState(() {
@@ -2064,7 +2200,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 }
@@ -2119,7 +2255,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
     setState(() => _downloads.removeAt(index));
     unawaited(BugVideoService.instance.removeDownloadAt(index));
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Silindi: ${item['title']}')),
+      SnackBar(content: Text(context.l10n.deletedItemSnack(item['title'] as String))),
     );
   }
 
@@ -2133,9 +2269,15 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
             bottom: false,
             child: Column(
               children: [
-                _buildAppBar(context, 'İNDİRİLENLER'),
+                _buildAppBar(context, context.l10n.studioDownloadsTitle),
                 Expanded(
-                  child: ListView(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final studioWidth = _studioContentWidth(constraints);
+                      return Center(
+                        child: SizedBox(
+                          width: studioWidth + _kStudioHorizontalPadding,
+                          child: ListView(
                     padding: EdgeInsets.fromLTRB(
                       14,
                       12,
@@ -2145,7 +2287,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                     children: [
                       // Storage card (x: 14, y: 107.4, width: 402, height: 137.2)
                       Container(
-                        width: 402,
+                        width: studioWidth,
                         height: 137.2,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -2165,7 +2307,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                               left: 14,
                               top: 39.1,
                               child: Text(
-                                'DEPOLAMA',
+                                context.l10n.storageTitle,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 15.5,
                                   fontWeight: FontWeight.w800,
@@ -2179,7 +2321,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                             Positioned(
                               left: 14,
                               top: 66.6,
-                              width: 374,
+                              width: studioWidth - _kStudioHorizontalPadding,
                               height: 14,
                               child: Container(
                                 height: 14,
@@ -2190,7 +2332,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                 child: Align(
                                   alignment: Alignment.centerLeft,
                                   child: Container(
-                                    width: 113.2,
+                                    width: (studioWidth - _kStudioHorizontalPadding) * 113.2 / 374.0,
                                     decoration: BoxDecoration(
                                       gradient: const LinearGradient(
                                         colors: [
@@ -2230,7 +2372,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                     ),
                                     TextSpan(
                                       text:
-                                          ' kullanıldı · 4 GB toplam · ${_downloads.length} öğe',
+                                          context.l10n.storageUsedSuffix(_downloads.length),
                                     ),
                                   ],
                                 ),
@@ -2245,7 +2387,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 9),
                           child: Container(
-                            width: 402,
+                            width: studioWidth,
                             height: 66,
                             padding: const EdgeInsets.all(9),
                             decoration: BoxDecoration(
@@ -2326,7 +2468,10 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    GestureDetector(
+                                    Semantics(
+                                      button: true,
+                                      label: context.l10n.playItemLabel(_downloads[i]['title'] as String),
+                                      child: GestureDetector(
                                       onTap: () {
                                         unawaited(
                                           AudioManager().playButtonTap(),
@@ -2341,7 +2486,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                         ).showSnackBar(
                                           SnackBar(
                                             content: Text(
-                                              'Oynatılıyor: ${_downloads[i]['title']}',
+                                              context.l10n.nowPlayingLabel(_downloads[i]['title'] as String),
                                             ),
                                           ),
                                         );
@@ -2357,8 +2502,11 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                           ),
                                         ),
                                       ),
-                                    ),
-                                    GestureDetector(
+                                    )),
+                                    Semantics(
+                                      button: true,
+                                      label: context.l10n.deleteItemLabel(_downloads[i]['title'] as String),
+                                      child: GestureDetector(
                                       onTap: () => _delete(i),
                                       child: Container(
                                         width: 48,
@@ -2371,7 +2519,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                           ),
                                         ),
                                       ),
-                                    ),
+                                    )),
                                   ],
                                 ),
                               ],
@@ -2379,6 +2527,10 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                           ),
                         ),
                     ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -2412,7 +2564,10 @@ Widget _buildAppBar(BuildContext context, String title) {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        GestureDetector(
+        Semantics(
+          button: true,
+          label: context.l10n.goBackLabel,
+          child: GestureDetector(
           onTap: () {
             unawaited(AudioManager().playButtonTap());
             if (Navigator.of(context).canPop()) {
@@ -2446,12 +2601,12 @@ Widget _buildAppBar(BuildContext context, String title) {
               ),
             ),
           ),
-        ),
+        )),
         const SizedBox(width: 10),
         Transform.translate(
           offset: const Offset(0, 1.3),
           child: Text(
-            _trUpper(title),
+            _trUpper(title, Localizations.localeOf(context)),
             style: GoogleFonts.baloo2(
               fontSize: 23,
               fontWeight: FontWeight.w800,
@@ -2949,7 +3104,7 @@ class _OutlineRRectPainter extends CustomPainter {
         -half,
         -half,
         size.width + strokeWidth,
-        99.0 + strokeWidth,
+        size.height + strokeWidth,
       ),
       Radius.circular(radius + half),
     );

@@ -6,11 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vibration/vibration.dart';
+import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
 import '../models/insect_tier.dart';
 import '../physics/physics_engine.dart';
 import '../services/adaptive_quality_scaler.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
@@ -38,6 +41,11 @@ class GameScreen extends StatefulWidget {
   /// Hub play: drop until the jar overflows. Campaign keeps move goals.
   final bool arcade;
 
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir. Doğrudan rota ve kampanya girişlerinde `false` kalır.
+  final bool energyConsumed;
+
   /// Static mid-game sample matching the HTML prototype; capture tests only.
   final bool prototypeVisualState;
 
@@ -45,6 +53,7 @@ class GameScreen extends StatefulWidget {
     super.key,
     required this.level,
     this.arcade = false,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
   });
 
@@ -104,6 +113,26 @@ class _GameScreenState extends State<GameScreen>
 
   /// Classic Suika: must stay over line briefly before lose.
   static const _overflowGraceSec = 0.85;
+
+  /// Tek birleşmede kazanılabilecek en yüksek puan (liderlik tavanı).
+  static const int _maxSingleMergePoints = 250000;
+
+  /// Kombo çarpanında hesaba katılan en yüksek kombo sayısı.
+  static const int _comboScoreCap = 5;
+
+  /// Düşürücü kelepçesi: önizleme yerleşmiş ölçekte çizilir, duvar payı
+  /// doğma sırasındaki 1.06 taşmasını da kapsar.
+  static const double _dropperSpawnScale = 1.0;
+  static const double _dropperWallMargin = 4.0;
+
+  /// Aydınlat bonusunun tek kullanımda verebileceği en yüksek toplam puan.
+  static const int _aydinlatScoreCap = 2000;
+
+  /// Süre sayacı işleyen gerçek bir hayatta kalma seviyesi mi?
+  bool get _isSurvivalLevel =>
+      !widget.arcade &&
+      _currentLevel.isSurvival &&
+      _currentLevel.timeLimitSeconds > 0;
   double _overflowAccum = 0;
   double _dangerPulse = 0;
   double _dangerProximity = 0;
@@ -119,6 +148,10 @@ class _GameScreenState extends State<GameScreen>
   int _dropGen = 0;
   int _mergeTotal = 0;
   int _arcadeDropCount = 0;
+
+  /// Bu oturumda yapılan düşürme sayısı. Yeniden başlatmada SIFIRLANMAZ:
+  /// enerji iadesi, oturum boyunca hiç hamle yapılmamasına bakar.
+  int _dropsMade = 0;
 
   static const ColorFilter _aydinlatBwFilter = ColorFilter.matrix(<double>[
     0.2126,
@@ -144,6 +177,17 @@ class _GameScreenState extends State<GameScreen>
   ]);
   int _maxCombo = 0;
   InsectTier _peakTier = InsectTier.cone;
+
+  /// Bu turda birleşmeyle ulaşılan en yüksek kademe; hamle-sonu hedef
+  /// denetimi (hedef-kademe seviyeleri) bunu okur. [_peakTier] ile aynı
+  /// tur sıfırlamasını paylaşır ama hedef denetimi için ayrı tutulur.
+  InsectTier _runPeakTier = InsectTier.cone;
+
+  /// Hayatta kalma seviyesinde kalan süre (saniye); süre dolunca zafer.
+  double _survivalTimeRemaining = 0;
+
+  /// Boss seviyesinde "duktur" repliği tur başına bir kez çalınır.
+  bool _bossIntroPlayed = false;
   String? _milestoneToast;
   Timer? _milestoneTimer;
   Timer? _dropTimer;
@@ -155,6 +199,7 @@ class _GameScreenState extends State<GameScreen>
   void initState() {
     super.initState();
     _currentLevel = widget.level;
+    _survivalTimeRemaining = _currentLevel.timeLimitSeconds.toDouble();
     _remainingMoves = widget.arcade ? -1 : _currentLevel.allowedMoves;
     AudioManager().initialize();
     _preloadImages();
@@ -190,9 +235,8 @@ class _GameScreenState extends State<GameScreen>
     if (widget.arcade) {
       final ramp = min(0.24, _arcadeDropCount * 0.003 + _score / 12000);
       if (r < ramp) {
-        if (_arcadeDropCount >= 36 || _score >= 6000) {
-          return InsectTier.diva;
-        }
+        // Düşürücü tavanı Dansçı (tier 4): Diva (tier 5) doğrudan
+        // düşürülmez, yalnızca birleşmeyle doğar.
         if (_arcadeDropCount >= 18 || _score >= 2400) {
           return InsectTier.dancer;
         }
@@ -200,9 +244,17 @@ class _GameScreenState extends State<GameScreen>
       }
       r = (r - ramp) / (1 - ramp);
     }
-    if (r < 0.42) return InsectTier.cone;
-    if (r < 0.72) return InsectTier.helmet;
-    if (r < 0.90) return InsectTier.fan;
+    // Kampanyada zorluk (difficulty 1..10) üst kademe olasılığını kısar;
+    // ölçek 1.0 iken eşikler taban dağılımla birebir aynıdır
+    // (0.42 / 0.72 / 0.90). Arcade'de ölçek 1.0'dır.
+    final scale = widget.arcade ? 1.0 : _currentLevel.highTierDropScale;
+    final upperMass = 0.28 * scale;
+    final lowerMass = 1.0 - upperMass;
+    final coneThreshold = (0.42 / 0.72) * lowerMass;
+    final fanThreshold = lowerMass + (0.18 / 0.28) * upperMass;
+    if (r < coneThreshold) return InsectTier.cone;
+    if (r < lowerMass) return InsectTier.helmet;
+    if (r < fanThreshold) return InsectTier.fan;
     return InsectTier.dancer;
   }
 
@@ -274,19 +326,24 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
+  double get _dropperClampInset =>
+      _currentDropperTier.radius * _dropperSpawnScale + _dropperWallMargin;
+
   double get _dropperMinX {
     final e = _engine!;
-    return e.arenaBounds.left + 28;
+    return e.arenaBounds.left + _dropperClampInset;
   }
 
   double get _dropperMaxX {
     final e = _engine!;
-    return e.arenaBounds.right - 28;
+    return e.arenaBounds.right - _dropperClampInset;
   }
 
   void _aimDropperAt(double localX) {
     if (_engine == null) return;
-    _dropperX = localX.clamp(_dropperMinX, _dropperMaxX);
+    final minX = _dropperMinX;
+    final maxX = _dropperMaxX;
+    _dropperX = minX > maxX ? (minX + maxX) / 2 : localX.clamp(minX, maxX);
   }
 
   void _restartLevel(CampaignLevel level) {
@@ -328,11 +385,15 @@ class _GameScreenState extends State<GameScreen>
       _arcadeDropCount = 0;
       _maxCombo = 0;
       _peakTier = InsectTier.cone;
+      _runPeakTier = InsectTier.cone;
+      _survivalTimeRemaining = level.timeLimitSeconds.toDouble();
+      _bossIntroPlayed = false;
       _milestoneToast = null;
       _juicePopups.clear();
       _bonusPulse.clear();
       _currentDropperTier = _rollDropTier();
       _nextDropperTier = _rollDropTier();
+      _aimDropperAt(_dropperX);
       _engine?.squareArena = widget.arcade || level.squareArena;
       _engine?.layoutBlocks(!widget.arcade && level.hasObstacles ? 3 : 0);
       _engine?.clear();
@@ -341,6 +402,12 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   void dispose() {
+    // Madde 35: giriş enerjisi tüketildiyse ve oyun bitmeden (zafer/yenilgi
+    // olmadan) hiç hamle yapılmadan çıkıldıysa 1 enerjiyi iade et.
+    // Kampanya ve doğrudan rota girişlerinde energyConsumed false'tur.
+    if (widget.energyConsumed && !_isFinished && _dropsMade == 0) {
+      EnergyService.instance.addEnergy(1);
+    }
     AudioManager().stopAll();
     for (final entry in _insectImageListeners.entries) {
       entry.key.removeListener(entry.value);
@@ -395,7 +462,7 @@ class _GameScreenState extends State<GameScreen>
       if (_comboTimeRemaining > 0) {
         _comboTimeRemaining = max(0, _comboTimeRemaining - dt);
         if (_comboTimeRemaining == 0 && _comboCount >= 2) {
-          _breakCombo('SÜRE DOLDU');
+          _breakCombo(context.l10n.comboTimeoutReason);
         }
       }
 
@@ -406,7 +473,15 @@ class _GameScreenState extends State<GameScreen>
             _settleHold >= 0.38) {
           _waitingSettle = false;
           _settleHold = 0;
-          if (!_dropHadMerge) _breakCombo('ISKA');
+          if (!_dropHadMerge) _breakCombo(context.l10n.comboMissReason);
+        }
+      }
+
+      // Hayatta kalma: süre dolunca zafer (duraklatmada sayaç durur).
+      if (_isSurvivalLevel) {
+        _survivalTimeRemaining = max(0, _survivalTimeRemaining - dt);
+        if (_survivalTimeRemaining <= 0) {
+          _triggerVictory();
         }
       }
 
@@ -519,6 +594,9 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _handleMerges(List<MergeEvent> mergeEvents) {
+    // Zafer, karedeki TÜM birleşmeler skorlandıktan sonra tetiklenir;
+    // yoksa aynı karedeki diğer birleşmelerin skoru kaybolurdu.
+    var victoryMet = false;
     for (final event in mergeEvents) {
       final nextTier = event.tier;
       _dropHadMerge = true;
@@ -529,15 +607,24 @@ class _GameScreenState extends State<GameScreen>
       }
       _comboTimeRemaining = 1.8;
 
-      // Combo heat: longer chains score harder.
-      final heat = 1.0 + min(0.85, (_comboCount - 1) * 0.12);
-      final pointsGained = (nextTier.scoreValue * _comboCount * heat).round();
+      // Combo heat: longer chains score harder, but the combo multiplier
+      // counts at most [_comboScoreCap] so a single merge can never pass
+      // the [_maxSingleMergePoints] ceiling.
+      final effectiveCombo = min(_comboCount, _comboScoreCap);
+      final heat = 1.0 + min(0.85, (effectiveCombo - 1) * 0.12);
+      final pointsGained = min(
+        _maxSingleMergePoints,
+        (nextTier.scoreValue * effectiveCombo * heat).round(),
+      );
       _score += pointsGained;
       _mergeTotal++;
       if (_comboCount > _maxCombo) _maxCombo = _comboCount;
 
       if (nextTier.tier > _highestTierUnlocked.tier) {
         _highestTierUnlocked = nextTier;
+      }
+      if (nextTier.tier > _runPeakTier.tier) {
+        _runPeakTier = nextTier;
       }
       if (nextTier.tier > _peakTier.tier) {
         _peakTier = nextTier;
@@ -562,23 +649,26 @@ class _GameScreenState extends State<GameScreen>
       if (_comboCount >= 3) {
         AudioManager().triggerHeavyHaptic();
       }
+      // Büyük kombo eşiği zincir başına bir kez çalınır.
+      if (_comboCount == 8) {
+        unawaited(AudioManager().playKanka());
+      }
 
       _playMergeJuice(event, _comboCount, pointsGained);
       _showSpeechBubble(nextTier.viralReplik);
 
-      // Check Victory Condition
+      // Check Victory Condition (deferred until every merge is scored).
       if (widget.arcade) continue;
       if (_currentLevel.objectiveType == ObjectiveType.mergeTargetTier &&
           _currentLevel.targetTier != null &&
           nextTier.tier >= _currentLevel.targetTier!.tier) {
-        _triggerVictory();
-        return;
+        victoryMet = true;
       } else if (_currentLevel.objectiveType == ObjectiveType.reachScore &&
           _score >= _currentLevel.targetScore) {
-        _triggerVictory();
-        return;
+        victoryMet = true;
       }
     }
+    if (victoryMet) _triggerVictory();
   }
 
   void _breakCombo(String reason) {
@@ -588,7 +678,7 @@ class _GameScreenState extends State<GameScreen>
     if (!hadVisibleCombo) return;
 
     _comboBreakTimer?.cancel();
-    _comboBreakToast = 'KOMBO BİTTİ: $reason';
+    _comboBreakToast = context.l10n.comboBreakToast(reason);
     _comboBreakTimer = Timer(const Duration(milliseconds: 1100), () {
       if (mounted) setState(() => _comboBreakToast = null);
     });
@@ -616,20 +706,28 @@ class _GameScreenState extends State<GameScreen>
 
   void _dropInsect() {
     if (_engine == null || !_canDrop) return;
-    if (!widget.arcade && _remainingMoves <= 0) return;
+    // Hayatta kalmada sınır süredir, hamle değil.
+    if (!widget.arcade && !_isSurvivalLevel && _remainingMoves <= 0) return;
 
     final gen = ++_dropGen;
     setState(() {
       _isDropping = true;
       _dropHadMerge = false;
-      if (!widget.arcade) _remainingMoves--;
+      if (!widget.arcade && !_isSurvivalLevel) _remainingMoves--;
     });
 
     final dropY = _engine!.arenaBounds.top + 18;
     _engine!.addBody(_currentDropperTier, _dropperX, dropY);
+    // Enerji iadesi sayacı (madde 35): düşürme anında sayılır, zamanlayıcı
+    // geri çağrısında değil — 280 ms içinde çıkılsa bile hamle sayılır.
+    _dropsMade++;
 
     AudioManager().playDrop();
     AudioManager().triggerHaptic();
+    if (!widget.arcade && _currentLevel.isBossLevel && !_bossIntroPlayed) {
+      _bossIntroPlayed = true;
+      unawaited(AudioManager().playDuktur());
+    }
 
     _dropTimer?.cancel();
     _dropTimer = Timer(const Duration(milliseconds: 280), () {
@@ -638,16 +736,17 @@ class _GameScreenState extends State<GameScreen>
         _arcadeDropCount++;
         _currentDropperTier = _nextDropperTier;
         _nextDropperTier = _rollDropTier();
+        _aimDropperAt(_dropperX);
         _isDropping = false;
         _waitingSettle = true;
         _settleHold = 0;
       });
 
-      if (!widget.arcade && _remainingMoves <= 0) {
+      if (!widget.arcade && !_isSurvivalLevel && _remainingMoves <= 0) {
         _movesEndTimer?.cancel();
         _movesEndTimer = Timer(const Duration(seconds: 2), () {
           if (!mounted || _isFinished || gen != _dropGen) return;
-          if (_calculateStars() >= 1) {
+          if (_hasMetObjective()) {
             _triggerVictory();
           } else {
             _triggerDefeat();
@@ -664,7 +763,7 @@ class _GameScreenState extends State<GameScreen>
 
   void _showMilestone(InsectTier tier) {
     _milestoneTimer?.cancel();
-    setState(() => _milestoneToast = 'YENİ: ${tier.title}');
+    setState(() => _milestoneToast = context.l10n.milestoneToast(tier.title));
     _milestoneTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) setState(() => _milestoneToast = null);
     });
@@ -688,45 +787,90 @@ class _GameScreenState extends State<GameScreen>
     return 0;
   }
 
+  /// Arcade yenilgisinde yıldız, oyun öncesi rekora oranla verilir ve
+  /// 2'yi geçemez: yenilgi ekranı asla 3 yıldız göstermez. Rekor henüz
+  /// yüklenmemişse (0) sıfırdan büyük skor 1 yıldız sayılır.
+  int _defeatArcadeStars() {
+    if (_score <= 0) return 0;
+    if (_bestScore <= 0) return 1;
+    final ratio = _score / _bestScore;
+    if (ratio >= 0.9) return 2;
+    if (ratio >= 0.6) return 1;
+    return 0;
+  }
+
+  /// Hamleler bitince hedefe bakılır: hedef-kademe seviyesinde bu turda
+  /// ulaşılan en yüksek kademe ([_runPeakTier]) şarttır; skor seviyesinde
+  /// mevcut yıldız şartı korunur.
+  bool _hasMetObjective() {
+    switch (_currentLevel.objectiveType) {
+      case ObjectiveType.mergeTargetTier:
+        final target = _currentLevel.targetTier;
+        if (target == null) return _calculateStars() >= 1;
+        return _runPeakTier.tier >= target.tier;
+      case ObjectiveType.reachScore:
+      case ObjectiveType.survivalTimer:
+        return _calculateStars() >= 1;
+    }
+  }
+
   Future<void> _triggerVictory() async {
     if (_isFinished) return;
     _isFinished = true;
 
-    final stars = max(1, _calculateStars());
+    // Yıldız gerçek eşiklere bırakılır: hedef karşılansa bile skor yıldız
+    // eşiğinin altındaysa 0 gösterilir (dürüst skor, garanti yok).
+    final stars = _calculateStars();
     final earnedCoins = ResultScoring.coinsFor(_score);
+    // recordLevelResult yalnız yıldız ARTIŞI kadar öder (starGain * 50);
+    // önceki yıldız KAYIT ÖNCESİ okunmalıdır (kayıt haritayı günceller).
+    final previousStars =
+        widget.arcade ? 0 : progress.getStarCount(_currentLevel.id);
+    final starGain = widget.arcade ? 0 : max(0, stars - previousStars);
+    final starCoins = starGain * 50;
     final totalCoins =
-        widget.arcade ? earnedCoins : max(earnedCoins, stars * 50);
-
-    if (widget.arcade) {
-      if (earnedCoins > 0) {
-        unawaited(ProgressManager.instance.addCoins(earnedCoins));
-      }
-    } else {
-      unawaited(
-        progress.recordLevelResult(
-          levelId: _currentLevel.id,
-          score: _score,
-          stars: stars,
-        ),
-      );
-      final extraCoins = earnedCoins - (stars * 50);
-      if (extraCoins > 0) {
-        unawaited(ProgressManager.instance.addCoins(extraCoins));
-      }
-    }
-    unawaited(ProgressManager.instance.recordTaskProgress('play'));
+        widget.arcade ? earnedCoins : max(earnedCoins, starCoins);
+    // Ödenen toplam = starCoins + extraCoins = totalCoins: gösterilen
+    // tutar ile ödenen tutar birebir uyuşur.
+    final extraCoins = earnedCoins - starCoins;
 
     AudioManager().playWin();
+    unawaited(AudioManager().playLululuNakarat());
     unawaited(_submitSuikaScore());
     if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + görev kaydı + sonuç ekranı finishRun() üzerinden;
+    // kampanya ödemesi (recordLevelResult + fark coini) settle kapaması
+    // içinde, eski unawaited sırasıyla aynen yapılır. Liderlik gönderimi
+    // _submitSuikaScore'da kalır (ensureLoaded + rekor tazeleme).
+    final replay = await finishRun(
       context,
       score: _score,
+      best: _bestScore,
       coins: totalCoins,
       stars: stars,
       bestScore: max(_score, _bestScore),
       bestCombo: max(1, _maxCombo),
       merges: _mergeTotal,
+      awaitSettle: false,
+      settle: () async {
+        if (widget.arcade) {
+          if (earnedCoins > 0) {
+            unawaited(ProgressManager.instance.addCoins(earnedCoins));
+          }
+        } else {
+          unawaited(
+            progress.recordLevelResult(
+              levelId: _currentLevel.id,
+              score: _score,
+              stars: stars,
+              victory: true,
+            ),
+          );
+          if (extraCoins > 0) {
+            unawaited(ProgressManager.instance.addCoins(extraCoins));
+          }
+        }
+      },
     );
     if (!mounted) return;
     if (replay) {
@@ -741,24 +885,27 @@ class _GameScreenState extends State<GameScreen>
     _isFinished = true;
 
     final earnedCoins = ResultScoring.coinsFor(_score);
-    if (earnedCoins > 0) {
-      unawaited(ProgressManager.instance.addCoins(earnedCoins));
-    }
-    unawaited(ProgressManager.instance.recordTaskProgress('play'));
 
     AudioManager().playLose();
     unawaited(_submitSuikaScore());
+    // Yenilgi asla 3 yıldız göstermez: arcade'de rekora oranla (en çok 2),
+    // kampanyada eşik yıldızı 2 ile sınırlanır.
     final stars = widget.arcade
-        ? ResultScoring.starsFor(score: _score, best: _bestScore)
-        : _calculateStars();
-    final replay = await showGameResult(
+        ? _defeatArcadeStars()
+        : min(2, _calculateStars());
+    // S1#49: ödeme + görev kaydı + sonuç ekranı finishRun() üzerinden
+    // (ateşle-unut ödeme, eski unawaited davranışı). Liderlik gönderimi
+    // _submitSuikaScore'da kalır.
+    final replay = await finishRun(
       context,
       score: _score,
+      best: _bestScore,
       coins: earnedCoins,
       stars: stars,
       bestScore: max(_score, _bestScore),
       bestCombo: max(1, _maxCombo),
       merges: _mergeTotal,
+      awaitSettle: false,
     );
     if (!mounted) return;
     if (replay) {
@@ -801,7 +948,11 @@ class _GameScreenState extends State<GameScreen>
 
   // Mega Booster: Aydınlat Hele! — F16 airstrike + grayscale flash.
   void _useAydinlatMegaBonus() {
-    if (_engine == null || progress.aydinlatCount <= 0 || _isAydinlatActive) {
+    if (_engine == null ||
+        progress.aydinlatCount <= 0 ||
+        _isAydinlatActive ||
+        _paused ||
+        _isFinished) {
       return;
     }
     setState(() {
@@ -812,11 +963,12 @@ class _GameScreenState extends State<GameScreen>
 
     unawaited(AudioManager().playF16Sfx());
     final initialBlast = _engine!.f16Bombardment(maxCount: 3);
-    if (initialBlast.isNotEmpty) {
-      _score += initialBlast.length * 180;
+    final initialAward = initialBlast.length * 180;
+    if (initialAward > 0) {
+      _score += initialAward;
     }
     _showSpeechBubble(
-      'Kurban olduğum şuraları bir aydınlat hele!',
+      context.l10n.speechAydinlat,
       durationSeconds: 3,
     );
 
@@ -825,11 +977,20 @@ class _GameScreenState extends State<GameScreen>
     _aydinlatTimer?.cancel();
     _aydinlatTimer = Timer(const Duration(milliseconds: 480), () {
       if (!mounted) return;
+      if (_isFinished) {
+        setState(() => _isAydinlatActive = false);
+        return;
+      }
       AudioManager().playAydinlatBeam();
       final cleared = _engine!.executeAydinlatAirstrike();
+      // Tek kullanımın toplam bonusu tavanı aşamaz.
+      final delayedAward = min(
+        cleared * 350,
+        max(0, _aydinlatScoreCap - initialAward),
+      );
 
       setState(() {
-        _score += cleared * 350;
+        _score += delayedAward;
         if (_score > _bestScore) _bestScore = _score;
         _isAydinlatActive = false;
       });
@@ -840,6 +1001,8 @@ class _GameScreenState extends State<GameScreen>
   void _useSlipperPowerup() {
     if (_engine == null ||
         progress.slipperCount <= 0 ||
+        _paused ||
+        _isFinished ||
         _engine!.bodies.isEmpty) {
       return;
     }
@@ -854,13 +1017,15 @@ class _GameScreenState extends State<GameScreen>
     if (_score > _bestScore) _bestScore = _score;
 
     AudioManager().playSlipper();
-    _showSpeechBubble('Şılapp! Anne Terliği indi!', durationSeconds: 2);
+    _showSpeechBubble(context.l10n.speechSlipper, durationSeconds: 2);
   }
 
   // Booster: Raid Spray
   void _useSprayPowerup() {
     if (_engine == null ||
         progress.sprayCount <= 0 ||
+        _paused ||
+        _isFinished ||
         _engine!.bodies.isEmpty) {
       return;
     }
@@ -871,7 +1036,7 @@ class _GameScreenState extends State<GameScreen>
     _score += vaporized * 300;
 
     AudioManager().playSpray();
-    _showSpeechBubble('Fısss! Raid tertemiz etti!', durationSeconds: 2);
+    _showSpeechBubble(context.l10n.speechSpray, durationSeconds: 2);
   }
 
   void _showInfoDialog() {
@@ -900,7 +1065,7 @@ class _GameScreenState extends State<GameScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Suika Arena — Nasıl Oynanır?',
+                ctx.l10n.howToTitle,
                 style: GoogleFonts.exo2(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
@@ -909,7 +1074,7 @@ class _GameScreenState extends State<GameScreen>
               ),
               const SizedBox(height: 14),
               Text(
-                'Alana dokun — sıradaki böcek tam oraya düşer. Aynı tier iki böcek çarpışınca bir üst tier doğar, skor katlanır. Yığın kırmızı tehlike çizgisini aşarsa oyun biter.\n\nGüçlendiriciler:\n• Raid Spreyi küçük böcekleri temizler.\n• Sarsıntı yığını yeniden yerleştirir.\n• Aydınlat Hele! ise F16 ile gelip alanı bombalar.',
+                ctx.l10n.howToBody,
                 style: GoogleFonts.exo2(
                   fontSize: 13,
                   height: 1.45,
@@ -937,7 +1102,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    'ANLADIM',
+                    ctx.l10n.understoodButton,
                     style: GoogleFonts.bangers(
                       fontSize: 18,
                       color: const Color(0xFF4A2E00),
@@ -1001,7 +1166,7 @@ class _GameScreenState extends State<GameScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'SKOR',
+                  context.l10n.gameScoreLabel,
                   style: GoogleFonts.exo2(
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
@@ -1036,7 +1201,7 @@ class _GameScreenState extends State<GameScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'REKOR',
+                  context.l10n.gameBestLabel,
                   style: GoogleFonts.exo2(
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
@@ -1045,7 +1210,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                 ),
                 Text(
-                  '${_bestScore > 0 ? _bestScore : 4820}',
+                  '${_bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore}',
                   style: GoogleFonts.bangers(
                     fontSize: 20,
                     color: Colors.white,
@@ -1070,7 +1235,7 @@ class _GameScreenState extends State<GameScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'SIRADAKİ',
+                  context.l10n.gameNextLabel,
                   style: GoogleFonts.exo2(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w900,
@@ -1125,12 +1290,12 @@ class _GameScreenState extends State<GameScreen>
   static const _protoPanel = Color(0xD9080B12);
 
   Widget _buildArcadeGameHud() {
-    final best = _bestScore > 0 ? _bestScore : 4820;
+    final best = _bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore;
     final hudRow = Row(
       children: [
         Semantics(
           button: true,
-          label: 'Duraklat',
+          label: context.l10n.pause,
           child: GestureDetector(
             onTap: _togglePause,
             behavior: HitTestBehavior.opaque,
@@ -1153,9 +1318,9 @@ class _GameScreenState extends State<GameScreen>
           ),
         ),
         const SizedBox(width: 8),
-        _buildArcadeScoreBox('SKOR', '$_score', 104),
+        _buildArcadeScoreBox(context.l10n.gameScoreLabel, '$_score', 104),
         const SizedBox(width: 8),
-        _buildArcadeScoreBox('REKOR', _formatArcadeScore(best), 84),
+        _buildArcadeScoreBox(context.l10n.gameBestLabel, _formatArcadeScore(best), 84),
         const Spacer(),
         Container(
           width: 90,
@@ -1169,12 +1334,12 @@ class _GameScreenState extends State<GameScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Flexible(
+              Flexible(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'SIRADAKİ',
+                    context.l10n.gameNextLabel,
                     maxLines: 1,
                     overflow: TextOverflow.clip,
                     style: TextStyle(
@@ -1355,7 +1520,7 @@ class _GameScreenState extends State<GameScreen>
           Expanded(
             flex: 3,
             child: _buildCompactStatCard(
-              label: 'SKOR',
+              label: context.l10n.gameScoreLabel,
               value: '$_score',
               accent: LululuColors.liquidGold,
             ),
@@ -1364,8 +1529,8 @@ class _GameScreenState extends State<GameScreen>
           Expanded(
             flex: 3,
             child: _buildCompactStatCard(
-              label: 'REKOR',
-              value: '${_bestScore > 0 ? _bestScore : 4820}',
+              label: context.l10n.gameBestLabel,
+              value: '${_bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore}',
               accent: LululuColors.mutedTitanium,
             ),
           ),
@@ -1383,7 +1548,7 @@ class _GameScreenState extends State<GameScreen>
                 children: [
                   Expanded(
                     child: Text(
-                      'SIRADAKİ',
+                      context.l10n.gameNextLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.exo2(
@@ -1482,7 +1647,7 @@ class _GameScreenState extends State<GameScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'OYUN DURAKLATILDI',
+                context.l10n.gamePausedTitle,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.bangers(
                   fontSize: 28,
@@ -1492,7 +1657,7 @@ class _GameScreenState extends State<GameScreen>
               ),
               const SizedBox(height: 2),
               Text(
-                'Duraklatıldı · Skor $_score',
+                context.l10n.pausedScoreLine(_score),
                 style: GoogleFonts.nunito(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
@@ -1525,7 +1690,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    'DEVAM ET',
+                    context.l10n.resumeButtonCaps,
                     style: GoogleFonts.bangers(
                       fontSize: 20,
                       color: const Color(0xFF04140A),
@@ -1556,7 +1721,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    'YENİDEN BAŞLA',
+                    context.l10n.restartLevelButton,
                     style: GoogleFonts.bangers(
                       fontSize: 20,
                       color: const Color(0xFF4A2E00),
@@ -1584,7 +1749,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    'OYUNU BİTİR',
+                    context.l10n.finishGameButton,
                     style: GoogleFonts.bangers(
                       fontSize: 18,
                       color: Colors.white,
@@ -1613,7 +1778,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    'ANA SAYFA',
+                    context.l10n.navHome,
                     style: GoogleFonts.bangers(
                       fontSize: 18,
                       color: LululuColors.mutedTitanium,
@@ -1625,6 +1790,111 @@ class _GameScreenState extends State<GameScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Hayatta kalma sayacı ve/veya boss göstergesi (kampanya HUD'unun altı;
+  /// arcade'de ve sıradan seviyelerde boş kutu döndürür).
+  Widget _buildObjectiveBanner() {
+    final showTimer = _isSurvivalLevel;
+    final showBoss = !widget.arcade && _currentLevel.isBossLevel;
+    if (!showTimer && !showBoss) return const SizedBox.shrink();
+
+    final remaining = _survivalTimeRemaining.ceil();
+    final urgent = showTimer && remaining <= 10;
+    final timerText =
+        '${remaining ~/ 60}:${(remaining % 60).toString().padLeft(2, '0')}';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (showTimer)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF080B12).withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: urgent
+                      ? LululuColors.mysticRuby
+                      : LululuColors.liquidGold.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.timer_outlined,
+                    size: 15,
+                    color: urgent
+                        ? LululuColors.mysticRuby
+                        : LululuColors.liquidGold,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    timerText,
+                    style: GoogleFonts.bangers(
+                      fontSize: 17,
+                      color: Colors.white,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    context.l10n.surviveLabel,
+                    style: GoogleFonts.exo2(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      color: LululuColors.mutedTitanium,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (showTimer && showBoss) const SizedBox(width: 8),
+          if (showBoss)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF080B12).withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: LululuColors.coralFlare.withValues(alpha: 0.6),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    context.l10n.bossLabel(_currentLevel.bossName ?? 'BOSS'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.exo2(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: LululuColors.coralFlare,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  if (_currentLevel.bossSpecialHazard != null)
+                    Text(
+                      _currentLevel.bossSpecialHazard!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.exo2(
+                        fontSize: 9,
+                        color: LululuColors.mutedTitanium,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1645,7 +1915,7 @@ class _GameScreenState extends State<GameScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Bölüm ${_currentLevel.id}',
+                      context.l10n.chapterLabel(_currentLevel.id),
                       style: GoogleFonts.exo2(
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
@@ -1665,6 +1935,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
             _buildGameHud(),
+            _buildObjectiveBanner(),
             if (!widget.prototypeVisualState) _buildEvolutionStrip(),
             SizedBox(height: widget.arcade ? 6 : 4),
             Expanded(
@@ -1932,8 +2203,10 @@ class _GameScreenState extends State<GameScreen>
 
     if (danger) {
       text = _overflowAccum > 0
-          ? 'TAŞIYOR! ${(max(0, _overflowGraceSec - _overflowAccum) * 10).ceil() / 10}s'
-          : 'ÇİZGİYE YAKLAŞTIN';
+          ? context.l10n.overflowingCountdown(
+              '${(max(0, _overflowGraceSec - _overflowAccum) * 10).ceil() / 10}',
+            )
+          : context.l10n.nearLineWarning;
       color = LululuColors.mysticRuby;
       glow = LululuColors.warningSolar;
       size = 20;
@@ -1957,7 +2230,7 @@ class _GameScreenState extends State<GameScreen>
       size = 18;
       animKey = _comboBreakToast;
     } else if (combo) {
-      text = 'KOMBO x$_comboCount!';
+      text = context.l10n.comboToast(_comboCount);
       color = LululuColors.liquidGold;
       glow = LululuColors.coralFlare;
       size = 26 + min(_comboCount, 6) * 1.5;
@@ -2164,7 +2437,7 @@ class _GameScreenState extends State<GameScreen>
         children: [
           _buildPowerBtn(
             key: _spreyKey,
-            label: 'RAİD SPREYİ',
+            label: context.l10n.boosterRaidLabel,
             asset: 'assets/design/ui/powerup_raid_spreyi.png',
             count: _shownCount(progress.sprayCount, 3),
             pulse: _bonusPulse.contains('Raid Sprey'),
@@ -2177,7 +2450,7 @@ class _GameScreenState extends State<GameScreen>
           if (widget.arcade) const SizedBox(width: 20),
           _buildPowerBtn(
             key: _terlikKey,
-            label: 'SARSINTI',
+            label: context.l10n.boosterShakeLabel,
             asset: 'assets/design/ui/powerup_terlik.png',
             count: _shownCount(progress.slipperCount, 2),
             pulse: _bonusPulse.contains('Terlik'),
@@ -2190,7 +2463,7 @@ class _GameScreenState extends State<GameScreen>
           if (widget.arcade) const SizedBox(width: 20),
           _buildPowerBtn(
             key: _aydinlatKey,
-            label: 'AYDINLAT',
+            label: context.l10n.boosterLightLabel,
             asset: 'assets/design/ui/powerup_aydinlat.png',
             count: _shownCount(progress.aydinlatCount, 1),
             pulse: _bonusPulse.contains('Aydınlat Hele!'),
@@ -2228,7 +2501,7 @@ class _GameScreenState extends State<GameScreen>
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '$label. $count adet',
+      label: context.l10n.boosterCountLabel(label, count),
       child: GestureDetector(
         key: key,
         onTap: enabled ? onTap : null,
@@ -2347,7 +2620,7 @@ class _GameScreenState extends State<GameScreen>
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '$label. $count adet',
+      label: context.l10n.boosterCountLabel(label, count),
       child: GestureDetector(
         key: key,
         onTap: enabled ? onTap : null,

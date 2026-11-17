@@ -8,9 +8,10 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
-import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -20,8 +21,15 @@ import '../widgets/mode_bonus_bar.dart';
 class Match3Screen extends StatefulWidget {
   const Match3Screen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika `GameScreen` deseni). Doğrudan rota girişlerinde
+  /// `false` kalır.
+  final bool energyConsumed;
 
   @visibleForTesting
   final bool prototypeVisualState;
@@ -61,6 +69,16 @@ class _Match3ScreenState extends State<Match3Screen> {
   bool _lost = false;
   bool _resultShown = false;
   bool _paused = false;
+
+  /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk takas denemesi
+  /// (`_resolve`, eşleşmese de) veya tur tamamlanması (`_endCheck`)
+  /// ile `true` olur; TEKRAR/yeniden başlatmada SIFIRLANMAZ (Suika
+  /// `_dropsMade` deseni — oturum ömrü).
+  bool _moveMade = false;
+
+  /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+
   bool _swiped = false;
   Point<int>? _selected;
   Point<int>? _dragFrom;
@@ -141,15 +159,23 @@ class _Match3ScreenState extends State<Match3Screen> {
     });
   }
 
+  // Varsayılan stok YALNIZ ilk kurulumda verilir. ProgressManager.load()
+  // 'lululu_power_seed_v1' bayrağıyla 33 gücü bir kez tohumlar; tohumlanan
+  // anahtarlar extraPowers'ta kalıcı olur, takePower() ise anahtarı silmez,
+  // 0'a düşürür. "Hiç tohumlanmadı" bu yüzden anahtar yokluğuyla anlaşılır;
+  // eski "üçü de 0 ise doldur" koşulu her girişte bedava stok veriyordu.
+  // Tohumlama persistBoosters() ile kalıcı kaydedilir.
   void _ensureDefaultPowers() {
     final pm = ProgressManager();
-    if (pm.powerCount('hammer') == 0 &&
-        pm.powerCount('bomb3') == 0 &&
-        pm.powerCount('hunter') == 0) {
-      pm.extraPowers['hammer'] = 2;
-      pm.extraPowers['bomb3'] = 2;
-      pm.extraPowers['hunter'] = 1;
+    const defaults = <String, int>{'hammer': 2, 'bomb3': 2, 'hunter': 1};
+    var seeded = false;
+    for (final entry in defaults.entries) {
+      if (!pm.extraPowers.containsKey(entry.key)) {
+        pm.extraPowers[entry.key] = entry.value;
+        seeded = true;
+      }
     }
+    if (seeded) unawaited(pm.persistBoosters());
   }
 
   @override
@@ -409,6 +435,9 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   Future<void> _resolve(int r0, int c0, int r1, int c1) async {
     if (_busy || _ended || _paused) return;
+    // Enerji iadesi sayacı: takas denemesi anında sayılır (eşleşme
+    // olmasa da hamle sayılır — Suika'da ıska atış gibi).
+    _moveMade = true;
     final epoch = _epoch;
     setState(() => _busy = true);
     _swap(r0, c0, r1, c1);
@@ -561,12 +590,15 @@ class _Match3ScreenState extends State<Match3Screen> {
   Future<void> _endCheck(int epoch) async {
     if (!mounted || epoch != _epoch) return;
     if (_score >= target) {
+      // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
+      _moveMade = true;
       _won = true;
       _hint = 'Hedef tuttu.';
       HapticFeedback.heavyImpact();
       AudioManager().playWin();
       await _persist();
     } else if (_moves <= 0) {
+      _moveMade = true;
       _lost = true;
       _hint = 'Hamle bitti.';
       HapticFeedback.heavyImpact();
@@ -669,6 +701,9 @@ class _Match3ScreenState extends State<Match3Screen> {
     await _endCheck(epoch);
   }
 
+  /// Güçler skor verir ama bedava değildir: kalıcı stoktan 1 adet
+  /// (stockBonus/takePower) + 1 hamle harcar. Hamle bedeli, güç sonrası
+  /// çalışan _resolveCascadeAfterPower → _endCheck tarafından görülür.
   bool _useHammer() {
     if (_ended || _paused || _busy) return false;
     final cell = _selected ?? _firstFilled();
@@ -677,6 +712,7 @@ class _Match3ScreenState extends State<Match3Screen> {
     AudioManager().playMerge(tierNumber: max(1, _base(_grid[cell.x][cell.y])));
     setState(() {
       _grid[cell.x][cell.y] = 0;
+      _moves--;
       _score += 48;
       if (_score > _best) _best = _score;
       _mergeTotal++;
@@ -711,6 +747,7 @@ class _Match3ScreenState extends State<Match3Screen> {
         }
       }
       final gained = n * 22;
+      _moves--;
       _score += gained;
       if (_score > _best) _best = _score;
       _mergeTotal += n;
@@ -749,6 +786,7 @@ class _Match3ScreenState extends State<Match3Screen> {
         }
       }
       final gained = n * 20;
+      _moves--;
       _score += gained;
       if (_score > _best) _best = _score;
       _mergeTotal += n;
@@ -769,21 +807,14 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   Future<void> _presentResult() async {
     if (_score > _best) _best = _score;
-    final coins = ResultScoring.coinsFor(_score);
-    final stars = ResultScoring.starsFor(score: _score, best: _best);
-    await ProgressManager.instance.addCoins(coins);
-    await ProgressManager.instance.recordTaskProgress('play');
-    await ProgressManager.instance.recordModeScore('match3', _score);
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeMatch3,
-      _score,
-    );
-    if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + mod skoru + liderlik + görev kaydı + sonuç ekranı
+    // finishRun() üzerinden (tek-ödeme korunur).
+    final replay = await finishRun(
       context,
       score: _score,
-      coins: coins,
-      stars: stars,
+      best: _best,
+      leaderboardMode: LeaderboardService.modeMatch3,
+      modeScoreId: 'match3',
     );
     if (!mounted) return;
     if (!replay) {
@@ -791,6 +822,20 @@ class _Match3ScreenState extends State<Match3Screen> {
       return;
     }
     _reset();
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
+  ///
+  /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
+  /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
+  /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  void _maybeRefundEnergy() {
+    if (_energyRefunded) return;
+    if (!widget.energyConsumed || _moveMade || _ended || _resultShown) {
+      return;
+    }
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   void _edgeShowResult() {
@@ -851,31 +896,34 @@ class _Match3ScreenState extends State<Match3Screen> {
         : null;
 
     final bonusItems = [
-      stockBonus(
+      stockBonusWithResult(
         id: 'hammer',
         label: 'ÇEKİÇ',
         asset: 'assets/icons2/hammer.png',
         effect: () {
-          _useHammer();
+          final applied = _useHammer();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'bomb3',
         label: 'BOMBA',
         asset: 'assets/icons2/boom.png',
         effect: () {
-          _useBomb3();
+          final applied = _useBomb3();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'hunter',
         label: 'AVCI',
         asset: 'assets/icons2/gem_blue.png',
         effect: () {
-          _useHunter();
+          final applied = _useHunter();
           setState(() {});
+          return applied;
         },
       ),
     ];
@@ -1175,11 +1223,17 @@ class _Match3ScreenState extends State<Match3Screen> {
       },
     );
 
-    return _buildMatch3PrototypeChrome(
-      context: context,
-      stageChild: stageChild,
-      bonusItems: bonusItems,
-      overlayWidget: overlayWidget,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _maybeRefundEnergy();
+      },
+      child: _buildMatch3PrototypeChrome(
+        context: context,
+        stageChild: stageChild,
+        bonusItems: bonusItems,
+        overlayWidget: overlayWidget,
+      ),
     );
   }
 

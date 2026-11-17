@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../theme/lululu_theme.dart';
 
@@ -43,13 +45,17 @@ class _SplashScreenState extends State<SplashScreen>
   bool _done = false;
   int _msgIndex = 0;
 
-  static const _loadMessages = [
-    'Hamam ısıtılıyor…',
-    'Böcekler sıraya giriyor…',
-    'Terlikler parlatılıyor…',
-    'Kapılar açılıyor…',
-    'Hazır! Macera başlıyor…',
-  ];
+  // S2#10: web otomatik-oynatma politikası — 650 ms zamanlayıcısının
+  // intro sesi web'de yalnız kullanıcı etkileşiminden sonra çalınır;
+  // etkileşim yoksa çalma denemesi bile yapılmaz. Mobilde davranış
+  // değişmez. Bayrak her kullanıcı hareketinde (kaydırma, GEÇ,
+  // DEVAM dokunuşları) true'ya çevrilir; arayüz durumu değildir.
+  bool _hasInteracted = false;
+
+  // Yükleme döngü mesajı sayısı; metinler AppLocalizations
+  // splashLoadMessage(index) metodundadır (0-4). Sayı ile metot
+  // kasaları birlikte değişmelidir.
+  static const _loadMessageCount = 5;
 
   @override
   void initState() {
@@ -115,6 +121,9 @@ class _SplashScreenState extends State<SplashScreen>
 
       // Ses: 650ms sonra Kongo Lideri sesi (tier 7)
       _soundTimer = Timer(const Duration(milliseconds: 650), () {
+        // Web'de etkileşim yoksa çalma denemesi yapılmaz (tarayıcı
+        // otomatik-oynatma politikası); mobilde eski davranış korunur.
+        if (kIsWeb && !_hasInteracted) return;
         AudioManager().playMerge(tierNumber: 7).catchError((_) {});
       });
     }
@@ -133,6 +142,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _onPageChanged(int index) {
+    _hasInteracted = true;
     setState(() => _pageIndex = index);
     if (index == 0) {
       AudioManager().playMerge(tierNumber: 7).catchError((_) {});
@@ -144,10 +154,12 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _skipToEnd() {
+    _hasInteracted = true;
     _finish();
   }
 
   void _nextPage() {
+    _hasInteracted = true;
     if (_pageIndex < 2) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 320),
@@ -169,7 +181,7 @@ class _SplashScreenState extends State<SplashScreen>
     _msgTimer = Timer.periodic(const Duration(milliseconds: 550), (_) {
       if (!mounted) return;
       setState(() {
-        _msgIndex = (_msgIndex + 1) % _loadMessages.length;
+        _msgIndex = (_msgIndex + 1) % _loadMessageCount;
       });
     });
 
@@ -200,20 +212,27 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: LululuColors.carbonVoid,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Arka plan görseli
+          // Arka plan görseli (WebP ikizi: 277 KB, 3.2 MB PNG ile aynı kare)
           Image.asset(
-            'assets/design/splash/bg_splash.png',
+            'assets/design/splash/bg_splash.webp',
             fit: BoxFit.cover,
-            width: 430,
-            height: 932,
+            width: double.infinity,
+            height: double.infinity,
+            cacheWidth: 860,
+            cacheHeight: 1911,
             errorBuilder: (_, _, _) => Image.asset(
               'assets/design/backgrounds/bg_splash.jpg',
               fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              cacheWidth: 860,
+              cacheHeight: 1911,
               errorBuilder: (_, _, _) =>
                   const ColoredBox(color: LululuColors.carbonVoid),
             ),
@@ -258,7 +277,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  'GEÇ ›',
+                  l10n.splashSkip,
                   style: GoogleFonts.baloo2(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -383,7 +402,9 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          _pageIndex == 2 ? 'BAŞLA ›' : 'DEVAM ›',
+                          _pageIndex == 2
+                              ? l10n.splashStartButton
+                              : l10n.splashContinueButton,
                           style: GoogleFonts.baloo2(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -406,11 +427,11 @@ class _SplashScreenState extends State<SplashScreen>
           ),
 
           // Version label (v1.0 · Tasarım Prototipi)
-          const Positioned(
+          Positioned(
             right: 18,
             bottom: 14,
             child: Text(
-              'v1.0 · Tasarım Prototipi',
+              l10n.splashVersionLabel,
               style: TextStyle(
                 fontFamily: 'Nunito',
                 fontSize: 11,
@@ -425,18 +446,47 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  /// Küçük ekranlarda (360x640, 375x667) dikey/yatay taşmayı önlerken
-  /// 430x932 referans boyutta 430x810 piksel koordinatlarını birebir korur.
+  /// Sayfa tasarımının referans ölçüleri: 430x932 ekranda üstten 0,
+  /// alttan 122px'lik ayak hariç kalan 430x810'luk görünüm alanı.
+  /// Sayfalar bu ölçüleri yalnızca referans oran olarak alır;
+  /// gerçek boyut her zaman LayoutBuilder constraints'inden gelir.
+  static const double _refPageWidth = 430.0;
+  static const double _refPageHeight = 810.0;
+
+  /// Sayfayı mevcut alana yayar: referans boyutta veya daha büyük ekranda
+  /// sayfa alanı doldurur (double.infinity); daha küçük ekranda
+  /// (360x640, 375x667) referans oranı korunarak küçültülür, taşma olmaz.
   Widget _wrapPageViewport(Widget pageContent) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 425 && constraints.maxHeight >= 800) {
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
           return pageContent;
         }
-        return FittedBox(
-          fit: BoxFit.contain,
+        final availWidth = constraints.maxWidth;
+        final availHeight = constraints.maxHeight;
+        if (availWidth >= _refPageWidth - 5 &&
+            availHeight >= _refPageHeight - 10) {
+          return pageContent;
+        }
+        final scale = math.min(
+          availWidth / _refPageWidth,
+          availHeight / _refPageHeight,
+        );
+        return Align(
           alignment: Alignment.topCenter,
-          child: pageContent,
+          child: SizedBox(
+            width: _refPageWidth * scale,
+            height: _refPageHeight * scale,
+            child: FittedBox(
+              fit: BoxFit.contain,
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: _refPageWidth,
+                height: _refPageHeight,
+                child: pageContent,
+              ),
+            ),
+          ),
         );
       },
     );
@@ -444,9 +494,10 @@ class _SplashScreenState extends State<SplashScreen>
 
   // SAYFA 1: Logo + Maskot Girişi
   Widget _buildPage1() {
+    final l10n = context.l10n;
     return Container(
-      width: 430,
-      height: 810,
+      width: double.infinity,
+      height: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 56.0, 22, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -468,7 +519,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
               child: Text(
-                'YENİ MACERA',
+                l10n.splashKicker1,
                 style: GoogleFonts.baloo2(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
@@ -545,7 +596,7 @@ class _SplashScreenState extends State<SplashScreen>
           // 3. Title H2 (starts at y=222.6, height=62.6)
           RichText(
             textAlign: TextAlign.center,
-            text: const TextSpan(
+            text: TextSpan(
               style: TextStyle(
                 fontFamily: 'Baloo 2',
                 fontSize: 29,
@@ -565,11 +616,11 @@ class _SplashScreenState extends State<SplashScreen>
               ),
               children: [
                 TextSpan(
-                  text: 'BÖCEKLERİ BİRLEŞTİR,\n',
+                  text: l10n.splashTitle1Line1,
                   style: TextStyle(color: Colors.white),
                 ),
                 TextSpan(
-                  text: 'EFSANEYİ YARAT!',
+                  text: l10n.splashTitle1Line2,
                   style: TextStyle(color: Color(0xFFFFD34D)),
                 ),
               ],
@@ -579,10 +630,10 @@ class _SplashScreenState extends State<SplashScreen>
           const SizedBox(height: 5.0),
 
           // 4. Subtitle (starts at y=293.2, width=290, height=67.4)
-          const SizedBox(
-            width: 292,
+          SizedBox(
+            width: 320,
             child: Text(
-              'Aynı böcekleri çarpıştır, 13 aşamalı evrim\nzincirinde Pembe Bornozlu\'ya kadar\nyüksel.',
+              l10n.splashSubtitle1,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Nunito',
@@ -656,13 +707,18 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                         ],
                       ),
-                      child: Text(
-                        'LİDER KONUŞTU!',
-                        style: GoogleFonts.bangers(
-                          fontSize: 19,
-                          letterSpacing: 0.8,
-                          color: const Color(0xFFB80F42),
-                          height: 1.0,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          l10n.splashBubbleText,
+                          maxLines: 1,
+                          softWrap: false,
+                          style: GoogleFonts.bangers(
+                            fontSize: 19,
+                            letterSpacing: 0.8,
+                            color: const Color(0xFFB80F42),
+                            height: 1.0,
+                          ),
                         ),
                       ),
                     ),
@@ -708,7 +764,8 @@ class _SplashScreenState extends State<SplashScreen>
                   );
                 },
                 child: Image.asset(
-                  'assets/design/splash/splash_mascot.png',
+                  // WebP ikizi (76 KB, PNG ile piksel-birebir aynı; S2#34).
+                  'assets/design/splash/splash_mascot.webp',
                   width: 172,
                   height: 278.8,
                   fit: BoxFit.contain,
@@ -729,14 +786,15 @@ class _SplashScreenState extends State<SplashScreen>
 
   // SAYFA 2: Oyun Modları Geçidi
   Widget _buildPage2() {
+    final l10n = context.l10n;
     return Container(
-      width: 430,
-      height: 810,
+      width: double.infinity,
+      height: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 56, 22, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Kicker (10 OYUN MODU)
+          // Kicker (11 OYUN MODU)
           Transform.rotate(
             angle: -2 * math.pi / 180,
             child: Container(
@@ -753,7 +811,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
               child: Text(
-                '10 OYUN MODU',
+                l10n.splashKicker2,
                 style: GoogleFonts.baloo2(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
@@ -787,13 +845,13 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ],
               ),
-              children: const [
+              children: [
                 TextSpan(
-                  text: 'HER GÜN YENİ\n',
+                  text: l10n.splashTitle2Line1,
                   style: TextStyle(color: Colors.white),
                 ),
                 TextSpan(
-                  text: 'BİR MACERA!',
+                  text: l10n.splashTitle2Line2,
                   style: TextStyle(color: Color(0xFFFFD34D)),
                 ),
               ],
@@ -865,54 +923,54 @@ class _SplashScreenState extends State<SplashScreen>
               crossAxisSpacing: 7,
               childAspectRatio: 185 / 40,
               physics: const NeverScrollableScrollPhysics(),
-              children: const [
+              children: [
                 _ModeChip(
-                  title: 'SUİKA ARENA',
+                  title: l10n.suikaArenaTitle,
                   assetPath: 'assets/design/bugs/tier1_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier1_hd.png',
                 ),
                 _ModeChip(
-                  title: '2048 GRİD',
+                  title: l10n.grid2048Title,
                   assetPath: 'assets/design/bugs/tier2_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier2_hd.png',
                 ),
                 _ModeChip(
-                  title: 'BALON PATLAT',
+                  title: l10n.balloonPopTitle,
                   assetPath: 'assets/design/bugs/tier1_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier1_hd.png',
                 ),
                 _ModeChip(
-                  title: 'MATCH 3',
+                  title: l10n.match3Title,
                   assetPath: 'assets/design/bugs/tier5_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier5_hd.png',
                 ),
                 _ModeChip(
-                  title: 'BAĞLA PATLAT',
+                  title: l10n.linkPopTitle,
                   assetPath: 'assets/design/bugs/tier3_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier3_hd.png',
                 ),
                 _ModeChip(
-                  title: 'STACK DROP',
+                  title: l10n.stackDropTitle,
                   assetPath: 'assets/design/bugs/tier6_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier6_hd.png',
                 ),
                 _ModeChip(
-                  title: 'TERLİK TAP',
+                  title: l10n.slipperTapTitle,
                   assetPath: 'assets/design/powerup_terlik.webp',
                   fallbackAssetPath: 'assets/design/powerup_terlik.png',
                 ),
                 _ModeChip(
-                  title: 'OSMANTUŞ',
+                  title: l10n.osmantusTitle,
                   assetPath: 'assets/design/osman/osmantus_kisi_a.webp',
                   fallbackAssetPath: 'assets/design/osman/osmantus_kisi_a.png',
                 ),
                 _ModeChip(
-                  title: 'ÇIĞLIK BÖCEK',
+                  title: l10n.screamBugTitle,
                   assetPath: 'assets/design/bugs/tier7_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier7_hd.png',
                 ),
                 _ModeChip(
-                  title: 'MAKARAYIZ',
+                  title: l10n.makarayizTitle,
                   assetPath: 'assets/design/bugs/tier3_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier3_hd.png',
                 ),
@@ -934,9 +992,10 @@ class _SplashScreenState extends State<SplashScreen>
 
   // SAYFA 3: Başlat + Loading Bar
   Widget _buildPage3() {
+    final l10n = context.l10n;
     return Container(
-      width: 430,
-      height: 810,
+      width: double.infinity,
+      height: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 56, 22, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -958,7 +1017,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
               child: Text(
-                'SON ADIM',
+                l10n.splashKicker3,
                 style: GoogleFonts.baloo2(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
@@ -992,13 +1051,13 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ],
               ),
-              children: const [
+              children: [
                 TextSpan(
-                  text: 'MACERAYA\n',
+                  text: l10n.splashTitle3Line1,
                   style: TextStyle(color: Colors.white),
                 ),
                 TextSpan(
-                  text: 'HAZIR MISIN?',
+                  text: l10n.splashTitle3Line2,
                   style: TextStyle(color: Color(0xFFFFD34D)),
                 ),
               ],
@@ -1091,9 +1150,9 @@ class _SplashScreenState extends State<SplashScreen>
                   Text(
                     _loading
                         ? (_done
-                            ? 'BAŞLIYOR!'
-                            : 'YÜKLENİYOR… %${_progress.round()}')
-                        : 'MACERAYA BAŞLA',
+                            ? l10n.splashStarting
+                            : l10n.splashLoadingPercent(_progress.round()))
+                        : l10n.splashStartAdventure,
                     style: GoogleFonts.baloo2(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
@@ -1214,8 +1273,8 @@ class _SplashScreenState extends State<SplashScreen>
                     children: [
                       Text(
                         _loading
-                            ? _loadMessages[_msgIndex]
-                            : 'Başlamak için butona bas!',
+                            ? l10n.splashLoadMessage(_msgIndex)
+                            : l10n.splashPressToStart,
                         style: GoogleFonts.nunito(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w800,

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_localizations.dart';
+import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
 import '../services/energy_service.dart';
@@ -11,6 +13,7 @@ import '../services/haptic_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/item_detail_popup.dart';
 import 'auth_screen.dart';
+import 'privacy_policy_screen.dart';
 
 /// 1:1 Pixel-Perfect Settings modal & screen matching `#settingsOverlay` (`.settings-sheet`).
 class SettingsScreen extends StatefulWidget {
@@ -66,7 +69,7 @@ class SettingsScreen extends StatefulWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'İLERLEMEYİ SIFIRLA',
+                dialogContext.l10n.resetProgressTitle,
                 style: GoogleFonts.baloo2(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
@@ -76,7 +79,7 @@ class SettingsScreen extends StatefulWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Tüm altın, seviye, yüksek skor ve güçlendirici ilerlemeniz sıfırlanacak. Emin misiniz?',
+                dialogContext.l10n.resetProgressBody,
                 style: GoogleFonts.nunito(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -108,7 +111,7 @@ class SettingsScreen extends StatefulWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          'İPTAL',
+                          dialogContext.l10n.cancelCaps,
                           style: GoogleFonts.baloo2(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
@@ -149,7 +152,7 @@ class SettingsScreen extends StatefulWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          'SIFIRLA',
+                          dialogContext.l10n.resetButton,
                           style: GoogleFonts.baloo2(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
@@ -219,6 +222,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _sfxOn = true;
   bool _voiceOn = true;
   bool _vibOn = false;
+  bool _deleteArmed = false;
+  bool _deleteBusy = false;
+  Timer? _deleteArmTimer;
 
   @override
   void initState() {
@@ -228,6 +234,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _voiceOn = _audio.voiceEnabled;
     _vibOn = false;
     _loadPrefs();
+  }
+
+  @override
+  void dispose() {
+    _deleteArmTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadPrefs() async {
@@ -245,7 +257,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     _audio.setMusicEnabled(music);
     _audio.setSfxEnabled(sfx);
-    _audio.setVoiceEnabled(voice && sfx);
+    // Ses ve sesli anahtarları bağımsızdır: her bayrak yalnız kendi
+    // saklanan değerinden beslenir (SFX kapalıyken voice ezilmez).
+    _audio.setVoiceEnabled(voice);
     _audio.setVibrationEnabled(vib);
     unawaited(HapticService.instance.setEnabled(vib));
 
@@ -277,7 +291,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _audio.isMuted = !v;
     });
     AudioManager().setSfxEnabled(v);
-    AudioManager().setVoiceEnabled(v && _voiceOn);
+    // SFX anahtarı voice bayrağına dokunmaz: voice yalnız kendi
+    // anahtarından yazılır (AudioManager'daki çalma kapısı da bağımsızdır).
     unawaited(ProgressManager.instance.setSfxEnabled(v));
     if (v) {
       AudioManager().playPop();
@@ -323,11 +338,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showHowToPlayOverlay(context);
   }
 
+  void _openPrivacyPolicy() {
+    AudioManager().playPop();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const PrivacyPolicyScreen(),
+      ),
+    );
+  }
+
+  /// Hesap silme akışı (madde 97): iki dokunuşlu onay. İlk dokunuş satırı
+  /// yerinde "EMİN MİSİN? TEKRAR DOKUN" yapar; 5 saniye içinde ikinci
+  /// dokunuş gelmezse satır eski hâline döner. İkinci dokunuş
+  /// [AuthService.deleteAccount] ile hesabı silip oturumu kapatır ve
+  /// kullanıcıyı giriş/kayıt akışına gönderir.
+  Future<void> _onDeleteAccountTap() async {
+    if (_deleteBusy) return;
+    AudioManager().playPop();
+    if (!_deleteArmed) {
+      setState(() => _deleteArmed = true);
+      _deleteArmTimer?.cancel();
+      _deleteArmTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() => _deleteArmed = false);
+        }
+      });
+      return;
+    }
+    _deleteArmTimer?.cancel();
+    setState(() => _deleteBusy = true);
+    try {
+      await AuthService.instance.deleteAccount();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _deleteArmed = false;
+        _deleteBusy = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.accountDeleteFailed('$e'))),
+      );
+      return;
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.accountDeletedSnack)),
+    );
+    setState(() {
+      _deleteArmed = false;
+      _deleteBusy = false;
+    });
+    _openAuth();
+  }
+
   void _close() {
     AudioManager().playPop();
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
+      return;
     }
+    // Yığında ekran yoksa (bağımsız açılış): suskun kalma, ana sekmeye git.
+    goTo(context, LululuRoutes.hub, replace: true);
   }
 
   @override
@@ -354,16 +425,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           valueListenable: AuthService.instance.currentUserNotifier,
           builder: (context, user, _) {
             final signedIn = user != null && user.isSignedIn;
+            // Hesap silme satırı yalnızca gerçek (misafir olmayan) hesaplarda.
+            final showDeleteRow =
+                user != null && user.isSignedIn && !user.isGuest;
             final accountSub = signedIn
-                ? '${user.displayName} · Oturum açık'
-                : 'Giriş yap / kayıt ol';
+                ? context.l10n.signedInAs(user.displayName)
+                : context.l10n.signInOrUpSlash;
 
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'AYARLAR',
+                  context.l10n.settings,
                   style: GoogleFonts.baloo2(
                     fontSize: 21,
                     fontWeight: FontWeight.w800,
@@ -374,49 +448,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 12),
                 _buildActionRow(
                   iconAsset: 'assets/design/ui/icons/friends.png',
-                  title: 'HESAP',
+                  title: context.l10n.accountTitle,
                   subtitle: accountSub,
                   onTap: _openAuth,
                 ),
                 _buildSwitchRow(
                   iconAsset: 'assets/design/ui/icons/sound_on.png',
-                  title: 'Müzik',
-                  subtitle: 'Arkaplan müziği',
+                  title: context.l10n.musicTitle,
+                  subtitle: context.l10n.musicSubtitle,
                   value: _musicOn,
                   onChanged: _onMusicChanged,
                 ),
                 _buildSwitchRow(
                   iconAsset: 'assets/design/ui/icons/sound_on.png',
-                  title: 'Ses Efektleri',
-                  subtitle: 'Birleştirme ve tıklama sesleri',
+                  title: context.l10n.sfxTitle,
+                  subtitle: context.l10n.sfxSubtitle,
                   value: _sfxOn,
                   onChanged: _onSfxChanged,
                 ),
                 _buildSwitchRow(
                   leadingSpacerWidth: 33,
-                  title: 'Titreşim',
-                  subtitle: 'Birleştirmede hafif titreşim',
+                  title: context.l10n.vibrationTitle,
+                  subtitle: context.l10n.vibrationSubtitle,
                   value: _vibOn,
                   onChanged: _onVibrationChanged,
                 ),
+                _buildActionRow(
+                  leadingSpacerWidth: 33,
+                  title: context.l10n.privacyTitle,
+                  subtitle: context.l10n.privacySubtitle,
+                  onTap: _openPrivacyPolicy,
+                ),
+                if (showDeleteRow)
+                  _buildActionRow(
+                    leadingSpacerWidth: 33,
+                    title: _deleteBusy
+                        ? context.l10n.deletingLabel
+                        : _deleteArmed
+                            ? context.l10n.confirmDeleteAgain
+                            : context.l10n.deleteAccountButton,
+                    subtitle: _deleteBusy
+                        ? context.l10n.pleaseWait
+                        : _deleteArmed
+                            ? context.l10n.deleteAccountArmedSub
+                            : context.l10n.deleteAccountSub,
+                    onTap: _onDeleteAccountTap,
+                  ),
                 if (widget.showExtendedOptions) ...[
                   _buildSwitchRow(
                     iconAsset: 'assets/design/ui/icons/sound_on.png',
-                    title: 'Böcek Seslendirmeleri',
-                    subtitle: 'Karakter replikleri ve efektleri',
+                    title: context.l10n.voiceTitle,
+                    subtitle: context.l10n.voiceSubtitle,
                     value: _voiceOn,
                     onChanged: _onVoiceChanged,
                   ),
                   _buildActionRow(
                     leadingSpacerWidth: 33,
-                    title: 'NASIL OYNANIR',
-                    subtitle: 'Oyun kuralları, birleştirme ve güçler',
+                    title: context.l10n.howToPlayRowTitle,
+                    subtitle: context.l10n.howToPlayRowSub,
                     onTap: _openHowToPlay,
                   ),
                   _buildActionRow(
                     leadingSpacerWidth: 33,
-                    title: 'İlerlemeyi Sıfırla',
-                    subtitle: 'Tüm kayıtlı oyun verilerini temizle',
+                    title: context.l10n.resetProgressRowTitle,
+                    subtitle: context.l10n.resetProgressRowSub,
                     onTap: () => resetAll(context),
                   ),
                 ],
@@ -456,7 +551,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     alignment: Alignment.center,
                     child: Text(
-                      'KAPAT',
+                      context.l10n.close,
                       style: GoogleFonts.baloo2(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,

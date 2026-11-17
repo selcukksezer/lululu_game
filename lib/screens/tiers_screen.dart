@@ -1,9 +1,13 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 
-String _trUpper(String input) {
+String _trUpper(String input, Locale locale) {
+  if (locale.languageCode != 'tr') {
+    return input.toUpperCase();
+  }
   return input
       .replaceAll('i', 'İ')
       .replaceAll('ı', 'I')
@@ -373,7 +377,7 @@ class _TiersScreenState extends State<TiersScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      _trUpper(t.name),
+                      _trUpper(t.name, Localizations.localeOf(context)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -729,12 +733,15 @@ class _TiersFloatingDock extends StatelessWidget {
   final int activeIndex;
   const _TiersFloatingDock({required this.activeIndex});
 
-  static const _tabs = [
-    ('ANA SAYFA', 'assets/icons2/home.png'),
-    ('MODLAR', 'assets/icons2/target.png'),
-    ('AİLEM', 'assets/icons2/paw.png'),
-    ('MAĞAZA', 'assets/icons2/cart.png'),
-    ('SKORLAR', 'assets/icons2/trophy.png'),
+  // S3#27: dock etiketleri tek kaynaktan (nav* anahtarları); bu
+  // dosyadaki tekrar kaldırıldı. İkonlar const kalır, etiketler
+  // build'de l10n'den okunur.
+  static const _tabIcons = [
+    'assets/icons2/home.png',
+    'assets/icons2/target.png',
+    'assets/icons2/paw.png',
+    'assets/icons2/cart.png',
+    'assets/icons2/trophy.png',
   ];
 
   void _onTapTab(BuildContext context, int index) {
@@ -791,6 +798,14 @@ class _TiersFloatingDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final labels = <String>[
+      l10n.navHome,
+      l10n.navModes,
+      l10n.navFamily,
+      l10n.navShop,
+      l10n.navScores,
+    ];
     return Container(
       height: 84,
       decoration: BoxDecoration(
@@ -820,7 +835,7 @@ class _TiersFloatingDock extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final innerW = (constraints.maxWidth - 14.0).clamp(100.0, 410.0);
-            final tabW = innerW / _tabs.length;
+            final tabW = innerW / _tabIcons.length;
             return Stack(
               clipBehavior: Clip.none,
               children: [
@@ -922,7 +937,7 @@ class _TiersFloatingDock extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.all(7),
                   child: Row(
-                    children: List.generate(_tabs.length, (i) {
+                    children: List.generate(_tabIcons.length, (i) {
                       final active = i == activeIndex;
                       return Expanded(
                         child: GestureDetector(
@@ -974,7 +989,7 @@ class _TiersFloatingDock extends StatelessWidget {
                                               ),
                                             ),
                                             _buildIconWithDropShadow(
-                                              _tabs[i].$2,
+                                              _tabIcons[i],
                                               35,
                                             ),
                                           ],
@@ -992,7 +1007,7 @@ class _TiersFloatingDock extends StatelessWidget {
                                           const _TiersInactiveDockCirclePainter(),
                                       child: Center(
                                         child: _buildIconWithDropShadow(
-                                          _tabs[i].$2,
+                                          _tabIcons[i],
                                           33,
                                         ),
                                       ),
@@ -1004,7 +1019,7 @@ class _TiersFloatingDock extends StatelessWidget {
                                   top: 46.0,
                                   child: Center(
                                     child: Text(
-                                      _tabs[i].$1,
+                                      labels[i],
                                       maxLines: 1,
                                       overflow: TextOverflow.visible,
                                       textHeightBehavior:
