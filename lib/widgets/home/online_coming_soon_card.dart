@@ -41,6 +41,30 @@ class _OnlineComingSoonCardState extends State<OnlineComingSoonCard> {
     if (mounted) setState(() {});
   }
 
+  /// LOBİ SYNC: kuyruğa al + flush et; reddedilirse hatayı görünür göster.
+  ///
+  /// [CloudSyncService.flushPendingDetailed] sonucu ile
+  /// [CloudSyncService.lastFailure] / `lastErrorMessage` okunur; hata
+  /// varsa SnackBar gösterilir. Kalıcı durum metni de `build` içinde
+  /// `lastFailure` üzerinden çizilir (dinleyici `_refresh` ile yenilenir).
+  Future<void> _onLobbySyncPressed() async {
+    final sync = CloudSyncService.instance;
+    await sync.enableOnlineWhenSignedIn();
+    await sync.enqueueLeaderboardPush();
+    await sync.enqueueChatPush();
+    final result = await sync.flushPendingDetailed();
+    if (!mounted) return;
+    final failure = result.failure ?? sync.lastFailure;
+    if (failure == null) return;
+    final message = sync.lastErrorMessage ?? failure.message;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: LululuColors.mysticRuby,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sync = CloudSyncService.instance;
@@ -158,6 +182,48 @@ class _OnlineComingSoonCardState extends State<OnlineComingSoonCard> {
                         color: LululuColors.mutedTitanium,
                       ),
                     ),
+                    if (sync.lastFailure != null &&
+                        sync.lastErrorMessage != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: LululuColors.mysticRuby.withValues(
+                            alpha: 0.14,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: LululuColors.mysticRuby.withValues(
+                              alpha: 0.55,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.error_outline_rounded,
+                              color: LululuColors.mysticRuby,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                sync.lastErrorMessage!,
+                                style: GoogleFonts.exo2(
+                                  fontSize: 12,
+                                  height: 1.35,
+                                  color: LululuColors.ink,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     Row(
                       children: [
@@ -194,14 +260,7 @@ class _OnlineComingSoonCardState extends State<OnlineComingSoonCard> {
                           child: _CtaButton(
                             label: 'LOBİ SYNC',
                             accent: LululuColors.warningSolar,
-                            onTap: () async {
-                              await CloudSyncService.instance
-                                  .enableOnlineWhenSignedIn();
-                              await CloudSyncService.instance
-                                  .enqueueLeaderboardPush();
-                              await CloudSyncService.instance.enqueueChatPush();
-                              await CloudSyncService.instance.flushPending();
-                            },
+                            onTap: _onLobbySyncPressed,
                           ),
                         ),
                       ],

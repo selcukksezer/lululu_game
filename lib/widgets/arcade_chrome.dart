@@ -5,11 +5,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
 import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
-import 'ad_mock.dart';
 import 'lululu_press.dart';
 
 /// Shared play chrome: dot mesh, prototype HUD (`mode-top` + `game-hud`),
@@ -132,9 +130,13 @@ class ArcadeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              GestureDetector(
-                onTap: () => Navigator.pop(dialogContext),
-                child: Container(
+              Semantics(
+                button: true,
+                label: 'Anladım',
+                excludeSemantics: true,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(dialogContext),
+                  child: Container(
                   constraints: const BoxConstraints(minHeight: 48),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 18,
@@ -169,6 +171,7 @@ class ArcadeScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
               ),
             ],
           ),
@@ -221,7 +224,22 @@ class ArcadeScreen extends StatelessWidget {
                     child: Image.asset(
                       backgroundAsset!,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const SizedBox(),
+                      errorBuilder: (_, error, _) {
+                        // Sessiz boşluk yerine yer tutucu + hata kaydı.
+                        debugPrint(
+                          'ArcadeScreen: arka plan yüklenemedi: '
+                          '$backgroundAsset ($error)',
+                        );
+                        return Container(
+                          color: LululuColors.carbonVoid,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.bug_report_rounded,
+                            size: 72,
+                            color: Color(0x33FFFFFF),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -265,12 +283,15 @@ class ArcadeScreen extends StatelessWidget {
                         children: [
                           _ChromeRound(
                             width: backBtnW,
-                            height: isCompactH ? 42 : 48,
+                            // Dokunma yüksekliği her zaman 48; dar ekranda
+                            // iç simge küçülür, düğme küçülmez.
+                            height: 48,
+                            semanticLabel: 'Geri',
                             onTap: () => Navigator.maybePop(context),
                             child: Image.asset(
                               'assets/icons2/back-prototype.png',
-                              width: isCompactW ? 24 : 29,
-                              height: isCompactW ? 24 : 29,
+                              width: (isCompactW || isCompactH) ? 24 : 29,
+                              height: (isCompactW || isCompactH) ? 24 : 29,
                               errorBuilder: (_, _, _) => const Icon(
                                 Icons.arrow_back_rounded,
                                 size: 20,
@@ -401,12 +422,15 @@ class ArcadeScreen extends StatelessWidget {
                           _ChromeRound(
                             circular: true,
                             width: isCompactW ? 40 : 48,
-                            height: isCompactH ? 42 : 48,
+                            // Dokunma yüksekliği her zaman 48; dar ekranda
+                            // iç '?' küçülür, düğme küçülmez.
+                            height: 48,
+                            semanticLabel: 'Nasıl oynanır',
                             onTap: () => _showHowToPlaySheet(context),
                             child: Text(
                               '?',
                               style: GoogleFonts.baloo2(
-                                fontSize: isCompactW ? 19 : 22,
+                                fontSize: (isCompactW || isCompactH) ? 19 : 22,
                                 height: 1,
                                 fontWeight: FontWeight.w800,
                                 color: const Color(0xFFFFB800),
@@ -465,11 +489,17 @@ class ArcadeScreen extends StatelessWidget {
                             ),
                           ],
                           SizedBox(width: isCompactW ? 4 : 8),
-                          GestureDetector(
-                            onTap: onRestart,
-                            child: Container(
-                              width: isCompactW ? 48 : 57.8,
-                              height: isCompactH ? 40 : 48,
+                          Semantics(
+                            button: true,
+                            label: 'Bitir',
+                            excludeSemantics: true,
+                            child: GestureDetector(
+                              onTap: onRestart,
+                              child: Container(
+                                width: isCompactW ? 48 : 57.8,
+                                // Dokunma yüksekliği her zaman 48; iç yazı
+                                // FittedBox ile zaten küçülerek sığar.
+                                height: 48,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFFB800),
@@ -498,6 +528,7 @@ class ArcadeScreen extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          ),
                           ),
                         ],
                       ),
@@ -756,6 +787,7 @@ class _ChromeRound extends StatelessWidget {
     this.circular = false,
     this.width,
     this.height = 48,
+    this.semanticLabel,
   });
 
   final Widget child;
@@ -764,29 +796,48 @@ class _ChromeRound extends StatelessWidget {
   final double? width;
   final double height;
 
+  /// Ekran okuyucu etiketi ve uzun basma ipucu (örn. 'Geri').
+  final String? semanticLabel;
+
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      width: width ?? 48,
-      height: height,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: const Color(0xDC080B12),
-        borderRadius: BorderRadius.circular(circular ? 99 : 14),
-        border: circular
-            ? Border.all(color: const Color(0xB3FFB800), width: 2)
-            : Border.all(color: const Color(0x3DFFFFFF), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.45),
-            offset: const Offset(0, 3),
-          ),
-        ],
+  Widget build(BuildContext context) {
+    Widget button = GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width ?? 48,
+        height: height,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xDC080B12),
+          borderRadius: BorderRadius.circular(circular ? 99 : 14),
+          border: circular
+              ? Border.all(color: const Color(0xB3FFB800), width: 2)
+              : Border.all(color: const Color(0x3DFFFFFF), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.45),
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: child,
       ),
-      child: child,
-    ),
-  );
+    );
+    final label = semanticLabel;
+    if (label != null) {
+      button = Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: Semantics(
+          button: true,
+          label: label,
+          excludeSemantics: true,
+          child: button,
+        ),
+      );
+    }
+    return button;
+  }
 }
 
 class ArcadeStat extends StatelessWidget {
@@ -893,7 +944,10 @@ class _ArcadeButtonState extends State<ArcadeButton> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onPressed != null;
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: GestureDetector(
       onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
       onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
       onTapCancel: () => setState(() => _pressed = false),
@@ -951,6 +1005,7 @@ class _ArcadeButtonState extends State<ArcadeButton> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -1064,26 +1119,28 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
     return 'VİRAL';
   }
 
+  /// Ödüllü reklam SDK'sı kurulu değil: reklam gösterilemez, devam hakkı
+  /// ve 2× altın verilmez. Gerçek SDK eklendiğinde bu düğmeler gerçek
+  /// reklam akışına bağlanmalıdır; sahte (mock) reklamla ödül verilmez
+  /// (madde 4). Düğmeye dokunmak yalnızca bilgi gösterir.
+  void _showRewardsComingSoon() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Ödüllü reklamlar yakında — şimdilik kullanılamıyor.',
+          style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
+        ),
+        backgroundColor: LululuColors.carbonVoid,
+      ),
+    );
+  }
+
   Future<void> _handleContinueAd() async {
-    final ok = await showRewardedAdMock(context, rewardLabel: 'DEVAM ET');
-    if (!mounted) return;
-    if (ok) {
-      widget.onRetry();
-    }
+    _showRewardsComingSoon();
   }
 
   Future<void> _handleDoubleCoinsAd() async {
-    if (_doubled) return;
-    final ok = await showRewardedAdMock(context, rewardLabel: '2X ALTIN');
-    if (!mounted) return;
-    if (ok) {
-      setState(() {
-        _doubled = true;
-        _displayCoins *= 2;
-      });
-      ProgressManager().addCoins(_displayCoins ~/ 2);
-      AudioManager().playWin();
-    }
+    _showRewardsComingSoon();
   }
 
   void _handleShare() {
@@ -1367,8 +1424,22 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                       width: isShort ? 74 : 100,
                                       height: isShort ? 90 : 124,
                                       fit: BoxFit.contain,
-                                      errorBuilder: (_, _, _) =>
-                                          const SizedBox.shrink(),
+                                      errorBuilder: (_, error, _) {
+                                        // Sessiz boşluk yerine yer tutucu + hata kaydı.
+                                        debugPrint(
+                                          'ArcadeResultOverlay: maskot yüklenemedi: '
+                                          '$_resolvedMascot ($error)',
+                                        );
+                                        return SizedBox(
+                                          width: isShort ? 74 : 100,
+                                          height: isShort ? 90 : 124,
+                                          child: const Icon(
+                                            Icons.bug_report_rounded,
+                                            size: 56,
+                                            color: Color(0xFF8A5220),
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ),
                                 ),
@@ -1482,13 +1553,13 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
 
                             // Action Buttons (`result-btns`)
                             _buildAdButton(
-                              label: 'REKLAM İZLE, DEVAM ET',
+                              label: 'REKLAMLA DEVAM ET · YAKINDA',
                               onTap: _handleContinueAd,
                               minHeight: isShort ? 44 : 52,
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Kaldığın yerden devam: +1 can / ekstra hamle',
+                              'Ödüllü reklamlar yakında — şimdilik kullanılamıyor.',
                               textAlign: TextAlign.center,
                               style: GoogleFonts.nunito(
                                 fontSize: 11.5,
@@ -1500,7 +1571,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                             _buildAdButton(
                               label: _doubled
                                   ? '2X ALTIN KAZANILDI'
-                                  : 'REKLAM İZLE, 2X ALTIN KAZAN',
+                                  : 'REKLAMLA 2X ALTIN · YAKINDA',
                               onTap: _handleDoubleCoinsAd,
                               minHeight: isShort ? 44 : 52,
                               disabled: _doubled,
@@ -1784,7 +1855,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'REKLAM',
+                    'YAKINDA',
                     style: GoogleFonts.nunito(
                       fontSize: 9,
                       fontWeight: FontWeight.w900,

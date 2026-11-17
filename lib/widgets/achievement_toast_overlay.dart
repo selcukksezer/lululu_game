@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/achievement_pass_service.dart';
 import '../services/progress_manager.dart';
 
@@ -154,9 +155,9 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
                               children: [
                                 Row(
                                   children: [
-                                    const Flexible(
+                                    Flexible(
                                       child: Text(
-                                        'BAŞARIM AÇILDI!',
+                                        context.l10n.achievementUnlockedTitle,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -180,7 +181,7 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
                                               BorderRadius.circular(8),
                                         ),
                                         child: Text(
-                                          '+${item.coinReward} 🪙 · +${item.seasonXpReward} XP',
+                                          context.l10n.achievementRewardLine(item.coinReward, item.seasonXpReward),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
@@ -206,7 +207,7 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
                                 ),
                                 if (item.rewardTitle.isNotEmpty)
                                   Text(
-                                    'Unvan: ${item.rewardTitle}',
+                                    context.l10n.titleRewardLine(item.rewardTitle),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -220,6 +221,7 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
                           ),
                           IconButton(
                             key: const Key('achievement_toast_close_btn'),
+                            tooltip: context.l10n.closeLabel,
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
@@ -345,7 +347,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'USTALIK & LÜLÜLÜ PASS',
+                context.l10n.masteryPassTitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -355,7 +357,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                 ),
               ),
               Text(
-                'Unvan: ${service.selectedTitle} · $unlockedCount/$totalCount Başarım',
+                context.l10n.masteryHeaderLine(service.selectedTitle, unlockedCount, totalCount),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -408,7 +410,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
             children: [
               Expanded(
                 child: Text(
-                  'Sezon Kademesi: $tier / 20  ($xp / $nextXp XP)',
+                  context.l10n.seasonTierLine(tier, xp, nextXp),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -440,7 +442,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    service.hasGoldPass ? 'ALTIN BİLET AKTİF' : 'ALTIN BİLET AÇ',
+                    service.hasGoldPass ? context.l10n.goldPassActive : context.l10n.goldPassOpen,
                     style: TextStyle(
                       color: service.hasGoldPass
                           ? const Color(0xFF261600)
@@ -480,7 +482,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
           child: _TabButton(
             key: const Key('tab_achievements_btn'),
             label:
-                '30 Başarım (${service.unlockedAchievementIds.length}/30)',
+                context.l10n.achievementsCountLine(service.unlockedAchievementIds.length),
             selected: _tabIndex == 0,
             onTap: () => setState(() => _tabIndex = 0),
           ),
@@ -489,7 +491,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
         Expanded(
           child: _TabButton(
             key: const Key('tab_season_pass_btn'),
-            label: 'Lülülü Pass (${service.currentPassTier}/20)',
+            label: context.l10n.passTierLabel(service.currentPassTier),
             selected: _tabIndex == 1,
             onTap: () => setState(() => _tabIndex = 1),
           ),
@@ -515,7 +517,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
             scrollDirection: Axis.horizontal,
             children: [
               _CategoryChip(
-                label: 'Tümü (30)',
+                label: context.l10n.allAchievementsLabel,
                 selected: _selectedCategory == null,
                 onTap: () => setState(() => _selectedCategory = null),
               ),
@@ -595,7 +597,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                '+${def.coinReward}🪙 +${def.seasonXpReward}XP',
+                                context.l10n.achievementRewardCompact(def.coinReward, def.seasonXpReward),
                                 style: const TextStyle(
                                   color: Color(0xFFFFD54F),
                                   fontSize: 10,
@@ -635,7 +637,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                               const SizedBox(width: 8),
                               Text(
                                 unlocked
-                                    ? 'AÇILDI'
+                                    ? context.l10n.unlockedShort
                                     : '$progress/${def.targetValue}',
                                 style: TextStyle(
                                   color: unlocked
@@ -733,7 +735,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
               Expanded(
                 child: _PassRewardTrackTile(
                   trackKey: Key('pass_free_btn_${tierDef.tier}'),
-                  trackTitle: 'ÜCRETSİZ',
+                  trackTitle: context.l10n.freeTrackTitle,
                   reward: tierDef.freeReward,
                   claimed: freeClaimed,
                   canClaim: canClaimFree,
@@ -748,7 +750,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
               Expanded(
                 child: _PassRewardTrackTile(
                   trackKey: Key('pass_gold_btn_${tierDef.tier}'),
-                  trackTitle: 'ALTIN BİLET',
+                  trackTitle: context.l10n.goldPassTitle,
                   reward: tierDef.goldReward,
                   claimed: goldClaimed,
                   canClaim: canClaimGold,
@@ -935,7 +937,7 @@ class _PassRewardTrackTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                claimed ? 'ALINDI' : (canClaim ? 'TOPLA' : 'KİLİTLİ'),
+                claimed ? context.l10n.claimedShort : (canClaim ? context.l10n.collectButton : context.l10n.lockedLabel),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 
 /// Prototip alt navigasyon barı (`.dock` / `.dock-ic` / `.dock-label`).
@@ -17,33 +18,31 @@ class PrototypeBottomDock extends StatelessWidget {
   final int activeIndex;
   final ValueChanged<int>? onSelect;
 
+  // S3#27: dock etiketleri tek kaynaktan (nav* anahtarları); bu
+  // dosyadaki tekrar kaldırıldı. Etiketler build'de l10n'den okunup
+  // [_DockButton]a parametreyle verilir; rota/ikon verisi const kalır.
   static const List<_DockNavItem> _items = [
     _DockNavItem(
-      label: 'ANA SAYFA',
       route: LululuRoutes.hub,
       customAsset: 'assets/design/ui/icons2/home.png',
       fallbackAsset: 'assets/icons2/home.png',
     ),
     _DockNavItem(
-      label: 'MODLAR',
       route: LululuRoutes.modes,
       customAsset: 'assets/design/ui/icons2/target.png',
       fallbackAsset: 'assets/icons2/target.png',
     ),
     _DockNavItem(
-      label: 'AİLEM',
       route: LululuRoutes.tiers,
       customAsset: 'assets/design/ui/icons2/paw.png',
       fallbackAsset: 'assets/icons2/paw.png',
     ),
     _DockNavItem(
-      label: 'MAĞAZA',
       route: LululuRoutes.shop,
       customAsset: 'assets/design/ui/icons2/cart.png',
       fallbackAsset: 'assets/icons2/cart.png',
     ),
     _DockNavItem(
-      label: 'SKORLAR',
       route: LululuRoutes.scores,
       customAsset: 'assets/design/ui/icons2/trophy.png',
       fallbackAsset: 'assets/icons2/trophy.png',
@@ -61,6 +60,14 @@ class PrototypeBottomDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final labels = <String>[
+      l10n.navHome,
+      l10n.navModes,
+      l10n.navFamily,
+      l10n.navShop,
+      l10n.navScores,
+    ];
     final clampedIndex = activeIndex.clamp(0, _items.length - 1);
 
     return Padding(
@@ -154,6 +161,7 @@ class PrototypeBottomDock extends StatelessWidget {
                               height: 64,
                               child: _DockButton(
                                 item: _items[i],
+                                label: labels[i],
                                 active: i == clampedIndex,
                                 onTap: () => _handleSelect(context, i),
                               ),
@@ -174,13 +182,11 @@ class PrototypeBottomDock extends StatelessWidget {
 
 class _DockNavItem {
   const _DockNavItem({
-    required this.label,
     required this.route,
     required this.customAsset,
     required this.fallbackAsset,
   });
 
-  final String label;
   final String route;
   final String customAsset;
   final String fallbackAsset;
@@ -189,11 +195,13 @@ class _DockNavItem {
 class _DockButton extends StatelessWidget {
   const _DockButton({
     required this.item,
+    required this.label,
     required this.active,
     required this.onTap,
   });
 
   final _DockNavItem item;
+  final String label;
   final bool active;
   final VoidCallback onTap;
 
@@ -291,7 +299,7 @@ class _DockButton extends StatelessWidget {
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
-                item.label,
+                label,
                 maxLines: 1,
                 style: GoogleFonts.baloo2(
                   fontSize: 10,

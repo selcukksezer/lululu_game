@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
-import 'ad_mock.dart';
 
 /// 1:1 Pixel-Perfect Energy Empty Popup matching `#energyOverlay` (`.energy-card`).
 Future<void> showEnergyEmptyPopup(BuildContext context) {
@@ -60,22 +59,6 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
     _ticker?.cancel();
     _energy.removeListener(_onChanged);
     super.dispose();
-  }
-
-  Future<void> _watchAd() async {
-    if (_busy) return;
-    AudioManager().playPop();
-    setState(() => _busy = true);
-    final granted = await showRewardedAdMock(
-      context,
-      rewardLabel: '+5 ENERJİ',
-    );
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (granted) {
-      await _energy.grantFull(5);
-      if (mounted) Navigator.of(context).maybePop();
-    }
   }
 
   Future<void> _buyEnergyPack() async {
@@ -239,28 +222,26 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                // `#energyAdBtn` (.btn.green) with 20x20 Play SVG icon (`M8 5.5v13l11-6.5z`)
+                // Ödüllü reklam SDK'sı kurulu değil (madde 4): reklam
+                // düğmesi devre dışıdır, ödül vermez. Gerçek SDK
+                // eklendiğinde bu düğme gerçek reklam akışına bağlanmalıdır.
                 _buildActionBtn(
-                  label: 'REKLAM İZLE · +5 ENERJİ',
-                  leadingIcon: const CustomPaint(
-                    size: Size(20, 20),
-                    painter: _PlayTriangleIconPainter(),
-                  ),
+                  label: 'ÖDÜLLÜ REKLAMLAR YAKINDA',
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     stops: [0.0, 0.55, 1.0],
                     colors: [
-                      Color(0xFF37E08B),
-                      Color(0xFF12B76A),
-                      Color(0xFF0A9553),
+                      Color(0xFFB8BFCB),
+                      Color(0xFF9AA3B2),
+                      Color(0xFF8A93A3),
                     ],
                   ),
-                  shadowColor: const Color(0xFF066C3C),
+                  shadowColor: const Color(0xFF6B7482),
                   hasBlurShadow: true,
                   textColor: Colors.white,
-                  hasTextShadow: true,
-                  onTap: _busy ? null : _watchAd,
+                  hasTextShadow: false,
+                  onTap: null,
                 ),
                 const SizedBox(height: 10),
                 // `#energyShopBtn` (.btn gold)
@@ -379,25 +360,3 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
   }
 }
 
-/// Renders `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>` (`20x20`).
-class _PlayTriangleIconPainter extends CustomPainter {
-  const _PlayTriangleIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final sx = size.width / 24.0;
-    final sy = size.height / 24.0;
-    final path = Path()
-      ..moveTo(8.0 * sx, 5.5 * sy)
-      ..lineTo(8.0 * sx, 18.5 * sy)
-      ..lineTo(19.0 * sx, 12.0 * sy)
-      ..close();
-    final paint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _PlayTriangleIconPainter oldDelegate) => false;
-}

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../l10n/app_localizations.dart';
+import '../../services/chat_service.dart';
+
 /// Sözleşme: bu isimler değişmez.
 enum LululuDockTab { home, modes, family, shop, scores }
 
@@ -21,12 +24,15 @@ class LululuDockBar extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'ANA SAYFA',
-        LululuDockTab.modes => 'MODLAR',
-        LululuDockTab.family => 'AİLEM',
-        LululuDockTab.shop => 'MAĞAZA',
-        LululuDockTab.scores => 'SKORLAR',
+  // S3#27: dock etiketleri tek kaynaktan (nav* anahtarları);
+  // home_shell.dart _DockVisualOverlay._label ile aynı imza.
+  static String _label(AppLocalizations l10n, LululuDockTab tab) =>
+      switch (tab) {
+        LululuDockTab.home => l10n.navHome,
+        LululuDockTab.modes => l10n.navModes,
+        LululuDockTab.family => l10n.navFamily,
+        LululuDockTab.shop => l10n.navShop,
+        LululuDockTab.scores => l10n.navScores,
       };
 
   static String _assetIcon(LululuDockTab tab) => switch (tab) {
@@ -36,6 +42,24 @@ class LululuDockBar extends StatelessWidget {
         LululuDockTab.shop => 'assets/design/ui/icons2/cart.png',
         LululuDockTab.scores => 'assets/design/ui/icons2/trophy.png',
       };
+
+  /// AİLEM sekmesindeki toplam okunmamış rozet etiketi; null ise rozet
+  /// gizlidir.
+  ///
+  /// Sayaç kanal başına [ChatService.unreadProbeLimit] ile sınırlı
+  /// olduğundan, herhangi bir kanal sınırdaysa toplam bir alt sınırdır
+  /// ve "N+" gösterilir; aksi hâlde kesin toplam yazılır.
+  ///
+  /// NOT: HomeShell bu çubuğu Opacity(0.0) ile çizip üstüne kendi
+  /// görsel kopyasını (_DockVisualOverlay) koyar; bu rozet orada
+  /// GÖRÜNMEZ. Görünür kabuk rozeti home_shell.dart işidir.
+  static String? _unreadBadgeLabel() {
+    final total = ChatService.instance.totalUnreadCount;
+    if (total <= 0) return null;
+    final capped = ChatService.instance.unreadCounts.values
+        .any((count) => count >= ChatService.unreadProbeLimit);
+    return capped ? '$total+' : '$total';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,11 +154,24 @@ class LululuDockBar extends StatelessWidget {
                           Expanded(
                             child: SizedBox(
                               height: 64,
-                              child: _DockItem(
-                                tab: tab,
-                                active: tab == selected,
-                                onTap: () => onSelect(tab),
-                              ),
+                              // AİLEM sekmesi toplam okunmamış rozetini
+                              // ChatService dinleyerek gösterir (S2#19);
+                              // diğer sekmeler dinlemez, yerleşim aynı.
+                              child: tab == LululuDockTab.family
+                                  ? ListenableBuilder(
+                                      listenable: ChatService.instance,
+                                      builder: (context, _) => _DockItem(
+                                        tab: tab,
+                                        active: tab == selected,
+                                        onTap: () => onSelect(tab),
+                                        badgeLabel: _unreadBadgeLabel(),
+                                      ),
+                                    )
+                                  : _DockItem(
+                                      tab: tab,
+                                      active: tab == selected,
+                                      onTap: () => onSelect(tab),
+                                    ),
                             ),
                           ),
                       ],
@@ -155,26 +192,42 @@ class _DockItem extends StatelessWidget {
     required this.tab,
     required this.active,
     required this.onTap,
+    this.badgeLabel,
   });
 
   final LululuDockTab tab;
   final bool active;
   final VoidCallback onTap;
 
+  /// İkonun sağ üstündeki okunmamış rozet etiketi; null ise rozet yok.
+  final String? badgeLabel;
+
   @override
   Widget build(BuildContext context) {
-    final label = LululuDockBar._label(tab);
+    final label = LululuDockBar._label(context.l10n, tab);
     final iconAsset = LululuDockBar._assetIcon(tab);
+    final badge = badgeLabel;
 
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
+    return Semantics(
+      button: true,
+      selected: active,
+      label: badge == null ? label : context.l10n.dockUnreadLabel(label, badge),
+      excludeSemantics: true,
+      child: Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
         padding: const EdgeInsets.only(top: 4, bottom: 2),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // dock-ic yuvarlak ikon kapsülü
+            // dock-ic yuvarlak ikon kapsülü (+ okunmamış rozeti).
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
             Transform.translate(
               offset: Offset(0, active ? -4 : 0),
               child: Transform.scale(
@@ -255,16 +308,43 @@ class _DockItem extends StatelessWidget {
                 ),
               ),
             ),
+                if (badge != null)
+                  Positioned(
+                    right: -7,
+                    top: -7,
+                    child: Container(
+                      height: 18,
+                      constraints: const BoxConstraints(minWidth: 18),
+                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE52E2E),
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: Text(
+                        badge,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          height: 1.0,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 2),
-            // dock-label
+            // dock-label: en az 11pt; seçili sekme daha büyük + daha kalın.
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
                 label,
                 maxLines: 1,
                 style: GoogleFonts.baloo2(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
+                  fontSize: active ? 12 : 11,
+                  fontWeight: active ? FontWeight.w900 : FontWeight.w800,
                   height: 1.0,
                   letterSpacing: 0,
                   color: active
@@ -290,6 +370,8 @@ class _DockItem extends StatelessWidget {
             ),
           ],
         ),
+      ),
+      ),
       ),
     );
   }

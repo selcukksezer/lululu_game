@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
@@ -41,6 +42,66 @@ class AuthPanel extends StatefulWidget {
 
   @override
   State<AuthPanel> createState() => _AuthPanelState();
+}
+
+/// Paylaşılan misafir-giriş düğmesi (`#authGuest.auth-guest` -> height: 52,
+/// beyaz zemin, 2px `#B97A2E` kenarlık).
+///
+/// AuthPanel ve AuthScreen'deki yinelenen misafir düğmelerinin tek tanımıdır.
+/// Görünüm burada, dokunma davranışı (`onTap`) çağıran ekrana aittir; her
+/// ekranın kendi meşgul/hata akışı (AuthScreen'de `_run`, AuthPanel'de
+/// `_continueAsGuest`) aynen korunur.
+class GuestSignInButton extends StatelessWidget {
+  const GuestSignInButton({super.key, required this.onTap});
+
+  /// Null ise düğme devre dışıdır.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: context.l10n.guestContinueLabel,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFB97A2E),
+              width: 2,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0xFFB97A2E),
+                offset: Offset(0, 4),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            context.l10n.guestContinueButton,
+            style: GoogleFonts.baloo2(
+              fontSize: 16.5,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF8A5220),
+              letterSpacing: 0.4,
+              height: 1.0,
+            ).copyWith(
+              fontFamily: 'Baloo 2',
+              fontWeight: FontWeight.w800,
+              fontFamilyFallback: const ['Nunito'],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _AuthPanelState extends State<AuthPanel> {
@@ -247,7 +308,9 @@ class _AuthPanelState extends State<AuthPanel> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _isRegister ? 'KAYIT OL' : 'GİRİŞ',
+                          _isRegister
+                              ? context.l10n.registerButtonShort
+                              : context.l10n.loginButtonShort,
                           style: _baloo2(
                             fontSize: 27,
                             fontWeight: FontWeight.w800,
@@ -264,8 +327,12 @@ class _AuthPanelState extends State<AuthPanel> {
                           ),
                         ),
                         if (widget.onClose != null)
-                          GestureDetector(
-                            onTap: () {
+                          Semantics(
+                            button: true,
+                            label: context.l10n.closeLabel,
+                            excludeSemantics: true,
+                            child: GestureDetector(
+                              onTap: () {
                               AudioManager().playPop();
                               widget.onClose!();
                             },
@@ -295,11 +362,12 @@ class _AuthPanelState extends State<AuthPanel> {
                               ),
                             ),
                           ),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      'Kullanıcı adı + şifre ile gerçek hesap. Skorlar sıralamaya bağlanır.',
+                      context.l10n.authCardSubtitle,
                       style: _nunito(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
@@ -316,19 +384,25 @@ class _AuthPanelState extends State<AuthPanel> {
                     const SizedBox(height: 13),
                     _buildInputField(
                       controller: _usernameCtrl,
-                      hintText: 'Kullanıcı adın (min 3 karakter)',
+                      hintText: context.l10n.usernameHintDetailed,
                       obscureText: false,
                     ),
                     const SizedBox(height: 10),
                     _buildInputField(
                       controller: _passwordCtrl,
-                      hintText: 'Şifre (min 4 karakter)',
+                      hintText: context.l10n.passwordHintDetailed,
                       obscureText: _obscurePassword,
-                      suffix: GestureDetector(
-                        onTap: () {
-                          AudioManager().playPop();
-                          setState(() => _obscurePassword = !_obscurePassword);
-                        },
+                      suffix: Semantics(
+                        button: true,
+                        label: _obscurePassword
+                            ? context.l10n.showPasswordLabel
+                            : context.l10n.hidePasswordLabel,
+                        excludeSemantics: true,
+                        child: GestureDetector(
+                          onTap: () {
+                            AudioManager().playPop();
+                            setState(() => _obscurePassword = !_obscurePassword);
+                          },
                         child: Container(
                           width: 48,
                           height: 48,
@@ -341,6 +415,7 @@ class _AuthPanelState extends State<AuthPanel> {
                             size: 21,
                           ),
                         ),
+                      ),
                       ),
                     ),
                     if (_error != null) ...[
@@ -359,10 +434,12 @@ class _AuthPanelState extends State<AuthPanel> {
                     const SizedBox(height: 13),
                     _buildOrDivider(),
                     const SizedBox(height: 11),
-                    _buildGuestButton(),
+                    GuestSignInButton(
+                      onTap: _busy ? null : _continueAsGuest,
+                    ),
                     const SizedBox(height: 9),
                     _buildSocialButton(
-                      label: 'Apple ile devam',
+                      label: context.l10n.continueWithApple,
                       icon: const Icon(
                         Icons.apple,
                         color: Color(0xFF33200A),
@@ -372,7 +449,7 @@ class _AuthPanelState extends State<AuthPanel> {
                     ),
                     const SizedBox(height: 9),
                     _buildSocialButton(
-                      label: 'Google ile devam',
+                      label: context.l10n.continueWithGoogle,
                       icon: const Icon(
                         Icons.g_mobiledata_rounded,
                         color: Color(0xFF4285F4),
@@ -471,7 +548,7 @@ class _AuthPanelState extends State<AuthPanel> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Oturum açık',
+                  context.l10n.authSessionOpen,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: _nunito(
@@ -508,7 +585,7 @@ class _AuthPanelState extends State<AuthPanel> {
               ),
               alignment: Alignment.center,
               child: Text(
-                'Çıkış',
+                context.l10n.signOutButton,
                 style: _baloo2(
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
@@ -535,7 +612,7 @@ class _AuthPanelState extends State<AuthPanel> {
         children: [
           Expanded(
             child: _buildTabItem(
-              label: 'Giriş',
+              label: context.l10n.loginTab,
               active: !_isRegister,
               onTap: () {
                 AudioManager().playPop();
@@ -549,7 +626,7 @@ class _AuthPanelState extends State<AuthPanel> {
           const SizedBox(width: 5),
           Expanded(
             child: _buildTabItem(
-              label: 'Kayıt',
+              label: context.l10n.registerTab,
               active: _isRegister,
               onTap: () {
                 AudioManager().playPop();
@@ -701,7 +778,9 @@ class _AuthPanelState extends State<AuthPanel> {
         ),
         alignment: Alignment.center,
         child: Text(
-          _isRegister ? 'HESAP OLUŞTUR' : 'GİRİŞ YAP',
+          _isRegister
+              ? context.l10n.createAccountButton
+              : context.l10n.signInButton,
           style: _baloo2(
             fontSize: 19,
             fontWeight: FontWeight.w800,
@@ -734,7 +813,7 @@ class _AuthPanelState extends State<AuthPanel> {
           ),
           const SizedBox(width: 10),
           Text(
-            'VEYA',
+            context.l10n.orDivider,
             style: _baloo2(
               fontSize: 11.5,
               fontWeight: FontWeight.w800,
@@ -751,41 +830,6 @@ class _AuthPanelState extends State<AuthPanel> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildGuestButton() {
-    return GestureDetector(
-      onTap: _busy ? null : _continueAsGuest,
-      child: Container(
-        height: 52,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFB97A2E),
-            width: 2,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0xFFB97A2E),
-              offset: Offset(0, 4),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          'MİSAFİR DEVAM ET',
-          style: _baloo2(
-            fontSize: 16.5,
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF8A5220),
-            letterSpacing: 0.4,
-            height: 1.0,
-          ),
-        ),
       ),
     );
   }

@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/audio_manager.dart';
-import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
-import 'ad_mock.dart';
 import 'lululu_press.dart';
 
 /// 7 günlük ödül takvimi & Günlük Hediye Kutusu + `#hbOverlay` kalp kırılma katmanı.
@@ -239,20 +237,23 @@ class _DailyRewardDialogState extends State<DailyRewardDialog> {
     }
   }
 
-  Future<void> _claimDouble() async {
-    final ok = await showRewardedAdMock(context, rewardLabel: '1.000 COİN');
-    if (!mounted || !ok) return;
-    setState(() => _claimed = true);
-    final pm = ProgressManager.instance;
-    if (pm.canClaimDailyGiftBox) {
-      await pm.claimDailyGiftBox(doubled: true);
-    } else {
-      await pm.addCoins(1000);
-    }
-    AudioManager().playWin();
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
+  /// Ödüllü reklam SDK'sı kurulu değil: reklam gösterilemez, ödül
+  /// verilmez. Gerçek SDK eklendiğinde reklam dalları gerçek reklam
+  /// akışına bağlanmalıdır; sahte (mock) reklamla ödül verilmez (madde 4).
+  void _showRewardsComingSoon() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Ödüllü reklamlar yakında — şimdilik kullanılamıyor.',
+          style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
+        ),
+        backgroundColor: LululuColors.carbonVoid,
+      ),
+    );
+  }
+
+  void _claimDouble() {
+    _showRewardsComingSoon();
   }
 
   Future<void> _claimEnergy() async {
@@ -263,19 +264,9 @@ class _DailyRewardDialogState extends State<DailyRewardDialog> {
       if (mounted) Navigator.of(context).pop();
       return;
     }
-    final ok = await showRewardedAdMock(context, rewardLabel: '+5 ENERJİ');
-    if (!mounted || !ok) return;
-    final granted = await pm.claimDailyFreeEnergy(
-      amount: 5,
-      fromRewardedAd: true,
-    );
-    if (!granted) {
-      EnergyService.instance.addEnergy(5);
-    }
-    AudioManager().playWin();
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
+    // Ücretsiz hak tükendi: reklam dalı ödül vermez, bilgi gösterir.
+    if (!mounted) return;
+    _showRewardsComingSoon();
   }
 
   @override
@@ -459,7 +450,7 @@ class _DailyRewardDialogState extends State<DailyRewardDialog> {
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
-                                    'REKLAM',
+                                    'YAKINDA',
                                     style: GoogleFonts.baloo2(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w900,
@@ -469,7 +460,7 @@ class _DailyRewardDialogState extends State<DailyRewardDialog> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  '2X · 1.000',
+                                  '2X · YAKINDA',
                                   style: GoogleFonts.baloo2(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w800,

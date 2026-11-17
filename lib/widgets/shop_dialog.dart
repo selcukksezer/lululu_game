@@ -1,13 +1,16 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/iap_service.dart';
 import '../services/progress_manager.dart';
-import 'ad_mock.dart';
 
-String _trUpper(String input) {
+String _trUpper(String input, Locale locale) {
+  if (locale.languageCode != 'tr') {
+    return input.toUpperCase();
+  }
   return input
       .replaceAll('i', 'İ')
       .replaceAll('ı', 'I')
@@ -421,19 +424,11 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Future<void> _watchFreeChestAd() async {
-    final rewarded = await showRewardedAdMock(
-      context,
-      rewardLabel: '+250 COİN',
-    );
-    if (!rewarded) return;
-    await _pm.addCoins(250);
-    await _grantPowerStock('undo', 1);
-    if (!mounted) return;
-    setState(() {});
-    widget.onStateChanged?.call();
-    _showToast(
-      'Ödül alındı: ücretsiz Ahşap Sandık + 1 güçlendirici envanterinde!',
-    );
+    // Ödüllü reklam SDK'sı kurulu değil (IapService.rewardedAdsAvailable
+    // `false`): reklam gösterilemez ve ödül verilmez. Gerçek ödüllü
+    // reklam SDK'sı eklendiğinde bu yöntem gerçek reklam akışına
+    // bağlanmalıdır; sahte (mock) reklamla ödül verilmez.
+    _showToast('Ödüllü reklamlar yakında — şimdilik kullanılamıyor.');
   }
 
   Future<void> _buyCoinItem({
@@ -451,7 +446,7 @@ class _ShopScreenState extends State<ShopScreen> {
     } else {
       if (!mounted) return;
       _showToast(
-        'Yetersiz altın! Reklam izleyerek veya oyun oynayarak altın kazanabilirsin.',
+        'Yetersiz altın! Oyun oynayarak altın kazanabilirsin.',
       );
     }
   }
@@ -548,9 +543,12 @@ class _ShopScreenState extends State<ShopScreen> {
                           ),
                           const Spacer(),
                           // Dark coin pill with +
-                          GestureDetector(
-                            onTap: () =>
-                                _showToast('Coin paketi sepete eklendi'),
+                          Semantics(
+                            button: true,
+                            label: context.l10n.addCoinPackLabel,
+                            child: GestureDetector(
+                              onTap: () =>
+                                  _showToast('Coin paketi sepete eklendi'),
                             child: Container(
                               height: 35,
                               padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
@@ -621,6 +619,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                 ],
                               ),
                             ),
+                          ),
                           ),
                           const SizedBox(width: 8),
                           // Dark star pill (86)
@@ -872,7 +871,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                             child: Transform.translate(
                                               offset: const Offset(0, -1.0),
                                               child: const Text(
-                                                'REKLAM',
+                                                'YAKINDA',
                                                 style: TextStyle(
                                                   fontFamily: 'Baloo 2',
                                                   fontSize: 10,
@@ -891,7 +890,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                       ),
                                     ),
                                     const Text(
-                                      'Reklam izle, ücretsiz Ahşap Sandık + rastgele 1 güçlendirici kazan. Coinsiz, beklemeden.',
+                                      'Ödüllü reklamlar yakında: ücretsiz Ahşap Sandık + rastgele 1 güçlendirici burada olacak.',
                                       style: TextStyle(
                                         fontFamily: 'Nunito',
                                         fontSize: 12.5,
@@ -916,15 +915,15 @@ class _ShopScreenState extends State<ShopScreen> {
                                     width: 97.1,
                                     height: 48,
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFFFF7DE),
+                                      color: const Color(0xFFEDF0F6),
                                       borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
-                                        color: const Color(0xFFFFB800),
+                                        color: const Color(0xFFD5DAE4),
                                         width: 2,
                                       ),
                                       boxShadow: const [
                                         BoxShadow(
-                                          color: Color(0x73000000),
+                                          color: Color(0x26000000),
                                           offset: Offset(0, 4),
                                           blurRadius: 0,
                                         ),
@@ -934,35 +933,31 @@ class _ShopScreenState extends State<ShopScreen> {
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
-                                          color: const Color(0x40FFB800),
+                                          color: const Color(0xFFD5DAE4),
                                           width: 1,
                                         ),
                                       ),
-                                      child: const Center(
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            CustomPaint(
-                                              size: Size(19, 19),
-                                              painter: _ShopPlayTrianglePainter(
-                                                color: Color(0xFF141B2A),
-                                              ),
+                                      child: const Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                        ),
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            'YAKINDA',
+                                            maxLines: 1,
+                                            softWrap: false,
+                                            style: TextStyle(
+                                              fontFamily: 'Baloo 2',
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w800,
+                                              fontVariations: [
+                                                FontVariation('wght', 800)
+                                              ],
+                                              color: Color(0xFF9AA3B2),
+                                              height: 1.1,
                                             ),
-                                            SizedBox(width: 8),
-                                            Text(
-                                              'İZLE',
-                                              style: TextStyle(
-                                                fontFamily: 'Baloo 2',
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w800,
-                                                fontVariations: [
-                                                  FontVariation('wght', 800)
-                                                ],
-                                                color: Color(0xFF141B2A),
-                                                height: 1.1,
-                                              ),
-                                            ),
-                                          ],
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -990,12 +985,18 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: '+10 enerji · anında dolar, bekleme yok',
                             priceText: '₺29,99',
                             isCoinPrice: false,
-                            onTap: () {
-                              EnergyService.instance.addEnergy(10);
+                            onTap: () async {
+                              // Satın alma sonucuna göre: mağaza yoksa
+                              // (sürümde) ürün verilmez, yalnızca bilgi
+                              // gösterilir. Teslimat IAP akışından gelir.
+                              final ok = await IapService.instance
+                                  .purchase('energy_pack_10');
                               if (!mounted) return;
                               setState(() {});
                               widget.onStateChanged?.call();
-                              _showToast('+10 enerji eklendi — kalbin doldu!');
+                              _showToast(ok
+                                  ? '+10 enerji eklendi — kalbin doldu!'
+                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
                             },
                           ),
                           _ShopItemData(
@@ -1007,12 +1008,17 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '₺59,99',
                             isCoinPrice: false,
                             onTap: () async {
-                              await IapService.instance.purchase('full_energy');
-                              await _pm.refillFullEnergy();
+                              final ok = await IapService.instance
+                                  .purchase('full_energy');
+                              if (ok) {
+                                await _pm.refillFullEnergy();
+                              }
                               if (!mounted) return;
                               setState(() {});
                               widget.onStateChanged?.call();
-                              _showToast('Enerji 30/30 doldu!');
+                              _showToast(ok
+                                  ? 'Enerji 30/30 doldu!'
+                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
                             },
                           ),
                         ),
@@ -1039,13 +1045,17 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '₺149,99',
                             isCoinPrice: false,
                             onTap: () async {
-                              await IapService.instance
+                              final ok = await IapService.instance
                                   .purchase('mega_starter_pack');
-                              await _pm.addCoins(1000);
+                              if (ok) {
+                                await _pm.addCoins(1000);
+                              }
                               if (!mounted) return;
                               setState(() {});
                               widget.onStateChanged?.call();
-                              _showToast('Yıldız Paketi sepete eklendi');
+                              _showToast(ok
+                                  ? 'Yıldız Paketi sepete eklendi'
+                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
                             },
                           ),
                           _ShopItemData(
@@ -1076,11 +1086,14 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '₺59,99',
                             isCoinPrice: false,
                             onTap: () async {
-                              await IapService.instance.purchase('coins_mid');
+                              final ok = await IapService.instance
+                                  .purchase('coins_mid');
                               if (!mounted) return;
                               setState(() {});
                               widget.onStateChanged?.call();
-                              _showToast('Coin paketi sepete eklendi');
+                              _showToast(ok
+                                  ? 'Coin paketi sepete eklendi'
+                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
                             },
                           ),
                           _ShopItemData(
@@ -1092,11 +1105,14 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '₺249,99',
                             isCoinPrice: false,
                             onTap: () async {
-                              await IapService.instance.purchase('coins_big');
+                              final ok = await IapService.instance
+                                  .purchase('coins_big');
                               if (!mounted) return;
                               setState(() {});
                               widget.onStateChanged?.call();
-                              _showToast('Coin paketi sepete eklendi');
+                              _showToast(ok
+                                  ? 'Coin paketi sepete eklendi'
+                                  : 'Mağaza kullanılamıyor — satın alma yapılamadı.');
                             },
                           ),
                           topPadding: 8,
@@ -1259,6 +1275,7 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Widget _buildShopCard(_ShopItemData item) {
+    final locale = Localizations.localeOf(context);
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -1296,7 +1313,7 @@ class _ShopScreenState extends State<ShopScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 25.28, bottom: 23.28),
                     child: Text(
-                      _trUpper(item.title),
+                      _trUpper(item.title, locale),
                       textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1331,9 +1348,13 @@ class _ShopScreenState extends State<ShopScreen> {
                   ),
                 ],
               ),
-              GestureDetector(
-                onTap: item.onTap,
-                child: CustomPaint(
+              Semantics(
+                button: true,
+                label: context.l10n.shopBuyItemLabel(item.title, item.priceText),
+                excludeSemantics: true,
+                child: GestureDetector(
+                  onTap: item.onTap,
+                  child: CustomPaint(
                   painter: _ShopBtnShadowPainter(
                     solidColor: item.isCoinPrice
                         ? const Color(0xFFB97A00)
@@ -1432,6 +1453,7 @@ class _ShopScreenState extends State<ShopScreen> {
                   ),
                 ),
               ),
+              ),
             ],
           ),
         ),
@@ -1480,6 +1502,7 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Widget _buildPowGroup(_ModePowerGroup group) {
+    final locale = Localizations.localeOf(context);
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
@@ -1526,7 +1549,7 @@ class _ShopScreenState extends State<ShopScreen> {
                     bottom: 20.615,
                   ),
                   child: Text(
-                    _trUpper(group.modeName),
+                    _trUpper(group.modeName, locale),
                     style: const TextStyle(
                       fontFamily: 'Baloo 2',
                       fontSize: 15.5,
@@ -1645,9 +1668,13 @@ class _ShopScreenState extends State<ShopScreen> {
               ),
             ),
             const SizedBox(width: 11),
-            GestureDetector(
-              onTap: () => _buyCoinItem(
-                toastMsg: '${pow.name} sepete eklendi (${group.modeName})',
+            Semantics(
+              button: true,
+              label: context.l10n.shopBuyPowerUpLabel(pow.name, pow.cost),
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: () => _buyCoinItem(
+                  toastMsg: '${pow.name} sepete eklendi (${group.modeName})',
                 cost: pow.cost,
                 onSuccess: () => _grantPowerStock(pow.id, 1),
               ),
@@ -1707,6 +1734,7 @@ class _ShopScreenState extends State<ShopScreen> {
                   ],
                 ),
               ),
+            ),
             ),
           ],
         ),
@@ -1851,27 +1879,6 @@ class _ShopBatteryPainter extends CustomPainter {
   bool shouldRepaint(covariant _ShopBatteryPainter oldDelegate) => false;
 }
 
-class _ShopPlayTrianglePainter extends CustomPainter {
-  final Color color;
-  const _ShopPlayTrianglePainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final sx = size.width / 24.0;
-    final sy = size.height / 24.0;
-    final path = Path()
-      ..moveTo(8 * sx, 5.5 * sy)
-      ..lineTo(8 * sx, 18.5 * sy)
-      ..lineTo(19 * sx, 12 * sy)
-      ..close();
-    canvas.drawPath(path, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(covariant _ShopPlayTrianglePainter oldDelegate) =>
-      oldDelegate.color != color;
-}
-
 class _ShopBtnShadowPainter extends CustomPainter {
   final Color solidColor;
   const _ShopBtnShadowPainter({required this.solidColor});
@@ -1926,18 +1933,23 @@ class _ShopFloatingDock extends StatelessWidget {
   final int activeIndex;
   const _ShopFloatingDock({required this.activeIndex});
 
-  static const _tabs = [
-    ('ANA SAYFA', 'assets/icons2/home.png', 'hub'),
-    ('MODLAR', 'assets/icons2/target.png', 'modes'),
-    ('AİLEM', 'assets/icons2/paw.png', 'tiers'),
-    ('MAĞAZA', 'assets/icons2/cart.png', 'shop'),
-    ('SKORLAR', 'assets/icons2/trophy.png', 'scores'),
+  // S3#27: dock etiketleri tek kaynaktan (nav* anahtarları); bu
+  // dosyadaki tekrar kaldırıldı. İkonlar ve rotalar const kalır,
+  // etiketler build'de l10n'den okunur.
+  static const _tabIcons = [
+    'assets/icons2/home.png',
+    'assets/icons2/target.png',
+    'assets/icons2/paw.png',
+    'assets/icons2/cart.png',
+    'assets/icons2/trophy.png',
   ];
+
+  static const _tabRoutes = ['hub', 'modes', 'tiers', 'shop', 'scores'];
 
   void _onTapTab(BuildContext context, int index) {
     AudioManager().playPop();
     if (index == activeIndex) return;
-    final routeName = '/${_tabs[index].$3}';
+    final routeName = '/${_tabRoutes[index]}';
     try {
       Navigator.of(context).pushReplacementNamed(routeName);
     } catch (_) {}
@@ -1985,6 +1997,14 @@ class _ShopFloatingDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final labels = <String>[
+      l10n.navHome,
+      l10n.navModes,
+      l10n.navFamily,
+      l10n.navShop,
+      l10n.navScores,
+    ];
     return CustomPaint(
       painter: const _ShopDockOuterShadowPainter(),
       child: Container(
@@ -2005,7 +2025,7 @@ class _ShopFloatingDock extends StatelessWidget {
             builder: (context, constraints) {
               final usableWidth =
                   (constraints.maxWidth - 14.0).clamp(100.0, 410.0);
-              final tabW = usableWidth / _tabs.length;
+              final tabW = usableWidth / _tabIcons.length;
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -2089,7 +2109,7 @@ class _ShopFloatingDock extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.all(7),
                     child: Row(
-                      children: List.generate(_tabs.length, (i) {
+                      children: List.generate(_tabIcons.length, (i) {
                         final active = i == activeIndex;
                         return Expanded(
                           child: GestureDetector(
@@ -2143,7 +2163,7 @@ class _ShopFloatingDock extends StatelessWidget {
                                                         0.5, 0.5),
                                                     child:
                                                         _buildIconWithDropShadow(
-                                                      _tabs[i].$2,
+                                                      _tabIcons[i],
                                                       35,
                                                     ),
                                                   ),
@@ -2188,7 +2208,7 @@ class _ShopFloatingDock extends StatelessWidget {
                                                         0.5, 0.5),
                                                     child:
                                                         _buildIconWithDropShadow(
-                                                      _tabs[i].$2,
+                                                      _tabIcons[i],
                                                       33,
                                                     ),
                                                   ),
@@ -2205,7 +2225,7 @@ class _ShopFloatingDock extends StatelessWidget {
                                       height: 16.0,
                                       child: Center(
                                         child: Text(
-                                          _tabs[i].$1,
+                                          labels[i],
                                           maxLines: 1,
                                           style: TextStyle(
                                             fontFamily: 'Baloo 2',

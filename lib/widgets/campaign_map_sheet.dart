@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
 import '../services/campaign_progression_service.dart';
 import '../services/progress_manager.dart';
@@ -97,8 +98,12 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
     if (!mounted) return;
     if (reward != null) {
       setState(() {
-        _chestFeedbackBanner =
-            '🎁 $milestoneStars⭐ Sandığı Açıldı: +${reward.coinsGranted} Altın & +${reward.boosterCount} ${reward.boosterKey.toUpperCase()}!';
+        _chestFeedbackBanner = context.l10n.chestUnlockedToast(
+          milestoneStars,
+          reward.coinsGranted,
+          reward.boosterCount,
+          reward.boosterKey.toUpperCase(),
+        );
       });
     }
   }
@@ -244,7 +249,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '80 SEVİYE KAMPANYA HARİTASI',
+                      context.l10n.campaignSheetTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -255,7 +260,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                       ),
                     ),
                     Text(
-                      '8 Bölüm · 8 Boss Savaşı · 24 Yıldız Sandığı',
+                      context.l10n.campaignSheetSubtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -432,7 +437,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'BÖLÜM ${chapterMeta.chapterIndex}: ${chapterMeta.title}',
+                  context.l10n.chapterBannerTitle(chapterMeta.chapterIndex, chapterMeta.title),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -443,7 +448,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '👑 Boss #${bossLevel.id}: ${chapterMeta.bossName} (${chapterMeta.bossHp} HP) · Tehlike: ${chapterMeta.bossSpecialHazard}',
+                  context.l10n.bossBannerLine(bossLevel.id, chapterMeta.bossName, chapterMeta.bossHp, chapterMeta.bossSpecialHazard),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -464,7 +469,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
               border: Border.all(color: accent.withValues(alpha: 0.5)),
             ),
             child: Text(
-              'Sv ${chapterMeta.startLevel}-${chapterMeta.endLevel}',
+              context.l10n.levelRangeShort(chapterMeta.startLevel, chapterMeta.endLevel),
               style: TextStyle(
                 fontSize: compact ? 9.5 : 10.5,
                 fontWeight: FontWeight.w800,
@@ -580,7 +585,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '$milestoneStars⭐ Sandık',
+                    context.l10n.chestStarsLabel(milestoneStars),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -595,8 +600,8 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                   ),
                   Text(
                     claimed
-                        ? 'Alındı'
-                        : '+${reward.coinsGranted}🪙 +${reward.boosterCount}⚡',
+                        ? context.l10n.claimedPlain
+                        : context.l10n.chestRewardLine(reward.coinsGranted, reward.boosterCount),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -734,7 +739,7 @@ class _CampaignLevelNodeCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 2),
                     Text(
-                      'BOSS',
+                      context.l10n.bossShort,
                       style: TextStyle(
                         fontSize: compact ? 7.5 : 8,
                         fontWeight: FontWeight.w900,
