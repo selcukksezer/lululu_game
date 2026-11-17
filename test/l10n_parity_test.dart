@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 340 getter + 54 metot = 394 anahtar,
+// açıkça sayılır (soyut sınıftaki 462 getter + 59 metot = 521 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -367,6 +367,128 @@ void main() {
         'showPasswordLabel': l10n.showPasswordLabel,
         'hidePasswordLabel': l10n.hidePasswordLabel,
         'addCoinPackLabel': l10n.addCoinPackLabel,
+        'shopModeSuikaArena': l10n.shopModeSuikaArena,
+        'shopPowerRaidSprayName': l10n.shopPowerRaidSprayName,
+        'shopPowerRaidSprayDesc': l10n.shopPowerRaidSprayDesc,
+        'shopPowerSlipperShakeName': l10n.shopPowerSlipperShakeName,
+        'shopPowerSlipperShakeDesc': l10n.shopPowerSlipperShakeDesc,
+        'shopPowerLightItUpName': l10n.shopPowerLightItUpName,
+        'shopPowerLightItUpDesc': l10n.shopPowerLightItUpDesc,
+        'shopModeGrid2048': l10n.shopModeGrid2048,
+        'shopPowerUndoName': l10n.shopPowerUndoName,
+        'shopPowerUndoDesc': l10n.shopPowerUndoDesc,
+        'shopPowerShuffleName': l10n.shopPowerShuffleName,
+        'shopPowerShuffleDesc': l10n.shopPowerShuffleDesc,
+        'shopPowerMergePairName': l10n.shopPowerMergePairName,
+        'shopPowerMergePairDesc': l10n.shopPowerMergePairDesc,
+        'shopModeBalloonPop': l10n.shopModeBalloonPop,
+        'shopPowerTripleArrowName': l10n.shopPowerTripleArrowName,
+        'shopPowerTripleArrowDesc': l10n.shopPowerTripleArrowDesc,
+        'shopPowerBombBalloonName': l10n.shopPowerBombBalloonName,
+        'shopPowerBombBalloonDesc': l10n.shopPowerBombBalloonDesc,
+        'shopPowerSlowName': l10n.shopPowerSlowName,
+        'shopPowerSlowBalloonDesc': l10n.shopPowerSlowBalloonDesc,
+        'shopModeMatch3': l10n.shopModeMatch3,
+        'shopPowerHammerName': l10n.shopPowerHammerName,
+        'shopPowerHammerDesc': l10n.shopPowerHammerDesc,
+        'shopPowerBombName': l10n.shopPowerBombName,
+        'shopPowerBombDesc': l10n.shopPowerBombDesc,
+        'shopPowerColorHunterName': l10n.shopPowerColorHunterName,
+        'shopPowerColorHunterDesc': l10n.shopPowerColorHunterDesc,
+        'shopModeLinkPop': l10n.shopModeLinkPop,
+        'shopPowerChainExtenderName': l10n.shopPowerChainExtenderName,
+        'shopPowerChainExtenderDesc': l10n.shopPowerChainExtenderDesc,
+        'shopPowerLightningName': l10n.shopPowerLightningName,
+        'shopPowerLightningDesc': l10n.shopPowerLightningDesc,
+        'shopPowerMagnetName': l10n.shopPowerMagnetName,
+        'shopPowerMagnetDesc': l10n.shopPowerMagnetDesc,
+        'shopModeStackDrop': l10n.shopModeStackDrop,
+        'shopPowerFreezeName': l10n.shopPowerFreezeName,
+        'shopPowerFreezeDesc': l10n.shopPowerFreezeDesc,
+        'shopPowerWidenName': l10n.shopPowerWidenName,
+        'shopPowerWidenDesc': l10n.shopPowerWidenDesc,
+        'shopPowerSlowStackDesc': l10n.shopPowerSlowStackDesc,
+        'shopModeSlipperTap': l10n.shopModeSlipperTap,
+        'shopPowerDoubleSlipperName': l10n.shopPowerDoubleSlipperName,
+        'shopPowerDoubleSlipperDesc': l10n.shopPowerDoubleSlipperDesc,
+        'shopPowerGoldenSlipperName': l10n.shopPowerGoldenSlipperName,
+        'shopPowerGoldenSlipperDesc': l10n.shopPowerGoldenSlipperDesc,
+        'shopPowerBugSprayName': l10n.shopPowerBugSprayName,
+        'shopPowerBugSprayDesc': l10n.shopPowerBugSprayDesc,
+        'shopModeNestDefense': l10n.shopModeNestDefense,
+        'shopPowerNestShieldName': l10n.shopPowerNestShieldName,
+        'shopPowerNestShieldDesc': l10n.shopPowerNestShieldDesc,
+        'shopModeOsmantus': l10n.shopModeOsmantus,
+        'shopPowerDikkisBoostName': l10n.shopPowerDikkisBoostName,
+        'shopPowerDikkisBoostDesc': l10n.shopPowerDikkisBoostDesc,
+        'shopPowerWideRingName': l10n.shopPowerWideRingName,
+        'shopPowerWideRingDesc': l10n.shopPowerWideRingDesc,
+        'shopPowerMicrophoneName': l10n.shopPowerMicrophoneName,
+        'shopPowerMicrophoneDesc': l10n.shopPowerMicrophoneDesc,
+        'shopModeScreamBug': l10n.shopModeScreamBug,
+        'shopPowerJumpBootsName': l10n.shopPowerJumpBootsName,
+        'shopPowerJumpBootsDesc': l10n.shopPowerJumpBootsDesc,
+        'shopPowerShieldName': l10n.shopPowerShieldName,
+        'shopPowerShieldDesc': l10n.shopPowerShieldDesc,
+        'shopPowerNitroName': l10n.shopPowerNitroName,
+        'shopPowerNitroDesc': l10n.shopPowerNitroDesc,
+        'shopModeMakarayiz': l10n.shopModeMakarayiz,
+        'shopPowerBeatFreezeName': l10n.shopPowerBeatFreezeName,
+        'shopPowerBeatFreezeDesc': l10n.shopPowerBeatFreezeDesc,
+        'shopPowerAutoReelName': l10n.shopPowerAutoReelName,
+        'shopPowerAutoReelDesc': l10n.shopPowerAutoReelDesc,
+        'shopPowerScoreMultiplierName': l10n.shopPowerScoreMultiplierName,
+        'shopPowerScoreMultiplierDesc': l10n.shopPowerScoreMultiplierDesc,
+        'shopGoldenWeekendTitle': l10n.shopGoldenWeekendTitle,
+        'shopGoldenWeekendSubtitle': l10n.shopGoldenWeekendSubtitle,
+        'shopFreeChestTitle': l10n.shopFreeChestTitle,
+        'shopFreeChestDesc': l10n.shopFreeChestDesc,
+        'shopEnergyTitle': l10n.shopEnergyTitle,
+        'shopEnergyRefillNote': l10n.shopEnergyRefillNote,
+        'shopPowerUpsTitle': l10n.shopPowerUpsTitle,
+        'shopPowerUpsNote': l10n.shopPowerUpsNote,
+        'shopCoinPacksTitle': l10n.shopCoinPacksTitle,
+        'shopChestsAndPotionsTitle': l10n.shopChestsAndPotionsTitle,
+        'shopBadgeBest': l10n.shopBadgeBest,
+        'shopBadgeDeal': l10n.shopBadgeDeal,
+        'shopBadgeLucky': l10n.shopBadgeLucky,
+        'shopItemEnergyPackTitle': l10n.shopItemEnergyPackTitle,
+        'shopItemEnergyPackDesc': l10n.shopItemEnergyPackDesc,
+        'shopItemEnergyDepotTitle': l10n.shopItemEnergyDepotTitle,
+        'shopItemEnergyDepotDesc': l10n.shopItemEnergyDepotDesc,
+        'shopItemStarPackTitle': l10n.shopItemStarPackTitle,
+        'shopItemStarPackDesc': l10n.shopItemStarPackDesc,
+        'shopItemSurpriseBoxTitle': l10n.shopItemSurpriseBoxTitle,
+        'shopItemSurpriseBoxDesc': l10n.shopItemSurpriseBoxDesc,
+        'shopItemHandfulTitle': l10n.shopItemHandfulTitle,
+        'shopItemHandfulDesc': l10n.shopItemHandfulDesc,
+        'shopItemCrateTitle': l10n.shopItemCrateTitle,
+        'shopItemCrateDesc': l10n.shopItemCrateDesc,
+        'shopItemWoodenChestTitle': l10n.shopItemWoodenChestTitle,
+        'shopItemWoodenChestDesc': l10n.shopItemWoodenChestDesc,
+        'shopItemGoldenChestTitle': l10n.shopItemGoldenChestTitle,
+        'shopItemGoldenChestDesc': l10n.shopItemGoldenChestDesc,
+        'shopItemDoubleCoinTitle': l10n.shopItemDoubleCoinTitle,
+        'shopItemDoubleCoinDesc': l10n.shopItemDoubleCoinDesc,
+        'shopItemLuckPotionTitle': l10n.shopItemLuckPotionTitle,
+        'shopItemLuckPotionDesc': l10n.shopItemLuckPotionDesc,
+        'shopNotEnoughGoldToast': l10n.shopNotEnoughGoldToast,
+        'shopAddedCoinPackToast': l10n.shopAddedCoinPackToast,
+        'shopEnergyRegenToast': l10n.shopEnergyRegenToast,
+        'shopEnergyAddedToast': l10n.shopEnergyAddedToast,
+        'shopStoreUnavailableToast': l10n.shopStoreUnavailableToast,
+        'shopEnergyFullToast': l10n.shopEnergyFullToast,
+        'shopPowerUpModeOnlyToast': l10n.shopPowerUpModeOnlyToast,
+        'shopAddedStarPackToast': l10n.shopAddedStarPackToast,
+        'shopAddedSurpriseBoxToast': l10n.shopAddedSurpriseBoxToast,
+        'shopAddedWoodenChestToast': l10n.shopAddedWoodenChestToast,
+        'shopAddedGoldenChestToast': l10n.shopAddedGoldenChestToast,
+        'shopAddedDoubleCoinToast': l10n.shopAddedDoubleCoinToast,
+        'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
+        'helpButtonLabel': l10n.helpButtonLabel,
+        'sendMessageLabel': l10n.sendMessageLabel,
+        'sendStickerHint': l10n.sendStickerHint,
+        'finishRoundLabel': l10n.finishRoundLabel,
       };
 
   Map<String, String> trStrings(AppLocalizationsTr l10n) => {
@@ -710,6 +832,128 @@ void main() {
         'showPasswordLabel': l10n.showPasswordLabel,
         'hidePasswordLabel': l10n.hidePasswordLabel,
         'addCoinPackLabel': l10n.addCoinPackLabel,
+        'shopModeSuikaArena': l10n.shopModeSuikaArena,
+        'shopPowerRaidSprayName': l10n.shopPowerRaidSprayName,
+        'shopPowerRaidSprayDesc': l10n.shopPowerRaidSprayDesc,
+        'shopPowerSlipperShakeName': l10n.shopPowerSlipperShakeName,
+        'shopPowerSlipperShakeDesc': l10n.shopPowerSlipperShakeDesc,
+        'shopPowerLightItUpName': l10n.shopPowerLightItUpName,
+        'shopPowerLightItUpDesc': l10n.shopPowerLightItUpDesc,
+        'shopModeGrid2048': l10n.shopModeGrid2048,
+        'shopPowerUndoName': l10n.shopPowerUndoName,
+        'shopPowerUndoDesc': l10n.shopPowerUndoDesc,
+        'shopPowerShuffleName': l10n.shopPowerShuffleName,
+        'shopPowerShuffleDesc': l10n.shopPowerShuffleDesc,
+        'shopPowerMergePairName': l10n.shopPowerMergePairName,
+        'shopPowerMergePairDesc': l10n.shopPowerMergePairDesc,
+        'shopModeBalloonPop': l10n.shopModeBalloonPop,
+        'shopPowerTripleArrowName': l10n.shopPowerTripleArrowName,
+        'shopPowerTripleArrowDesc': l10n.shopPowerTripleArrowDesc,
+        'shopPowerBombBalloonName': l10n.shopPowerBombBalloonName,
+        'shopPowerBombBalloonDesc': l10n.shopPowerBombBalloonDesc,
+        'shopPowerSlowName': l10n.shopPowerSlowName,
+        'shopPowerSlowBalloonDesc': l10n.shopPowerSlowBalloonDesc,
+        'shopModeMatch3': l10n.shopModeMatch3,
+        'shopPowerHammerName': l10n.shopPowerHammerName,
+        'shopPowerHammerDesc': l10n.shopPowerHammerDesc,
+        'shopPowerBombName': l10n.shopPowerBombName,
+        'shopPowerBombDesc': l10n.shopPowerBombDesc,
+        'shopPowerColorHunterName': l10n.shopPowerColorHunterName,
+        'shopPowerColorHunterDesc': l10n.shopPowerColorHunterDesc,
+        'shopModeLinkPop': l10n.shopModeLinkPop,
+        'shopPowerChainExtenderName': l10n.shopPowerChainExtenderName,
+        'shopPowerChainExtenderDesc': l10n.shopPowerChainExtenderDesc,
+        'shopPowerLightningName': l10n.shopPowerLightningName,
+        'shopPowerLightningDesc': l10n.shopPowerLightningDesc,
+        'shopPowerMagnetName': l10n.shopPowerMagnetName,
+        'shopPowerMagnetDesc': l10n.shopPowerMagnetDesc,
+        'shopModeStackDrop': l10n.shopModeStackDrop,
+        'shopPowerFreezeName': l10n.shopPowerFreezeName,
+        'shopPowerFreezeDesc': l10n.shopPowerFreezeDesc,
+        'shopPowerWidenName': l10n.shopPowerWidenName,
+        'shopPowerWidenDesc': l10n.shopPowerWidenDesc,
+        'shopPowerSlowStackDesc': l10n.shopPowerSlowStackDesc,
+        'shopModeSlipperTap': l10n.shopModeSlipperTap,
+        'shopPowerDoubleSlipperName': l10n.shopPowerDoubleSlipperName,
+        'shopPowerDoubleSlipperDesc': l10n.shopPowerDoubleSlipperDesc,
+        'shopPowerGoldenSlipperName': l10n.shopPowerGoldenSlipperName,
+        'shopPowerGoldenSlipperDesc': l10n.shopPowerGoldenSlipperDesc,
+        'shopPowerBugSprayName': l10n.shopPowerBugSprayName,
+        'shopPowerBugSprayDesc': l10n.shopPowerBugSprayDesc,
+        'shopModeNestDefense': l10n.shopModeNestDefense,
+        'shopPowerNestShieldName': l10n.shopPowerNestShieldName,
+        'shopPowerNestShieldDesc': l10n.shopPowerNestShieldDesc,
+        'shopModeOsmantus': l10n.shopModeOsmantus,
+        'shopPowerDikkisBoostName': l10n.shopPowerDikkisBoostName,
+        'shopPowerDikkisBoostDesc': l10n.shopPowerDikkisBoostDesc,
+        'shopPowerWideRingName': l10n.shopPowerWideRingName,
+        'shopPowerWideRingDesc': l10n.shopPowerWideRingDesc,
+        'shopPowerMicrophoneName': l10n.shopPowerMicrophoneName,
+        'shopPowerMicrophoneDesc': l10n.shopPowerMicrophoneDesc,
+        'shopModeScreamBug': l10n.shopModeScreamBug,
+        'shopPowerJumpBootsName': l10n.shopPowerJumpBootsName,
+        'shopPowerJumpBootsDesc': l10n.shopPowerJumpBootsDesc,
+        'shopPowerShieldName': l10n.shopPowerShieldName,
+        'shopPowerShieldDesc': l10n.shopPowerShieldDesc,
+        'shopPowerNitroName': l10n.shopPowerNitroName,
+        'shopPowerNitroDesc': l10n.shopPowerNitroDesc,
+        'shopModeMakarayiz': l10n.shopModeMakarayiz,
+        'shopPowerBeatFreezeName': l10n.shopPowerBeatFreezeName,
+        'shopPowerBeatFreezeDesc': l10n.shopPowerBeatFreezeDesc,
+        'shopPowerAutoReelName': l10n.shopPowerAutoReelName,
+        'shopPowerAutoReelDesc': l10n.shopPowerAutoReelDesc,
+        'shopPowerScoreMultiplierName': l10n.shopPowerScoreMultiplierName,
+        'shopPowerScoreMultiplierDesc': l10n.shopPowerScoreMultiplierDesc,
+        'shopGoldenWeekendTitle': l10n.shopGoldenWeekendTitle,
+        'shopGoldenWeekendSubtitle': l10n.shopGoldenWeekendSubtitle,
+        'shopFreeChestTitle': l10n.shopFreeChestTitle,
+        'shopFreeChestDesc': l10n.shopFreeChestDesc,
+        'shopEnergyTitle': l10n.shopEnergyTitle,
+        'shopEnergyRefillNote': l10n.shopEnergyRefillNote,
+        'shopPowerUpsTitle': l10n.shopPowerUpsTitle,
+        'shopPowerUpsNote': l10n.shopPowerUpsNote,
+        'shopCoinPacksTitle': l10n.shopCoinPacksTitle,
+        'shopChestsAndPotionsTitle': l10n.shopChestsAndPotionsTitle,
+        'shopBadgeBest': l10n.shopBadgeBest,
+        'shopBadgeDeal': l10n.shopBadgeDeal,
+        'shopBadgeLucky': l10n.shopBadgeLucky,
+        'shopItemEnergyPackTitle': l10n.shopItemEnergyPackTitle,
+        'shopItemEnergyPackDesc': l10n.shopItemEnergyPackDesc,
+        'shopItemEnergyDepotTitle': l10n.shopItemEnergyDepotTitle,
+        'shopItemEnergyDepotDesc': l10n.shopItemEnergyDepotDesc,
+        'shopItemStarPackTitle': l10n.shopItemStarPackTitle,
+        'shopItemStarPackDesc': l10n.shopItemStarPackDesc,
+        'shopItemSurpriseBoxTitle': l10n.shopItemSurpriseBoxTitle,
+        'shopItemSurpriseBoxDesc': l10n.shopItemSurpriseBoxDesc,
+        'shopItemHandfulTitle': l10n.shopItemHandfulTitle,
+        'shopItemHandfulDesc': l10n.shopItemHandfulDesc,
+        'shopItemCrateTitle': l10n.shopItemCrateTitle,
+        'shopItemCrateDesc': l10n.shopItemCrateDesc,
+        'shopItemWoodenChestTitle': l10n.shopItemWoodenChestTitle,
+        'shopItemWoodenChestDesc': l10n.shopItemWoodenChestDesc,
+        'shopItemGoldenChestTitle': l10n.shopItemGoldenChestTitle,
+        'shopItemGoldenChestDesc': l10n.shopItemGoldenChestDesc,
+        'shopItemDoubleCoinTitle': l10n.shopItemDoubleCoinTitle,
+        'shopItemDoubleCoinDesc': l10n.shopItemDoubleCoinDesc,
+        'shopItemLuckPotionTitle': l10n.shopItemLuckPotionTitle,
+        'shopItemLuckPotionDesc': l10n.shopItemLuckPotionDesc,
+        'shopNotEnoughGoldToast': l10n.shopNotEnoughGoldToast,
+        'shopAddedCoinPackToast': l10n.shopAddedCoinPackToast,
+        'shopEnergyRegenToast': l10n.shopEnergyRegenToast,
+        'shopEnergyAddedToast': l10n.shopEnergyAddedToast,
+        'shopStoreUnavailableToast': l10n.shopStoreUnavailableToast,
+        'shopEnergyFullToast': l10n.shopEnergyFullToast,
+        'shopPowerUpModeOnlyToast': l10n.shopPowerUpModeOnlyToast,
+        'shopAddedStarPackToast': l10n.shopAddedStarPackToast,
+        'shopAddedSurpriseBoxToast': l10n.shopAddedSurpriseBoxToast,
+        'shopAddedWoodenChestToast': l10n.shopAddedWoodenChestToast,
+        'shopAddedGoldenChestToast': l10n.shopAddedGoldenChestToast,
+        'shopAddedDoubleCoinToast': l10n.shopAddedDoubleCoinToast,
+        'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
+        'helpButtonLabel': l10n.helpButtonLabel,
+        'sendMessageLabel': l10n.sendMessageLabel,
+        'sendStickerHint': l10n.sendStickerHint,
+        'finishRoundLabel': l10n.finishRoundLabel,
       };
 
   // Metot anahtarları: her metot, soyut sınıftaki imzasına uygun
@@ -772,6 +1016,11 @@ void main() {
         'dockUnreadLabel': l10n.dockUnreadLabel('X', '5'),
         'shopBuyItemLabel': l10n.shopBuyItemLabel('X', 'X'),
         'shopBuyPowerUpLabel': l10n.shopBuyPowerUpLabel('X', 3),
+        'shopPowerUpDescModeSuffix': l10n.shopPowerUpDescModeSuffix('X', 'X'),
+        'shopPowerUpAddedToCartToast': l10n.shopPowerUpAddedToCartToast('X', 'X'),
+        'shopPowerGroupBonusCount': l10n.shopPowerGroupBonusCount(3),
+        'profilePillLabel': l10n.profilePillLabel('X', 3),
+        'coinPillLabel': l10n.coinPillLabel('X'),
       };
 
   Map<String, String> trMethodStrings(AppLocalizationsTr l10n) => {
@@ -829,13 +1078,18 @@ void main() {
         'dockUnreadLabel': l10n.dockUnreadLabel('X', '5'),
         'shopBuyItemLabel': l10n.shopBuyItemLabel('X', 'X'),
         'shopBuyPowerUpLabel': l10n.shopBuyPowerUpLabel('X', 3),
+        'shopPowerUpDescModeSuffix': l10n.shopPowerUpDescModeSuffix('X', 'X'),
+        'shopPowerUpAddedToCartToast': l10n.shopPowerUpAddedToCartToast('X', 'X'),
+        'shopPowerGroupBonusCount': l10n.shopPowerGroupBonusCount(3),
+        'profilePillLabel': l10n.profilePillLabel('X', 3),
+        'coinPillLabel': l10n.coinPillLabel('X'),
       };
 
   // İki dilde de aynen kalan meşru değerler. Liste programatik
   // çıkarıldı: app_en.dart / app_tr.dart'taki string literalleri
   // taranıp (tek satırlı `=> '...'` + bitişik string'ler birleştirilerek)
   // EN ve TR değeri birebir aynı olan anahtarların TAMAMI alındı
-  // (13 getter + 8 metot şablonu). Her girdinin gerekçesi yanındadır.
+  // (21 getter + 9 metot şablonu). Her girdinin gerekçesi yanındadır.
   // NOT: `levelBadge` koşullu metot olduğu için listededir ama
   // çalışma zamanı eşitliği denetlenmez (bkz. `conditionalMethods`).
   const allowedIdentical = {
@@ -853,6 +1107,14 @@ void main() {
     'bareTierLabel', // oyun terimi, iki dilde de 'Tier'
     'bossShort', // oyun terimi, ortak kelime: 'BOSS'
     'speedNormal', // ortak kelime: 'NORMAL'
+    'shopModeSuikaArena', // mod adı: 'Suika Arena'
+    'shopModeGrid2048', // mod adı: '2048 Grid'
+    'shopModeMatch3', // mod adı: 'Match 3'
+    'shopModeStackDrop', // mod adı: 'Stack Drop'
+    'shopModeOsmantus', // özel ad: 'Osmantuş'
+    'shopModeMakarayiz', // özel ad: 'Makarayız'
+    'shopPowerDikkisBoostName', // marka/ünlem ifadesi: 'Dıkkış Boost'
+    'shopPowerNitroName', // ortak kelime: 'Nitro'
     // --- Metotlar: EN ve TR şablonu birebir aynı ---
     'tierLabel', // şablon 'Tier $tier': oyun terimi + sayı
     'levelBadge', // koşullu; her iki dalın şablonu da aynı: kısaltma + sayı
@@ -862,6 +1124,7 @@ void main() {
     'passTierLabel', // özel ad + sayı: 'Lülülü Pass ($tier/20)'
     'achievementRewardCompact', // şablon sayı + emoji/sembol
     'stickerLabel', // şablon 'Sticker $index': ortak kelime + sayı
+    'shopPowerGroupBonusCount', // şablon '$count bonus': sayı + ortak kelime
   };
 
   // Koşullu metotlar: dönüş değeri dala/argümana bağlıdır
@@ -874,21 +1137,21 @@ void main() {
     'likeLabel', // ternary (liked)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 394 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 521 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 340);
-    expect(tr.length, 340);
-    expect(enMethods.length, 54);
-    expect(trMethods.length, 54);
+    expect(en.length, 462);
+    expect(tr.length, 462);
+    expect(enMethods.length, 59);
+    expect(trMethods.length, 59);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 394);
+    expect(en.length + enMethods.length, 521);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

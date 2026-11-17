@@ -1315,4 +1315,390 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String shopBuyPowerUpLabel(String name, int cost) =>
       '$name satın al, $cost coin';
+
+  // --- Dalga 55 göçü (W55-3): Mağaza (shop_dialog) — yalnız anahtar ---
+
+  @override
+  String get shopModeSuikaArena => 'Suika Arena';
+
+  @override
+  String get shopPowerRaidSprayName => 'Raid Spreyi';
+
+  @override
+  String get shopPowerRaidSprayDesc => 'Küçük böcekleri temizler';
+
+  @override
+  String get shopPowerSlipperShakeName => 'Terlik Sarsıntısı';
+
+  @override
+  String get shopPowerSlipperShakeDesc => 'Alanı sarsıp yerleşimi düzeltir';
+
+  @override
+  String get shopPowerLightItUpName => 'Aydınlat Hele!';
+
+  @override
+  String get shopPowerLightItUpDesc => 'F16 bombardımanı — 3 böceği yakıp geçer';
+
+  @override
+  String get shopModeGrid2048 => '2048 Grid';
+
+  @override
+  String get shopPowerUndoName => 'Geri Al';
+
+  @override
+  String get shopPowerUndoDesc => 'Son hamleyi geri alır';
+
+  @override
+  String get shopPowerShuffleName => 'Karıştır';
+
+  @override
+  String get shopPowerShuffleDesc => 'Izgarayı karıştırır, kilidi açar';
+
+  @override
+  String get shopPowerMergePairName => 'Çiftleştir';
+
+  @override
+  String get shopPowerMergePairDesc => 'Rastgele iki aynı karoyu birleştirir';
+
+  @override
+  String get shopModeBalloonPop => 'Balon Patlat';
+
+  @override
+  String get shopPowerTripleArrowName => 'Üçlü Ok';
+
+  @override
+  String get shopPowerTripleArrowDesc => 'Tek atışta 3 balonu deler';
+
+  @override
+  String get shopPowerBombBalloonName => 'Bomba Balon';
+
+  @override
+  String get shopPowerBombBalloonDesc => 'Alan patlatması yapar';
+
+  @override
+  String get shopPowerSlowName => 'Yavaşlat';
+
+  @override
+  String get shopPowerSlowBalloonDesc => 'Balonları 10 sn yavaşlatır';
+
+  @override
+  String get shopModeMatch3 => 'Match 3';
+
+  @override
+  String get shopPowerHammerName => 'Çekiç';
+
+  @override
+  String get shopPowerHammerDesc => 'Tek karo kırar';
+
+  @override
+  String get shopPowerBombName => 'Bomba';
+
+  @override
+  String get shopPowerBombDesc => '3×3 alanı patlatır';
+
+  @override
+  String get shopPowerColorHunterName => 'Renk Avcısı';
+
+  @override
+  String get shopPowerColorHunterDesc => 'Bir türün hepsini toplar';
+
+  @override
+  String get shopModeLinkPop => 'Bağla Patlat';
+
+  @override
+  String get shopPowerChainExtenderName => 'Zincir Uzatıcı';
+
+  @override
+  String get shopPowerChainExtenderDesc => 'Zincir hakkını artırır';
+
+  @override
+  String get shopPowerLightningName => 'Yıldırım';
+
+  @override
+  String get shopPowerLightningDesc => 'Rastgele bir zincir oluşturur';
+
+  @override
+  String get shopPowerMagnetName => 'Mıknatıs';
+
+  @override
+  String get shopPowerMagnetDesc => 'Aynı türü birbirine çeker';
+
+  @override
+  String get shopModeStackDrop => 'Stack Drop';
+
+  @override
+  String get shopPowerFreezeName => 'Dondur';
+
+  @override
+  String get shopPowerFreezeDesc => 'Sallantıyı durdurur';
+
+  @override
+  String get shopPowerWidenName => 'Genişlet';
+
+  @override
+  String get shopPowerWidenDesc => 'Dilimi büyütür';
+
+  @override
+  String get shopPowerSlowStackDesc => 'Düşüş hızını azaltır';
+
+  @override
+  String get shopModeSlipperTap => 'Terlik Tap';
+
+  @override
+  String get shopPowerDoubleSlipperName => 'Çift Terlik';
+
+  @override
+  String get shopPowerDoubleSlipperDesc => 'Tek dokunuşta çift vuruş';
+
+  @override
+  String get shopPowerGoldenSlipperName => 'Altın Terlik';
+
+  @override
+  String get shopPowerGoldenSlipperDesc => 'Süreli 2x puan';
+
+  @override
+  String get shopPowerBugSprayName => 'Böcek İlacı';
+
+  @override
+  String get shopPowerBugSprayDesc => 'Ekrandaki böcekleri temizler';
+
+  @override
+  String get shopModeNestDefense => 'Yuva Savunması';
+
+  @override
+  String get shopPowerNestShieldName => 'Yuva Kalkanı';
+
+  @override
+  String get shopPowerNestShieldDesc => 'Bir kaçışı affeder';
+
+  @override
+  String get shopModeOsmantus => 'Osmantuş';
+
+  @override
+  String get shopPowerDikkisBoostName => 'Dıkkış Boost';
+
+  @override
+  String get shopPowerDikkisBoostDesc => 'Tempo artışı — halka yavaşlar';
+
+  @override
+  String get shopPowerWideRingName => 'Geniş Halka';
+
+  @override
+  String get shopPowerWideRingDesc => 'Hedef halkayı büyütür';
+
+  @override
+  String get shopPowerMicrophoneName => 'Mikrofon';
+
+  @override
+  String get shopPowerMicrophoneDesc => 'Komboyu bir hatada korur';
+
+  @override
+  String get shopModeScreamBug => 'Çığlık Böcek';
+
+  @override
+  String get shopPowerJumpBootsName => 'Zıplama Botu';
+
+  @override
+  String get shopPowerJumpBootsDesc => 'Engelleri aşar';
+
+  @override
+  String get shopPowerShieldName => 'Kalkan';
+
+  @override
+  String get shopPowerShieldDesc => 'Bir hatayı affeder';
+
+  @override
+  String get shopPowerNitroName => 'Nitro';
+
+  @override
+  String get shopPowerNitroDesc => 'Hız ve puan artışı';
+
+  @override
+  String get shopModeMakarayiz => 'Makarayız';
+
+  @override
+  String get shopPowerBeatFreezeName => 'Beat Dondur';
+
+  @override
+  String get shopPowerBeatFreezeDesc => 'Ritmi yavaşlatır';
+
+  @override
+  String get shopPowerAutoReelName => 'Oto Makara';
+
+  @override
+  String get shopPowerAutoReelDesc => 'Kısa süre otomatik oynar';
+
+  @override
+  String get shopPowerScoreMultiplierName => 'Puan Çarpanı';
+
+  @override
+  String get shopPowerScoreMultiplierDesc => 'Süreli x2 puan';
+
+  @override
+  String get shopGoldenWeekendTitle => 'ALTIN HAFTA SONU';
+
+  @override
+  String get shopGoldenWeekendSubtitle => 'Tüm coin paketlerinde %50 bonus';
+
+  @override
+  String get shopFreeChestTitle => 'ÜCRETSİZ SANDIK';
+
+  @override
+  String get shopFreeChestDesc => 'Ödüllü reklamlar yakında: ücretsiz Ahşap Sandık + rastgele 1 güçlendirici burada olacak.';
+
+  @override
+  String get shopEnergyTitle => 'ENERJİ';
+
+  @override
+  String get shopEnergyRefillNote => '5 dk = +1 kalp';
+
+  @override
+  String get shopPowerUpsTitle => 'GÜÇLENDİRİCİLER';
+
+  @override
+  String get shopPowerUpsNote => 'Moda özel · 30 çeşit';
+
+  @override
+  String get shopCoinPacksTitle => 'COİN PAKETLERİ';
+
+  @override
+  String get shopChestsAndPotionsTitle => 'SANDIKLAR VE İKSİRLER';
+
+  @override
+  String get shopBadgeBest => 'EN İYİ';
+
+  @override
+  String get shopBadgeDeal => 'FIRSAT';
+
+  @override
+  String get shopBadgeLucky => 'ŞANSLI';
+
+  @override
+  String get shopItemEnergyPackTitle => 'Enerji Paketi';
+
+  @override
+  String get shopItemEnergyPackDesc => '+10 enerji · anında dolar, bekleme yok';
+
+  @override
+  String get shopItemEnergyDepotTitle => 'Enerji Deposu';
+
+  @override
+  String get shopItemEnergyDepotDesc => 'Kalbi 30/30 fulle · tek seferde tam enerji';
+
+  @override
+  String get shopItemStarPackTitle => 'Yıldız Paketi';
+
+  @override
+  String get shopItemStarPackDesc => '25 yıldız + 1.000 coin';
+
+  @override
+  String get shopItemSurpriseBoxTitle => 'Sürpriz Kutu';
+
+  @override
+  String get shopItemSurpriseBoxDesc => 'Rastgele moddan 1 güçlendirici';
+
+  @override
+  String get shopItemHandfulTitle => 'Bir Avuç';
+
+  @override
+  String get shopItemHandfulDesc => '1.250 coin';
+
+  @override
+  String get shopItemCrateTitle => 'Bir Kasa';
+
+  @override
+  String get shopItemCrateDesc => '7.500 coin · +%50 bonus';
+
+  @override
+  String get shopItemWoodenChestTitle => 'Ahşap Sandık';
+
+  @override
+  String get shopItemWoodenChestDesc => 'Rastgele güçlendirici + coin';
+
+  @override
+  String get shopItemGoldenChestTitle => 'Altın Sandık';
+
+  @override
+  String get shopItemGoldenChestDesc => 'Garantili nadir ödül içerir';
+
+  @override
+  String get shopItemDoubleCoinTitle => 'Çifte Coin';
+
+  @override
+  String get shopItemDoubleCoinDesc => '30 dakika boyunca 2× coin';
+
+  @override
+  String get shopItemLuckPotionTitle => 'Şans İksiri';
+
+  @override
+  String get shopItemLuckPotionDesc => 'Birleşmede kritik şansı artar';
+
+  @override
+  String get shopNotEnoughGoldToast => 'Yetersiz altın! Oyun oynayarak altın kazanabilirsin.';
+
+  @override
+  String get shopAddedCoinPackToast => 'Coin paketi sepete eklendi';
+
+  @override
+  String get shopEnergyRegenToast => 'Enerji 5 dakikada 1 yenilenir — paketle beklemeden oyna';
+
+  @override
+  String get shopEnergyAddedToast => '+10 enerji eklendi — kalbin doldu!';
+
+  @override
+  String get shopStoreUnavailableToast => 'Mağaza kullanılamıyor — satın alma yapılamadı.';
+
+  @override
+  String get shopEnergyFullToast => 'Enerji 30/30 doldu!';
+
+  @override
+  String get shopPowerUpModeOnlyToast => 'Her modun güçlendiricisi yalnızca o modda kullanılır';
+
+  @override
+  String get shopAddedStarPackToast => 'Yıldız Paketi sepete eklendi';
+
+  @override
+  String get shopAddedSurpriseBoxToast => 'Sürpriz Kutu sepete eklendi';
+
+  @override
+  String get shopAddedWoodenChestToast => 'Ahşap Sandık sepete eklendi';
+
+  @override
+  String get shopAddedGoldenChestToast => 'Altın Sandık sepete eklendi';
+
+  @override
+  String get shopAddedDoubleCoinToast => 'Çifte Coin sepete eklendi';
+
+  @override
+  String get shopAddedLuckPotionToast => 'Şans İksiri sepete eklendi';
+
+  @override
+  String shopPowerUpDescModeSuffix(String desc, String modeName) => '$desc · yalnızca $modeName modunda';
+
+  @override
+  String shopPowerUpAddedToCartToast(String name, String modeName) => '$name sepete eklendi ($modeName)';
+
+  @override
+  String shopPowerGroupBonusCount(int count) => '$count bonus';
+
+  // --- Dalga 59 (W59-2): erişilebilirlik etiketleri, 2. tur ---
+
+  @override
+  String get helpButtonLabel => 'Nasıl oynanır';
+
+  @override
+  String get sendMessageLabel => 'Mesajı gönder';
+
+  @override
+  String get sendStickerHint => 'Uzun bas: sticker gönder';
+
+  @override
+  String get finishRoundLabel => 'Bitir';
+
+  @override
+  String profilePillLabel(String name, int level) =>
+      'Profil: $name, $level. seviye';
+
+  @override
+  String coinPillLabel(String value) => 'Coin: $value, coin paketi ekle';
 }

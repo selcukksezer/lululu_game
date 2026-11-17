@@ -668,6 +668,170 @@ abstract class AppLocalizations {
   /// adı + coin bedeli. TR şablon kaynak metindeki gibi 'coin'
   /// (tekil) kullanır.
   String shopBuyPowerUpLabel(String name, int cost);
+
+  // --- Dalga 55 göçü (W55-3): Mağaza (shop_dialog) — yalnız anahtar ---
+  // Envanter: goals/lululu-game-ui-ux-design/hidden_files/
+  // shop-dialog-tr-envanteri.md (124 benzersiz TR metin; 3'ü mevcut
+  // anahtarla karşılanır: navShop, comingSoon, rewardedAdsComingSoon).
+  // UI göçü bu dalgada YOK; metinler shop_dialog.dart'ta gömülü duruyor.
+
+  String get shopModeSuikaArena;
+  String get shopPowerRaidSprayName;
+  String get shopPowerRaidSprayDesc;
+  String get shopPowerSlipperShakeName;
+  String get shopPowerSlipperShakeDesc;
+  String get shopPowerLightItUpName;
+  String get shopPowerLightItUpDesc;
+  String get shopModeGrid2048;
+  String get shopPowerUndoName;
+  String get shopPowerUndoDesc;
+  String get shopPowerShuffleName;
+  String get shopPowerShuffleDesc;
+  String get shopPowerMergePairName;
+  String get shopPowerMergePairDesc;
+  String get shopModeBalloonPop;
+  String get shopPowerTripleArrowName;
+  String get shopPowerTripleArrowDesc;
+  String get shopPowerBombBalloonName;
+  String get shopPowerBombBalloonDesc;
+  String get shopPowerSlowName;
+  String get shopPowerSlowBalloonDesc;
+  String get shopModeMatch3;
+  String get shopPowerHammerName;
+  String get shopPowerHammerDesc;
+  String get shopPowerBombName;
+  String get shopPowerBombDesc;
+  String get shopPowerColorHunterName;
+  String get shopPowerColorHunterDesc;
+  String get shopModeLinkPop;
+  String get shopPowerChainExtenderName;
+  String get shopPowerChainExtenderDesc;
+  String get shopPowerLightningName;
+  String get shopPowerLightningDesc;
+  String get shopPowerMagnetName;
+  String get shopPowerMagnetDesc;
+  String get shopModeStackDrop;
+  String get shopPowerFreezeName;
+  String get shopPowerFreezeDesc;
+  String get shopPowerWidenName;
+  String get shopPowerWidenDesc;
+  String get shopPowerSlowStackDesc;
+  String get shopModeSlipperTap;
+  String get shopPowerDoubleSlipperName;
+  String get shopPowerDoubleSlipperDesc;
+  String get shopPowerGoldenSlipperName;
+  String get shopPowerGoldenSlipperDesc;
+  String get shopPowerBugSprayName;
+  String get shopPowerBugSprayDesc;
+  String get shopModeNestDefense;
+  String get shopPowerNestShieldName;
+  String get shopPowerNestShieldDesc;
+  String get shopModeOsmantus;
+  String get shopPowerDikkisBoostName;
+  String get shopPowerDikkisBoostDesc;
+  String get shopPowerWideRingName;
+  String get shopPowerWideRingDesc;
+  String get shopPowerMicrophoneName;
+  String get shopPowerMicrophoneDesc;
+  String get shopModeScreamBug;
+  String get shopPowerJumpBootsName;
+  String get shopPowerJumpBootsDesc;
+  String get shopPowerShieldName;
+  String get shopPowerShieldDesc;
+  String get shopPowerNitroName;
+  String get shopPowerNitroDesc;
+  String get shopModeMakarayiz;
+  String get shopPowerBeatFreezeName;
+  String get shopPowerBeatFreezeDesc;
+  String get shopPowerAutoReelName;
+  String get shopPowerAutoReelDesc;
+  String get shopPowerScoreMultiplierName;
+  String get shopPowerScoreMultiplierDesc;
+  String get shopGoldenWeekendTitle;
+  String get shopGoldenWeekendSubtitle;
+  String get shopFreeChestTitle;
+  String get shopFreeChestDesc;
+  String get shopEnergyTitle;
+  String get shopEnergyRefillNote;
+  String get shopPowerUpsTitle;
+  String get shopPowerUpsNote;
+  String get shopCoinPacksTitle;
+  String get shopChestsAndPotionsTitle;
+  String get shopBadgeBest;
+  String get shopBadgeDeal;
+  String get shopBadgeLucky;
+  String get shopItemEnergyPackTitle;
+  String get shopItemEnergyPackDesc;
+  String get shopItemEnergyDepotTitle;
+  String get shopItemEnergyDepotDesc;
+  String get shopItemStarPackTitle;
+  String get shopItemStarPackDesc;
+  String get shopItemSurpriseBoxTitle;
+  String get shopItemSurpriseBoxDesc;
+  String get shopItemHandfulTitle;
+  String get shopItemHandfulDesc;
+  String get shopItemCrateTitle;
+  String get shopItemCrateDesc;
+  String get shopItemWoodenChestTitle;
+  String get shopItemWoodenChestDesc;
+  String get shopItemGoldenChestTitle;
+  String get shopItemGoldenChestDesc;
+  String get shopItemDoubleCoinTitle;
+  String get shopItemDoubleCoinDesc;
+  String get shopItemLuckPotionTitle;
+  String get shopItemLuckPotionDesc;
+  String get shopNotEnoughGoldToast;
+  String get shopAddedCoinPackToast;
+  String get shopEnergyRegenToast;
+  String get shopEnergyAddedToast;
+  String get shopStoreUnavailableToast;
+  String get shopEnergyFullToast;
+  String get shopPowerUpModeOnlyToast;
+  String get shopAddedStarPackToast;
+  String get shopAddedSurpriseBoxToast;
+  String get shopAddedWoodenChestToast;
+  String get shopAddedGoldenChestToast;
+  String get shopAddedDoubleCoinToast;
+  String get shopAddedLuckPotionToast;
+
+  /// Güç satırı açıklama satırı: çevrilmiş açıklama + çevrilmiş mod adı.
+  /// [desc] ve [modeName] zaten çevrilmiş değerlerdir.
+  String shopPowerUpDescModeSuffix(String desc, String modeName);
+
+  /// Güç satın alma toast'ı: çevrilmiş güç adı + çevrilmiş mod adı.
+  String shopPowerUpAddedToCartToast(String name, String modeName);
+
+  /// Güç grubu rozeti: gruptaki güç sayısı (hâlen hep 3).
+  String shopPowerGroupBonusCount(int count);
+
+  // --- Dalga 59 göçü (W59-2): erişilebilirlik etiketleri, 2. tur ---
+  // W46-2 semantics denetiminin P1 listesinden kalan noktalar
+  // (W55-5 kotası dolduğu için bırakılanlar) + P0 üst-bar hapları
+  // için şablonlar. [finishRoundLabel], [profilePillLabel] ve
+  // [coinPillLabel] bu dalgada yalnız anahtar olarak eklenir;
+  // UI kullanımı sonraki dalgada (BİTİR düğmeleri, vault_top_hud
+  // satır-içi etiketlerinin göçü).
+
+  /// '?' yardım düğmesinin erişilebilirlik etiketi.
+  String get helpButtonLabel;
+
+  /// Sohbet gönder düğmesinin erişilebilirlik etiketi.
+  String get sendMessageLabel;
+
+  /// Gönder düğmesinin uzun basma ipucu (sticker sayfasını açar);
+  /// [Semantics.onLongPressHint] içinde kullanılır.
+  String get sendStickerHint;
+
+  /// Tur sonu 'BİTİR' düğmesinin erişilebilirlik etiketi.
+  String get finishRoundLabel;
+
+  /// Üst bar profil hapının erişilebilirlik etiketi: oyuncu adı +
+  /// seviye. [name] görüntülenen ad, [level] seviye numarasıdır.
+  String profilePillLabel(String name, int level);
+
+  /// Üst bar coin hapının erişilebilirlik etiketi: biçimlendirilmiş
+  /// bakiye ([value], örn. '12.450') + coin paketi ekleme eylemi.
+  String coinPillLabel(String value);
 }
 
 /// [AppLocalizations.of] kısayolu: `context.l10n.play`.

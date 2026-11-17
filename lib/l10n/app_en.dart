@@ -1314,4 +1314,390 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String shopBuyPowerUpLabel(String name, int cost) =>
       'Buy $name, $cost coins';
+
+  // --- Dalga 55 göçü (W55-3): Mağaza (shop_dialog) — yalnız anahtar ---
+
+  @override
+  String get shopModeSuikaArena => 'Suika Arena';
+
+  @override
+  String get shopPowerRaidSprayName => 'Raid Spray';
+
+  @override
+  String get shopPowerRaidSprayDesc => 'Clears small bugs';
+
+  @override
+  String get shopPowerSlipperShakeName => 'Slipper Shake';
+
+  @override
+  String get shopPowerSlipperShakeDesc => 'Shakes the area and fixes the layout';
+
+  @override
+  String get shopPowerLightItUpName => 'Light It Up!';
+
+  @override
+  String get shopPowerLightItUpDesc => 'F16 bombardment — burns through 3 bugs';
+
+  @override
+  String get shopModeGrid2048 => '2048 Grid';
+
+  @override
+  String get shopPowerUndoName => 'Undo';
+
+  @override
+  String get shopPowerUndoDesc => 'Undoes the last move';
+
+  @override
+  String get shopPowerShuffleName => 'Shuffle';
+
+  @override
+  String get shopPowerShuffleDesc => 'Shuffles the grid, unlocks it';
+
+  @override
+  String get shopPowerMergePairName => 'Pair Up';
+
+  @override
+  String get shopPowerMergePairDesc => 'Merges two random matching tiles';
+
+  @override
+  String get shopModeBalloonPop => 'Balloon Pop';
+
+  @override
+  String get shopPowerTripleArrowName => 'Triple Arrow';
+
+  @override
+  String get shopPowerTripleArrowDesc => 'Pops 3 balloons in one shot';
+
+  @override
+  String get shopPowerBombBalloonName => 'Bomb Balloon';
+
+  @override
+  String get shopPowerBombBalloonDesc => 'Blasts an area';
+
+  @override
+  String get shopPowerSlowName => 'Slow Down';
+
+  @override
+  String get shopPowerSlowBalloonDesc => 'Slows balloons for 10 sec';
+
+  @override
+  String get shopModeMatch3 => 'Match 3';
+
+  @override
+  String get shopPowerHammerName => 'Hammer';
+
+  @override
+  String get shopPowerHammerDesc => 'Breaks a single tile';
+
+  @override
+  String get shopPowerBombName => 'Bomb';
+
+  @override
+  String get shopPowerBombDesc => 'Blasts a 3×3 area';
+
+  @override
+  String get shopPowerColorHunterName => 'Color Hunter';
+
+  @override
+  String get shopPowerColorHunterDesc => 'Collects all of one type';
+
+  @override
+  String get shopModeLinkPop => 'Link Pop';
+
+  @override
+  String get shopPowerChainExtenderName => 'Chain Extender';
+
+  @override
+  String get shopPowerChainExtenderDesc => 'Increases chain allowance';
+
+  @override
+  String get shopPowerLightningName => 'Lightning';
+
+  @override
+  String get shopPowerLightningDesc => 'Creates a random chain';
+
+  @override
+  String get shopPowerMagnetName => 'Magnet';
+
+  @override
+  String get shopPowerMagnetDesc => 'Pulls the same type together';
+
+  @override
+  String get shopModeStackDrop => 'Stack Drop';
+
+  @override
+  String get shopPowerFreezeName => 'Freeze';
+
+  @override
+  String get shopPowerFreezeDesc => 'Stops the wobble';
+
+  @override
+  String get shopPowerWidenName => 'Widen';
+
+  @override
+  String get shopPowerWidenDesc => 'Enlarges the slice';
+
+  @override
+  String get shopPowerSlowStackDesc => 'Reduces fall speed';
+
+  @override
+  String get shopModeSlipperTap => 'Slipper Tap';
+
+  @override
+  String get shopPowerDoubleSlipperName => 'Double Slipper';
+
+  @override
+  String get shopPowerDoubleSlipperDesc => 'Double hit in one tap';
+
+  @override
+  String get shopPowerGoldenSlipperName => 'Golden Slipper';
+
+  @override
+  String get shopPowerGoldenSlipperDesc => '2x points for a limited time';
+
+  @override
+  String get shopPowerBugSprayName => 'Bug Spray';
+
+  @override
+  String get shopPowerBugSprayDesc => 'Clears the bugs on screen';
+
+  @override
+  String get shopModeNestDefense => 'Nest Defense';
+
+  @override
+  String get shopPowerNestShieldName => 'Nest Shield';
+
+  @override
+  String get shopPowerNestShieldDesc => 'Forgives one escape';
+
+  @override
+  String get shopModeOsmantus => 'Osmantuş';
+
+  @override
+  String get shopPowerDikkisBoostName => 'Dıkkış Boost';
+
+  @override
+  String get shopPowerDikkisBoostDesc => 'Tempo boost — the ring slows down';
+
+  @override
+  String get shopPowerWideRingName => 'Wide Ring';
+
+  @override
+  String get shopPowerWideRingDesc => 'Enlarges the target ring';
+
+  @override
+  String get shopPowerMicrophoneName => 'Microphone';
+
+  @override
+  String get shopPowerMicrophoneDesc => 'Protects the combo on one mistake';
+
+  @override
+  String get shopModeScreamBug => 'Scream Bug';
+
+  @override
+  String get shopPowerJumpBootsName => 'Jump Boots';
+
+  @override
+  String get shopPowerJumpBootsDesc => 'Clears obstacles';
+
+  @override
+  String get shopPowerShieldName => 'Shield';
+
+  @override
+  String get shopPowerShieldDesc => 'Forgives one mistake';
+
+  @override
+  String get shopPowerNitroName => 'Nitro';
+
+  @override
+  String get shopPowerNitroDesc => 'Speed and score boost';
+
+  @override
+  String get shopModeMakarayiz => 'Makarayız';
+
+  @override
+  String get shopPowerBeatFreezeName => 'Beat Freeze';
+
+  @override
+  String get shopPowerBeatFreezeDesc => 'Slows the rhythm';
+
+  @override
+  String get shopPowerAutoReelName => 'Auto Reel';
+
+  @override
+  String get shopPowerAutoReelDesc => 'Plays automatically for a short while';
+
+  @override
+  String get shopPowerScoreMultiplierName => 'Score Multiplier';
+
+  @override
+  String get shopPowerScoreMultiplierDesc => 'x2 points for a limited time';
+
+  @override
+  String get shopGoldenWeekendTitle => 'GOLDEN WEEKEND';
+
+  @override
+  String get shopGoldenWeekendSubtitle => '50% bonus on all coin packs';
+
+  @override
+  String get shopFreeChestTitle => 'FREE CHEST';
+
+  @override
+  String get shopFreeChestDesc => 'Rewarded ads coming soon: a free Wooden Chest + 1 random power-up will be here.';
+
+  @override
+  String get shopEnergyTitle => 'ENERGY';
+
+  @override
+  String get shopEnergyRefillNote => '5 min = +1 heart';
+
+  @override
+  String get shopPowerUpsTitle => 'POWER-UPS';
+
+  @override
+  String get shopPowerUpsNote => 'Mode-specific · 30 kinds';
+
+  @override
+  String get shopCoinPacksTitle => 'COIN PACKS';
+
+  @override
+  String get shopChestsAndPotionsTitle => 'CHESTS & POTIONS';
+
+  @override
+  String get shopBadgeBest => 'BEST';
+
+  @override
+  String get shopBadgeDeal => 'DEAL';
+
+  @override
+  String get shopBadgeLucky => 'LUCKY';
+
+  @override
+  String get shopItemEnergyPackTitle => 'Energy Pack';
+
+  @override
+  String get shopItemEnergyPackDesc => '+10 energy · fills instantly, no waiting';
+
+  @override
+  String get shopItemEnergyDepotTitle => 'Energy Depot';
+
+  @override
+  String get shopItemEnergyDepotDesc => 'Fill hearts to 30/30 · full energy in one go';
+
+  @override
+  String get shopItemStarPackTitle => 'Star Pack';
+
+  @override
+  String get shopItemStarPackDesc => '25 stars + 1,000 coins';
+
+  @override
+  String get shopItemSurpriseBoxTitle => 'Surprise Box';
+
+  @override
+  String get shopItemSurpriseBoxDesc => '1 power-up from a random mode';
+
+  @override
+  String get shopItemHandfulTitle => 'A Handful';
+
+  @override
+  String get shopItemHandfulDesc => '1,250 coins';
+
+  @override
+  String get shopItemCrateTitle => 'A Crate';
+
+  @override
+  String get shopItemCrateDesc => '7,500 coins · +50% bonus';
+
+  @override
+  String get shopItemWoodenChestTitle => 'Wooden Chest';
+
+  @override
+  String get shopItemWoodenChestDesc => 'Random power-up + coins';
+
+  @override
+  String get shopItemGoldenChestTitle => 'Golden Chest';
+
+  @override
+  String get shopItemGoldenChestDesc => 'Contains a guaranteed rare reward';
+
+  @override
+  String get shopItemDoubleCoinTitle => 'Double Coins';
+
+  @override
+  String get shopItemDoubleCoinDesc => '2× coins for 30 minutes';
+
+  @override
+  String get shopItemLuckPotionTitle => 'Luck Potion';
+
+  @override
+  String get shopItemLuckPotionDesc => 'Increases crit chance on merges';
+
+  @override
+  String get shopNotEnoughGoldToast => 'Not enough gold! Play games to earn gold.';
+
+  @override
+  String get shopAddedCoinPackToast => 'Coin pack added to cart';
+
+  @override
+  String get shopEnergyRegenToast => 'Energy refills 1 every 5 minutes — play without waiting with a pack';
+
+  @override
+  String get shopEnergyAddedToast => '+10 energy added — your heart is full!';
+
+  @override
+  String get shopStoreUnavailableToast => 'Store unavailable — purchase could not be completed.';
+
+  @override
+  String get shopEnergyFullToast => 'Energy is full at 30/30!';
+
+  @override
+  String get shopPowerUpModeOnlyToast => 'Each mode\'s power-ups can only be used in that mode';
+
+  @override
+  String get shopAddedStarPackToast => 'Star Pack added to cart';
+
+  @override
+  String get shopAddedSurpriseBoxToast => 'Surprise Box added to cart';
+
+  @override
+  String get shopAddedWoodenChestToast => 'Wooden Chest added to cart';
+
+  @override
+  String get shopAddedGoldenChestToast => 'Golden Chest added to cart';
+
+  @override
+  String get shopAddedDoubleCoinToast => 'Double Coins added to cart';
+
+  @override
+  String get shopAddedLuckPotionToast => 'Luck Potion added to cart';
+
+  @override
+  String shopPowerUpDescModeSuffix(String desc, String modeName) => '$desc · only in $modeName mode';
+
+  @override
+  String shopPowerUpAddedToCartToast(String name, String modeName) => '$name added to cart ($modeName)';
+
+  @override
+  String shopPowerGroupBonusCount(int count) => '$count bonus';
+
+  // --- Dalga 59 (W59-2): erişilebilirlik etiketleri, 2. tur ---
+
+  @override
+  String get helpButtonLabel => 'How to play';
+
+  @override
+  String get sendMessageLabel => 'Send message';
+
+  @override
+  String get sendStickerHint => 'Long press: send a sticker';
+
+  @override
+  String get finishRoundLabel => 'Finish';
+
+  @override
+  String profilePillLabel(String name, int level) =>
+      'Profile: $name, level $level';
+
+  @override
+  String coinPillLabel(String value) => 'Coin: $value, add coin pack';
 }
