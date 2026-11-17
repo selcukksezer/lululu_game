@@ -1,0 +1,6 @@
+# Release imzalama ayarları — BU DOSYA ASLA COMMITLENMEZ (.gitignore'da).
+# Keystore'u Selçuk oluşturacak; şifreleri o dolduracak. Şifre UYDURULMADI.
+storePassword=
+keyPassword=
+keyAlias=upload
+storeFile=upload-keystore.jks
