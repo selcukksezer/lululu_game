@@ -10,8 +10,8 @@
 /// gerçek "hışır" klibi kesilince ses dosyası/sabit değişir, bu dosya değişmez.
 ///
 /// Görsel: Hışır'a özel üretildi (`assets/design/bugs_hd/hisir_hd.png`) —
-/// videodaki sarı-lacivert çubuklu formalı taraftar böcek (armasız düz
-/// forma, yumruk havada sevinç pozu), şeffaf zeminli.
+/// kasketli köy dedesi (kırışık yüz, yelek, baston), videolardaki gerçekçi
+/// tarzda, şeffaf zeminli. Selçuk'un seçimi (2026-11-17).
 class HisirCharacter {
   HisirCharacter._();
 
