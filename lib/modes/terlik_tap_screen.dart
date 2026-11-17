@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
@@ -354,6 +355,25 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       return;
     }
 
+    // ~8% Hışır özel hedefi (tier dışı; sesi 'hisir' kimliğiyle husur_aday).
+    // Görsel GEÇİCİ: tier1 görseli ödünç (bkz. HisirCharacter).
+    if (_rng.nextDouble() < 0.08) {
+      _bugs.add(
+        _Bug(
+          id: _nextId++,
+          characterId: HisirCharacter.id,
+          assetPath: HisirCharacter.assetPath,
+          replik: HisirCharacter.replik,
+          voiceHintTier: null,
+          holeIndex: holeIndex,
+          life: visibleFor,
+          basePoints: 90,
+          isOsman: false,
+        ),
+      );
+      return;
+    }
+
     final tier = InsectTier.values[_rng.nextInt(InsectTier.values.length)];
     _bugs.add(
       _Bug(
@@ -631,6 +651,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         comboCount: _combo,
       ),
     );
+    // Ek: Diva ezilince "yasla" repliği (mevcut terlik sesi aynen durur).
+    if (hit.voiceHintTier == InsectTier.diva) {
+      unawaited(AudioManager().playDivaYasla());
+    }
     unawaited(_applyEconomyDrops(coinDrop, slipperDrop, sprayDrop));
     setState(() {});
   }

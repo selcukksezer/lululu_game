@@ -60,6 +60,31 @@ abstract final class GameAudio {
   static const voiceOsmanA = 'voice_osman_a.mp3';
   static const voiceOsmanB = 'voice_osman_b.mp3';
 
+  /// Viral one-shot lines cut from TikTok clips (see `assets/audio/ASSETS_NOTE.md`
+  /// for source video ids and cut ranges). Filenames are bare, like every other
+  /// entry here: consumers join them with `assets/audio/` themselves.
+  static const mezarinaSiktigim = 'mezarina_siktigim.mp3';
+  static const divaSinyal = 'diva_sinyal.mp3';
+  static const divaYasla = 'diva_yasla.mp3';
+  static const lululuNakarat = 'lululu_nakarat.mp3';
+  static const duktur = 'duktur.mp3';
+  static const kanka = 'kanka.mp3';
+
+  /// UNVERIFIED candidate: transcript heard "huşur", not confirmed by ear as
+  /// "hışır". Wired as Hışır's voice with that caveat (see ASSETS_NOTE.md).
+  static const husurAday = 'husur_aday.mp3';
+
+  /// Viral one-shot clips, spread into [allAssets] for warmup + integrity checks.
+  static const viralOneShots = [
+    mezarinaSiktigim,
+    divaSinyal,
+    divaYasla,
+    lululuNakarat,
+    duktur,
+    kanka,
+    husurAday,
+  ];
+
   static const allAssets = [
     sfxAydinlatBeam,
     sfxButtonTap,
@@ -78,6 +103,7 @@ abstract final class GameAudio {
     voiceAydinlat,
     voiceOsmanA,
     voiceOsmanB,
+    ...viralOneShots,
     voiceTier1,
     voiceTier2,
     voiceTier3,
@@ -181,6 +207,8 @@ abstract final class GameAudio {
       case 'osman_b':
       case 'tus':
         return voiceOsmanB;
+      case 'hisir':
+        return husurAday;
       default:
         return null;
     }
@@ -191,7 +219,9 @@ abstract final class GameAudio {
   /// Whether [assetName] is a character voice clip rather than generic SFX.
   static bool isVoiceAsset(String assetName) {
     final base = assetName.split('/').last;
-    return base.startsWith('voice_') || base.endsWith('_ses.mp3');
+    return base.startsWith('voice_') ||
+        base.endsWith('_ses.mp3') ||
+        viralOneShots.contains(base);
   }
 }
 
@@ -524,12 +554,17 @@ class AudioManager {
   }
 
   String _normalizeAssetPath(String assetName) {
-    if (assetName.startsWith('audio/') ||
-        assetName.startsWith('design/sounds/') ||
-        assetName.startsWith('sounds/')) {
-      return assetName;
+    // Tolerate a leading 'assets/' (e.g. values written as full asset paths):
+    // audioplayers already prefixes with 'assets/', so strip it first.
+    final name = assetName.startsWith('assets/')
+        ? assetName.substring('assets/'.length)
+        : assetName;
+    if (name.startsWith('audio/') ||
+        name.startsWith('design/sounds/') ||
+        name.startsWith('sounds/')) {
+      return name;
     }
-    return 'audio/$assetName';
+    return 'audio/$name';
   }
 
   Future<void> playSfx(
@@ -757,6 +792,32 @@ class AudioManager {
 
   Future<void> playAydinlatVoice() =>
       playSfx(GameAudio.voiceAydinlat, isVoice: true);
+
+  /// Viral one-shot: "mezarına sıçtığım" (TikTok video4 kesimi).
+  Future<void> playMezarinaSiktigim() =>
+      playSfx(GameAudio.mezarinaSiktigim, isVoice: true);
+
+  /// Viral one-shot: Diva "sinyal" repliği (TikTok 7697726382641614100).
+  Future<void> playDivaSinyal() =>
+      playSfx(GameAudio.divaSinyal, isVoice: true);
+
+  /// Viral one-shot: Diva "yasla" repliği (TikTok 7697726382641614100).
+  Future<void> playDivaYasla() => playSfx(GameAudio.divaYasla, isVoice: true);
+
+  /// Viral one-shot: Lülülü nakaratı (TikTok video3 kesimi).
+  Future<void> playLululuNakarat() =>
+      playSfx(GameAudio.lululuNakarat, isVoice: true);
+
+  /// Viral one-shot: Duktur repliği (TikTok video2 kesimi).
+  Future<void> playDuktur() => playSfx(GameAudio.duktur, isVoice: true);
+
+  /// Viral one-shot: Kanka ikilisi (TikTok video5 kesimi).
+  Future<void> playKanka() => playSfx(GameAudio.kanka, isVoice: true);
+
+  /// Hışır'ın sesi. UNVERIFIED aday: transkriptte "huşur" diye geçti,
+  /// "hışır" olduğu kulakla teyit edilmedi (bkz. assets/audio/ASSETS_NOTE.md).
+  Future<void> playHusurAday() =>
+      playSfx(GameAudio.husurAday, isVoice: true);
 
   Future<void> playAydinlatBeam() {
     if (vibrationEnabled) {

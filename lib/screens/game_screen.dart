@@ -542,6 +542,7 @@ class _GameScreenState extends State<GameScreen>
       if (nextTier.tier > _peakTier.tier) {
         _peakTier = nextTier;
         _showMilestone(nextTier);
+        _playMilestoneOneShot(nextTier);
       }
 
       unawaited(ProgressManager.instance.unlockTier(nextTier.tier));
@@ -667,6 +668,17 @@ class _GameScreenState extends State<GameScreen>
     _milestoneTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) setState(() => _milestoneToast = null);
     });
+  }
+
+  /// Milestone anına ek viral tek-seferlik ses (mevcut akışa ek, opt-in):
+  /// Diva'ya ilk ulaşışta "sinyal", zirve tier'lere (12+) ilk ulaşışta
+  /// (büyük birleşme) "mezarına" repliği. Ses ayarlarına metotlar saygı duyar.
+  void _playMilestoneOneShot(InsectTier tier) {
+    if (tier == InsectTier.diva) {
+      unawaited(AudioManager().playDivaSinyal());
+    } else if (tier.tier >= 12) {
+      unawaited(AudioManager().playMezarinaSiktigim());
+    }
   }
 
   int _calculateStars() {
