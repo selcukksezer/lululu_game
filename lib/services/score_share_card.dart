@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -12,12 +13,17 @@ class ScoreShareCard {
   ScoreShareCard._();
   static final instance = ScoreShareCard._();
 
+  /// Web'de dosya API'si yoktur: [StateError] fırlatır, çağıran hata mesajını
+  /// kullanıcıya gösterir.
   Future<void> share({
     required String modeTitle,
     required int score,
     int? best,
     String? line,
   }) async {
+    if (kIsWeb) {
+      throw StateError('Skor kartı paylaşımı web sürümünde desteklenmiyor');
+    }
     final bytes = await _renderPng(
       modeTitle: modeTitle,
       score: score,

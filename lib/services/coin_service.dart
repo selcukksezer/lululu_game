@@ -36,9 +36,6 @@ class CoinService extends ChangeNotifier {
   ValueListenable<int> get coinsNotifier =>
       ProgressManager.instance.coinsNotifier;
 
-  /// Belirtilen tutarın karşılanıp karşılanamayacağını döner.
-  bool canAfford(int cost) => cost <= 0 || coins >= cost;
-
   /// Kalıcı ekonomiyi yükler ve senkronize eder.
   Future<void> load() async {
     await ProgressManager.instance.load();
@@ -56,7 +53,8 @@ class CoinService extends ChangeNotifier {
 
   /// Kasadan altın harcar. Yetersiz bakiyede `false` döner.
   Future<bool> spendCoins(int amount) async {
-    if (amount <= 0) return true;
+    if (amount < 0) return false;
+    if (amount == 0) return true;
     final ok = await ProgressManager.instance.spendCoins(amount);
     if (ok) {
       _lastKnownCoins = ProgressManager.instance.coins;
@@ -73,8 +71,9 @@ class CoinService extends ChangeNotifier {
   }) async {
     final clampedStars = stars.clamp(0, 3);
     if (clampedStars <= 0) return 0;
+    final safeBase = baseReward < 0 ? 0 : baseReward;
     final reward =
-        (clampedStars * baseReward) + (isBossLevel ? 100 : 0);
+        (clampedStars * safeBase) + (isBossLevel ? 100 : 0);
     await addCoins(reward);
     return reward;
   }

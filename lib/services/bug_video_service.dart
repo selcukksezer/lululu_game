@@ -321,15 +321,13 @@ class BugVideoService extends ChangeNotifier {
     }
   }
 
-  static String formatCount(int n) {
-    final clamped = n < 0 ? 0 : n;
-    final s = clamped.toString();
-    if (s.length <= 3) return s;
-    return '${s.substring(0, s.length - 3)}.${s.substring(s.length - 3)}';
-  }
-
   /// Verilen `raw_tiktok_videos/...` veya yerel dosya yolunu güvenli biçimde çözer.
-  File? resolvePlayableFile(String path) {
+  ///
+  /// Web'de dosya API'si yoktur: her zaman `null` döner, çağıranlar yerleşik
+  /// yedek (örnek veri) dalına düşer. Sabit geliştirici makine yolu kullanılmaz;
+  /// [baseDir] verilirse (uygulama belgeler dizini) oraya da bakılır.
+  File? resolvePlayableFile(String path, {String? baseDir}) {
+    if (kIsWeb) return null;
     final clean = path.trim();
     if (clean.isEmpty) return null;
     try {
@@ -340,7 +338,8 @@ class BugVideoService extends ChangeNotifier {
         File('${Directory.current.path}/$clean'),
         File('${Directory.current.parent.path}/$clean'),
         File('${Directory.systemTemp.path}/lululu_bug_videos/$baseName'),
-        File('/Users/selcuk/Documents/lululu/$clean'),
+        if (baseDir != null && baseDir.isNotEmpty) File('$baseDir/$clean'),
+        if (baseDir != null && baseDir.isNotEmpty) File('$baseDir/$baseName'),
       ];
       for (final candidate in candidates) {
         if (candidate.existsSync()) return candidate;
@@ -566,6 +565,7 @@ class BugVideoService extends ChangeNotifier {
   }
 
   bool _safeFileExists(String path) {
+    if (kIsWeb) return false;
     if (path.isEmpty) return false;
     try {
       return File(path).existsSync();
@@ -575,6 +575,9 @@ class BugVideoService extends ChangeNotifier {
   }
 
   Future<Directory> _resolveStorageDir(String subFolder) async {
+    if (kIsWeb) {
+      throw StateError('Dosya depolama web sürümünde desteklenmiyor');
+    }
     try {
       final base = await getApplicationDocumentsDirectory();
       final dir = Directory('${base.path}/$subFolder');
@@ -632,6 +635,9 @@ class BugVideoService extends ChangeNotifier {
     bool isPublic = true,
     bool addToDownloads = true,
   }) async {
+    if (kIsWeb) {
+      throw StateError('Sahne videosu oluşturma web sürümünde desteklenmiyor');
+    }
     await ensureLoaded();
     await AuthService.instance.ensureLoaded();
 
@@ -649,7 +655,8 @@ class BugVideoService extends ChangeNotifier {
     final id = 'scene_${DateTime.now().microsecondsSinceEpoch}';
     final dest = File('${dir.path}/$id.mp4');
 
-    final rawSample = resolvePlayableFile(rawTiktokVideoPaths[0]);
+    final rawSample =
+        resolvePlayableFile(rawTiktokVideoPaths[0], baseDir: dir.path);
     if (rawSample != null) {
       try {
         await rawSample.copy(dest.path);
@@ -714,6 +721,9 @@ class BugVideoService extends ChangeNotifier {
     bool isPublic = true,
     bool requireSignedIn = false,
   }) async {
+    if (kIsWeb) {
+      throw StateError('Video yükleme web sürümünde desteklenmiyor');
+    }
     await ensureLoaded();
     await AuthService.instance.ensureLoaded();
     if (requireSignedIn && !AuthService.instance.isSignedIn) {
@@ -729,7 +739,7 @@ class BugVideoService extends ChangeNotifier {
 
     var copied = false;
     if (sourcePath != null && sourcePath.trim().isNotEmpty) {
-      final src = resolvePlayableFile(sourcePath);
+      final src = resolvePlayableFile(sourcePath, baseDir: dir.path);
       if (src != null) {
         try {
           await src.copy(dest.path);
@@ -739,7 +749,8 @@ class BugVideoService extends ChangeNotifier {
     }
 
     if (!copied) {
-      final fallbackRaw = resolvePlayableFile(rawTiktokVideoPaths[0]);
+      final fallbackRaw =
+        resolvePlayableFile(rawTiktokVideoPaths[0], baseDir: dir.path);
       if (fallbackRaw != null) {
         try {
           await fallbackRaw.copy(dest.path);
@@ -799,6 +810,9 @@ class BugVideoService extends ChangeNotifier {
     int speedIndex = 1,
     bool addToDownloads = true,
   }) async {
+    if (kIsWeb) {
+      throw StateError('GIF oluşturma web sürümünde desteklenmiyor');
+    }
     await ensureLoaded();
     final sortedIndices = selectedFrames.isEmpty
         ? <int>[0, 1]

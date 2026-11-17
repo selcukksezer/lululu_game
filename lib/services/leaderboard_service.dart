@@ -65,35 +65,30 @@ class LeaderboardService extends ChangeNotifier {
     modeYuva: 'Yuva Savunması',
   };
 
-  /// Mod bazlı makul üst sınır kontrolü (anti-cheat ceiling).
-  static const int defaultMaxScoreCeiling = 500000;
-  static const Map<String, int> modeScoreCeilings = {
-    modeSuika: 250000,
-    mode2048: 500000,
-    modeBalloon: 150000,
-    modeMatch3: 300000,
-    modeConnect: 250000,
-    modeStack: 150000,
-    modeOsmantus: 200000,
-    modeScream: 150000,
-    modeMakarayiz: 200000,
-    modeTerlik: 150000,
-    modeYuva: 200000,
-  };
+  /// Mod bazlı makul üst sınır kontrolü (anti-cheat ceiling) — TEK KAYNAK
+  /// [ProgressManager.modeScoreCeilings]'tedir (S1#35). Bu sınıf tabloyu
+  /// ve doğrulamayı oraya delege eder; kendi kopyasını tutmaz. Böylece
+  /// [submitScore] ile `ProgressManager.recordModeScore` aynı tavanı
+  /// kullanır ve iki depo ayrışamaz. Tavan değişmezleri (rules +
+  /// `CloudSyncService` uyumu, Suika 250.000, toplam ≤ 5.500.000) tablonun
+  /// başındaki belgede yazılıdır.
+  ///
+  /// Tavanlar "ulaşılabilir en yüksek skor" değil, hileye karşı makullük
+  /// sınırıdır: [submitScore] üstündeki skorları reddeder,
+  /// [_rebindCurrentUserBests] yüklü veriden atar.
+  static const int defaultMaxScoreCeiling = ProgressManager.maxValidModeScore;
+  static const Map<String, int> modeScoreCeilings =
+      ProgressManager.modeScoreCeilings;
 
-  /// Verilen mod için geçerli üst skor sınırını döner.
-  static int ceilingForMode(String modeId) {
-    final canonical = normalizeModeId(modeId);
-    return modeScoreCeilings[canonical] ?? defaultMaxScoreCeiling;
-  }
+  /// Verilen mod için geçerli üst skor sınırını döner (her zaman ≤ 500.000,
+  /// rules skor sınırıyla uyumlu). [ProgressManager.ceilingForMode] delege edilir.
+  static int ceilingForMode(String modeId) =>
+      ProgressManager.ceilingForMode(modeId);
 
   /// Skorun pozitif ve modun anti-cheat tavanı içinde olup olmadığını doğrular.
-  static bool isScoreValidForMode(String modeId, int score) {
-    if (score <= 0) return false;
-    final canonical = normalizeModeId(modeId);
-    if (canonical.isEmpty) return false;
-    return score <= ceilingForMode(canonical);
-  }
+  /// [ProgressManager.isScoreValidForMode] delege edilir.
+  static bool isScoreValidForMode(String modeId, int score) =>
+      ProgressManager.isScoreValidForMode(modeId, score);
 
   /// Canonicalizes mode aliases (e.g. 'balloon' -> 'balloon_pop', 'grid2048' -> 'grid_2048').
   static String normalizeModeId(String modeId) {
@@ -114,6 +109,8 @@ class LeaderboardService extends ChangeNotifier {
       case 'scream':
       case 'scream_roach':
         return modeScream;
+      case 'makara':
+        return modeMakarayiz;
       case 'terlik':
       case 'terlik_tap':
         return modeTerlik;
@@ -127,6 +124,16 @@ class LeaderboardService extends ChangeNotifier {
 
   LeaderboardData _data = LeaderboardData(modes: []);
   bool _loaded = false;
+
+  /// Bulut üst-sıralama önbelleğinin tazelik süresi (mod başına). Süre
+  /// içinde tekrar istenen mod buluta sorulmaz; tahtadaki (yerel +
+  /// kalıcı) eski sonuç kullanılır. `force: true` önbelleği atlar.
+  static const Duration cloudTopCacheTtl = Duration(seconds: 60);
+
+  /// Mod başına son bulut çekme denemesi zamanı (yalnız bellek içi;
+  /// tahtaların kendisi `_data` içinde kalıcı önbellektir).
+  final Map<String, DateTime> _lastCloudFetchAt = {};
+
   LeaderboardCategory _activeCategory = LeaderboardCategory.turkeyTop100;
 
   LeaderboardCategory get activeCategory => _activeCategory;
@@ -239,33 +246,43 @@ class LeaderboardService extends ChangeNotifier {
     _rebindCurrentUserBests();
     await _save();
     notifyListeners();
-    unawaited(refreshFromCloud());
+    // Kimlik değişti: önbelleği atla, tüm modları tazele.
+    unawaited(refreshFromCloud(force: true));
   }
 
   /// Pull Firestore tops (when configured) and merge into local boards.
-  Future<void> refreshFromCloud() async {
+  ///
+  /// [onlyModeId] verilirse yalnız o mod buluttan tazelenir; diğer modlar
+  /// tahtalarındaki eski (önbellek) sonucu kullanır. `force: false` ise
+  /// [cloudTopCacheTtl] içinde çekilmiş modlar atlanır. Parametresiz
+  /// çağrı eski davranışı korur: tüm modlar (tazelik süresi dolmuş
+  /// olanlar) sırayla tazelenir.
+  Future<void> refreshFromCloud({
+    String? onlyModeId,
+    bool force = false,
+  }) async {
     await ensureLoaded();
     await CloudSyncService.instance.enableOnlineWhenSignedIn();
     if (!CloudSyncService.instance.firebaseReady) {
       notifyListeners();
       return;
     }
+    final List<String> targetModes;
+    if (onlyModeId != null) {
+      final canonical = normalizeModeId(onlyModeId);
+      // Bilinmeyen modda sorgu yapılmaz (11 sorguluk tam tazelemeye düşme).
+      if (!allModeIds.contains(canonical)) {
+        notifyListeners();
+        return;
+      }
+      targetModes = [canonical];
+    } else {
+      targetModes = allModeIds;
+    }
     var changed = false;
-    for (final modeId in allModeIds) {
-      final remote = await CloudSyncService.instance.fetchGlobalTop(
-        modeId,
-        limit: maxTop,
-      );
-      if (remote.isEmpty) continue;
-      final board = _getOrCreate(modeId);
-      for (final row in remote) {
-        final merged = _upsertRemoteEntry(
-          board,
-          playerId: row.playerId,
-          playerName: row.name,
-          score: row.score,
-        );
-        if (merged) changed = true;
+    for (final modeId in targetModes) {
+      if (await _refreshSingleModeFromCloud(modeId, force: force)) {
+        changed = true;
       }
     }
     if (changed) {
@@ -273,6 +290,52 @@ class LeaderboardService extends ChangeNotifier {
       await _save();
     }
     notifyListeners();
+  }
+
+  /// Yalnız [modeId] modunun bulut üst-sıralamasını tazeler; diğer modlar
+  /// eski önbelleği kullanır. Bilinmeyen modda sorgu yapılmaz.
+  Future<void> refreshModeFromCloud(
+    String modeId, {
+    bool force = false,
+  }) async {
+    await refreshFromCloud(onlyModeId: modeId, force: force);
+  }
+
+  /// Tek modun bulut üst-sıralamasını çeker ve tahtaya birleştirir.
+  /// Taze önbellek varsa (`force` yoksa) buluta sorulmadan `false` döner.
+  /// Birleştirme değişim yaptıysa `true` döner.
+  Future<bool> _refreshSingleModeFromCloud(
+    String modeId, {
+    bool force = false,
+  }) async {
+    if (!force) {
+      final lastFetch = _lastCloudFetchAt[modeId];
+      if (lastFetch != null &&
+          DateTime.now().difference(lastFetch) < cloudTopCacheTtl) {
+        return false;
+      }
+    }
+    final remote = await CloudSyncService.instance.fetchGlobalTop(
+      modeId,
+      limit: maxTop,
+    );
+    // fetchGlobalTop hata durumunda da [] döner (fırlatmaz); çekim denemesi
+    // önbelleğe yazılır, böylece hata/burst durumunda sorgu yağmuru olmaz.
+    // Süre kısadır (60 sn) ve `force: true` atlar.
+    _lastCloudFetchAt[modeId] = DateTime.now();
+    if (remote.isEmpty) return false;
+    final board = _getOrCreate(modeId);
+    var changed = false;
+    for (final row in remote) {
+      final merged = _upsertRemoteEntry(
+        board,
+        playerId: row.playerId,
+        playerName: row.name,
+        score: row.score,
+      );
+      if (merged) changed = true;
+    }
+    return changed;
   }
 
   bool _upsertRemoteEntry(
@@ -402,6 +465,9 @@ class LeaderboardService extends ChangeNotifier {
 
     await _save();
     notifyListeners();
+    // Yalnız gönderilen mod tazelenir (tek sorgu, TTL önbellekli); diğer
+    // modlar eski önbelleği kullanır. Ateşle-unut: gönderim beklemez.
+    unawaited(refreshModeFromCloud(canonicalMode));
     return true;
   }
 
@@ -458,24 +524,6 @@ class LeaderboardService extends ChangeNotifier {
       category: LeaderboardCategory.total11Modes,
       limit: limit.clamp(1, 100),
     );
-  }
-
-  int getMyTurkeyRank({String? modeId}) {
-    final board = getTurkeyTop100(limit: 100, modeId: modeId);
-    final idx = board.indexWhere((e) => e.isLocalPlayer);
-    return idx >= 0 ? idx + 1 : board.length + 1;
-  }
-
-  int getMyGlobalRank({String? modeId}) {
-    final board = getGlobalTop(limit: 100, modeId: modeId);
-    final idx = board.indexWhere((e) => e.isLocalPlayer);
-    return idx >= 0 ? idx + 1 : board.length + 1;
-  }
-
-  int getMy11ModeTotalRank() {
-    final board = get11ModeTotalTop(limit: 100);
-    final idx = board.indexWhere((e) => e.isLocalPlayer);
-    return idx >= 0 ? idx + 1 : board.length + 1;
   }
 
   List<LeaderboardEntry> _buildCompetitiveLadder({

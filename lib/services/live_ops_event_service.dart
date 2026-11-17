@@ -241,10 +241,17 @@ class LiveOpsEventService {
   ///   - `06:00 - 11:59`: *Büyük Birleşim Çılgınlığı* (`grandMergeFrenzy`)
   ///   - `12:00 - 17:59`: *Terlik Fırtınası Maratonu* (`slipperStormMarathon`)
   ///   - `18:00 - 23:59`: *Osmantuş & Makara Müzik Gecesi* (`osmantusMakaraMusicNight`)
-  /// - Gün bazlı özel festival aktivasyonu:
-  ///   - Cuma (`5`), Cumartesi (`6`) ve Pazar (`7`) günleri ile Pazartesi/Çarşamba
-  ///     öğle/akşam saatlerinde *Altın Yağmuru Festivali* (`goldRainFestival`)
-  ///     ek olarak veya ana etkinlik olarak aktifleşir.
+  /// - Gün bazlı ek tema / festival aktivasyonu (ana etkinliğe eklenir):
+  ///   - Cumartesi (`6`) ve Pazar (`7`): *Altın Yağmuru Festivali*
+  ///     (`goldRainFestival`) gün boyu aktiftir.
+  ///   - Cuma (`5`): `16:00` ve sonrasında *Altın Yağmuru Festivali* aktiftir
+  ///     (ayrıca `00:00 - 05:59` dönüşümünde de ana etkinliktir).
+  ///   - Pazartesi (`1`): `12:00` öncesinde *Altın Yağmuru Festivali* aktiftir.
+  ///   - Salı (`2`): *Terlik Fırtınası Maratonu* (`slipperStormMarathon`) eklenir.
+  ///   - Çarşamba (`3`): *Büyük Birleşim Çılgınlığı* (`grandMergeFrenzy`)
+  ///     eklenir; *Altın Yağmuru Festivali* Çarşamba günü aktif değildir.
+  ///   - Perşembe (`4`): *Osmantuş & Makara Müzik Gecesi*
+  ///     (`osmantusMakaraMusicNight`) eklenir.
   List<LiveOpsEventDefinition> getActiveEvents({DateTime? at}) {
     final targetTime = at ?? DateTime.now();
     final weekday = targetTime.weekday.clamp(1, 7); // 1 = Mon .. 7 = Sun
@@ -348,7 +355,7 @@ class LiveOpsEventService {
   /// birikir (`5.0 * 480 dakika = 2.400 altın` maksimum kavanoz tavanı).
   static double coinsPerMinuteForTier(int highestUnlockedTier) {
     final safeTier = highestUnlockedTier.clamp(1, 12);
-    // Tier 1 -> 1.0, Tier 2 -> 1.4, ..., Tier 10 -> 4.6, Tier 11 -> 5.0, Tier 12 -> 5.0
+    // Tier 1 -> 1.0, Tier 2 -> 1.45, ..., Tier 9 -> 4.6, Tier 10+ -> 5.0 (tavan kırpması)
     final rate = 1.0 + ((safeTier - 1) * 0.45);
     return rate.clamp(1.0, 5.0);
   }
@@ -486,7 +493,33 @@ class LiveOpsEventService {
       );
     }
 
-    // 3. AntiCheatService Cooldown & Replay Kontrolü:
+    // 3. 8 Saat (480 Dakika) ve 2.400 Altın Tavanı Hesaplaması:
+    final cappedMinutes = rawMinutes.clamp(0, maxIdleMinutes);
+    final calculatedCoins = (cappedMinutes * rate).floor().clamp(1, maxJarCoins);
+
+    // 4. AntiCheatService Ekonomi Doğrulaması:
+    //    Cooldown/replay kaydından ÖNCE yapılır: ekonomi reddederse
+    //    claimId tüketilmez, aynı claimId ile tekrar deneme yapılabilir.
+    final economyCheck = _antiCheat.validateCoinDelta(
+      calculatedCoins,
+      currentBalance: safeBalance,
+      allowSpend: false,
+      maxGrant: maxJarCoins,
+    );
+
+    if (!economyCheck.isValid && economyCheck.sanitizedDelta <= 0) {
+      return IdleJarClaimResult(
+        isSuccess: false,
+        grantedCoins: 0,
+        newCoinBalance: safeBalance,
+        accumulatedMinutes: cappedMinutes,
+        highestUnlockedTier: safeTier,
+        coinsPerMinute: rate,
+        reason: economyCheck.reason,
+      );
+    }
+
+    // 5. AntiCheatService Cooldown & Replay Kontrolü (talebi kaydeder):
     final canClaim = _antiCheat.canClaimCooldownReward(
       'idle_bug_jar',
       claimId: claimId,
@@ -504,30 +537,6 @@ class LiveOpsEventService {
         highestUnlockedTier: safeTier,
         coinsPerMinute: rate,
         reason: 'anti_cheat_cooldown_or_replay_blocked',
-      );
-    }
-
-    // 4. 8 Saat (480 Dakika) ve 2.400 Altın Tavanı Hesaplaması:
-    final cappedMinutes = rawMinutes.clamp(0, maxIdleMinutes);
-    final calculatedCoins = (cappedMinutes * rate).floor().clamp(1, maxJarCoins);
-
-    // 5. AntiCheatService Ekonomi Doğrulaması:
-    final economyCheck = _antiCheat.validateCoinDelta(
-      calculatedCoins,
-      currentBalance: safeBalance,
-      allowSpend: false,
-      maxGrant: maxJarCoins,
-    );
-
-    if (!economyCheck.isValid && economyCheck.sanitizedDelta <= 0) {
-      return IdleJarClaimResult(
-        isSuccess: false,
-        grantedCoins: 0,
-        newCoinBalance: safeBalance,
-        accumulatedMinutes: cappedMinutes,
-        highestUnlockedTier: safeTier,
-        coinsPerMinute: rate,
-        reason: economyCheck.reason,
       );
     }
 

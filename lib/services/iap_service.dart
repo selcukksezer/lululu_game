@@ -64,10 +64,22 @@ class ShopPowerUpCatalogEntry {
 
 /// StoreKit / Play Billing + Coin Маğaza + Ödüllü Reklam servisi.
 /// Store ürünleri mevcut olmadığında (simülatör / test / offline) otomatik
-/// sandbox grant fallback ile sıfır çökme garantisi sunar.
+/// Sandbox bağışı YALNIZCA debug derlemelerinde yapılır; sürümde mağaza
+/// veya ürün yoksa satın alma başarısız döner ve ürün verilmez. Ödüllü
+/// reklam SDK'sı kurulu değildir: ödüllü reklam ödülü verilmez (bkz.
+/// [rewardedAdsAvailable]).
 class IapService extends ChangeNotifier {
   IapService._();
   static final instance = IapService._();
+
+  /// Ödüllü reklamların kullanılabilir olup olmadığı.
+  ///
+  /// Şu an `false`: projede reklam SDK'sı (örn. `google_mobile_ads`) kurulu
+  /// değil, bu yüzden gerçek bir reklam gösterilemez ve ödüllü reklam
+  /// ödülü verilemez. Gerçek SDK entegrasyonu tamamlanıp reklam gösterimi
+  /// doğrulandığında bu bayrak gerçek kullanılabilirlik kontrolüne
+  /// bağlanmalıdır; SDK olmadan `true` yapılmamalıdır.
+  static const bool rewardedAdsAvailable = false;
 
   /// Ana coin paketleri (`widget_test.dart` geriye dönük uyumluluğu için 3 eleman).
   static const packs = <({String id, String title, int coins, String priceLabel})>[
@@ -517,6 +529,13 @@ class IapService extends ChangeNotifier {
 
   String status = 'IAP · store bağlanıyor…';
   bool storeAvailable = false;
+
+  /// Son ürün sorgusunda mağazada bulunamayan ürün kimlikleri (S2#24).
+  /// Boş değilse katalog eksiktir: bu kimlikler mağaza konsolunda
+  /// tanımlı değil ya da henüz yayılmamıştır.
+  List<String> _missingProductIds = const [];
+  List<String> get missingProductIds => List.unmodifiable(_missingProductIds);
+
   final Map<String, ProductDetails> _products = {};
   StreamSubscription<List<PurchaseDetails>>? _sub;
   bool _booted = false;
@@ -654,7 +673,9 @@ class IapService extends ChangeNotifier {
       final iap = InAppPurchase.instance;
       storeAvailable = await iap.isAvailable();
       if (!storeAvailable) {
-        status = 'Store yok · sandbox simülasyon açık';
+        status = kDebugMode
+            ? 'Store yok · sandbox simülasyon açık (yalnızca debug)'
+            : 'Mağaza kullanılamıyor';
         notifyListeners();
         return;
       }
@@ -669,14 +690,48 @@ class IapService extends ChangeNotifier {
       for (final p in resp.productDetails) {
         _products[p.id] = p;
       }
+      // S2#24: bulunamayan kimlikler yok sayılmaz — durum iletisine ve
+      // debug kaydına yazılır, katalog eksikliği görünür olur.
+      _missingProductIds = List<String>.from(resp.notFoundIDs);
+      if (_missingProductIds.isNotEmpty) {
+        debugPrint('[lululu] IAP bulunamayan ürünler '
+            '(${_missingProductIds.length}/${productIds.length}): '
+            '${_missingProductIds.join(', ')}');
+      }
+      final missingSuffix = _missingProductIds.isEmpty
+          ? ''
+          : ' · bulunamadı (${_missingProductIds.length}): '
+              '${_missingProductIds.join(', ')}';
       status = _products.isEmpty
-          ? 'Ürün ID bulunamadı · sandbox simülasyon'
-          : 'Store hazır · ${_products.length} ürün';
+          ? (kDebugMode
+              ? 'Ürün ID bulunamadı · sandbox simülasyon (yalnızca debug)$missingSuffix'
+              : 'Mağaza ürünleri bulunamadı$missingSuffix')
+          : 'Store hazır · ${_products.length} ürün$missingSuffix';
     } catch (e) {
       storeAvailable = false;
-      status = 'Store kanal yok · sandbox simülasyon ($e)';
+      status = kDebugMode
+          ? 'Store kanal yok · sandbox simülasyon ($e)'
+          : 'Mağaza kullanılamıyor';
     }
     notifyListeners();
+  }
+
+  /// İstemci-içi asgari doğrulama: sürüm derlemesinde (release/profile)
+  /// doğrulama verisi boş olan bir satın alma teslim edilmez. Debug'da
+  /// mağaza sandbox'ı doğrulama verisi döndürmeyebildiği için izin verilir.
+  ///
+  /// Bu kontrol tek başına yeterli DEĞİLDİR: istemciye gelen doğrulama
+  /// verisi taklit edilebilir.
+  /// TODO (sunucu doğrulaması, kapsam dışı): teslimattan önce satın alma
+  /// bir arka uç servisinde doğrulanmalıdır — App Store makbuzu
+  /// (App Store Server API) / Play satın alma jetonu (Google Play
+  /// Developer API) sunucuda sorgulanıp onaylanmadan ürün verilmemeli,
+  /// aynı işlem kimliği (purchaseID) iki kez teslim edilmemelidir.
+  /// Sunucu hazır olana dek bu asgari kontrol sürümde boş veriyle
+  /// teslimatı engeller.
+  bool _isVerifiedForDelivery(PurchaseDetails purchase) {
+    if (kDebugMode) return true;
+    return purchase.verificationData.serverVerificationData.trim().isNotEmpty;
   }
 
   Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
@@ -691,6 +746,14 @@ class IapService extends ChangeNotifier {
         notifyListeners();
       } else if (purchase.status == PurchaseStatus.purchased ||
           purchase.status == PurchaseStatus.restored) {
+        if (!_isVerifiedForDelivery(purchase)) {
+          status = 'Doğrulama başarısız · ürün teslim edilmedi';
+          notifyListeners();
+          // completePurchase çağrılmaz: tamamlanmamış satın alma mağaza
+          // kuyruğunda kalır; sunucu doğrulaması eklendiğinde aynı
+          // işlem yeniden ele alınıp doğrulanarak teslim edilebilir.
+          continue;
+        }
         await _deliverProduct(purchase.productID, source: 'Satın alındı');
       }
       if (purchase.pendingCompletePurchase) {
@@ -747,7 +810,9 @@ class IapService extends ChangeNotifier {
     }
   }
 
-  /// Uygulama içi satın alma (StoreKit / Play Billing + otomatik sandbox fallback).
+  /// Uygulama içi satın alma (StoreKit / Play Billing). Mağaza veya ürün
+  /// yoksa YALNIZCA debug derlemesinde sandbox bağışı yapılır; sürümde
+  /// `false` döner ve ürün verilmez.
   Future<bool> purchase(String packId) async {
     await ensureLoaded();
     final key = _normalizeProductKey(packId);
@@ -770,7 +835,14 @@ class IapService extends ChangeNotifier {
       return ok;
     }
 
-    // Sandbox path — simulator / missing App Store products.
+    // Sandbox yolu YALNIZCA debug'da (simülatör / eksik mağaza ürünü).
+    // Sürümde mağaza/ürün yoksa ödeme alınmadan ürün verilmez: açık
+    // hata sonucu döndürülür.
+    if (!kDebugMode) {
+      status = 'Mağaza kullanılamıyor · satın alma yapılamadı';
+      notifyListeners();
+      return false;
+    }
     return _deliverProduct(key, source: 'Sandbox grant');
   }
 
@@ -795,27 +867,17 @@ class IapService extends ChangeNotifier {
   }
 
   /// Ödüllü reklam izleyerek mağaza ürünü / sandık / enerji kazanma.
+  ///
+  /// Reklam SDK'sı kurulu olmadığı için ([rewardedAdsAvailable] `false`)
+  /// gerçek bir reklam gösterilemez; bu yöntem ödül VERMEZ ve her zaman
+  /// `false` döndürür. İmza, mevcut çağrıcılarla uyumluluk için korunur.
+  /// Gerçek SDK entegrasyonu tamamlandığında reklam gösterimi doğrulanıp
+  /// ödül ancak izleme tamamlandıktan sonra verilmelidir.
   Future<bool> claimWithRewardedAd(String itemIdOrTitle) async {
     await ensureLoaded();
-    final item = findCatalogItem(itemIdOrTitle);
-    if (item != null) {
-      await _applyCatalogGrant(item);
-      status = 'Ödüllü reklam · ${item.title} kazanıldı';
-      notifyListeners();
-      return true;
-    }
-    final powEntry = findPowerUpEntry(itemIdOrTitle);
-    if (powEntry != null) {
-      await ProgressManager.instance.incrementPowerCount(powEntry.key, 1);
-      status = 'Ödüllü reklam · ${powEntry.title} (+1) kazanıldı';
-      notifyListeners();
-      return true;
-    }
-    // Genel reklam ödülü: +350 coin + 1 Anne Terliği
-    await ProgressManager.instance.grantArcadeDrop(coins: 350, slipper: 1);
-    status = 'Ödüllü reklam · +350 Altın + 1 Anne Terliği';
+    status = 'Ödüllü reklam kullanılamıyor · reklam SDK\'sı kurulu değil';
     notifyListeners();
-    return true;
+    return false;
   }
 
   /// Mağazadaki 33 oyun modu güçlendiricisinden birini altınla veya ödüllü reklamla satın alır.
@@ -835,10 +897,10 @@ class IapService extends ChangeNotifier {
     final pm = ProgressManager.instance;
 
     if (useRewardedAd) {
-      await pm.incrementPowerCount(canonicalKey, quantity);
-      status = 'Ödüllü reklam · $displayTitle (+$quantity)';
+      // Reklam SDK'sı yok: reklam gösterilmeden ödül verilmez.
+      status = 'Ödüllü reklam kullanılamıyor · reklam SDK\'sı kurulu değil';
       notifyListeners();
-      return true;
+      return false;
     }
 
     final unitCost = coinCost ?? entry?.coinCost ?? 300;
@@ -908,24 +970,28 @@ class IapService extends ChangeNotifier {
   }
 
   /// Satın alımları geri yükler (Kraliyet Pelerini vb. non-consumable ürünler için).
-  Future<void> restorePurchases() async {
+  ///
+  /// Mağaza yoksa geri yükleme yapılamaz: `false` döner ve yerel kasa
+  /// başarı sayılmaz. Geri yüklenen ürünler satın alma akışından
+  /// ([_onPurchases]) teslim edilir.
+  Future<bool> restorePurchases() async {
     await ensureLoaded();
     if (!storeAvailable) {
-      status = 'Geri yükleme tamam (yerel kasa)';
+      status = 'Geri yükleme kullanılamıyor · mağaza yok';
       notifyListeners();
-      return;
+      return false;
     }
     try {
       await InAppPurchase.instance.restorePurchases();
-      status = 'Satın alımlar geri yüklendi';
+      status = 'Geri yükleme başlatıldı';
+      notifyListeners();
+      return true;
     } catch (e) {
       status = 'Geri yükleme hata ($e)';
+      notifyListeners();
+      return false;
     }
-    notifyListeners();
   }
-
-  /// Legacy name used by shop UI.
-  Future<bool> purchaseStub(String packId) => purchase(packId);
 
   @override
   void dispose() {
@@ -933,6 +999,3 @@ class IapService extends ChangeNotifier {
     super.dispose();
   }
 }
-
-/// Back-compat while shop migrates.
-typedef IapStubService = IapService;

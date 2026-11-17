@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -88,7 +89,23 @@ class AchievementPassService extends ChangeNotifier {
       AchievementPassService._internal();
   factory AchievementPassService() => _instance;
   static AchievementPassService get instance => _instance;
-  AchievementPassService._internal();
+  AchievementPassService._internal() {
+    // Kalıcı durum (açık başarımlar, sezon XP'si, talep edilen kademeler)
+    // hiçbir çağırıcı load() çağırmadığı için ilk erişimde yüklenir;
+    // aksi hâlde talep edilen kademeler her açılışta yeniden talep
+    // edilebilirdi. Yükleme bitince notifyListeners ile dinleyiciler
+    // (örn. başarımlar sayfası) yenilenir.
+    unawaited(_autoLoad());
+  }
+
+  /// İlk erişimde kalıcı durumu sessizce yükler; okuma başarısız olursa
+  /// bellek-içi varsayılanlarla devam edilir (açık `load()` çağrıları
+  /// hatayı çağırıcıya aynen iletmeye devam eder).
+  Future<void> _autoLoad() async {
+    try {
+      await load();
+    } catch (_) {}
+  }
 
   static const String _prefUnlockedAchievements =
       'lululu_ach_unlocked_ids_v1';
@@ -792,7 +809,6 @@ class AchievementPassService extends ChangeNotifier {
   bool get hasGoldPass => _hasGoldPass;
 
   int _bonusStars = 0;
-  int get bonusStars => _bonusStars;
 
   final Set<int> claimedFreeTiers = <int>{};
   final Set<int> claimedGoldTiers = <int>{};
@@ -942,16 +958,6 @@ class AchievementPassService extends ChangeNotifier {
     await prefs.remove(_prefClaimedGoldTiers);
     await prefs.remove(_prefBonusStars);
     notifyListeners();
-  }
-
-  /// Aktif profil unvanını değiştirir.
-  Future<bool> selectTitle(String title) async {
-    if (!unlockedTitles.contains(title)) return false;
-    selectedTitle = title;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefSelectedTitle, selectedTitle);
-    notifyListeners();
-    return true;
   }
 
   /// Altın Bilet (Gold Pass) kilidini açar.

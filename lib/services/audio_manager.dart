@@ -9,7 +9,12 @@ import '../models/insect_tier.dart';
 import 'haptic_service.dart';
 import 'progress_manager.dart';
 
-/// Asset filenames under `assets/audio/` and `assets/design/sounds/`.
+/// Asset filenames under the single canonical folder `assets/audio/`
+/// (madde 17: the byte-identical `assets/design/sounds/` copies are legacy
+/// duplicates, kept on disk only until the remaining migration lands —
+/// see `assets/audio/ASSETS_NOTE.md`). Every constant here is a BARE
+/// filename, never a full path (Mac merge rule); [_normalizeAssetPath]
+/// joins it with `audio/` at playback time.
 abstract final class GameAudio {
   static const sfxAydinlatBeam = 'sfx_aydinlat_beam.mp3';
   static const sfxButtonTap = 'sfx_button_tap.mp3';
@@ -167,6 +172,9 @@ abstract final class GameAudio {
   }
 
   /// Prototype `tierN_ses.mp3` for tier 1–13; null if out of range.
+  ///
+  /// Merge/tier playback prefers this over [voiceForTier] (see
+  /// `AudioManager._resolveMergeVoice`); `voice_tierN.mp3` is the fallback.
   static String? designSoundForTier(int tier) {
     if (tier < 1 || tier > 13) return null;
     return 'tier${tier}_ses.mp3';
@@ -246,6 +254,14 @@ class AudioManager {
   bool _listenersBound = false;
   bool _syncingWithProgress = false;
 
+  /// Effective audibility: the single master mute flag ([_isMuted]) ANDed
+  /// with each channel's own preference. Mute/unmute never rewrites the
+  /// channel preferences — [toggleMute] flips only [_isMuted], so unmuting
+  /// restores exactly the mix the user had before muting. Every playback
+  /// gate in this file derives from these getters (S2#7 / S2#9).
+  bool get _sfxAudible => !_isMuted && _sfxEnabled;
+  bool get _voiceAudible => !_isMuted && _voiceEnabled;
+
   void _bindProgressManagerListeners() {
     if (_listenersBound) return;
     _listenersBound = true;
@@ -257,6 +273,21 @@ class AudioManager {
     pm.sfxNotifier.addListener(_onProgressSfxChanged);
     pm.musicNotifier.addListener(_onProgressMusicChanged);
     pm.vibrationNotifier.addListener(_onProgressVibrationChanged);
+  }
+
+  /// Mirror of [_bindProgressManagerListeners]: removes exactly the three
+  /// listeners registered there and clears [_listenersBound] so a later
+  /// [initialize] can bind again. Called from [dispose] (S2#8). The flag is
+  /// cleared first so a re-entrant bind cannot double-register.
+  void _unbindProgressManagerListeners() {
+    if (!_listenersBound) return;
+    _listenersBound = false;
+    try {
+      final pm = ProgressManager.instance;
+      pm.sfxNotifier.removeListener(_onProgressSfxChanged);
+      pm.musicNotifier.removeListener(_onProgressMusicChanged);
+      pm.vibrationNotifier.removeListener(_onProgressVibrationChanged);
+    } catch (_) {}
   }
 
   void _onProgressSfxChanged() {
@@ -275,9 +306,7 @@ class AudioManager {
     final next = ProgressManager.instance.musicEnabled;
     if (_musicEnabled != next) {
       _musicEnabled = next;
-      if (!next) {
-        unawaited(_stopMusicPlayer());
-      }
+      // No music player to stop yet (TODO on `musicEnabled`).
     }
   }
 
@@ -343,6 +372,12 @@ class AudioManager {
   }
 
   /// Master mute flag (kept in sync with settings toggles and test overrides).
+  ///
+  /// The single mute switch (S2#7): setting it never rewrites
+  /// [sfxEnabled]/[musicEnabled]/[voiceEnabled] — those stay as user
+  /// preferences and take effect again on unmute via the derived
+  /// [_sfxAudible]/[_voiceAudible] gates. Callers that snapshot/restore
+  /// around lifecycle pauses (AppLifecycleGuard) rely on this.
   bool get isMuted => _isMuted;
   set isMuted(bool value) {
     _isMuted = value;
@@ -370,12 +405,15 @@ class AudioManager {
   }
 
   /// Settings screen toggle: Background Music (`musicEnabled`).
+  ///
+  /// TODO(music): flag + persistence/sync only — no music file exists yet
+  /// (no music/bgm/loop asset under `assets/`), so there is no player and no
+  /// `playMusic`. When a real music asset lands, add a dedicated looping
+  /// player here (do not reuse the SFX pool) and start/stop it from this
+  /// setter, [_onProgressMusicChanged], [stopAll] and [dispose].
   bool get musicEnabled => _musicEnabled;
   set musicEnabled(bool value) {
     _musicEnabled = value;
-    if (!value) {
-      unawaited(_stopMusicPlayer());
-    }
     final pm = ProgressManager.instance;
     if (pm.musicEnabled != value) {
       _syncingWithProgress = true;
@@ -431,9 +469,6 @@ class AudioManager {
   StreamSubscription<void>? _exclusiveCompleteSub;
   void Function()? _exclusiveOnComplete;
   bool _exclusiveBusy = false;
-
-  /// Optional background music player.
-  AudioPlayer? _musicPlayer;
 
   /// True while [playExclusiveSfx] clip is still playing.
   bool get isExclusivePlaying => _exclusiveBusy;
@@ -507,15 +542,6 @@ class AudioManager {
     }
   }
 
-  Future<void> _stopMusicPlayer() async {
-    final mp = _musicPlayer;
-    if (mp != null) {
-      try {
-        await mp.stop();
-      } catch (_) {}
-    }
-  }
-
   /// Stop every pooled player. Call from game-screen [State.dispose]
   /// so SFX / voice do not leak into home / menu after route pop.
   ///
@@ -524,7 +550,7 @@ class AudioManager {
     _playGeneration++;
     final gen = _playGeneration;
     await _stopExclusivePlayer();
-    await _stopMusicPlayer();
+    // No music player yet (TODO on `musicEnabled`).
     if (_playersPool.isEmpty) return;
     for (final p in _playersPool) {
       if (gen != _playGeneration) return;
@@ -536,21 +562,27 @@ class AudioManager {
     }
   }
 
+  /// Flips only the master mute flag (S2#7). Channel preferences
+  /// ([sfxEnabled], [musicEnabled], [voiceEnabled]) are left untouched, so
+  /// unmuting restores the exact pre-mute mix; previously this also rewrote
+  /// [_musicEnabled] (muting forced it off, unmuting forced it on even if
+  /// the user had disabled music) while leaving SFX/voice stale. Delegates
+  /// to the [isMuted] setter so mute/unmute has a single mutation path.
   void toggleMute() {
-    _isMuted = !_isMuted;
-    _musicEnabled = !_isMuted;
-    if (_isMuted) {
-      unawaited(stopAll());
-    }
+    isMuted = !_isMuted;
   }
 
   bool _canPlayAsset(String assetName, {bool? isVoiceOverride}) {
-    if (_isMuted || _isTestEnvironment) return false;
+    if (_isTestEnvironment) return false;
     final isVoice = isVoiceOverride ?? GameAudio.isVoiceAsset(assetName);
+    // S2#9: a voice clip needs only the voice channel (plus master mute,
+    // folded into [_voiceAudible]); requiring SFX as well made the voice
+    // toggle dead whenever SFX was off. Viral one-shots reach here with
+    // `isVoice: true` (and [GameAudio.isVoiceAsset] also matches them).
     if (isVoice) {
-      return _voiceEnabled && _sfxEnabled;
+      return _voiceAudible;
     }
-    return _sfxEnabled;
+    return _sfxAudible;
   }
 
   String _normalizeAssetPath(String assetName) {
@@ -559,10 +591,18 @@ class AudioManager {
     final name = assetName.startsWith('assets/')
         ? assetName.substring('assets/'.length)
         : assetName;
-    if (name.startsWith('audio/') ||
-        name.startsWith('design/sounds/') ||
-        name.startsWith('sounds/')) {
+    if (name.startsWith('audio/')) {
       return name;
+    }
+    // Canonical folder is `assets/audio/` (madde 17): every clip that used
+    // to live under `assets/design/sounds/` (or a bare `sounds/` prefix) is
+    // byte-identical in `assets/audio/`, so legacy full paths are rewritten
+    // here and keep playing from the single canonical folder. Bare
+    // filenames (every `GameAudio` constant) never reach this branch.
+    for (final legacy in ['design/sounds/', 'sounds/']) {
+      if (name.startsWith(legacy)) {
+        return 'audio/${name.substring(legacy.length)}';
+      }
     }
     return 'audio/$name';
   }
@@ -666,17 +706,18 @@ class AudioManager {
 
   /// Plays the viral insect voice for [tier] (1..8+, up to 13+).
   ///
-  /// Tiers 1–13 play their dedicated `voice_tierN.mp3` (`tierN_ses.mp3`);
-  /// tiers > 13 gracefully clamp to tier 13.
+  /// Same resolution as the merge flow ([_resolveMergeVoice]): the tier's
+  /// design sound (`tierN_ses.mp3`) first, `voice_tierN.mp3` fallback.
+  /// Tiers > 13 gracefully clamp to tier 13.
   Future<void> playTierVoice(
     int tier, {
     double volume = 1.0,
     double playbackRate = 1.0,
   }) async {
-    if (tier < 1 || _isMuted || !_voiceEnabled || !_sfxEnabled) return;
+    if (tier < 1 || !_voiceAudible) return;
     final clampedTier = tier.clamp(1, 13);
     final voiceAsset =
-        GameAudio.voiceForTier(clampedTier) ?? GameAudio.voiceTier8;
+        _resolveMergeVoice(tierNumber: clampedTier) ?? GameAudio.voiceTier8;
     await playSfx(
       voiceAsset,
       volume: volume,
@@ -685,9 +726,10 @@ class AudioManager {
     );
   }
 
-  /// Merge juice: merge SFX (+ optional combo) together with `voice_tierN`.
+  /// Merge juice: merge SFX (+ optional combo) together with the new tier's
+  /// sound (design sound first, `voice_tierN` fallback — [_resolveMergeVoice]).
   ///
-  /// Prefer [tier]; else [tierNumber] 1–13 maps to verified `GameAudio.voiceTierN`.
+  /// Prefer [tier]; else [tierNumber] 1–13 resolves the same way.
   Future<void> playMerge({
     InsectTier? tier,
     int? tierNumber,
@@ -706,7 +748,7 @@ class AudioManager {
     if (_sfxEnabled && comboCount > 1) {
       plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
     }
-    if (_voiceEnabled && _sfxEnabled && voiceAsset != null) {
+    if (_voiceAudible && voiceAsset != null) {
       plays.add(playSfx(voiceAsset, isVoice: true));
     }
     if (plays.isNotEmpty) {
@@ -726,8 +768,19 @@ class AudioManager {
         comboCount: comboCount,
       );
 
+  /// Resolves the sound for a merge/tier event: the tier's design sound
+  /// (`InsectTier.soundFile`, `tierN_ses.mp3`) first, falling back to the
+  /// verified `voice_tierN.mp3` and then to `InsectTier.voiceFile`.
+  ///
+  /// The two file families currently hold byte-identical audio on disk, so
+  /// preferring the design sound changes no audible behaviour; it makes
+  /// `soundFile` / [GameAudio.designSoundForTier] live instead of dead.
+  /// All names stay bare filenames — [_normalizeAssetPath] joins them.
   String? _resolveMergeVoice({InsectTier? tier, int? tierNumber}) {
     if (tier != null) {
+      if (GameAudio.allAssets.contains(tier.soundFile)) {
+        return tier.soundFile;
+      }
       final fromTier = GameAudio.voiceForTier(tier.tier);
       if (fromTier != null) return fromTier;
       if (GameAudio.allAssets.contains(tier.voiceFile)) {
@@ -736,7 +789,12 @@ class AudioManager {
       return null;
     }
     if (tierNumber != null && tierNumber >= 1) {
-      return GameAudio.voiceForTier(tierNumber.clamp(1, 13));
+      final clamped = tierNumber.clamp(1, 13);
+      final design = GameAudio.designSoundForTier(clamped);
+      if (design != null && GameAudio.allAssets.contains(design)) {
+        return design;
+      }
+      return GameAudio.voiceForTier(clamped);
     }
     return null;
   }
@@ -760,7 +818,7 @@ class AudioManager {
     }
     final plays = <Future<void>>[
       if (_sfxEnabled) playSfx(GameAudio.sfxVictory, isVoice: false),
-      if (includeVoice && _voiceEnabled && _sfxEnabled)
+      if (includeVoice && _voiceAudible)
         playSfx(GameAudio.voiceTier8, isVoice: true),
     ];
     if (plays.isNotEmpty) {
@@ -814,10 +872,19 @@ class AudioManager {
   /// Viral one-shot: Kanka ikilisi (TikTok video5 kesimi).
   Future<void> playKanka() => playSfx(GameAudio.kanka, isVoice: true);
 
-  /// Hışır'ın sesi. UNVERIFIED aday: transkriptte "huşur" diye geçti,
-  /// "hışır" olduğu kulakla teyit edilmedi (bkz. assets/audio/ASSETS_NOTE.md).
-  Future<void> playHusurAday() =>
-      playSfx(GameAudio.husurAday, isVoice: true);
+  /// Hışır'ın sesi — tek Hışır ses yolu. UNVERIFIED aday: transkriptte
+  /// "huşur" diye geçti, "hışır" olduğu kulakla teyit edilmedi (bkz.
+  /// assets/audio/ASSETS_NOTE.md).
+  ///
+  /// Resolves through [GameAudio.voiceForCharacterId] (`'hisir'`), the same
+  /// map Terlik Tap uses via [playSlipperSmash]; the [GameAudio.husurAday]
+  /// constant is only the fallback if the map ever drops the id. The clip
+  /// stays preloaded via [GameAudio.viralOneShots] / [GameAudio.allAssets].
+  Future<void> playHusurAday() async {
+    final asset =
+        GameAudio.voiceForCharacterId('hisir') ?? GameAudio.husurAday;
+    await playSfx(asset, isVoice: true);
+  }
 
   Future<void> playAydinlatBeam() {
     if (vibrationEnabled) {
@@ -835,7 +902,7 @@ class AudioManager {
       if (_sfxEnabled) playSfx(GameAudio.sfxF16, isVoice: false),
       if (_sfxEnabled)
         playSfx(GameAudio.sfxAydinlatBeam, volume: 0.85, isVoice: false),
-      if (includeVoice && _voiceEnabled && _sfxEnabled)
+      if (includeVoice && _voiceAudible)
         playSfx(GameAudio.voiceAydinlat, isVoice: true),
     ];
     if (plays.isNotEmpty) {
@@ -869,6 +936,7 @@ class AudioManager {
   /// Terlik tap smash: slipper SFX + that character's voice (not a generic merge).
   ///
   /// Resolve order: [characterId] map → [tier] voice → pop fallback + log.
+  /// `'hisir'` plays through [playHusurAday], the single Hışır voice path.
   Future<void> playSlipperSmash({
     String? characterId,
     InsectTier? tier,
@@ -887,8 +955,14 @@ class AudioManager {
     }
     voice ??= _resolveMergeVoice(tier: tier, tierNumber: tier?.tier);
 
-    if (voice != null) {
-      if (_voiceEnabled && _sfxEnabled) {
+    if (characterId == 'hisir') {
+      // Single Hışır voice path: resolve + play via [playHusurAday] so the
+      // 'hisir' mapping lives in exactly one place.
+      if (_voiceAudible) {
+        plays.add(playHusurAday());
+      }
+    } else if (voice != null) {
+      if (_voiceAudible) {
         plays.add(playSfx(voice, isVoice: true));
       }
     } else if (_sfxEnabled) {
@@ -966,7 +1040,7 @@ class AudioManager {
           isVoice: false,
         ),
     ];
-    if (includeVoice && _voiceEnabled && _sfxEnabled) {
+    if (includeVoice && _voiceAudible) {
       final voice = isPersonB ? GameAudio.voiceOsmanB : GameAudio.voiceOsmanA;
       plays.add(playSfx(voice, volume: 0.9, isVoice: true));
     }
@@ -999,7 +1073,7 @@ class AudioManager {
     ];
     final voice = bug?.voiceFile ??
         (tier != null ? GameAudio.voiceForTier(tier.clamp(1, 13)) : null);
-    if (voice != null && _voiceEnabled && _sfxEnabled) {
+    if (voice != null && _voiceAudible) {
       plays.add(
         playSfx(
           voice,
@@ -1055,8 +1129,28 @@ class AudioManager {
   /// Alias for [triggerLightHaptic] (existing call sites).
   void triggerHaptic() => triggerLightHaptic();
 
+  /// Releases the pooled players and the exclusive player, cancels the
+  /// completion subscription, and unbinds the [ProgressManager] listeners
+  /// (S2#8: listener registration and removal are now symmetric — see
+  /// [_bindProgressManagerListeners] / [_unbindProgressManagerListeners]).
+  ///
+  /// Idempotent and re-initializable: calling [initialize] afterwards
+  /// rebinds the listeners and rebuilds the pool. Safe to call when never
+  /// initialized. Channel preferences ([sfxEnabled], [musicEnabled],
+  /// [voiceEnabled], [vibrationEnabled]) and [isMuted] are intentionally
+  /// left untouched so a later [initialize] resumes the same mix.
+  ///
+  /// NOTE (S2#8, wiring — for the agent that owns app teardown): nothing
+  /// in `lib/` calls this yet; `main.dart` calls only
+  /// `AudioManager().initialize()`. App teardown should call
+  /// `AudioManager.instance.dispose()` (e.g. from the root widget's
+  /// dispose / app-detach path). Do NOT call it from per-screen dispose —
+  /// screens use [stopAll]; the singleton pool is shared across screens.
   void dispose() {
+    _unbindProgressManagerListeners();
+    _syncingWithProgress = false;
     _playGeneration++;
+    _poolIndex = 0;
     _exclusiveBusy = false;
     _exclusiveOnComplete = null;
     unawaited(_exclusiveCompleteSub?.cancel() ?? Future<void>.value());
@@ -1066,11 +1160,7 @@ class AudioManager {
     try {
       exclusive?.dispose();
     } catch (_) {}
-    final mp = _musicPlayer;
-    _musicPlayer = null;
-    try {
-      mp?.dispose();
-    } catch (_) {}
+    // No music player to dispose yet (TODO on `musicEnabled`).
     for (final p in _playersPool) {
       try {
         p.dispose();

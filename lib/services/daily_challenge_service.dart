@@ -106,7 +106,12 @@ class DailyChallengeService extends ChangeNotifier {
 
   /// Estimated coin reward for today's claim.
   int get nextClaimRewardCoins {
-    final nextStreak = max(1, streak + (canClaimToday ? 1 : 0));
+    if (!canClaimToday) {
+      return 40 + max(1, streak) * 15 + (completedToday ? 80 : 0);
+    }
+    // Seri kuralı: son talep dün değilse seri sıfırlanır
+    // (yeni seri 1'den başlar); aksi hâlde seri bir artar.
+    final nextStreak = lastClaimDay == _dayKeyOffset(-1) ? streak + 1 : 1;
     return 40 + nextStreak * 15 + (completedToday ? 80 : 0);
   }
 
@@ -163,7 +168,11 @@ class DailyChallengeService extends ChangeNotifier {
 
   Future<bool> tryCompleteWithScore(String playedModeId, int score) async {
     await ensureLoaded();
-    await ProgressManager.instance.recordTaskProgress('play', delta: 1);
+    // 'play' görevi burada kaydedilmez: tek kayıt noktası tur-bitirme
+    // yardımcısıdır (finish_run.dart, recordPlayTask varsayılanı true).
+    // Bu metot skor gönderimi başına (hatta Çığlık Böcek'te her çığlıkta)
+    // çağrıldığı için buradaki kayıt '3 Oyun Oyna' görevini tek turda
+    // dolduruyordu.
     if (completedToday) return false;
     final normalizedPlayed = ProgressManager.normalizeModeId(playedModeId);
     final normalizedTarget = ProgressManager.normalizeModeId(modeId);
@@ -177,30 +186,6 @@ class DailyChallengeService extends ChangeNotifier {
     await prefs.setBool('${_prefsKey}_done_$today', true);
     notifyListeners();
     return true;
-  }
-
-  /// Günlük ödül + streak. Challenge tamam zorunlu değil; giriş ödülü.
-  Future<int> claimDailyReward() async {
-    await ensureLoaded();
-    final today = _todayKey();
-    if (lastClaimDay == today) return 0;
-
-    final yesterday = _dayKeyOffset(-1);
-    if (lastClaimDay == yesterday) {
-      streak += 1;
-    } else {
-      streak = 1;
-    }
-    lastClaimDay = today;
-
-    var coins = 40 + streak * 15;
-    if (completedToday) coins += 80;
-    await ProgressManager.instance.addCoins(coins);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('${_prefsKey}_streak', streak);
-    await prefs.setString('${_prefsKey}_lastClaim', today);
-    notifyListeners();
-    return coins;
   }
 
   bool get canClaimToday {

@@ -73,14 +73,6 @@ class HapticService {
     } catch (_) {}
   }
 
-  /// Orta şiddette dokunuş geri bildirimi.
-  Future<void> mediumImpact() async {
-    if (!_canTrigger()) return;
-    try {
-      await HapticFeedback.mediumImpact();
-    } catch (_) {}
-  }
-
   /// Güçlü darbe geri bildirimi.
   Future<void> heavyImpact() async {
     if (!_canTrigger()) return;

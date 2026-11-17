@@ -317,6 +317,7 @@ class GameTelemetryService extends ChangeNotifier {
 
   /// Belirtilen yüzdelik dilimdeki (`0.0 .. 1.0`, örn. `0.99`) frame süresini (ms) hesaplar.
   double percentileFrameTimeMs(double percentile) {
+    if (percentile.isNaN) return 0.0;
     final samples = _frameBuffer.toList();
     if (samples.isEmpty) return 0.0;
     final clampedP = percentile.clamp(0.0, 1.0);

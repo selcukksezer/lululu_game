@@ -186,7 +186,7 @@ class ComboJuiceService extends ChangeNotifier {
       tierForCombo(combo)?.shakeIntensity ?? 0.0;
 
   /// Sönümlü harmonik kamera sarsıntısı (damped harmonic screen shake) vektörü:
-  /// `progress` `0.0` ile `1.0` arasında ilerlerken üstel sönümlü (`e^(-5.2 * t)`)
+  /// `progress` `0.0` ile `1.0` arasında ilerlerken üstel sönümlü (`e^(-4.8 * t)`)
   /// sinüs/kosinüs salınımı üretir. Başlangıç (`<= 0`) ve bitiş (`>= 1`) anlarında
   /// tam `Offset.zero` döner.
   Offset computeShakeOffset(
@@ -226,17 +226,6 @@ class ComboJuiceService extends ChangeNotifier {
     return false;
   }
 
-  /// Kalan kombo süresi oranını (`0.0` .. `1.0`) döndürür.
-  double remainingWindowRatio({int? nowMs}) {
-    if (_comboCount <= 0 || _lastHitTimestampMs == null || comboWindowMs <= 0) {
-      return 0.0;
-    }
-    final currentMs = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-    final elapsed = currentMs - _lastHitTimestampMs!;
-    if (elapsed >= comboWindowMs) return 0.0;
-    return (1.0 - elapsed / comboWindowMs).clamp(0.0, 1.0);
-  }
-
   /// Yeni bir böcek birleşimi veya vuruş kaydeder.
   /// `comboWindowMs` (2800ms) içinde gerçekleşirse komboyu artırır, aksi halde `1` yapar.
   int registerMerge({
@@ -269,14 +258,6 @@ class ComboJuiceService extends ChangeNotifier {
 
     notifyListeners();
     return _comboCount;
-  }
-
-  /// Manuel kamera sarsıntısı tetikler (örn. Boss darbesi, F16 bombardımanı, Anne Terliği).
-  void triggerShake({double intensity = 8.0}) {
-    if (intensity <= 0) return;
-    _activeShakeIntensity = intensity;
-    _shakeTriggerVersion++;
-    notifyListeners();
   }
 
   void _triggerAudioAndHaptics({required int tier, required int combo}) {

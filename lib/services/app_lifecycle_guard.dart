@@ -220,6 +220,12 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
   /// Güncel uygulama yaşam döngüsü durumu.
   AppLifecycleState get currentState => _currentState;
 
+  /// `WidgetsBinding` gözlemcisinin bağlı olup olmadığı.
+  ///
+  /// Bağlama `main.dart` içinde `initialize()` ile yapılır; bu getter
+  /// bağlamanın gerçekleştiğini okuyarak doğrulamayı sağlar.
+  bool get isAttached => _isAttached;
+
   /// Aktif oyun modunun otomatik duraklatılması gerekip gerekmediği.
   bool get shouldAutoPauseGame => _shouldAutoPauseGame;
   set shouldAutoPauseGame(bool value) {

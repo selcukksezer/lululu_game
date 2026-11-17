@@ -11,14 +11,21 @@ class FriendInviteService extends ChangeNotifier {
   static final instance = FriendInviteService._();
 
   String? _code;
+  String? _codePlayerId;
 
   String get inviteCode {
-    _code ??= _makeCode();
+    // Oyuncu kimliği değişirse (misafir -> giriş yapmış hesap) eski
+    // kimlikten türetilmiş kod kullanılmaz, yeniden üretilir.
+    final playerId = AuthService.instance.playerId;
+    if (_code == null || _codePlayerId != playerId) {
+      _codePlayerId = playerId;
+      _code = _makeCode(playerId);
+    }
     return _code!;
   }
 
-  String _makeCode() {
-    final id = AuthService.instance.playerId.hashCode.abs().toRadixString(36);
+  String _makeCode(String playerId) {
+    final id = playerId.hashCode.abs().toRadixString(36);
     final r = Random().nextInt(999).toString().padLeft(3, '0');
     return 'LULU-${id.toUpperCase().padLeft(4, 'X').substring(0, 4)}$r';
   }
