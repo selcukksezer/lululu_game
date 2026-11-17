@@ -6,10 +6,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'leaderboard_service.dart';
 import 'progress_manager.dart';
 
+class DailyMissionSpec {
+  final String id;
+  final String title;
+  final String subtitle;
+  final int target;
+  final int coinReward;
+  final int energyReward;
+  final String iconAsset;
+
+  const DailyMissionSpec({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.target,
+    required this.coinReward,
+    this.energyReward = 0,
+    required this.iconAsset,
+  });
+}
+
 /// Günlük viral challenge + streak / daily reward.
 class DailyChallengeService extends ChangeNotifier {
   DailyChallengeService._();
-  static final instance = DailyChallengeService._();
+  static final DailyChallengeService instance = DailyChallengeService._();
+  factory DailyChallengeService() => instance;
 
   static const _prefsKey = 'LululuDailyV1';
 
@@ -22,6 +43,45 @@ class DailyChallengeService extends ChangeNotifier {
   int streak = 0;
   String? lastClaimDay;
 
+  static const List<DailyMissionSpec> defaultMissions = [
+    DailyMissionSpec(
+      id: 'play',
+      title: '3 Oyun Oyna',
+      subtitle: 'Herhangi bir modda 3 maç tamamla',
+      target: 3,
+      coinReward: 150,
+      energyReward: 1,
+      iconAsset: 'assets/design/ui/icons2/target.png',
+    ),
+    DailyMissionSpec(
+      id: 'merge',
+      title: '25 Böcek Birleştir',
+      subtitle: 'Suika veya 2048 modunda evrim yap',
+      target: 25,
+      coinReward: 200,
+      energyReward: 1,
+      iconAsset: 'assets/design/ui/icons2/paw.png',
+    ),
+    DailyMissionSpec(
+      id: 'combo',
+      title: '5x Kombo Yap',
+      subtitle: 'Peş peşe hızlı birleşim yakala',
+      target: 5,
+      coinReward: 250,
+      energyReward: 2,
+      iconAsset: 'assets/design/ui/icons2/bolt.png',
+    ),
+    DailyMissionSpec(
+      id: 'video',
+      title: 'Stüdyoya Göz At',
+      subtitle: 'Böcek Stüdyosu veya GIF vitrinini ziyaret et',
+      target: 1,
+      coinReward: 120,
+      energyReward: 1,
+      iconAsset: 'assets/design/ui/icons2/star.png',
+    ),
+  ];
+
   static const _rotation = <(String id, String label, int target)>[
     (LeaderboardService.modeOsmantus, 'Osmantuş', 5000),
     (LeaderboardService.modeScream, 'Çığlık Böcek', 3500),
@@ -33,12 +93,29 @@ class DailyChallengeService extends ChangeNotifier {
 
   /// Best progress toward today's target (0–1).
   double get progressTowardTarget {
-    final best = LeaderboardService.instance.getBest(modeId);
+    final best = bestTowardTarget;
     if (targetScore <= 0) return 0;
     return (best / targetScore).clamp(0.0, 1.0);
   }
 
-  int get bestTowardTarget => LeaderboardService.instance.getBest(modeId);
+  int get bestTowardTarget {
+    final lbBest = LeaderboardService.instance.getBest(modeId);
+    final pmBest = ProgressManager.instance.getModeHighScore(modeId);
+    return max(lbBest, pmBest);
+  }
+
+  /// Estimated coin reward for today's claim.
+  int get nextClaimRewardCoins {
+    final nextStreak = max(1, streak + (canClaimToday ? 1 : 0));
+    return 40 + nextStreak * 15 + (completedToday ? 80 : 0);
+  }
+
+  String get formattedTimeLeft {
+    final left = timeLeft;
+    final hh = left.inHours.clamp(0, 99).toString().padLeft(2, '0');
+    final mm = (left.inMinutes % 60).clamp(0, 59).toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
 
   Future<void> ensureLoaded() async {
     if (_loaded) return;
@@ -78,14 +155,21 @@ class DailyChallengeService extends ChangeNotifier {
 
   Duration get timeLeft {
     final now = DateTime.now();
-    final end = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    final end = DateTime(now.year, now.month, now.day).add(
+      const Duration(days: 1),
+    );
     return end.difference(now);
   }
 
   Future<bool> tryCompleteWithScore(String playedModeId, int score) async {
     await ensureLoaded();
+    await ProgressManager.instance.recordTaskProgress('play', delta: 1);
     if (completedToday) return false;
-    if (playedModeId != modeId) return false;
+    final normalizedPlayed = ProgressManager.normalizeModeId(playedModeId);
+    final normalizedTarget = ProgressManager.normalizeModeId(modeId);
+    if (normalizedPlayed != normalizedTarget && playedModeId != modeId) {
+      return false;
+    }
     if (score < targetScore) return false;
     completedToday = true;
     final prefs = await SharedPreferences.getInstance();
@@ -111,7 +195,7 @@ class DailyChallengeService extends ChangeNotifier {
 
     var coins = 40 + streak * 15;
     if (completedToday) coins += 80;
-    await ProgressManager().addCoins(coins);
+    await ProgressManager.instance.addCoins(coins);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('${_prefsKey}_streak', streak);
     await prefs.setString('${_prefsKey}_lastClaim', today);

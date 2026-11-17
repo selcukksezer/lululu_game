@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart'
 /// Defines (optional):
 /// `FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_MESSAGING_SENDER_ID`,
 /// `FIREBASE_PROJECT_ID`, `FIREBASE_STORAGE_BUCKET`, `FIREBASE_IOS_CLIENT_ID`,
-/// `FIREBASE_IOS_BUNDLE_ID`
+/// `FIREBASE_IOS_BUNDLE_ID`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_DATABASE_URL`
 class DefaultFirebaseOptions {
   DefaultFirebaseOptions._();
 
@@ -19,6 +19,8 @@ class DefaultFirebaseOptions {
   static const _projectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
   static const _storageBucket =
       String.fromEnvironment('FIREBASE_STORAGE_BUCKET');
+  static const _authDomain = String.fromEnvironment('FIREBASE_AUTH_DOMAIN');
+  static const _databaseUrl = String.fromEnvironment('FIREBASE_DATABASE_URL');
   static const _iosClientId =
       String.fromEnvironment('FIREBASE_IOS_CLIENT_ID');
   static const _iosBundleId = String.fromEnvironment(
@@ -26,12 +28,26 @@ class DefaultFirebaseOptions {
     defaultValue: 'com.lululu.game.lululuGame',
   );
 
-  /// True when required dart-defines (or hardcoded fill) are present.
+  static bool? _overrideConfigured;
+
+  /// True when required dart-defines (or runtime override) are present.
   static bool get isConfigured =>
-      _apiKey.isNotEmpty &&
-      _appId.isNotEmpty &&
-      _messagingSenderId.isNotEmpty &&
-      _projectId.isNotEmpty;
+      _overrideConfigured ??
+      (_apiKey.isNotEmpty &&
+          _appId.isNotEmpty &&
+          _messagingSenderId.isNotEmpty &&
+          _projectId.isNotEmpty);
+
+  /// Alias for [isConfigured] used by cloud-ready services.
+  static bool get isAvailable => isConfigured;
+
+  /// Optional test/runtime hook to override configuration detection.
+  static void setConfiguredOverride(bool? value) {
+    _overrideConfigured = value;
+  }
+
+  static String get projectId =>
+      _projectId.isNotEmpty ? _projectId : 'lululu-offline-local';
 
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -44,33 +60,43 @@ class DefaultFirebaseOptions {
         return android;
       case TargetPlatform.macOS:
         return macos;
-      default:
-        return android;
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+      case TargetPlatform.fuchsia:
+        return web;
     }
   }
 
   static FirebaseOptions get web => FirebaseOptions(
-        apiKey: _apiKey,
-        appId: _appId,
-        messagingSenderId: _messagingSenderId,
-        projectId: _projectId,
-        storageBucket: _storageBucket,
+        apiKey: _apiKey.isNotEmpty ? _apiKey : 'AIzaSyLocalFallbackKey000000000000',
+        appId: _appId.isNotEmpty ? _appId : '1:000000000000:web:localfallback',
+        messagingSenderId:
+            _messagingSenderId.isNotEmpty ? _messagingSenderId : '000000000000',
+        projectId: projectId,
+        authDomain: _authDomain.isEmpty ? null : _authDomain,
+        databaseURL: _databaseUrl.isEmpty ? null : _databaseUrl,
+        storageBucket: _storageBucket.isEmpty ? null : _storageBucket,
       );
 
   static FirebaseOptions get android => FirebaseOptions(
-        apiKey: _apiKey,
-        appId: _appId,
-        messagingSenderId: _messagingSenderId,
-        projectId: _projectId,
-        storageBucket: _storageBucket,
+        apiKey: _apiKey.isNotEmpty ? _apiKey : 'AIzaSyLocalFallbackKey000000000000',
+        appId:
+            _appId.isNotEmpty ? _appId : '1:000000000000:android:localfallback',
+        messagingSenderId:
+            _messagingSenderId.isNotEmpty ? _messagingSenderId : '000000000000',
+        projectId: projectId,
+        databaseURL: _databaseUrl.isEmpty ? null : _databaseUrl,
+        storageBucket: _storageBucket.isEmpty ? null : _storageBucket,
       );
 
   static FirebaseOptions get ios => FirebaseOptions(
-        apiKey: _apiKey,
-        appId: _appId,
-        messagingSenderId: _messagingSenderId,
-        projectId: _projectId,
-        storageBucket: _storageBucket,
+        apiKey: _apiKey.isNotEmpty ? _apiKey : 'AIzaSyLocalFallbackKey000000000000',
+        appId: _appId.isNotEmpty ? _appId : '1:000000000000:ios:localfallback',
+        messagingSenderId:
+            _messagingSenderId.isNotEmpty ? _messagingSenderId : '000000000000',
+        projectId: projectId,
+        databaseURL: _databaseUrl.isEmpty ? null : _databaseUrl,
+        storageBucket: _storageBucket.isEmpty ? null : _storageBucket,
         iosClientId: _iosClientId.isEmpty ? null : _iosClientId,
         iosBundleId: _iosBundleId,
       );

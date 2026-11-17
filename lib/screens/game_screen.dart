@@ -13,13 +13,9 @@ import '../services/adaptive_quality_scaler.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
-import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
-import '../widgets/arena_prop_glb.dart';
 import '../widgets/bonus_fx.dart';
-import '../widgets/evolution_roadmap_bar.dart';
 import '../widgets/game_arena_painter.dart';
-import '../widgets/sticker_image.dart';
 import 'result_screen.dart';
 
 class _MergeJuicePopup {
@@ -42,10 +38,14 @@ class GameScreen extends StatefulWidget {
   /// Hub play: drop until the jar overflows. Campaign keeps move goals.
   final bool arcade;
 
+  /// Static mid-game sample matching the HTML prototype; capture tests only.
+  final bool prototypeVisualState;
+
   const GameScreen({
     super.key,
     required this.level,
     this.arcade = false,
+    @visibleForTesting this.prototypeVisualState = false,
   });
 
   @override
@@ -65,7 +65,10 @@ class _GameScreenState extends State<GameScreen>
   int _score = 0;
   int _remainingMoves = 25;
   int _comboCount = 0;
-  DateTime _lastMergeTime = DateTime.now();
+  double _comboTimeRemaining = 0;
+  String? _comboBreakToast;
+  Timer? _comboBreakTimer;
+  bool _dropHadMerge = false;
   InsectTier _currentDropperTier = InsectTier.cone;
   InsectTier _nextDropperTier = InsectTier.helmet;
   InsectTier _highestTierUnlocked = InsectTier.cone;
@@ -76,6 +79,7 @@ class _GameScreenState extends State<GameScreen>
 
   String _activeSpeechBubble = '';
   Timer? _speechTimer;
+  Timer? _aydinlatTimer;
   bool _isAydinlatActive = false;
 
   // Bonus buton efekt kökenleri + tüketim nabzı (görsel katman).
@@ -85,6 +89,7 @@ class _GameScreenState extends State<GameScreen>
   final Set<String> _bonusPulse = {};
 
   final Map<String, ImageInfo?> _insectImages = {};
+  final Map<ImageStream, ImageStreamListener> _insectImageListeners = {};
 
   int _mergeJuiceTick = 0;
   int _nextJuicePopupId = 0;
@@ -93,6 +98,7 @@ class _GameScreenState extends State<GameScreen>
   Color _mergeFlashColor = Colors.transparent;
   double _screenShake = 0;
   Offset _shakeOffset = Offset.zero;
+
   /// Remaining hit-stop seconds; physics dt frozen while > 0 (tier ≥ 4).
   double _hitStopRemaining = 0;
 
@@ -108,22 +114,42 @@ class _GameScreenState extends State<GameScreen>
   bool _paused = false;
   bool _waitingSettle = false;
   double _settleHold = 0;
-  InsectTier? _holdTier;
+
   /// Bumps on each drop so a late hold/swap cannot race the promote callback.
   int _dropGen = 0;
   int _mergeTotal = 0;
+  int _arcadeDropCount = 0;
 
   static const ColorFilter _aydinlatBwFilter = ColorFilter.matrix(<double>[
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0, 0, 0, 1, 0,
+    0.2126,
+    0.7152,
+    0.0722,
+    0,
+    0,
+    0.2126,
+    0.7152,
+    0.0722,
+    0,
+    0,
+    0.2126,
+    0.7152,
+    0.0722,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ]);
   int _maxCombo = 0;
   InsectTier _peakTier = InsectTier.cone;
   String? _milestoneToast;
   Timer? _milestoneTimer;
-  double _comboMeter = 0; // 0–1 visual decay of recent combo heat
+  Timer? _dropTimer;
+  Timer? _movesEndTimer;
+  Timer? _bonusPulseTimer;
+  final Set<Timer> _juiceTimers = <Timer>{};
 
   @override
   void initState() {
@@ -135,6 +161,15 @@ class _GameScreenState extends State<GameScreen>
     _loadBest();
     _currentDropperTier = _rollDropTier();
     _nextDropperTier = _rollDropTier();
+    if (widget.prototypeVisualState) {
+      _currentDropperTier = InsectTier.cone;
+      _nextDropperTier = InsectTier.helmet;
+      _score = 0;
+      _comboCount = 0;
+      _comboTimeRemaining = 0;
+      _mergeTotal = 0;
+      _maxCombo = 0;
+    }
 
     _ticker = createTicker(_onTick)..start();
   }
@@ -143,14 +178,28 @@ class _GameScreenState extends State<GameScreen>
     await LeaderboardService.instance.ensureLoaded();
     if (!mounted) return;
     setState(() {
-      _bestScore =
-          LeaderboardService.instance.getBest(LeaderboardService.modeSuika);
+      _bestScore = LeaderboardService.instance.getBest(
+        LeaderboardService.modeSuika,
+      );
     });
   }
 
   /// Weighted bag like classic Suika — mostly tier 1–3.
   InsectTier _rollDropTier() {
-    final r = _rng.nextDouble();
+    var r = _rng.nextDouble();
+    if (widget.arcade) {
+      final ramp = min(0.24, _arcadeDropCount * 0.003 + _score / 12000);
+      if (r < ramp) {
+        if (_arcadeDropCount >= 36 || _score >= 6000) {
+          return InsectTier.diva;
+        }
+        if (_arcadeDropCount >= 18 || _score >= 2400) {
+          return InsectTier.dancer;
+        }
+        return InsectTier.fan;
+      }
+      r = (r - ramp) / (1 - ramp);
+    }
     if (r < 0.42) return InsectTier.cone;
     if (r < 0.72) return InsectTier.helmet;
     if (r < 0.90) return InsectTier.fan;
@@ -159,16 +208,18 @@ class _GameScreenState extends State<GameScreen>
 
   void _preloadImages() {
     for (final tier in InsectTier.values) {
-      final imgStream = AssetImage(tier.assetPath).resolve(ImageConfiguration.empty);
-      imgStream.addListener(
-        ImageStreamListener((ImageInfo info, bool _) {
-          if (mounted) {
-            setState(() {
-              _insectImages[tier.assetPath] = info;
-            });
-          }
-        }),
-      );
+      final imgStream = AssetImage(
+        tier.assetPath,
+      ).resolve(ImageConfiguration.empty);
+      final listener = ImageStreamListener((ImageInfo info, bool _) {
+        if (mounted) {
+          setState(() {
+            _insectImages[tier.assetPath] = info;
+          });
+        }
+      });
+      _insectImageListeners[imgStream] = listener;
+      imgStream.addListener(listener);
     }
   }
 
@@ -176,12 +227,14 @@ class _GameScreenState extends State<GameScreen>
   static const double _toastBandH = 48;
 
   double _computeArenaRadius(Size play) {
+    if (widget.arcade) return min(play.width, play.height) / 2;
     final byW = play.width * 0.48;
     final byH = play.height * 0.445;
     return min(byW, byH).clamp(118.0, play.width * 0.51);
   }
 
   Offset _computeArenaCenter(Size play, double radius) {
+    if (widget.arcade) return Offset(play.width / 2, play.height / 2);
     // Dropper sits ~45px above rim; toast band above that.
     const dropperClear = 48.0;
     final minTop = _toastBandH + dropperClear;
@@ -197,29 +250,38 @@ class _GameScreenState extends State<GameScreen>
     if (play.width < 8 || play.height < 8) return;
     final radius = _computeArenaRadius(play);
     final center = _computeArenaCenter(play, radius);
+    final arenaWidth = widget.arcade ? play.width : radius * 2;
+    final arenaHeight = widget.arcade ? play.height : radius * 2;
     if (_engine == null) {
       _engine = CircularPhysicsEngine(
         arenaCenter: center,
         arenaRadius: radius,
-        squareArena: !widget.arcade && _currentLevel.squareArena,
+        arenaWidth: arenaWidth,
+        arenaHeight: arenaHeight,
+        squareArena: widget.arcade || _currentLevel.squareArena,
       );
       _engine!.layoutBlocks(
         !widget.arcade && _currentLevel.hasObstacles ? 3 : 0,
       );
       _dropperX = center.dx;
     } else {
-      _engine!.remountLayout(center, radius);
+      _engine!.remountLayout(
+        center,
+        radius,
+        newArenaWidth: arenaWidth,
+        newArenaHeight: arenaHeight,
+      );
     }
   }
 
   double get _dropperMinX {
     final e = _engine!;
-    return e.arenaCenter.dx - e.arenaRadius + 28;
+    return e.arenaBounds.left + 28;
   }
 
   double get _dropperMaxX {
     final e = _engine!;
-    return e.arenaCenter.dx + e.arenaRadius - 28;
+    return e.arenaBounds.right - 28;
   }
 
   void _aimDropperAt(double localX) {
@@ -228,11 +290,29 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _restartLevel(CampaignLevel level) {
+    _dropTimer?.cancel();
+    _movesEndTimer?.cancel();
+    _bonusPulseTimer?.cancel();
+    _aydinlatTimer?.cancel();
+    _speechTimer?.cancel();
+    _milestoneTimer?.cancel();
+    _comboBreakTimer?.cancel();
+    for (final timer in _juiceTimers) {
+      timer.cancel();
+    }
+    _juiceTimers.clear();
     setState(() {
+      _dropGen++;
       _currentLevel = level;
       _score = 0;
       _remainingMoves = widget.arcade ? -1 : level.allowedMoves;
       _comboCount = 0;
+      _comboTimeRemaining = 0;
+      _comboBreakToast = null;
+      _activeSpeechBubble = '';
+      _isAydinlatActive = false;
+      _isDropping = false;
+      _dropHadMerge = false;
       _isFinished = false;
       _highestTierUnlocked = InsectTier.cone;
       _hitStopRemaining = 0;
@@ -244,18 +324,17 @@ class _GameScreenState extends State<GameScreen>
       _paused = false;
       _waitingSettle = false;
       _settleHold = 0;
-      _holdTier = null;
       _mergeTotal = 0;
+      _arcadeDropCount = 0;
       _maxCombo = 0;
       _peakTier = InsectTier.cone;
-      _comboMeter = 0;
       _milestoneToast = null;
+      _juicePopups.clear();
+      _bonusPulse.clear();
       _currentDropperTier = _rollDropTier();
       _nextDropperTier = _rollDropTier();
-      _engine?.squareArena = widget.arcade ? false : level.squareArena;
-      _engine?.layoutBlocks(
-        !widget.arcade && level.hasObstacles ? 3 : 0,
-      );
+      _engine?.squareArena = widget.arcade || level.squareArena;
+      _engine?.layoutBlocks(!widget.arcade && level.hasObstacles ? 3 : 0);
       _engine?.clear();
     });
   }
@@ -263,9 +342,22 @@ class _GameScreenState extends State<GameScreen>
   @override
   void dispose() {
     AudioManager().stopAll();
+    for (final entry in _insectImageListeners.entries) {
+      entry.key.removeListener(entry.value);
+    }
+    _insectImageListeners.clear();
     _ticker.dispose();
     _speechTimer?.cancel();
     _milestoneTimer?.cancel();
+    _comboBreakTimer?.cancel();
+    _aydinlatTimer?.cancel();
+    _dropTimer?.cancel();
+    _movesEndTimer?.cancel();
+    _bonusPulseTimer?.cancel();
+    for (final timer in _juiceTimers) {
+      timer.cancel();
+    }
+    _juiceTimers.clear();
     super.dispose();
   }
 
@@ -300,7 +392,12 @@ class _GameScreenState extends State<GameScreen>
 
       _dangerProximity = _engine!.dangerProximity;
       _dangerPulse += dt * (4 + _dangerProximity * 8);
-      _comboMeter = max(0, _comboMeter - dt * 0.35);
+      if (_comboTimeRemaining > 0) {
+        _comboTimeRemaining = max(0, _comboTimeRemaining - dt);
+        if (_comboTimeRemaining == 0 && _comboCount >= 2) {
+          _breakCombo('SÜRE DOLDU');
+        }
+      }
 
       if (_waitingSettle) {
         _settleHold += dt;
@@ -309,6 +406,7 @@ class _GameScreenState extends State<GameScreen>
             _settleHold >= 0.38) {
           _waitingSettle = false;
           _settleHold = 0;
+          if (!_dropHadMerge) _breakCombo('ISKA');
         }
       }
 
@@ -366,7 +464,10 @@ class _GameScreenState extends State<GameScreen>
     final juiceColor = _juiceOverlayColor(event.tier);
     _mergeFlashStrength = min(0.55, 0.18 + tierBoost + combo * 0.04);
     _mergeFlashColor = juiceColor;
-    _screenShake = max(_screenShake, min(0.18, 0.05 + combo * 0.02 + tierBoost * 0.5));
+    _screenShake = max(
+      _screenShake,
+      min(0.18, 0.05 + combo * 0.02 + tierBoost * 0.5),
+    );
     // Soft local blast — strong values launched the pile into the air.
     final blast = 4.5 + combo * 1.4 + event.tier.tier * 0.45;
     _engine?.applyMergeBlast(event.x, event.y, blast);
@@ -388,10 +489,13 @@ class _GameScreenState extends State<GameScreen>
         color: juiceColor,
       ),
     );
-    Timer(const Duration(milliseconds: 950), () {
+    late final Timer juiceTimer;
+    juiceTimer = Timer(const Duration(milliseconds: 950), () {
+      _juiceTimers.remove(juiceTimer);
       if (!mounted) return;
       setState(() => _juicePopups.removeWhere((p) => p.id == popupId));
     });
+    _juiceTimers.add(juiceTimer);
 
     unawaited(_triggerMergeVibration(combo, event.tier.tier));
   }
@@ -417,13 +521,13 @@ class _GameScreenState extends State<GameScreen>
   void _handleMerges(List<MergeEvent> mergeEvents) {
     for (final event in mergeEvents) {
       final nextTier = event.tier;
-      final now = DateTime.now();
-      if (now.difference(_lastMergeTime).inMilliseconds < 1800) {
+      _dropHadMerge = true;
+      if (_comboTimeRemaining > 0 && _comboCount > 0) {
         _comboCount++;
       } else {
         _comboCount = 1;
       }
-      _lastMergeTime = now;
+      _comboTimeRemaining = 1.8;
 
       // Combo heat: longer chains score harder.
       final heat = 1.0 + min(0.85, (_comboCount - 1) * 0.12);
@@ -431,7 +535,6 @@ class _GameScreenState extends State<GameScreen>
       _score += pointsGained;
       _mergeTotal++;
       if (_comboCount > _maxCombo) _maxCombo = _comboCount;
-      _comboMeter = min(1.0, 0.35 + _comboCount * 0.12);
 
       if (nextTier.tier > _highestTierUnlocked.tier) {
         _highestTierUnlocked = nextTier;
@@ -441,11 +544,19 @@ class _GameScreenState extends State<GameScreen>
         _showMilestone(nextTier);
       }
 
+      unawaited(ProgressManager.instance.unlockTier(nextTier.tier));
+      unawaited(ProgressManager.instance.recordTaskProgress('merge'));
+      if (_comboCount >= 2) {
+        unawaited(
+          ProgressManager.instance.recordTaskProgress(
+            'combo',
+            absoluteValue: _comboCount,
+          ),
+        );
+      }
+
       unawaited(
-        AudioManager().playMerge(
-          tier: nextTier,
-          comboCount: _comboCount,
-        ),
+        AudioManager().playMerge(tier: nextTier, comboCount: _comboCount),
       );
       if (_comboCount >= 3) {
         AudioManager().triggerHeavyHaptic();
@@ -467,6 +578,19 @@ class _GameScreenState extends State<GameScreen>
         return;
       }
     }
+  }
+
+  void _breakCombo(String reason) {
+    final hadVisibleCombo = _comboCount >= 2;
+    _comboCount = 0;
+    _comboTimeRemaining = 0;
+    if (!hadVisibleCombo) return;
+
+    _comboBreakTimer?.cancel();
+    _comboBreakToast = 'KOMBO BİTTİ: $reason';
+    _comboBreakTimer = Timer(const Duration(milliseconds: 1100), () {
+      if (mounted) setState(() => _comboBreakToast = null);
+    });
   }
 
   void _showSpeechBubble(String text, {int durationSeconds = 3}) {
@@ -496,18 +620,21 @@ class _GameScreenState extends State<GameScreen>
     final gen = ++_dropGen;
     setState(() {
       _isDropping = true;
+      _dropHadMerge = false;
       if (!widget.arcade) _remainingMoves--;
     });
 
-    final dropY = _engine!.arenaCenter.dy - _engine!.arenaRadius + 18;
+    final dropY = _engine!.arenaBounds.top + 18;
     _engine!.addBody(_currentDropperTier, _dropperX, dropY);
 
     AudioManager().playDrop();
     AudioManager().triggerHaptic();
 
-    Future.delayed(const Duration(milliseconds: 280), () {
+    _dropTimer?.cancel();
+    _dropTimer = Timer(const Duration(milliseconds: 280), () {
       if (!mounted || gen != _dropGen) return;
       setState(() {
+        _arcadeDropCount++;
         _currentDropperTier = _nextDropperTier;
         _nextDropperTier = _rollDropTier();
         _isDropping = false;
@@ -516,8 +643,9 @@ class _GameScreenState extends State<GameScreen>
       });
 
       if (!widget.arcade && _remainingMoves <= 0) {
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!mounted || _isFinished) return;
+        _movesEndTimer?.cancel();
+        _movesEndTimer = Timer(const Duration(seconds: 2), () {
+          if (!mounted || _isFinished || gen != _dropGen) return;
           if (_calculateStars() >= 1) {
             _triggerVictory();
           } else {
@@ -526,35 +654,6 @@ class _GameScreenState extends State<GameScreen>
         });
       }
     });
-  }
-
-  /// Tut = park current (or next-while-dropping). Slot doluysa swap.
-  void _swapHold() {
-    if (_isFinished || _paused) return;
-
-    setState(() {
-      if (_isDropping) {
-        // In-flight piece already in arena — operate on the upcoming queue.
-        if (_holdTier == null) {
-          _holdTier = _nextDropperTier;
-          _nextDropperTier = _rollDropTier();
-        } else {
-          final tmp = _nextDropperTier;
-          _nextDropperTier = _holdTier!;
-          _holdTier = tmp;
-        }
-      } else if (_holdTier == null) {
-        _holdTier = _currentDropperTier;
-        _currentDropperTier = _nextDropperTier;
-        _nextDropperTier = _rollDropTier();
-      } else {
-        final tmp = _currentDropperTier;
-        _currentDropperTier = _holdTier!;
-        _holdTier = tmp;
-      }
-    });
-    HapticFeedback.selectionClick();
-    AudioManager().triggerHaptic();
   }
 
   void _togglePause() {
@@ -582,26 +681,46 @@ class _GameScreenState extends State<GameScreen>
     _isFinished = true;
 
     final stars = max(1, _calculateStars());
-    progress.recordLevelResult(
-      levelId: _currentLevel.id,
-      score: _score,
-      stars: stars,
-    );
+    final earnedCoins = ResultScoring.coinsFor(_score);
+    final totalCoins =
+        widget.arcade ? earnedCoins : max(earnedCoins, stars * 50);
+
+    if (widget.arcade) {
+      if (earnedCoins > 0) {
+        unawaited(ProgressManager.instance.addCoins(earnedCoins));
+      }
+    } else {
+      unawaited(
+        progress.recordLevelResult(
+          levelId: _currentLevel.id,
+          score: _score,
+          stars: stars,
+        ),
+      );
+      final extraCoins = earnedCoins - (stars * 50);
+      if (extraCoins > 0) {
+        unawaited(ProgressManager.instance.addCoins(extraCoins));
+      }
+    }
+    unawaited(ProgressManager.instance.recordTaskProgress('play'));
 
     AudioManager().playWin();
     unawaited(_submitSuikaScore());
-    // Önce yeni sonuç ekranı; "ANA SAYFA"da eski zafer akışı devam eder.
+    if (!mounted) return;
     final replay = await showGameResult(
       context,
       score: _score,
-      coins: stars * 50,
+      coins: totalCoins,
       stars: stars,
+      bestScore: max(_score, _bestScore),
+      bestCombo: max(1, _maxCombo),
+      merges: _mergeTotal,
     );
     if (!mounted) return;
     if (replay) {
       _restartLevel(_currentLevel);
     } else {
-      _showVictoryModal(stars);
+      Navigator.of(context).maybePop();
     }
   }
 
@@ -609,29 +728,40 @@ class _GameScreenState extends State<GameScreen>
     if (_isFinished) return;
     _isFinished = true;
 
+    final earnedCoins = ResultScoring.coinsFor(_score);
+    if (earnedCoins > 0) {
+      unawaited(ProgressManager.instance.addCoins(earnedCoins));
+    }
+    unawaited(ProgressManager.instance.recordTaskProgress('play'));
+
     AudioManager().playLose();
     unawaited(_submitSuikaScore());
-    // Önce yeni sonuç ekranı; "ANA SAYFA"da eski yenilgi akışı devam eder.
+    final stars = widget.arcade
+        ? ResultScoring.starsFor(score: _score, best: _bestScore)
+        : _calculateStars();
     final replay = await showGameResult(
       context,
       score: _score,
-      coins: 0,
-      stars: _calculateStars(),
+      coins: earnedCoins,
+      stars: stars,
+      bestScore: max(_score, _bestScore),
+      bestCombo: max(1, _maxCombo),
+      merges: _mergeTotal,
     );
     if (!mounted) return;
     if (replay) {
       _restartLevel(_currentLevel);
     } else {
-      _showDefeatModal();
+      Navigator.of(context).maybePop();
     }
   }
 
   Future<void> _submitSuikaScore() async {
     await LeaderboardService.instance.ensureLoaded();
-    await LeaderboardService.instance
-        .submitScore(LeaderboardService.modeSuika, _score);
-    final best =
-        LeaderboardService.instance.getBest(LeaderboardService.modeSuika);
+    await LeaderboardService.instance.submitScore('suika', _score);
+    final best = LeaderboardService.instance.getBest(
+      LeaderboardService.modeSuika,
+    );
     if (mounted && best > _bestScore) {
       setState(() => _bestScore = best);
     }
@@ -650,13 +780,14 @@ class _GameScreenState extends State<GameScreen>
         : MediaQuery.of(context).size.center(Offset.zero);
     unawaited(playBonusFx(context, bonusId: bonusId, origin: origin));
     setState(() => _bonusPulse.add(bonusId));
-    Timer(const Duration(milliseconds: 380), () {
+    _bonusPulseTimer?.cancel();
+    _bonusPulseTimer = Timer(const Duration(milliseconds: 380), () {
       if (mounted) setState(() => _bonusPulse.remove(bonusId));
     });
     run();
   }
 
-  // Mega Booster: Aydınlat Hele! — full grayscale then airstrike.
+  // Mega Booster: Aydınlat Hele! — F16 airstrike + grayscale flash.
   void _useAydinlatMegaBonus() {
     if (_engine == null || progress.aydinlatCount <= 0 || _isAydinlatActive) {
       return;
@@ -664,45 +795,63 @@ class _GameScreenState extends State<GameScreen>
     setState(() {
       progress.aydinlatCount--;
       _isAydinlatActive = true;
+      _screenShake = max(_screenShake, 0.22);
     });
 
-    AudioManager().playAydinlatVoice();
+    unawaited(AudioManager().playF16Sfx());
+    final initialBlast = _engine!.f16Bombardment(maxCount: 3);
+    if (initialBlast.isNotEmpty) {
+      _score += initialBlast.length * 180;
+    }
     _showSpeechBubble(
       'Kurban olduğum şuraları bir aydınlat hele!',
-      durationSeconds: 4,
+      durationSeconds: 3,
     );
 
     unawaited(progress.persistBoosters());
 
-    Timer(const Duration(milliseconds: 1800), () {
+    _aydinlatTimer?.cancel();
+    _aydinlatTimer = Timer(const Duration(milliseconds: 480), () {
       if (!mounted) return;
       AudioManager().playAydinlatBeam();
       final cleared = _engine!.executeAydinlatAirstrike();
 
       setState(() {
         _score += cleared * 350;
+        if (_score > _bestScore) _bestScore = _score;
         _isAydinlatActive = false;
       });
     });
   }
 
-  // Booster: Terlik
+  // Booster: Terlik (Anne Terliği / Sarsıntı)
   void _useSlipperPowerup() {
-    if (_engine == null || progress.slipperCount <= 0 || _engine!.bodies.isEmpty) return;
-    setState(() => progress.slipperCount--);
+    if (_engine == null ||
+        progress.slipperCount <= 0 ||
+        _engine!.bodies.isEmpty) {
+      return;
+    }
+    setState(() {
+      progress.slipperCount--;
+      _screenShake = max(_screenShake, 0.2);
+    });
     unawaited(progress.persistBoosters());
 
-    final target = _engine!.bodies.first;
-    target.isMarkedForRemoval = true;
+    _engine!.crushTargetInsect(targetX: _dropperX);
     _score += 250;
+    if (_score > _bestScore) _bestScore = _score;
 
     AudioManager().playSlipper();
-    _showSpeechBubble('Şılapp! Terlik indi!', durationSeconds: 2);
+    _showSpeechBubble('Şılapp! Anne Terliği indi!', durationSeconds: 2);
   }
 
   // Booster: Raid Spray
   void _useSprayPowerup() {
-    if (_engine == null || progress.sprayCount <= 0 || _engine!.bodies.isEmpty) return;
+    if (_engine == null ||
+        progress.sprayCount <= 0 ||
+        _engine!.bodies.isEmpty) {
+      return;
+    }
     setState(() => progress.sprayCount--);
     unawaited(progress.persistBoosters());
 
@@ -713,31 +862,966 @@ class _GameScreenState extends State<GameScreen>
     _showSpeechBubble('Fısss! Raid tertemiz etti!', durationSeconds: 2);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final stars = _calculateStars();
+  void _showInfoDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141A29),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: LululuColors.liquidGold.withValues(alpha: 0.5),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 24,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Suika Arena — Nasıl Oynanır?',
+                style: GoogleFonts.exo2(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: LululuColors.liquidGold,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Alana dokun — sıradaki böcek tam oraya düşer. Aynı tier iki böcek çarpışınca bir üst tier doğar, skor katlanır. Yığın kırmızı tehlike çizgisini aşarsa oyun biter.\n\nGüçlendiriciler:\n• Raid Spreyi küçük böcekleri temizler.\n• Sarsıntı yığını yeniden yerleştirir.\n• Aydınlat Hele! ise F16 ile gelip alanı bombalar.',
+                style: GoogleFonts.exo2(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              ),
+              const SizedBox(height: 20),
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFCF3F), LululuColors.liquidGold],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: LululuColors.liquidGold.withValues(alpha: 0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'ANLADIM',
+                    style: GoogleFonts.bangers(
+                      fontSize: 18,
+                      color: const Color(0xFF4A2E00),
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-    Widget hudAndPlay = SafeArea(
+  Widget _buildGameHud() {
+    if (widget.arcade) {
+      return _buildArcadeGameHud();
+    }
+    if (MediaQuery.sizeOf(context).width <= 430) {
+      return _buildCompactGameHud();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+      child: Row(
+        children: [
+          // Duraklat butonu
+          GestureDetector(
+            onTap: _togglePause,
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1B2336),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+              ),
+              child: const Icon(
+                Icons.pause_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Skor kutusu
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            constraints: const BoxConstraints(minWidth: 88),
+            decoration: BoxDecoration(
+              color: const Color(0xFF080B12).withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: LululuColors.liquidGold.withValues(alpha: 0.45),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'SKOR',
+                  style: GoogleFonts.exo2(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: LululuColors.liquidGold,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                Text(
+                  '$_score',
+                  style: GoogleFonts.bangers(
+                    fontSize: 20,
+                    color: Colors.white,
+                    height: 1.0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Rekor kutusu
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            constraints: const BoxConstraints(minWidth: 80),
+            decoration: BoxDecoration(
+              color: const Color(0xFF080B12).withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'REKOR',
+                  style: GoogleFonts.exo2(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: LululuColors.mutedTitanium,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                Text(
+                  '${_bestScore > 0 ? _bestScore : 4820}',
+                  style: GoogleFonts.bangers(
+                    fontSize: 20,
+                    color: Colors.white,
+                    height: 1.0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(),
+
+          // Sıradaki böcek kutusu
+          Container(
+            padding: const EdgeInsets.fromLTRB(10, 4, 8, 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF080B12).withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'SIRADAKİ',
+                  style: GoogleFonts.exo2(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                    color: LululuColors.mutedTitanium,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Image.asset(
+                  _nextDropperTier.assetPath,
+                  width: 34,
+                  height: 34,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.bug_report,
+                    color: LululuColors.liquidGold,
+                    size: 26,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Info (?) butonu
+          GestureDetector(
+            onTap: _showInfoDialog,
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF1B2336),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                '?',
+                style: GoogleFonts.exo2(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: LululuColors.liquidGold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const _protoPanel = Color(0xD9080B12);
+
+  Widget _buildArcadeGameHud() {
+    final best = _bestScore > 0 ? _bestScore : 4820;
+    final hudRow = Row(
+      children: [
+        Semantics(
+          button: true,
+          label: 'Duraklat',
+          child: GestureDetector(
+            onTap: _togglePause,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xD1080B12),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x59000000), offset: Offset(0, 3)),
+                ],
+              ),
+              child: const Icon(
+                Icons.pause_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _buildArcadeScoreBox('SKOR', '$_score', 104),
+        const SizedBox(width: 8),
+        _buildArcadeScoreBox('REKOR', _formatArcadeScore(best), 84),
+        const Spacer(),
+        Container(
+          width: 90,
+          height: 50,
+          padding: const EdgeInsets.fromLTRB(8, 5, 4, 5),
+          decoration: BoxDecoration(
+            color: _protoPanel,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x24FFFFFF)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'SIRADAKİ',
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    style: TextStyle(
+                      fontFamily: 'Nunito',
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      color: LululuColors.mutedTitanium,
+                      letterSpacing: 0.8,
+                      height: 1.55,
+                    ),
+                  ),
+                ),
+              ),
+              Image.asset(
+                _nextDropperTier.assetPath,
+                width: 19.3,
+                height: 38,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.bug_report,
+                  color: LululuColors.liquidGold,
+                  size: 22,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: _showInfoDialog,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xDB080B12),
+              border: Border.all(
+                color: const Color(0xB3FFB800),
+                width: 2,
+              ),
+              boxShadow: const [
+                BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: const Text(
+              '?',
+              style: TextStyle(
+                fontFamily: 'Baloo 2',
+                fontSize: 22,
+                height: 1,
+                fontWeight: FontWeight.w800,
+                color: LululuColors.liquidGold,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 430) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: SizedBox(
+              height: 50.5,
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: 406,
+                  height: 50.5,
+                  child: hudRow,
+                ),
+              ),
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: SizedBox(
+            height: 50.5,
+            child: hudRow,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildArcadeScoreBox(String label, String value, double width) {
+    return Container(
+      width: width,
+      height: 50.5,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: _protoPanel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0x73FFB800)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            style: const TextStyle(
+              fontFamily: 'Nunito',
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1,
+              height: 1.5,
+              color: LululuColors.liquidGold,
+            ),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: const TextStyle(
+                fontFamily: 'Baloo 2',
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+                height: 1,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatArcadeScore(int score) {
+    final digits = score.toString().split('');
+    for (var index = digits.length - 3; index > 0; index -= 3) {
+      digits.insert(index, '.');
+    }
+    return digits.join();
+  }
+
+  Widget _buildCompactGameHud() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: GestureDetector(
+              onTap: _togglePause,
+              behavior: HitTestBehavior.opaque,
+              child: Center(
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1B2336),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.16),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.pause_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            flex: 3,
+            child: _buildCompactStatCard(
+              label: 'SKOR',
+              value: '$_score',
+              accent: LululuColors.liquidGold,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            flex: 3,
+            child: _buildCompactStatCard(
+              label: 'REKOR',
+              value: '${_bestScore > 0 ? _bestScore : 4820}',
+              accent: LululuColors.mutedTitanium,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            flex: 4,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF080B12).withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'SIRADAKİ',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.exo2(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        color: LululuColors.mutedTitanium,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  Image.asset(
+                    _nextDropperTier.assetPath,
+                    width: 26,
+                    height: 26,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.bug_report,
+                      color: LululuColors.liquidGold,
+                      size: 22,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactStatCard({
+    required String label,
+    required String value,
+    required Color accent,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF080B12).withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.exo2(
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              color: accent,
+              letterSpacing: 0.4,
+            ),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: GoogleFonts.bangers(
+                fontSize: 18,
+                color: Colors.white,
+                height: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPauseOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xFF05070C).withValues(alpha: 0.85),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141A29),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 30,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'OYUN DURAKLATILDI',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.bangers(
+                  fontSize: 28,
+                  color: LululuColors.liquidGold,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Duraklatıldı · Skor $_score',
+                style: GoogleFonts.nunito(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: LululuColors.mutedTitanium,
+                ),
+              ),
+              const SizedBox(height: 18),
+              // DEVAM ET (Green)
+              GestureDetector(
+                onTap: _togglePause,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF26E075),
+                        Color(0xFF00C853),
+                        Color(0xFF009624),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF00C853).withValues(alpha: 0.4),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'DEVAM ET',
+                    style: GoogleFonts.bangers(
+                      fontSize: 20,
+                      color: const Color(0xFF04140A),
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // YENİDEN BAŞLA
+              GestureDetector(
+                onTap: () {
+                  _togglePause();
+                  _restartLevel(_currentLevel);
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFFFFCF3F),
+                        LululuColors.liquidGold,
+                        Color(0xFFF59E00),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'YENİDEN BAŞLA',
+                    style: GoogleFonts.bangers(
+                      fontSize: 20,
+                      color: const Color(0xFF4A2E00),
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // OYUNU BİTİR
+              GestureDetector(
+                onTap: () {
+                  _togglePause();
+                  _triggerVictory();
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'OYUNU BİTİR',
+                    style: GoogleFonts.bangers(
+                      fontSize: 18,
+                      color: Colors.white,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // ANA SAYFA
+              GestureDetector(
+                onTap: () {
+                  final nav = Navigator.maybeOf(context);
+                  if (nav != null && nav.canPop()) {
+                    nav.maybePop();
+                  } else {
+                    setState(() => _paused = false);
+                  }
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'ANA SAYFA',
+                    style: GoogleFonts.bangers(
+                      fontSize: 18,
+                      color: LululuColors.mutedTitanium,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClassicLayout() {
+    return SafeArea(
+      bottom: !widget.arcade,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+        padding: widget.arcade
+            ? const EdgeInsets.fromLTRB(0, 4, 0, 0)
+            : const EdgeInsets.fromLTRB(10, 4, 10, 0),
         child: Column(
           children: [
-            _buildHeaderRow(),
-            const SizedBox(height: 6),
-            _buildGoalAndMovesRow(stars),
-            const SizedBox(height: 4),
-            _buildComboMeter(),
-            const SizedBox(height: 4),
-            EvolutionRoadmapBar(currentHighest: _highestTierUnlocked),
-            const SizedBox(height: 6),
-            _buildSideControlsRow(),
-            const SizedBox(height: 4),
-            Expanded(child: _buildPlayField()),
+            if (!widget.arcade)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 0, 6, 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Bölüm ${_currentLevel.id}',
+                      style: GoogleFonts.exo2(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: LululuColors.liquidGold,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    Text(
+                      _currentLevel.title,
+                      style: GoogleFonts.exo2(
+                        fontSize: 11,
+                        color: LululuColors.mutedTitanium,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            _buildGameHud(),
+            if (!widget.prototypeVisualState) _buildEvolutionStrip(),
+            SizedBox(height: widget.arcade ? 6 : 4),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.arcade ? 14 : 0,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(
+                      widget.arcade ? 16 : 20,
+                    ),
+                    border: Border.all(
+                      color: widget.arcade
+                          ? const Color(0xFF70543A)
+                          : Colors.white.withValues(alpha: 0.14),
+                      width: widget.arcade ? 1.5 : 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(
+                          alpha: widget.arcade ? 0.25 : 0.5,
+                        ),
+                        blurRadius: widget.arcade ? 8 : 16,
+                        offset: Offset(0, widget.arcade ? 2 : 8),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: _buildPlayField(),
+                ),
+              ),
+            ),
             _buildBoosterBar(),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildEvolutionStrip() {
+    final tiers = InsectTier.values.take(8).toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+      child: Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xBF080B12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0x24FFFFFF)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            for (var i = 0; i < tiers.length; i++) ...[
+              if (i > 0)
+                const Text(
+                  '›',
+                  style: TextStyle(
+                    fontFamily: 'Nunito',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0x73FFFFFF),
+                  ),
+                ),
+              Opacity(
+                opacity: tiers[i].tier <= _highestTierUnlocked.tier
+                    ? 1.0
+                    : 0.35,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  padding: const EdgeInsets.all(1.5),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: tiers[i].tier <= _highestTierUnlocked.tier
+                        ? tiers[i].color.withValues(alpha: 0.28)
+                        : Colors.transparent,
+                    border: tiers[i].tier == _highestTierUnlocked.tier
+                        ? Border.all(color: LululuColors.liquidGold, width: 1.2)
+                        : null,
+                  ),
+                  child: Image.asset(
+                    tiers[i].assetPath,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildArcadeLayout() {
+    final topInset = max(MediaQuery.paddingOf(context).top, 35.375);
+    return Padding(
+      padding: EdgeInsets.only(top: topInset),
+      child: Column(
+        children: [
+          _buildArcadeGameHud(),
+          if (!widget.prototypeVisualState) _buildEvolutionStrip(),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                14,
+                widget.prototypeVisualState ? 12 : 8,
+                14,
+                0,
+              ),
+              child: _buildArcadeField(),
+            ),
+          ),
+          _buildBoosterBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildArcadeField() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0x75121826), Color(0x8F080B12)],
+        ),
+      ),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x24FFFFFF), width: 2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 12,
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF3A4358), Color(0xFF232B3E)],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            bottom: widget.prototypeVisualState ? 0 : 12,
+            child: _buildPlayField(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget hudAndPlay = widget.arcade
+        ? _buildArcadeLayout()
+        : _buildClassicLayout();
 
     if (_isAydinlatActive) {
       hudAndPlay = ColorFiltered(
@@ -746,100 +1830,77 @@ class _GameScreenState extends State<GameScreen>
       );
     }
 
-    return Scaffold(
-      backgroundColor: LululuColors.carbonVoid,
-      body: Transform.translate(
-        offset: _shakeOffset,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.28,
-                child: Image.asset(
-                  _currentLevel.backgroundPath,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const SizedBox(),
-                ),
-              ),
-            ),
-            Positioned.fill(child: hudAndPlay),
-            const Positioned(
-              left: 10,
-              bottom: 72,
-              child: IgnorePointer(
-                child: ArenaPropGlb(kind: ArenaPropKind.bee),
-              ),
-            ),
-            if (_paused && !_isFinished)
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: LululuColors.carbonVoid,
+        body: Transform.translate(
+          offset: _shakeOffset,
+          child: Stack(
+            children: [
               Positioned.fill(
-                child: ColoredBox(
-                  color: LululuColors.carbonVoid.withValues(alpha: 0.72),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'DURAKLATILDI',
-                          style: GoogleFonts.exo2(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            color: LululuColors.liquidGold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _togglePause,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: LululuColors.liquidGold,
-                            foregroundColor: LululuColors.carbonVoid,
-                            minimumSize: const Size(48, 48),
-                          ),
-                          child: const Text('DEVAM'),
-                        ),
-                      ],
+                child: Opacity(
+                  opacity: widget.arcade ? 0.94 : 0.62,
+                  child: Image.asset(
+                    'assets/design/backgrounds/suika_kitchen.webp',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Image.asset(
+                      _currentLevel.backgroundPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox(),
                     ),
                   ),
                 ),
               ),
-            if (_mergeFlashStrength > 0)
               Positioned.fill(
-                child: IgnorePointer(
-                  child: ColoredBox(
-                    color: _mergeFlashColor.withValues(
-                      alpha: _mergeFlashStrength * 0.35,
+                child: widget.arcade
+                    ? const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Color(0x4D080B12),
+                              Colors.transparent,
+                              Colors.transparent,
+                              Color(0x52080B12),
+                            ],
+                            stops: [0, 0.24, 0.76, 1],
+                          ),
+                        ),
+                      )
+                    : Container(
+                        color: LululuColors.carbonVoid.withValues(alpha: 0.5),
+                      ),
+              ),
+              Positioned.fill(child: hudAndPlay),
+              if (widget.prototypeVisualState)
+                const Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 35.375,
+                  child: IgnorePointer(child: _PrototypeStatusBar()),
+                ),
+              if (_paused && !_isFinished) _buildPauseOverlay(),
+              if (_mergeFlashStrength > 0)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: _mergeFlashColor.withValues(
+                        alpha: _mergeFlashStrength * 0.35,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildSideControlsRow() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _MiniIconBtn(
-          icon: _paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-          onTap: _togglePause,
-        ),
-        const Spacer(),
-        _PieceSlot(
-          label: 'SIRADAKİ',
-          tier: _nextDropperTier,
-          accent: _nextDropperTier.color,
-        ),
-        const SizedBox(width: 8),
-        _PieceSlot(
-          label: _holdTier == null ? 'TUT' : 'DEĞİŞ',
-          tier: _holdTier,
-          accent: LululuColors.cyberFuchsia,
-          emptyHint: 'BOŞ',
-          onTap: _swapHold,
-        ),
-      ],
     );
   }
 
@@ -848,6 +1909,7 @@ class _GameScreenState extends State<GameScreen>
     final danger = _dangerProximity > 0.65 && !_isFinished;
     final speech = _activeSpeechBubble.isNotEmpty;
     final milestone = _milestoneToast != null;
+    final comboBreak = _comboBreakToast != null;
     final combo = _comboCount >= 2;
 
     String? text;
@@ -876,8 +1938,14 @@ class _GameScreenState extends State<GameScreen>
       glow = LululuColors.liquidGold;
       size = 20;
       animKey = _milestoneToast;
+    } else if (comboBreak) {
+      text = _comboBreakToast;
+      color = LululuColors.coralFlare;
+      glow = LululuColors.liquidGold;
+      size = 18;
+      animKey = _comboBreakToast;
     } else if (combo) {
-      text = 'COMBO x$_comboCount!';
+      text = 'KOMBO x$_comboCount!';
       color = LululuColors.liquidGold;
       glow = LululuColors.coralFlare;
       size = 26 + min(_comboCount, 6) * 1.5;
@@ -886,8 +1954,8 @@ class _GameScreenState extends State<GameScreen>
 
     if (text == null) return const SizedBox.shrink();
 
-    final flashOut = combo || milestone;
-    var line = Text(
+    final flashOut = combo || milestone || comboBreak;
+    final comboLine = Text(
       text,
       key: ValueKey(animKey),
       textAlign: TextAlign.center,
@@ -907,7 +1975,12 @@ class _GameScreenState extends State<GameScreen>
           ),
         ],
       ),
-    )
+    );
+    if (widget.prototypeVisualState) {
+      return Align(alignment: Alignment.center, child: comboLine);
+    }
+
+    var line = comboLine
         .animate()
         .fadeIn(duration: 80.ms)
         .scale(
@@ -936,19 +2009,73 @@ class _GameScreenState extends State<GameScreen>
         return Stack(
           clipBehavior: Clip.hardEdge,
           children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: GameArenaPainter(
-                  engine: _engine!,
-                  dropperX: _dropperX,
-                  dropTier: _currentDropperTier,
-                  isDropping: _isDropping,
-                  insectImages: _insectImages,
-                  dangerPulse: _dangerPulse,
-                  dangerProximity: _dangerProximity,
+            if (!widget.prototypeVisualState)
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: GameArenaPainter(
+                      engine: _engine!,
+                      insectImages: _insectImages,
+                      dangerPulse: _dangerPulse,
+                      dangerProximity: _dangerProximity,
+                      transparentSquareArena: widget.arcade,
+                      coneSpriteScale: 1,
+                      dropperX: _dropperX,
+                      currentDropperTier: _currentDropperTier,
+                      showDropperPreview:
+                          !_isFinished && !_paused && !_isDropping,
+                    ),
+                  ),
                 ),
               ),
-            ),
+            if (widget.arcade || widget.prototypeVisualState)
+              const Positioned(
+                left: 2,
+                right: 2,
+                top: 8,
+                height: 3,
+                child: IgnorePointer(
+                  child: CustomPaint(painter: _PrototypeDropLinePainter()),
+                ),
+              ),
+            if (widget.prototypeVisualState) ...[
+              Positioned(
+                left: 118.4,
+                top: 677.1,
+                width: 53.8,
+                height: 101.7,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    InsectTier.helmet.assetPath,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 213.9,
+                top: 677.1,
+                width: 53.8,
+                height: 101.7,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    InsectTier.helmet.assetPath,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 171.0,
+                top: 687.3,
+                width: 44.2,
+                height: 113.1,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    InsectTier.cone.assetPath,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ],
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -962,671 +2089,420 @@ class _GameScreenState extends State<GameScreen>
                 left: popup.position.dx - 44,
                 top: popup.position.dy - 28,
                 child: IgnorePointer(
-                  child: Text(
-                    popup.text,
-                    key: ValueKey('juice_${popup.id}'),
-                    style: GoogleFonts.bangers(
-                      fontSize: popup.text.contains('x') ? 22 : 18,
-                      color: popup.color,
-                      shadows: const [
-                        Shadow(
-                          color: LululuColors.carbonVoid,
-                          blurRadius: 6,
-                          offset: Offset(1, 2),
-                        ),
-                      ],
-                    ),
-                  )
-                      .animate()
-                      .fadeIn(duration: 70.ms)
-                      .scale(
-                        begin: const Offset(0.45, 0.45),
-                        end: const Offset(1, 1),
-                        curve: Curves.elasticOut,
-                        duration: 420.ms,
-                      )
-                      .moveY(
-                        begin: 0,
-                        end: -42,
-                        duration: 820.ms,
-                        curve: Curves.easeOutCubic,
-                      )
-                      .fadeOut(delay: 420.ms, duration: 280.ms),
+                  child:
+                      Text(
+                            popup.text,
+                            key: ValueKey('juice_${popup.id}'),
+                            style: GoogleFonts.bangers(
+                              fontSize: popup.text.contains('x') ? 22 : 18,
+                              color: popup.color,
+                              shadows: const [
+                                Shadow(
+                                  color: LululuColors.carbonVoid,
+                                  blurRadius: 6,
+                                  offset: Offset(1, 2),
+                                ),
+                              ],
+                            ),
+                          )
+                          .animate()
+                          .fadeIn(duration: 70.ms)
+                          .scale(
+                            begin: const Offset(0.45, 0.45),
+                            end: const Offset(1, 1),
+                            curve: Curves.elasticOut,
+                            duration: 280.ms,
+                          )
+                          .moveY(
+                            begin: 0,
+                            end: -42,
+                            duration: 540.ms,
+                            curve: Curves.easeOutCubic,
+                          )
+                          .fadeOut(delay: 340.ms, duration: 200.ms),
                 ),
               ),
             // Replik / combo / uyarı — üst boş band (çemberin üstü).
-            Positioned(
-              top: 2,
-              left: 8,
-              right: 8,
-              height: _toastBandH,
-              child: IgnorePointer(
-                child: _buildTopToastBand(),
+            if (!widget.prototypeVisualState)
+              Positioned(
+                top: 2,
+                left: 8,
+                right: 8,
+                height: _toastBandH,
+                child: IgnorePointer(child: _buildTopToastBand()),
               ),
-            ),
           ],
         );
       },
     );
   }
 
+  int _shownCount(int real, int sample) =>
+      widget.prototypeVisualState ? sample : real;
+
   Widget _buildBoosterBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 6, 0, 8),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 360;
-          return Row(
-            children: [
-              Expanded(
-                child: _buildBoosterButton(
-                  key: _aydinlatKey,
-                  icon: '💡',
-                  label: compact ? 'Aydınlat' : 'Aydınlat Hele!',
-                  count: progress.aydinlatCount,
-                  color: LululuColors.liquidGold,
-                  pulse: _bonusPulse.contains('Aydınlat Hele!'),
-                  onPressed: () => _useBonusWithFx(
-                    bonusId: 'Aydınlat Hele!',
-                    key: _aydinlatKey,
-                    run: _useAydinlatMegaBonus,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _buildBoosterButton(
-                  key: _terlikKey,
-                  icon: '🩴',
-                  label: 'Terlik',
-                  count: progress.slipperCount,
-                  color: LululuColors.mysticRuby,
-                  pulse: _bonusPulse.contains('Terlik'),
-                  onPressed: () => _useBonusWithFx(
-                    bonusId: 'Terlik',
-                    key: _terlikKey,
-                    run: _useSlipperPowerup,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _buildBoosterButton(
-                  key: _spreyKey,
-                  icon: '💨',
-                  label: compact ? 'Raid' : 'Raid Sprey',
-                  count: progress.sprayCount,
-                  color: LululuColors.cyberFuchsia,
-                  pulse: _bonusPulse.contains('Raid Sprey'),
-                  onPressed: () => _useBonusWithFx(
-                    bonusId: 'Raid Sprey',
-                    key: _spreyKey,
-                    run: _useSprayPowerup,
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+      padding: widget.arcade
+          ? const EdgeInsets.fromLTRB(14, 8, 14, 10)
+          : const EdgeInsets.fromLTRB(10, 6, 10, 8),
+      child: Row(
+        mainAxisAlignment: widget.arcade
+            ? MainAxisAlignment.center
+            : MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildPowerBtn(
+            key: _spreyKey,
+            label: 'RAİD SPREYİ',
+            asset: 'assets/design/ui/powerup_raid_spreyi.png',
+            count: _shownCount(progress.sprayCount, 3),
+            pulse: _bonusPulse.contains('Raid Sprey'),
+            onTap: () => _useBonusWithFx(
+              bonusId: 'Raid Sprey',
+              key: _spreyKey,
+              run: _useSprayPowerup,
+            ),
+          ),
+          if (widget.arcade) const SizedBox(width: 20),
+          _buildPowerBtn(
+            key: _terlikKey,
+            label: 'SARSINTI',
+            asset: 'assets/design/ui/powerup_terlik.png',
+            count: _shownCount(progress.slipperCount, 2),
+            pulse: _bonusPulse.contains('Terlik'),
+            onTap: () => _useBonusWithFx(
+              bonusId: 'Terlik',
+              key: _terlikKey,
+              run: _useSlipperPowerup,
+            ),
+          ),
+          if (widget.arcade) const SizedBox(width: 20),
+          _buildPowerBtn(
+            key: _aydinlatKey,
+            label: 'AYDINLAT',
+            asset: 'assets/design/ui/powerup_aydinlat.png',
+            count: _shownCount(progress.aydinlatCount, 1),
+            pulse: _bonusPulse.contains('Aydınlat Hele!'),
+            onTap: () => _useBonusWithFx(
+              bonusId: 'Aydınlat Hele!',
+              key: _aydinlatKey,
+              run: _useAydinlatMegaBonus,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildHeaderRow() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Semantics(
-          button: true,
-          label: 'Geri',
-          child: IconButton(
-            tooltip: 'Geri',
-            icon: const Icon(Icons.arrow_back_ios_new, color: LululuColors.ink, size: 22),
-            onPressed: () => Navigator.pop(context),
+  Widget _buildPowerBtn({
+    Key? key,
+    required String label,
+    required String asset,
+    required int count,
+    required VoidCallback onTap,
+    bool pulse = false,
+  }) {
+    final enabled = count > 0;
+    if (widget.arcade) {
+      return _buildArcadePowerBtn(
+        key: key,
+        label: label,
+        asset: asset,
+        count: count,
+        onTap: onTap,
+        pulse: pulse,
+        enabled: enabled,
+      );
+    }
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: '$label. $count adet',
+      child: GestureDetector(
+        key: key,
+        onTap: enabled ? onTap : null,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedOpacity(
+          opacity: pulse ? 0.35 : (enabled ? 1.0 : 0.45),
+          duration: const Duration(milliseconds: 180),
+          child: AnimatedScale(
+            scale: pulse ? 0.85 : 1.0,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 86,
+                  constraints: const BoxConstraints(minHeight: 82),
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFF2E3850), Color(0xFF1B2336)],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        offset: const Offset(0, 4),
+                        blurRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 46,
+                        height: 46,
+                        child: Image.asset(
+                          asset,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: LululuColors.liquidGold,
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.exo2(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w900,
+                          color: const Color(0xFFD8E0EE),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: -6,
+                  right: -4,
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 22,
+                      minHeight: 22,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: LululuColors.cyberFuchsia,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: LululuColors.carbonVoid,
+                        width: 2,
+                      ),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: GoogleFonts.exo2(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        Column(
-          children: [
-            Text(
-              widget.arcade ? 'SUİKA ARENA' : 'BÖLÜM ${_currentLevel.id}',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: LululuColors.warningSolar,
-                letterSpacing: 1.1,
+      ),
+    );
+  }
+
+  Widget _buildArcadePowerBtn({
+    Key? key,
+    required String label,
+    required String asset,
+    required int count,
+    required VoidCallback onTap,
+    required bool enabled,
+    required bool pulse,
+  }) {
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: '$label. $count adet',
+      child: GestureDetector(
+        key: key,
+        onTap: enabled ? onTap : null,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedOpacity(
+          opacity: pulse ? 0.35 : (enabled ? 1 : 0.45),
+          duration: const Duration(milliseconds: 180),
+          child: AnimatedScale(
+            scale: pulse ? 0.85 : 1,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            child: SizedBox(
+              width: 66,
+              height: 63,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Column(
+                    children: [
+                      const SizedBox(height: 2),
+                      Container(
+                        width: 48,
+                        height: 48,
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xFF333F58), Color(0xFF1B2336)],
+                          ),
+                          border: Border.all(
+                            color: const Color(0x47FFFFFF),
+                            width: 1,
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x73000000),
+                              offset: Offset(0, 3),
+                            ),
+                            BoxShadow(
+                              color: Color(0x4D000000),
+                              offset: Offset(0, 6),
+                              blurRadius: 12,
+                            ),
+                          ],
+                        ),
+                        child: Image.asset(
+                          asset,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: LululuColors.liquidGold,
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.visible,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'Nunito',
+                          fontSize: 9,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFFD8E0EE),
+                          letterSpacing: 0.18,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Positioned(
+                    top: -2,
+                    right: 3,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE01E5A),
+                        shape: BoxShape.circle,
+                        border: Border.fromBorderSide(
+                          BorderSide(color: Color(0xFF080B12), width: 2),
+                        ),
+                      ),
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          fontFamily: 'Nunito',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Text(
-              widget.arcade
-                  ? 'Dokun veya kaydır · bırak'
-                  : _currentLevel.chapterName,
-              style: const TextStyle(fontSize: 11, color: LululuColors.mutedTitanium),
-            ),
-          ],
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: LululuColors.spaceNavy,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: LululuColors.darkObsidian),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+        ),
+      ),
+    );
+  }
+}
+
+class _PrototypeStatusBar extends StatelessWidget {
+  const _PrototypeStatusBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Stack(
+      children: [
+        Positioned(
+          top: 14,
+          left: 22,
+          right: 22,
+          height: 19.4,
+          child: Row(
             children: [
               Text(
-                'SKOR',
-                style: GoogleFonts.fredoka(
-                  fontSize: 9,
-                  color: LululuColors.mutedTitanium,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                '$_score',
-                key: ValueKey('score_$_mergeJuiceTick'),
-                style: GoogleFonts.fredoka(
-                  fontSize: 20,
+                '09:41',
+                style: TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w900,
-                  color: LululuColors.liquidGold,
-                ),
-              )
-                  .animate()
-                  .scale(
-                    begin: const Offset(1, 1),
-                    end: const Offset(1.22, 1.22),
-                    duration: 120.ms,
-                    curve: Curves.easeOutBack,
-                  )
-                  .then()
-                  .scale(
-                    begin: const Offset(1.22, 1.22),
-                    end: const Offset(1, 1),
-                    duration: 180.ms,
-                    curve: Curves.easeInOut,
-                  ),
-              Text(
-                'EN ${max(_bestScore, _score) > 0 ? max(_bestScore, _score) : '—'}',
-                style: GoogleFonts.exo2(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: LululuColors.mutedTitanium,
+                  height: 1.55,
+                  color: Colors.white,
                 ),
               ),
+              Spacer(),
+              Icon(
+                Icons.signal_cellular_alt_rounded,
+                size: 15,
+                color: Colors.white,
+              ),
+              SizedBox(width: 5),
+              Icon(Icons.battery_full_rounded, size: 15, color: Colors.white),
             ],
           ),
         ),
       ],
     );
   }
-
-  Widget _buildGoalAndMovesRow(int stars) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: LululuColors.spaceNavy.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: LululuColors.darkObsidian),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Text(
-              widget.arcade
-                  ? (_dangerProximity > 0.5
-                      ? 'Dikkat! Çizginin altında tut.'
-                      : 'Dokun veya kaydır · aynılar birleşir')
-                  : '🎯 ${_currentLevel.objectiveDescription}',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: _dangerProximity > 0.5
-                    ? LululuColors.mysticRuby
-                    : LululuColors.ink,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Row(
-            children: List.generate(3, (i) {
-              return Icon(
-                i < stars ? Icons.star : Icons.star_border,
-                size: 18,
-                color: i < stars ? LululuColors.warningSolar : LululuColors.darkObsidian,
-              );
-            }),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: !widget.arcade && _remainingMoves <= 5
-                  ? LululuColors.mysticRuby
-                  : LululuColors.darkObsidian,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              widget.arcade ? 'SONSUZ' : 'Atış: $_remainingMoves',
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: LululuColors.ink,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBoosterButton({
-    Key? key,
-    required String icon,
-    required String label,
-    required int count,
-    required Color color,
-    required VoidCallback onPressed,
-    bool pulse = false,
-  }) {
-    return AnimatedOpacity(
-      opacity: pulse ? 0.35 : 1,
-      duration: const Duration(milliseconds: 180),
-      child: AnimatedScale(
-        scale: pulse ? 0.82 : 1,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        child: SizedBox(
-          height: 52,
-          child: ElevatedButton(
-            key: key,
-            onPressed: count > 0 ? onPressed : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: LululuColors.ink,
-              disabledBackgroundColor: color.withValues(alpha: 0.35),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(
-                  color: LululuColors.warningSolar.withValues(alpha: 0.85),
-                  width: 2,
-                ),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-              minimumSize: const Size(48, 48),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              elevation: 6,
-              shadowColor: color.withValues(alpha: 0.55),
-            ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 16)),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    '($count)',
-                    style: const TextStyle(
-                      fontSize: 9,
-                      color: LululuColors.mutedTitanium,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        ),
-        ),
-      ),
-    );
-  }
-
-  void _showVictoryModal(int stars) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: LululuColors.spaceNavy,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-            side: const BorderSide(color: LululuColors.warningSolar, width: 2),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'BÖLÜM TAMAMLANDI!',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: LululuColors.warningSolar,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(3, (i) {
-                    return Icon(
-                      i < stars ? Icons.star : Icons.star_border,
-                      size: 44,
-                      color: i < stars ? LululuColors.warningSolar : LululuColors.darkObsidian,
-                    );
-                  }),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Skor: $_score',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: LululuColors.ink),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Ödül: +${stars * 50} 🪙',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: LululuColors.warningSolar),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _statsLine(),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 12, color: LululuColors.mutedTitanium),
-                ),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: () {
-                    unawaited(
-                      ScoreShareCard.instance.share(
-                        modeTitle: widget.arcade ? 'Suika Arena' : _currentLevel.title,
-                        score: _score,
-                        line: _statsLine(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.ios_share_rounded, color: LululuColors.liquidGold),
-                  label: const Text(
-                    'PAYLAŞ KART',
-                    style: TextStyle(
-                      color: LululuColors.liquidGold,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _restartLevel(_currentLevel);
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: LululuColors.ink,
-                          side: const BorderSide(color: LululuColors.darkObsidian),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: const Text('TEKRAR 🔄'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          if (_currentLevel.id < 80) {
-                            final nextLevel = CampaignDatabase.getLevel(_currentLevel.id + 1);
-                            _restartLevel(nextLevel);
-                          } else {
-                            Navigator.pop(context);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: LululuColors.liquidGold,
-                          foregroundColor: LululuColors.carbonVoid,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: const Text('SONRAKİ ➡️', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pop(context);
-                  },
-                  child: const Text('HARİTAYA DÖN 🗺️', style: TextStyle(color: LululuColors.mutedTitanium)),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _showDefeatModal() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: LululuColors.carbonVoid,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-            side: const BorderSide(color: LululuColors.mysticRuby, width: 2),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'DUKTURU ARAYIN! 💀',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: LululuColors.mysticRuby,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '"Kurban olduğum böcekler taştı!"',
-                  style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: LululuColors.mutedTitanium),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Skor: $_score',
-                  style: const TextStyle(fontSize: 18, color: LululuColors.ink),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _statsLine(),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 12, color: LululuColors.mutedTitanium),
-                ),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: () {
-                    unawaited(
-                      ScoreShareCard.instance.share(
-                        modeTitle: widget.arcade ? 'Suika Arena' : _currentLevel.title,
-                        score: _score,
-                        line: _statsLine(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.ios_share_rounded, color: LululuColors.liquidGold),
-                  label: const Text(
-                    'PAYLAŞ KART',
-                    style: TextStyle(
-                      color: LululuColors.liquidGold,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _restartLevel(_currentLevel);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: LululuColors.mysticRuby,
-                    foregroundColor: LululuColors.ink,
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: const Text('TEKRAR DENE 🔄', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(height: 10),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pop(context);
-                  },
-                  child: const Text('HARİTAYA DÖN 🗺️', style: TextStyle(color: LululuColors.mutedTitanium)),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _statsLine() =>
-      'Birleşim $_mergeTotal · Max combo x$_maxCombo · Zirve ${_peakTier.name}';
-
-  Widget _buildComboMeter() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: LinearProgressIndicator(
-        value: _comboMeter,
-        minHeight: 6,
-        backgroundColor: LululuColors.darkObsidian,
-        color: Color.lerp(
-          LululuColors.liquidGold,
-          LululuColors.cyberFuchsia,
-          _comboMeter,
-        ),
-      ),
-    );
-  }
 }
 
-class _PieceSlot extends StatelessWidget {
-  const _PieceSlot({
-    required this.label,
-    required this.tier,
-    required this.accent,
-    this.emptyHint,
-    this.onTap,
-  });
-
-  final String label;
-  final InsectTier? tier;
-  final Color accent;
-  final String? emptyHint;
-  final VoidCallback? onTap;
+class _PrototypeDropLinePainter extends CustomPainter {
+  const _PrototypeDropLinePainter();
 
   @override
-  Widget build(BuildContext context) {
-    final slot = Container(
-      width: 80,
-      constraints: const BoxConstraints(minHeight: 56, minWidth: 80),
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: LululuColors.spaceNavy.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: onTap != null ? accent : accent.withValues(alpha: 0.7),
-          width: onTap != null ? 2 : 1.5,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              color: onTap != null ? accent : LululuColors.mutedTitanium,
-            ),
-          ),
-          const SizedBox(height: 4),
-          if (tier != null)
-            StickerImage(assetPath: tier!.assetPath, width: 40, height: 40)
-          else
-            SizedBox(
-              height: 40,
-              child: Center(
-                child: Text(
-                  emptyHint ?? '—',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-    if (onTap == null) return slot;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: slot,
-    );
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xBFE52E2E)
+      ..style = PaintingStyle.fill;
+    const dash = 9.0;
+    const gap = 6.0;
+    var x = 0.0;
+    while (x < size.width) {
+      final w = min(dash, size.width - x);
+      canvas.drawRect(Rect.fromLTWH(x, 0, w, size.height), paint);
+      x += dash + gap;
+    }
   }
-}
-
-class _MiniIconBtn extends StatelessWidget {
-  const _MiniIconBtn({
-    required this.icon,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: LululuColors.spaceNavy.withValues(alpha: 0.9),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          width: 48,
-          height: 48,
-          child: Icon(icon, color: LululuColors.liquidGold),
-        ),
-      ),
-    );
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

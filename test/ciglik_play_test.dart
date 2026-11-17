@@ -1,0 +1,46 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lululu_game/modes/scream_roach_screen.dart';
+import 'package:lululu_game/services/audio_manager.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('Çığlık: tap flaps immediately and tutorial runs safely', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(374, 680);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    AudioManager().isMuted = true;
+    for (final channel in [
+      'xyz.luan/audioplayers.global',
+      'xyz.luan/audioplayers',
+    ]) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            MethodChannel(channel),
+            (call) async => null,
+          );
+    }
+
+    await tester.pumpWidget(const MaterialApp(home: ScreamRoachScreen()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(find.text('SKOR'), findsOneWidget);
+    expect(find.textContaining('İLK 15 SN YAVAŞ'), findsOneWidget);
+    expect(find.byTooltip('Bağırarak zıplamayı aç'), findsOneWidget);
+
+    for (var i = 0; i < 24; i++) {
+      await tester.tapAt(const Offset(190, 390));
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(tester.takeException(), isNull);
+    }
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+}

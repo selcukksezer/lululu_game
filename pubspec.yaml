@@ -51,6 +51,8 @@ dependencies:
   sign_in_with_apple: ^8.1.0
   in_app_purchase: ^3.3.1
   crypto: ^3.0.8
+  noise_meter: ^5.1.0
+  permission_handler: ^12.0.1
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +64,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  golden_toolkit: ^0.15.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -70,15 +73,88 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  config:
+    enable-lldb-debugging: false
+
   assets:
+    - assets/
+    - assets/appicon/
+    - assets/icons/
+    - assets/icons2/
+    - assets/bugs/
+    - assets/obstacles/
+    - assets/osman/
+    - assets/sounds/
+    - assets/refs/
+    - assets/game/
     - assets/images/
     - assets/images/stickers/
     - assets/images/bg/
     - assets/images/scream/
+    - assets/images/source_refs/
     - assets/ui/kenney/
+    - assets/ui/kenney/Blue/Default/
+    - assets/ui/kenney/Blue/Double/
+    - assets/ui/kenney/Extra/Default/
+    - assets/ui/kenney/Extra/Double/
+    - assets/ui/kenney/Green/Default/
+    - assets/ui/kenney/Green/Double/
+    - assets/ui/kenney/Grey/Default/
+    - assets/ui/kenney/Grey/Double/
+    - assets/ui/kenney/Red/Default/
+    - assets/ui/kenney/Red/Double/
+    - assets/ui/kenney/Yellow/Default/
+    - assets/ui/kenney/Yellow/Double/
     - assets/audio/
     - assets/models/
     - assets/design/
+    - assets/design/app_icons/
+    - assets/design/backgrounds/
+    - assets/design/bugs_hd/
+    - assets/design/bugs_new/
+    - assets/design/images/
+    - assets/design/images/stickers/
+    - assets/design/icons/
+    - assets/design/icons/extra_icons/
+    - assets/design/icons/extra_icons/All_Icons/
+    - assets/design/icons/extra_icons/01_Core_Interface/
+    - assets/design/icons/extra_icons/02_Currency_and_Valuables/
+    - assets/design/icons/extra_icons/04_Shop_and_Premium/
+    - assets/design/icons/extra_icons/05_Progression_and_Achievements/
+    - assets/design/icons/extra_icons/06_Quests_and_Daily_Rewards/
+    - assets/design/icons/extra_icons/07_Chests_and_Event_Rewards/
+    - assets/design/icons/extra_icons/08_Boosts_and_Multipliers/
+    - assets/design/icons/extra_icons/09_Potions_and_Consumables/
+    - assets/design/icons/extra_icons/10_Pets_and_Eggs/
+    - assets/design/icons/extra_icons/11_Rarity_and_Inventory/
+    - assets/design/icons/extra_icons/12_Weapons_and_Abilities/
+    - assets/design/icons/extra_icons/13_Equipment_and_Tools/
+    - assets/design/icons/extra_icons/14_Stats_and_Interactions/
+    - assets/design/icons/extra_icons/15_World_and_Travel/
+    - assets/design/icons/extra_icons/16_Time_and_Tycoon_Resources/
+    - assets/design/icons/extra_icons/17_Bonus_Icons/
+    - assets/design/icons/itch_icons/Game_Essentials_Simple_Free_Demo/All_Icons/
+    - assets/design/obstacles/
+    - assets/design/orig/
+    - assets/design/repo_originals/
+    - assets/design/sounds/
+    - assets/design/ui/
+    - assets/design/ui/bugs/
+    - assets/design/ui/icons/
+    - assets/design/ui/icons2/
+    - assets/design/ui/obstacles/
+    - assets/design/ui/osman/
+    - assets/design/ui/refs/
+    - assets/design/ui/sounds/
+    - assets/design/ui/studio_watch/
+    - assets/design/ui/studio_create/
+    - assets/design/ui/studio_upload/
+    - assets/design/ui/studio_gif/
+    - assets/design/ui/studio_downloads/
+    - assets/design/splash/
+    - tasarim/assets/osman/
+    - tasarim/assets/sounds/
+    - assets/fonts/
 
 
   # An image asset can refer to one or more resolution-specific "variants", see
@@ -92,17 +168,51 @@ flutter:
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for the font. For
   # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
+  fonts:
+    - family: Fredoka
+      fonts:
+        - asset: assets/fonts/Fredoka-Regular.ttf
+        - asset: assets/fonts/Fredoka-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Fredoka-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Fredoka-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Fredoka-ExtraBold.ttf
+          weight: 800
+    - family: Baloo 2
+      fonts:
+        - asset: assets/fonts/Baloo2-Regular.ttf
+        - asset: assets/fonts/Baloo2-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Baloo2-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Baloo2-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Baloo2-Medium.ttf
+          weight: 500
+    - family: Bangers
+      fonts:
+        - asset: assets/fonts/Bangers-Regular.ttf
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-Regular.ttf
+        - asset: assets/fonts/Nunito-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Nunito-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Nunito-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Nunito-Black.ttf
+          weight: 900
+    - family: Exo 2
+      fonts:
+        - asset: assets/fonts/Exo2-Regular.ttf
+        - asset: assets/fonts/Exo2-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Exo2-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Exo2-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Exo2-Black.ttf
+          weight: 900

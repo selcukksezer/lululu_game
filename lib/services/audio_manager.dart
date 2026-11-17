@@ -1,21 +1,31 @@
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/insect_tier.dart';
+import 'haptic_service.dart';
+import 'progress_manager.dart';
 
-/// Asset filenames under `assets/audio/`.
+/// Asset filenames under `assets/audio/` and `assets/design/sounds/`.
 abstract final class GameAudio {
   static const sfxAydinlatBeam = 'sfx_aydinlat_beam.mp3';
+  static const sfxButtonTap = 'sfx_button_tap.mp3';
   static const sfxCombo = 'sfx_combo.mp3';
   static const sfxDrop = 'sfx_drop.mp3';
+  static const sfxF16 = 'sfx_f16.mp3';
   static const sfxGameOver = 'sfx_gameover.mp3';
+  static const sfxMakaraSpin = 'sfx_makara_spin.mp3';
   static const sfxMergeChime = 'sfx_merge_chime.mp3';
+  static const sfxOsmantusBeat = 'sfx_osmantus_beat.mp3';
   static const sfxPop = 'sfx_pop.mp3';
+  static const sfxScreamRoach = 'sfx_scream_roach.mp3';
   static const sfxSlipper = 'sfx_slipper.mp3';
   static const sfxSpray = 'sfx_spray.mp3';
+  static const sfxVictory = 'sfx_victory.mp3';
+
   static const voiceAydinlat = 'voice_aydinlat.mp3';
   static const voiceTier1 = 'voice_tier1.mp3';
   static const voiceTier2 = 'voice_tier2.mp3';
@@ -25,21 +35,49 @@ abstract final class GameAudio {
   static const voiceTier6 = 'voice_tier6.mp3';
   static const voiceTier7 = 'voice_tier7.mp3';
   static const voiceTier8 = 'voice_tier8.mp3';
+  static const voiceTier9 = 'voice_tier9.mp3';
+  static const voiceTier10 = 'voice_tier10.mp3';
+  static const voiceTier11 = 'voice_tier11.mp3';
+  static const voiceTier12 = 'voice_tier12.mp3';
+  static const voiceTier13 = 'voice_tier13.mp3';
 
-  /// Dedicated Osmantuş person lines — not on disk yet; map falls back below.
+  /// Prototype design sound naming (`tier1_ses.mp3`..`tier13_ses.mp3`).
+  static const tier1Ses = 'tier1_ses.mp3';
+  static const tier2Ses = 'tier2_ses.mp3';
+  static const tier3Ses = 'tier3_ses.mp3';
+  static const tier4Ses = 'tier4_ses.mp3';
+  static const tier5Ses = 'tier5_ses.mp3';
+  static const tier6Ses = 'tier6_ses.mp3';
+  static const tier7Ses = 'tier7_ses.mp3';
+  static const tier8Ses = 'tier8_ses.mp3';
+  static const tier9Ses = 'tier9_ses.mp3';
+  static const tier10Ses = 'tier10_ses.mp3';
+  static const tier11Ses = 'tier11_ses.mp3';
+  static const tier12Ses = 'tier12_ses.mp3';
+  static const tier13Ses = 'tier13_ses.mp3';
+
+  /// Dedicated Osmantuş person lines extracted from original viral TikTok audio.
   static const voiceOsmanA = 'voice_osman_a.mp3';
   static const voiceOsmanB = 'voice_osman_b.mp3';
 
   static const allAssets = [
     sfxAydinlatBeam,
+    sfxButtonTap,
     sfxCombo,
     sfxDrop,
+    sfxF16,
     sfxGameOver,
+    sfxMakaraSpin,
     sfxMergeChime,
+    sfxOsmantusBeat,
     sfxPop,
+    sfxScreamRoach,
     sfxSlipper,
     sfxSpray,
+    sfxVictory,
     voiceAydinlat,
+    voiceOsmanA,
+    voiceOsmanB,
     voiceTier1,
     voiceTier2,
     voiceTier3,
@@ -48,9 +86,27 @@ abstract final class GameAudio {
     voiceTier6,
     voiceTier7,
     voiceTier8,
+    voiceTier9,
+    voiceTier10,
+    voiceTier11,
+    voiceTier12,
+    voiceTier13,
+    tier1Ses,
+    tier2Ses,
+    tier3Ses,
+    tier4Ses,
+    tier5Ses,
+    tier6Ses,
+    tier7Ses,
+    tier8Ses,
+    tier9Ses,
+    tier10Ses,
+    tier11Ses,
+    tier12Ses,
+    tier13Ses,
   ];
 
-  /// Verified `voice_tierN.mp3` for merge tier 1–8; null if out of range.
+  /// Verified `voice_tierN.mp3` for merge tier 1–13; null if out of range.
   static String? voiceForTier(int tier) {
     switch (tier) {
       case 1:
@@ -69,15 +125,28 @@ abstract final class GameAudio {
         return voiceTier7;
       case 8:
         return voiceTier8;
+      case 9:
+        return voiceTier9;
+      case 10:
+        return voiceTier10;
+      case 11:
+        return voiceTier11;
+      case 12:
+        return voiceTier12;
+      case 13:
+        return voiceTier13;
       default:
         return null;
     }
   }
 
+  /// Prototype `tierN_ses.mp3` for tier 1–13; null if out of range.
+  static String? designSoundForTier(int tier) {
+    if (tier < 1 || tier > 13) return null;
+    return 'tier${tier}_ses.mp3';
+  }
+
   /// Tap/squash character id → voice filename under `assets/audio/`.
-  ///
-  /// Osmantuş A/B: preferred dedicated files; until present, map to distinct
-  /// existing tier voices (A→tier6 Can, B→tier5 Diva) so each person differs.
   static String? voiceForCharacterId(String characterId) {
     switch (characterId) {
       case 'tier_1':
@@ -96,30 +165,233 @@ abstract final class GameAudio {
         return voiceTier7;
       case 'tier_8':
         return voiceTier8;
+      case 'tier_9':
+        return voiceTier9;
+      case 'tier_10':
+        return voiceTier10;
+      case 'tier_11':
+        return voiceTier11;
+      case 'tier_12':
+        return voiceTier12;
+      case 'tier_13':
+        return voiceTier13;
       case 'osman_a':
-        // Missing on disk: voice_osman_a.mp3 — fallback Hamam Can.
-        return voiceTier6;
+      case 'osman':
+        return voiceOsmanA;
       case 'osman_b':
-        // Missing on disk: voice_osman_b.mp3 — fallback Hamam Diva.
-        return voiceTier5;
+      case 'tus':
+        return voiceOsmanB;
       default:
         return null;
     }
   }
 
   static String characterIdForTier(InsectTier tier) => 'tier_${tier.tier}';
+
+  /// Whether [assetName] is a character voice clip rather than generic SFX.
+  static bool isVoiceAsset(String assetName) {
+    final base = assetName.split('/').last;
+    return base.startsWith('voice_') || base.endsWith('_ses.mp3');
+  }
 }
 
 class AudioManager {
   static final AudioManager _instance = AudioManager._internal();
+  static AudioManager get instance => _instance;
   factory AudioManager() => _instance;
-  AudioManager._internal();
+  AudioManager._internal() {
+    _bindProgressManagerListeners();
+  }
 
   final List<AudioPlayer> _playersPool = [];
   int _poolIndex = 0;
   static const int _poolSize = 8;
-  bool isMuted = false;
+
+  bool _isMuted = false;
+  bool _sfxEnabled = true;
+  bool _musicEnabled = true;
+  bool _voiceEnabled = true;
+  bool _vibrationEnabled = true;
   bool _initialized = false;
+  bool _listenersBound = false;
+  bool _syncingWithProgress = false;
+
+  void _bindProgressManagerListeners() {
+    if (_listenersBound) return;
+    _listenersBound = true;
+    final pm = ProgressManager.instance;
+    _sfxEnabled = pm.sfxEnabled;
+    _musicEnabled = pm.musicEnabled;
+    _vibrationEnabled = pm.vibrationEnabled;
+
+    pm.sfxNotifier.addListener(_onProgressSfxChanged);
+    pm.musicNotifier.addListener(_onProgressMusicChanged);
+    pm.vibrationNotifier.addListener(_onProgressVibrationChanged);
+  }
+
+  void _onProgressSfxChanged() {
+    if (_syncingWithProgress) return;
+    final next = ProgressManager.instance.sfxEnabled;
+    if (_sfxEnabled != next) {
+      _sfxEnabled = next;
+      if (!next && !_musicEnabled && !_voiceEnabled) {
+        unawaited(stopAll());
+      }
+    }
+  }
+
+  void _onProgressMusicChanged() {
+    if (_syncingWithProgress) return;
+    final next = ProgressManager.instance.musicEnabled;
+    if (_musicEnabled != next) {
+      _musicEnabled = next;
+      if (!next) {
+        unawaited(_stopMusicPlayer());
+      }
+    }
+  }
+
+  void _onProgressVibrationChanged() {
+    if (_syncingWithProgress) return;
+    final next = ProgressManager.instance.vibrationEnabled;
+    if (_vibrationEnabled != next) {
+      _vibrationEnabled = next;
+    }
+  }
+
+  Future<void> _persistDualBool(
+    String primaryKey,
+    String legacyKey,
+    bool value,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(primaryKey, value);
+      await prefs.setBool(legacyKey, value);
+    } catch (_) {}
+  }
+
+  /// Synchronizes flags two-way with [ProgressManager.instance] and `SharedPreferences`.
+  Future<void> syncWithProgressManager() async {
+    _bindProgressManagerListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pm = ProgressManager.instance;
+
+      final resolvedMusic = prefs.getBool('lululu_music_enabled') ??
+          prefs.getBool('LululuSetMusic') ??
+          pm.musicEnabled;
+      final resolvedSfx = prefs.getBool('lululu_sfx_enabled') ??
+          prefs.getBool('LululuSetSfx') ??
+          pm.sfxEnabled;
+      final resolvedVoice = prefs.getBool('lululu_voice_enabled') ??
+          prefs.getBool('LululuSetVoice') ??
+          _voiceEnabled;
+      final resolvedVib = prefs.getBool('lululu_vibration_enabled') ??
+          prefs.getBool('LululuSetVib') ??
+          pm.vibrationEnabled;
+
+      _syncingWithProgress = true;
+      _musicEnabled = resolvedMusic;
+      _sfxEnabled = resolvedSfx;
+      _voiceEnabled = resolvedVoice;
+      _vibrationEnabled = resolvedVib;
+
+      if (pm.musicEnabled != resolvedMusic) {
+        await pm.setMusicEnabled(resolvedMusic);
+      }
+      if (pm.sfxEnabled != resolvedSfx) {
+        await pm.setSfxEnabled(resolvedSfx);
+      }
+      if (pm.vibrationEnabled != resolvedVib) {
+        await pm.setVibrationEnabled(resolvedVib);
+      }
+    } catch (_) {
+    } finally {
+      _syncingWithProgress = false;
+    }
+  }
+
+  /// Master mute flag (kept in sync with settings toggles and test overrides).
+  bool get isMuted => _isMuted;
+  set isMuted(bool value) {
+    _isMuted = value;
+    if (value) {
+      unawaited(stopAll());
+    }
+  }
+
+  /// Settings screen toggle: Sound Effects (`sfxEnabled`).
+  bool get sfxEnabled => _sfxEnabled;
+  set sfxEnabled(bool value) {
+    _sfxEnabled = value;
+    if (!value && !_musicEnabled && !_voiceEnabled) {
+      unawaited(stopAll());
+    }
+    final pm = ProgressManager.instance;
+    if (pm.sfxEnabled != value) {
+      _syncingWithProgress = true;
+      pm.sfxEnabled = value;
+      pm.sfxNotifier.value = value;
+      _syncingWithProgress = false;
+      unawaited(pm.setSfxEnabled(value).catchError((_) {}));
+    }
+    unawaited(_persistDualBool('lululu_sfx_enabled', 'LululuSetSfx', value));
+  }
+
+  /// Settings screen toggle: Background Music (`musicEnabled`).
+  bool get musicEnabled => _musicEnabled;
+  set musicEnabled(bool value) {
+    _musicEnabled = value;
+    if (!value) {
+      unawaited(_stopMusicPlayer());
+    }
+    final pm = ProgressManager.instance;
+    if (pm.musicEnabled != value) {
+      _syncingWithProgress = true;
+      pm.musicEnabled = value;
+      pm.musicNotifier.value = value;
+      _syncingWithProgress = false;
+      unawaited(pm.setMusicEnabled(value).catchError((_) {}));
+    }
+    unawaited(
+      _persistDualBool('lululu_music_enabled', 'LululuSetMusic', value),
+    );
+  }
+
+  /// Settings screen toggle: Viral Bug Voices (`voiceEnabled`).
+  bool get voiceEnabled => _voiceEnabled;
+  set voiceEnabled(bool value) {
+    _voiceEnabled = value;
+    if (!value && _exclusiveBusy) {
+      unawaited(_stopExclusivePlayer());
+    }
+    unawaited(
+      _persistDualBool('lululu_voice_enabled', 'LululuSetVoice', value),
+    );
+  }
+
+  /// Settings screen toggle: Haptic Vibration (`vibrationEnabled`).
+  bool get vibrationEnabled => _vibrationEnabled;
+  set vibrationEnabled(bool value) {
+    _vibrationEnabled = value;
+    final pm = ProgressManager.instance;
+    if (pm.vibrationEnabled != value) {
+      _syncingWithProgress = true;
+      pm.vibrationEnabled = value;
+      pm.vibrationNotifier.value = value;
+      _syncingWithProgress = false;
+      unawaited(pm.setVibrationEnabled(value).catchError((_) {}));
+    }
+    unawaited(
+      _persistDualBool('lululu_vibration_enabled', 'LululuSetVib', value),
+    );
+  }
+
+  void setSfxEnabled(bool enabled) => sfxEnabled = enabled;
+  void setMusicEnabled(bool enabled) => musicEnabled = enabled;
+  void setVoiceEnabled(bool enabled) => voiceEnabled = enabled;
+  void setVibrationEnabled(bool enabled) => vibrationEnabled = enabled;
 
   /// Bumped by [stopAll] so in-flight [playSfx] calls abort after leave-screen.
   int _playGeneration = 0;
@@ -130,30 +402,87 @@ class AudioManager {
   void Function()? _exclusiveOnComplete;
   bool _exclusiveBusy = false;
 
+  /// Optional background music player.
+  AudioPlayer? _musicPlayer;
+
   /// True while [playExclusiveSfx] clip is still playing.
   bool get isExclusivePlaying => _exclusiveBusy;
 
-  void initialize() {
-    if (_initialized) return;
-    _initialized = true;
-    for (int i = 0; i < _poolSize; i++) {
-      final p = AudioPlayer();
-      p.setReleaseMode(ReleaseMode.stop);
-      _playersPool.add(p);
-    }
-    _preloadAssets();
-  }
-
-  Future<void> _preloadAssets() async {
-    final preloader = AudioPlayer();
+  /// Detects `FlutterTest` / headless test runner so native platform channels
+  /// never throw unhandled exceptions or leak timers during automated tests.
+  bool get _isTestEnvironment {
     try {
-      for (final assetName in GameAudio.allAssets) {
-        await preloader.setSource(AssetSource('audio/$assetName'));
+      if (Zone.current[#test.declarer] != null) return true;
+      final bindingType = WidgetsBinding.instance.runtimeType.toString();
+      if (bindingType.contains('TestWidgetsFlutterBinding') ||
+          bindingType.contains('AutomatedTestWidgetsFlutterBinding') ||
+          bindingType.contains('LiveTestWidgetsFlutterBinding')) {
+        return true;
       }
     } catch (_) {
-      // Web / missing asset — runtime play still attempts fallback
-    } finally {
-      await preloader.dispose();
+      return true;
+    }
+    return false;
+  }
+
+  void initialize() {
+    _bindProgressManagerListeners();
+    if (!_isTestEnvironment) {
+      unawaited(syncWithProgressManager());
+    }
+    if (_initialized || _isMuted || _isTestEnvironment) return;
+    _initialized = true;
+
+    // iOS AudioSession çakışmalarını (Code 561015905) önlemek için global ambient/mixWithOthers context ayarla
+    try {
+      AudioPlayer.global.setAudioContext(
+        AudioContext(
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.ambient,
+            options: const {AVAudioSessionOptions.mixWithOthers},
+          ),
+          android: const AudioContextAndroid(
+            isSpeakerphoneOn: true,
+            stayAwake: true,
+            contentType: AndroidContentType.sonification,
+            usageType: AndroidUsageType.game,
+            audioFocus: AndroidAudioFocus.none,
+          ),
+        ),
+      );
+    } catch (_) {}
+
+    for (int i = 0; i < _poolSize; i++) {
+      try {
+        final p = AudioPlayer();
+        unawaited(p.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
+        _playersPool.add(p);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _stopExclusivePlayer() async {
+    _exclusiveBusy = false;
+    _exclusiveOnComplete = null;
+    final exclusiveSub = _exclusiveCompleteSub;
+    _exclusiveCompleteSub = null;
+    try {
+      await exclusiveSub?.cancel();
+    } catch (_) {}
+    final exclusive = _exclusivePlayer;
+    if (exclusive != null) {
+      try {
+        await exclusive.stop();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _stopMusicPlayer() async {
+    final mp = _musicPlayer;
+    if (mp != null) {
+      try {
+        await mp.stop();
+      } catch (_) {}
     }
   }
 
@@ -164,19 +493,8 @@ class AudioManager {
   Future<void> stopAll() async {
     _playGeneration++;
     final gen = _playGeneration;
-    _exclusiveBusy = false;
-    _exclusiveOnComplete = null;
-    final exclusiveSub = _exclusiveCompleteSub;
-    _exclusiveCompleteSub = null;
-    unawaited(exclusiveSub?.cancel() ?? Future<void>.value());
-    final exclusive = _exclusivePlayer;
-    if (exclusive != null) {
-      try {
-        await exclusive.stop();
-      } catch (_) {
-        // Platform / already released
-      }
-    }
+    await _stopExclusivePlayer();
+    await _stopMusicPlayer();
     if (_playersPool.isEmpty) return;
     for (final p in _playersPool) {
       if (gen != _playGeneration) return;
@@ -188,45 +506,72 @@ class AudioManager {
     }
   }
 
+  void toggleMute() {
+    _isMuted = !_isMuted;
+    _musicEnabled = !_isMuted;
+    if (_isMuted) {
+      unawaited(stopAll());
+    }
+  }
+
+  bool _canPlayAsset(String assetName, {bool? isVoiceOverride}) {
+    if (_isMuted || _isTestEnvironment) return false;
+    final isVoice = isVoiceOverride ?? GameAudio.isVoiceAsset(assetName);
+    if (isVoice) {
+      return _voiceEnabled && _sfxEnabled;
+    }
+    return _sfxEnabled;
+  }
+
+  String _normalizeAssetPath(String assetName) {
+    if (assetName.startsWith('audio/') ||
+        assetName.startsWith('design/sounds/') ||
+        assetName.startsWith('sounds/')) {
+      return assetName;
+    }
+    return 'audio/$assetName';
+  }
+
   Future<void> playSfx(
     String assetName, {
     double volume = 1.0,
     double playbackRate = 1.0,
+    bool? isVoice,
   }) async {
-    if (isMuted) return;
+    if (!_canPlayAsset(assetName, isVoiceOverride: isVoice)) return;
     final gen = _playGeneration;
     try {
       if (_playersPool.isEmpty) initialize();
-      if (gen != _playGeneration) return;
+      if (_playersPool.isEmpty || gen != _playGeneration) return;
       final player = _playersPool[_poolIndex];
       _poolIndex = (_poolIndex + 1) % _playersPool.length;
       await player.stop();
       if (gen != _playGeneration) return;
-      await player.setVolume(volume);
+      await player.setVolume(volume.clamp(0.0, 1.0));
       await player.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
       if (gen != _playGeneration) return;
-      await player.play(AssetSource('audio/$assetName'));
+      await player.play(AssetSource(_normalizeAssetPath(assetName)));
       if (gen != _playGeneration) {
         try {
           await player.stop();
         } catch (_) {}
       }
-    } catch (e) {
-      // Audio fallback or web policy
+    } catch (_) {
+      // Graceful fallback for headless / test / platform audio constraints
     }
   }
 
   /// One clip at a time. Returns `false` if another exclusive clip is active.
   ///
   /// [onComplete] runs only on natural end — not after [stopAll] / route pop.
-  /// Mute: no audio; [onComplete] still runs so callers can unlock UI.
+  /// Mute or test mode: no audio; [onComplete] still runs so callers can unlock UI.
   Future<bool> playExclusiveSfx(
     String assetName, {
     double volume = 1.0,
     double playbackRate = 1.0,
     void Function()? onComplete,
   }) async {
-    if (isMuted) {
+    if (!_canPlayAsset(assetName)) {
       onComplete?.call();
       return true;
     }
@@ -259,14 +604,14 @@ class AudioManager {
         _exclusiveOnComplete = null;
         return false;
       }
-      await player.setVolume(volume);
+      await player.setVolume(volume.clamp(0.0, 1.0));
       await player.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
       if (gen != _playGeneration) {
         _exclusiveBusy = false;
         _exclusiveOnComplete = null;
         return false;
       }
-      await player.play(AssetSource('audio/$assetName'));
+      await player.play(AssetSource(_normalizeAssetPath(assetName)));
       if (gen != _playGeneration) {
         try {
           await player.stop();
@@ -279,60 +624,186 @@ class AudioManager {
     } catch (_) {
       _exclusiveBusy = false;
       _exclusiveOnComplete = null;
+      onComplete?.call();
       return false;
     }
   }
 
+  /// Plays the viral insect voice for [tier] (1..8+, up to 13+).
+  ///
+  /// Tiers 1–13 play their dedicated `voice_tierN.mp3` (`tierN_ses.mp3`);
+  /// tiers > 13 gracefully clamp to tier 13.
+  Future<void> playTierVoice(
+    int tier, {
+    double volume = 1.0,
+    double playbackRate = 1.0,
+  }) async {
+    if (tier < 1 || _isMuted || !_voiceEnabled || !_sfxEnabled) return;
+    final clampedTier = tier.clamp(1, 13);
+    final voiceAsset =
+        GameAudio.voiceForTier(clampedTier) ?? GameAudio.voiceTier8;
+    await playSfx(
+      voiceAsset,
+      volume: volume,
+      playbackRate: playbackRate,
+      isVoice: true,
+    );
+  }
+
   /// Merge juice: merge SFX (+ optional combo) together with `voice_tierN`.
   ///
-  /// Prefer [tier]; else [tierNumber] 1–8 maps to verified `GameAudio.voiceTierN`.
+  /// Prefer [tier]; else [tierNumber] 1–13 maps to verified `GameAudio.voiceTierN`.
   Future<void> playMerge({
     InsectTier? tier,
     int? tierNumber,
     int comboCount = 1,
   }) async {
+    final resolvedTier = (tier?.tier ?? tierNumber ?? 1).clamp(1, 13);
+    if (vibrationEnabled) {
+      unawaited(
+        HapticService.instance.onMerge(tier: resolvedTier, combo: comboCount),
+      );
+    }
     final voiceAsset = _resolveMergeVoice(tier: tier, tierNumber: tierNumber);
     final plays = <Future<void>>[
-      playSfx(GameAudio.sfxMergeChime),
+      if (_sfxEnabled) playSfx(GameAudio.sfxMergeChime, isVoice: false),
     ];
-    if (comboCount > 1) {
-      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85));
+    if (_sfxEnabled && comboCount > 1) {
+      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
     }
-    if (voiceAsset != null) {
-      plays.add(playSfx(voiceAsset));
+    if (_voiceEnabled && _sfxEnabled && voiceAsset != null) {
+      plays.add(playSfx(voiceAsset, isVoice: true));
     }
-    await Future.wait(plays);
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
   }
+
+  /// Prototype alias for merge sound effects (`playMergeSfx`).
+  Future<void> playMergeSfx({
+    int? tier,
+    InsectTier? insectTier,
+    int comboCount = 1,
+  }) =>
+      playMerge(
+        tier: insectTier,
+        tierNumber: tier,
+        comboCount: comboCount,
+      );
 
   String? _resolveMergeVoice({InsectTier? tier, int? tierNumber}) {
     if (tier != null) {
       final fromTier = GameAudio.voiceForTier(tier.tier);
       if (fromTier != null) return fromTier;
-      // Fall back to model path only when it matches a known asset name.
       if (GameAudio.allAssets.contains(tier.voiceFile)) {
         return tier.voiceFile;
       }
       return null;
     }
-    if (tierNumber != null) {
-      return GameAudio.voiceForTier(tierNumber);
+    if (tierNumber != null && tierNumber >= 1) {
+      return GameAudio.voiceForTier(tierNumber.clamp(1, 13));
     }
     return null;
   }
 
-  Future<void> playDrop() => playSfx(GameAudio.sfxDrop);
+  Future<void> playDrop() {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.lightImpact());
+    }
+    return playSfx(GameAudio.sfxDrop, isVoice: false);
+  }
 
-  Future<void> playWin() => playSfx(GameAudio.voiceTier8);
+  /// Prototype alias for drop sound effect (`playDropSfx`).
+  Future<void> playDropSfx() => playDrop();
 
-  Future<void> playLose() => playSfx(GameAudio.sfxGameOver);
+  Future<void> playWin() => playVictorySfx();
 
-  Future<void> playPop() => playSfx(GameAudio.sfxPop);
+  /// Celebratory victory sound + Hasta Bilge / Lülülü victory voice.
+  Future<void> playVictorySfx({bool includeVoice = true}) async {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.onLevelComplete());
+    }
+    final plays = <Future<void>>[
+      if (_sfxEnabled) playSfx(GameAudio.sfxVictory, isVoice: false),
+      if (includeVoice && _voiceEnabled && _sfxEnabled)
+        playSfx(GameAudio.voiceTier8, isVoice: true),
+    ];
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
+  }
 
-  Future<void> playAydinlatVoice() => playSfx(GameAudio.voiceAydinlat);
+  Future<void> playLose() {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.onGameOver());
+    }
+    return playSfx(GameAudio.sfxGameOver, isVoice: false);
+  }
 
-  Future<void> playAydinlatBeam() => playSfx(GameAudio.sfxAydinlatBeam);
+  Future<void> playPop() {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.lightImpact());
+    }
+    return playSfx(GameAudio.sfxPop, isVoice: false);
+  }
 
-  Future<void> playSlipper() => playSfx(GameAudio.sfxSlipper);
+  /// UI button tap feedback (`playButtonTap`).
+  Future<void> playButtonTap() {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.selectionClick());
+    }
+    return playSfx(GameAudio.sfxButtonTap, isVoice: false);
+  }
+
+  Future<void> playAydinlatVoice() =>
+      playSfx(GameAudio.voiceAydinlat, isVoice: true);
+
+  Future<void> playAydinlatBeam() {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.heavyImpact());
+    }
+    return playSfx(GameAudio.sfxAydinlatBeam, isVoice: false);
+  }
+
+  /// Prototype F16 bombardment / "Aydınlat Hele!" jet roar + explosion + voice.
+  Future<void> playF16Sfx({bool includeVoice = true}) async {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.onF16Bombardment());
+    }
+    final plays = <Future<void>>[
+      if (_sfxEnabled) playSfx(GameAudio.sfxF16, isVoice: false),
+      if (_sfxEnabled)
+        playSfx(GameAudio.sfxAydinlatBeam, volume: 0.85, isVoice: false),
+      if (includeVoice && _voiceEnabled && _sfxEnabled)
+        playSfx(GameAudio.voiceAydinlat, isVoice: true),
+    ];
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
+  }
+
+  Future<void> playSlipper() {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.onSlipperSlap());
+    }
+    return playSfx(GameAudio.sfxSlipper, isVoice: false);
+  }
+
+  /// Prototype alias for slipper slap (`playSlapSfx`).
+  Future<void> playSlapSfx({
+    String? characterId,
+    InsectTier? tier,
+    int comboCount = 1,
+  }) {
+    if (characterId != null || tier != null) {
+      return playSlipperSmash(
+        characterId: characterId,
+        tier: tier,
+        comboCount: comboCount,
+      );
+    }
+    return playSlipper();
+  }
 
   /// Terlik tap smash: slipper SFX + that character's voice (not a generic merge).
   ///
@@ -342,8 +813,11 @@ class AudioManager {
     InsectTier? tier,
     int comboCount = 1,
   }) async {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.onSlipperSlap(combo: comboCount));
+    }
     final plays = <Future<void>>[
-      playSfx(GameAudio.sfxSlipper),
+      if (_sfxEnabled) playSfx(GameAudio.sfxSlipper, isVoice: false),
     ];
 
     String? voice;
@@ -353,25 +827,141 @@ class AudioManager {
     voice ??= _resolveMergeVoice(tier: tier, tierNumber: tier?.tier);
 
     if (voice != null) {
-      plays.add(playSfx(voice));
-    } else {
+      if (_voiceEnabled && _sfxEnabled) {
+        plays.add(playSfx(voice, isVoice: true));
+      }
+    } else if (_sfxEnabled) {
       debugPrint(
         '[Audio] slipper smash missing voice '
         'id=$characterId tier=${tier?.tier} — fallback pop',
       );
-      plays.add(playSfx(GameAudio.sfxPop, volume: 0.7));
+      plays.add(playSfx(GameAudio.sfxPop, volume: 0.7, isVoice: false));
     }
 
-    if (comboCount >= 3) {
-      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85));
+    if (_sfxEnabled && comboCount >= 3) {
+      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
     }
-    await Future.wait(plays);
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
   }
 
-  Future<void> playSpray() => playSfx(GameAudio.sfxSpray);
+  Future<void> playSpray() {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.onRaidSpray());
+    }
+    return playSfx(GameAudio.sfxSpray, isVoice: false);
+  }
+
+  /// Prototype alias for Raid spray (`playSpraySfx`).
+  Future<void> playSpraySfx() => playSpray();
+
+  /// Çığlık Böcek mode scream audio (`playScreamRoach`).
+  Future<bool> playScreamRoach({
+    InsectTier? bug,
+    int? tier,
+    double power = 1.0,
+    double? playbackRate,
+    void Function()? onComplete,
+  }) {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.onScreamRoach(power: power));
+    }
+    final asset = bug?.voiceFile ??
+        (tier != null ? GameAudio.voiceForTier(tier.clamp(1, 13)) : null) ??
+        GameAudio.sfxScreamRoach;
+    final volume = (0.82 + power.clamp(0.0, 1.0) * 0.18).clamp(0.0, 1.0);
+    final rate = (playbackRate ?? (0.92 + power.clamp(0.0, 1.0) * 0.22))
+        .clamp(0.7, 1.45);
+    return playExclusiveSfx(
+      asset,
+      volume: volume,
+      playbackRate: rate,
+      onComplete: onComplete,
+    );
+  }
+
+  /// Osmantuş mode rhythmic green-ring beat hit + duo voice (`playOsmantusBeat`).
+  Future<void> playOsmantusBeat({
+    bool isPersonB = false,
+    bool perfect = false,
+    int comboCount = 1,
+    bool includeVoice = true,
+  }) async {
+    if (vibrationEnabled) {
+      unawaited(
+        HapticService.instance.onOsmantusBeat(
+          perfect: perfect,
+          combo: comboCount,
+        ),
+      );
+    }
+    final plays = <Future<void>>[
+      if (_sfxEnabled)
+        playSfx(
+          GameAudio.sfxOsmantusBeat,
+          volume: perfect ? 1.0 : 0.85,
+          playbackRate: perfect ? 1.08 : 1.0,
+          isVoice: false,
+        ),
+    ];
+    if (includeVoice && _voiceEnabled && _sfxEnabled) {
+      final voice = isPersonB ? GameAudio.voiceOsmanB : GameAudio.voiceOsmanA;
+      plays.add(playSfx(voice, volume: 0.9, isVoice: true));
+    }
+    if (_sfxEnabled && comboCount >= 3) {
+      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.8, isVoice: false));
+    }
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
+  }
+
+  /// Makarayız mode reel spin & lane beat hit (`playMakaraSpin`).
+  Future<void> playMakaraSpin({
+    int? tier,
+    InsectTier? bug,
+    int comboCount = 1,
+    double playbackRate = 1.0,
+  }) async {
+    if (vibrationEnabled) {
+      unawaited(HapticService.instance.onMakaraSpin(combo: comboCount));
+    }
+    final plays = <Future<void>>[
+      if (_sfxEnabled)
+        playSfx(
+          GameAudio.sfxMakaraSpin,
+          volume: 0.9,
+          playbackRate: playbackRate,
+          isVoice: false,
+        ),
+    ];
+    final voice = bug?.voiceFile ??
+        (tier != null ? GameAudio.voiceForTier(tier.clamp(1, 13)) : null);
+    if (voice != null && _voiceEnabled && _sfxEnabled) {
+      plays.add(
+        playSfx(
+          voice,
+          playbackRate: playbackRate,
+          isVoice: true,
+        ),
+      );
+    }
+    if (_sfxEnabled && comboCount >= 3) {
+      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
+    }
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
+  }
 
   /// Light impact — drop / soft feedback.
   void triggerLightHaptic() {
+    if (!vibrationEnabled ||
+        !ProgressManager.instance.vibrationEnabled ||
+        _isTestEnvironment) {
+      return;
+    }
     try {
       HapticFeedback.lightImpact();
     } catch (_) {}
@@ -379,6 +969,11 @@ class AudioManager {
 
   /// Medium impact — standard merge feedback.
   void triggerMediumHaptic() {
+    if (!vibrationEnabled ||
+        !ProgressManager.instance.vibrationEnabled ||
+        _isTestEnvironment) {
+      return;
+    }
     try {
       HapticFeedback.mediumImpact();
     } catch (_) {}
@@ -386,6 +981,11 @@ class AudioManager {
 
   /// Heavy impact — high combo / big merge.
   void triggerHeavyHaptic() {
+    if (!vibrationEnabled ||
+        !ProgressManager.instance.vibrationEnabled ||
+        _isTestEnvironment) {
+      return;
+    }
     try {
       HapticFeedback.heavyImpact();
     } catch (_) {}
@@ -402,9 +1002,18 @@ class AudioManager {
     _exclusiveCompleteSub = null;
     final exclusive = _exclusivePlayer;
     _exclusivePlayer = null;
-    exclusive?.dispose();
+    try {
+      exclusive?.dispose();
+    } catch (_) {}
+    final mp = _musicPlayer;
+    _musicPlayer = null;
+    try {
+      mp?.dispose();
+    } catch (_) {}
     for (final p in _playersPool) {
-      p.dispose();
+      try {
+        p.dispose();
+      } catch (_) {}
     }
     _playersPool.clear();
     _initialized = false;

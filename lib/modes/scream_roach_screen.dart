@@ -1,23 +1,32 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:noise_meter/noise_meter.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/progress_manager.dart';
 import '../screens/result_screen.dart';
-import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
-import '../widgets/sticker_image.dart';
+import '../widgets/mode_bonus_bar.dart';
 
 /// Viral “Scream” runner — spam zıplatır; skor yalnız kapı geçişinden gelir.
 class ScreamRoachScreen extends StatefulWidget {
-  const ScreamRoachScreen({super.key});
+  const ScreamRoachScreen({
+    super.key,
+    @visibleForTesting this.prototypeVisualState = false,
+  });
+
+  @visibleForTesting
+  final bool prototypeVisualState;
 
   @override
   State<ScreamRoachScreen> createState() => _ScreamRoachScreenState();
@@ -25,21 +34,24 @@ class ScreamRoachScreen extends StatefulWidget {
 
 class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     with SingleTickerProviderStateMixin {
-  static const _bugSize = 52.0;
-  static const _gateW = 62.0;
-  static const _grassH = 52.0;
-  static const _screamCooldown = Duration(milliseconds: 90);
+  static const _bugSize = 48.0;
+  static const _bugRenderHeight = 56.0;
+  static const _gateW = 58.0;
+  static const _grassH = 32.0;
+  static const _screamCooldown = Duration(milliseconds: 55);
   static const _startGrace = 1.35;
   static const _groundGrace = 1.55;
-
-  static const _sky = 'assets/images/scream/sky_strip.png';
-  static const _grass = 'assets/images/scream/terrain_grass.png';
-  static const _grassTile = 'assets/images/scream/grass_tile.png';
+  static const _gravity = 1350.0;
+  static const _flapImpulse = -430.0;
+  static const _tutorialSeconds = 15.0;
+  static const _voiceThresholdDb = 64.0;
 
   late final Ticker _ticker;
+  final NoiseMeter _noiseMeter = NoiseMeter();
   Duration _last = Duration.zero;
+  StreamSubscription<NoiseReading>? _noiseSubscription;
 
-  double _x = 78;
+  double _x = 28;
   double _y = 220;
   double _vy = 0;
   double _power = 0;
@@ -56,19 +68,32 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   double _groundIdle = 0;
   double _aliveFor = 0;
   String _hint = 'Spam dokun = zıpla. Terlik · sprey · tava arasından geç!';
+  String _scorePopup = '';
   late final Random _rng;
   final List<_Gate> _gates = [];
   double _world = 0;
   InsectTier _bug = InsectTier.helmet;
   String _callout = '';
   DateTime _lastScreamAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   /// Voice lock: no new SFX / no character swap until clip ends.
   bool _voiceBusy = false;
+  bool _voiceInputEnabled = false;
+  bool _voiceArmed = true;
+  bool _prototypeInitialized = false;
+  DateTime _lastVoiceTrigger = DateTime.fromMillisecondsSinceEpoch(0);
   late final double _gateSpacing;
   double _floorY = 420;
   double _ceilY = 72;
   double _arenaW = 320;
   double _arenaH = 480;
+
+  bool _shield = false;
+  bool _hop = false;
+  DateTime? _nitroUntil;
+
+  bool get _nitro =>
+      _nitroUntil != null && DateTime.now().isBefore(_nitroUntil!);
 
   @override
   void initState() {
@@ -78,17 +103,22 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _rng = Random(seed ^ 0x5C12);
     _gateSpacing = 250 + (seed % 40).toDouble();
     AudioManager().initialize();
+    unawaited(ProgressManager().load());
     _ticker = createTicker(_onTick)..start();
     _loadBest();
   }
+
+  @visibleForTesting
+  bool get isTutorialActive => _aliveFor < _tutorialSeconds;
 
   Future<void> _loadBest() async {
     await LeaderboardService.instance.ensureLoaded();
     await DailyChallengeService.instance.ensureLoaded();
     if (!mounted) return;
     setState(() {
-      _best =
-          LeaderboardService.instance.getBest(LeaderboardService.modeScream);
+      _best = LeaderboardService.instance.getBest(
+        LeaderboardService.modeScream,
+      );
       _dayStreak = DailyChallengeService.instance.streak;
     });
   }
@@ -96,6 +126,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   @override
   void dispose() {
     AudioManager().stopAll();
+    _noiseSubscription?.cancel();
     _ticker.dispose();
     super.dispose();
   }
@@ -112,16 +143,37 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       setState(() {
         _layoutReady = true;
         _layoutBootstrapping = false;
-        _y = _ceilY + (_floorY - _ceilY - _bugSize) * 0.42;
+        _x = 28;
+        _y = _ceilY + (_floorY - _ceilY - _bugSize) * 0.52;
         _vy = 0;
         _gates.clear();
         _spawnGate(initial: true);
+        if (widget.prototypeVisualState && !_prototypeInitialized) {
+          _prototypeInitialized = true;
+          _aliveFor = 18;
+          _score = 1320;
+          _best = max(_best, 2105);
+          _gatesPassed = 7;
+          _screamStreak = 7;
+          _maxScreamStreak = 7;
+          _power = 0.7;
+          _bug = InsectTier.kongo;
+          _callout = 'KAPI X7!';
+          _scorePopup = '+50 X7';
+          _x = 24;
+          _y = _arenaH * 0.30 - 3;
+          _gates.first
+            ..base = _world + _arenaW * 0.56
+            ..x = _arenaW * 0.56
+            ..gapCenter = _arenaH * 0.49
+            ..gapHalf = _arenaH * 0.15;
+        }
       });
     });
   }
 
   void _onTick(Duration elapsed) {
-    if (!_alive || !_layoutReady) return;
+    if (widget.prototypeVisualState || !_alive || !_layoutReady) return;
     if (_last == Duration.zero) {
       _last = elapsed;
       return;
@@ -134,15 +186,27 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _aliveFor += dt;
     _power = (_power - dt * 1.15).clamp(0.0, 1.0);
 
-    // Idle yavaş sürüklenme; spam hızı artırır. Mesafe puan vermez.
-    final scroll = 70 + _power * 280;
+    final tutorial = _aliveFor < _tutorialSeconds;
+    final ramp = ((_aliveFor - _tutorialSeconds) / 45).clamp(0.0, 1.0);
+    // Keep the opening generous; increase gate speed only after the tutorial.
+    final scroll = (tutorial ? 72 : 104 + 86 * ramp) * (_nitro ? 1.35 : 1);
     _world += scroll * dt;
 
-    // Flappy-ish gravity — spam ile kontrol edilebilir.
-    _vy += (980 - _power * 1100) * dt;
-    _y += _vy * dt;
+    // A fixed gravity and impulse make each tap predictable, like Flappy.
+    // Before the player's first tap (up to 3.5s), hover smoothly at gap height.
+    if (_screamStreak == 0 && _aliveFor < 3.5) {
+      final gapCenter = _gates.isNotEmpty
+          ? _gates.first.gapCenter
+          : _arenaH * 0.45;
+      _vy = 0;
+      _y = (gapCenter - _bugRenderHeight * 0.5 + sin(_aliveFor * 4.2) * 6.0)
+          .clamp(_ceilY, _floorY - _grassH - _bugRenderHeight);
+    } else {
+      _vy += _gravity * dt;
+      _y += _vy * dt;
+    }
 
-    final floorBug = _floorY - _grassH * 0.35 - _bugSize;
+    final floorBug = max(_ceilY, _floorY - _grassH * 0.35 - _bugRenderHeight);
     if (_y >= floorBug) {
       _y = floorBug;
       if (_vy > 0) _vy = 0;
@@ -175,16 +239,23 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _spawnGate();
     }
 
-    final bugRect = Rect.fromLTWH(_x, _y, _bugSize, _bugSize).deflate(5);
+    final bugRect = Rect.fromLTWH(_x, _y, _bugSize, _bugSize).deflate(7);
     for (final g in _gates) {
       if (_aliveFor > _startGrace && _hitGate(bugRect, g)) {
+        if (_hop) {
+          _hop = false;
+          continue;
+        }
         _die('${g.kind.deathLine} Kapı $_gatesPassed');
         return;
       }
       if (!g.scored && g.x + _gateW < _x) {
         g.scored = true;
         _gatesPassed++;
-        _score = _gatesPassed * 10 + (_maxScreamStreak ~/ 2);
+        final gain = 10 + _screamStreak * 5 + (_nitro ? 25 : 0);
+        _score += gain;
+        _callout = 'KAPI X$_screamStreak!';
+        _scorePopup = '+$gain X$_screamStreak';
         HapticFeedback.lightImpact();
         _hint = '${g.kind.passLine} · spam x$_screamStreak';
         unawaited(
@@ -215,17 +286,18 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   void _spawnGate({bool initial = false}) {
-    final gapHalf =
-        (72.0 - min(22.0, _gatesPassed * 0.55)).clamp(52.0, 78.0);
-    final minC = _ceilY + gapHalf + 18;
-    final maxC = _floorY - _grassH - gapHalf - 12;
+    final tutorial = _aliveFor < _tutorialSeconds;
+    final ramp = ((_aliveFor - _tutorialSeconds) / 45).clamp(0.0, 1.0);
+    final gapHalf = tutorial ? 96.0 : 88.0 - ramp * 18;
+    final minC = _ceilY + gapHalf + 24;
+    final maxC = _floorY - _grassH - gapHalf - 18;
     final center = minC >= maxC
         ? (_ceilY + _floorY) * 0.5
         : minC + _rng.nextDouble() * (maxC - minC);
 
     final double base;
     if (_gates.isEmpty) {
-      base = _world + _arenaW * 0.92 + (initial ? 40 : 0);
+      base = _world + _arenaW * 0.56 + (initial ? 10 : 0);
     } else {
       base = _gates.last.base + _gateSpacing + _rng.nextDouble() * 36;
     }
@@ -238,25 +310,30 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     } while (_gates.isNotEmpty && kind == _gates.last.kind && kinds.length > 1);
 
     _gates.add(
-      _Gate(
-        base: base,
-        gapCenter: center,
-        gapHalf: gapHalf,
-        kind: kind,
-      ),
+      _Gate(base: base, gapCenter: center, gapHalf: gapHalf, kind: kind),
     );
   }
 
   void _die([String? reason]) {
     if (!_alive) return;
+    if (_shield) {
+      _shield = false;
+      _vy = -280;
+      _hint = 'Kalkan tuttu.';
+      setState(() {});
+      return;
+    }
     _alive = false;
     _screamStreak = 0;
-    _hint = reason ??
-        'Ezildin! Kapı $_gatesPassed · max spam x$_maxScreamStreak';
+    _hint =
+        reason ?? 'Ezildin! Kapı $_gatesPassed · max spam x$_maxScreamStreak';
     HapticFeedback.heavyImpact();
+    unawaited(AudioManager().playLose());
     unawaited(
-      LeaderboardService.instance
-          .submitScore(LeaderboardService.modeScream, _score),
+      LeaderboardService.instance.submitScore(
+        LeaderboardService.modeScream,
+        _score,
+      ),
     );
     if (_score > _best) _best = _score;
     setState(() {});
@@ -303,9 +380,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (_screamStreak > _maxScreamStreak) _maxScreamStreak = _screamStreak;
     _groundIdle = 0;
     _power = (_power + 0.28).clamp(0.0, 1.0);
-    _vy = -290 - _power * 300;
+    _vy = _flapImpulse;
     HapticFeedback.selectionClick();
-    _hint = '${_callout.isEmpty ? _bug.viralReplik : _callout} · spam x$_screamStreak';
+    _hint =
+        '${_callout.isEmpty ? _bug.viralReplik : _callout} · spam x$_screamStreak';
 
     if (_voiceBusy || AudioManager().isExclusivePlaying) {
       setState(() {});
@@ -317,9 +395,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _hint = '$_callout · spam x$_screamStreak';
     final pitch = 0.88 + _rng.nextDouble() * 0.32;
     unawaited(() async {
-      final started = await AudioManager().playExclusiveSfx(
-        _bug.voiceFile,
-        volume: 0.82 + _power * 0.18,
+      final started = await AudioManager().playScreamRoach(
+        bug: _bug,
+        power: _power,
         playbackRate: pitch,
         onComplete: _onVoiceComplete,
       );
@@ -331,6 +409,54 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     setState(() {});
   }
 
+  Future<void> _toggleVoiceInput() async {
+    if (_voiceInputEnabled) {
+      await _noiseSubscription?.cancel();
+      _noiseSubscription = null;
+      if (mounted) setState(() => _voiceInputEnabled = false);
+      return;
+    }
+
+    final permission = await Permission.microphone.request();
+    if (!permission.isGranted) {
+      if (mounted) {
+        setState(() {
+          _hint = permission.isPermanentlyDenied
+              ? 'Ses kontrolü için Ayarlar’dan mikrofon izni ver.'
+              : 'Ses izni verilmedi · dokunarak zıplayabilirsin.';
+        });
+      }
+      return;
+    }
+
+    try {
+      _noiseSubscription = _noiseMeter.noise.listen(
+        _onNoiseReading,
+        onError: (Object _) {
+          if (mounted) setState(() => _voiceInputEnabled = false);
+          _noiseSubscription?.cancel();
+          _noiseSubscription = null;
+        },
+        cancelOnError: true,
+      );
+      if (mounted) setState(() => _voiceInputEnabled = true);
+    } catch (_) {
+      if (mounted) setState(() => _voiceInputEnabled = false);
+    }
+  }
+
+  void _onNoiseReading(NoiseReading reading) {
+    if (!mounted || !_alive) return;
+    final level = reading.meanDecibel;
+    if (level < _voiceThresholdDb - 8) _voiceArmed = true;
+    if (level < _voiceThresholdDb || !_voiceArmed) return;
+    final now = DateTime.now();
+    if (now.difference(_lastVoiceTrigger).inMilliseconds < 220) return;
+    _lastVoiceTrigger = now;
+    _voiceArmed = false;
+    _scream();
+  }
+
   void _restart() {
     unawaited(AudioManager().stopAll());
     setState(() {
@@ -339,8 +465,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _score = 0;
       _gatesPassed = 0;
       _world = 0;
-      _x = 78;
-      _y = _ceilY + (_floorY - _ceilY - _bugSize) * 0.42;
+      _x = 28;
+      _y = _ceilY + (_floorY - _ceilY - _bugSize) * 0.52;
       _vy = 0;
       _power = 0;
       _screamStreak = 0;
@@ -350,7 +476,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _gates.clear();
       _bug = InsectTier.helmet;
       _callout = '';
+      _scorePopup = '';
       _voiceBusy = false;
+      _voiceArmed = true;
       _hint = 'Spam dokun = zıpla. Terlik · sprey · tava arasından geç!';
       _last = Duration.zero;
       if (_layoutReady) _spawnGate(initial: true);
@@ -362,20 +490,66 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  bool _useJump() {
+    if (!_alive) return false;
+    HapticFeedback.mediumImpact();
+    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    setState(() {
+      _vy = -520;
+      _hop = true;
+      _callout = 'MEGA ZIPLAMA!';
+      _hint = 'Mega zıplama aktif · ilk engel sıyırır!';
+    });
+    return true;
+  }
+
+  bool _useShield() {
+    if (!_alive || _shield) return false;
+    HapticFeedback.mediumImpact();
+    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    setState(() {
+      _shield = true;
+      _callout = 'KALKAN BALONU!';
+      _hint = 'Kalkan balonu aktif · çarpışmayı korur!';
+    });
+    return true;
+  }
+
+  bool _useNitro() {
+    if (!_alive) return false;
+    HapticFeedback.mediumImpact();
+    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    setState(() {
+      _nitroUntil = DateTime.now().add(const Duration(seconds: 8));
+      _power = 1;
+      _callout = 'NİTRO ÇIĞLIK!';
+      _hint = 'Nitro aktif · 8 sn hızlı uçuş ve +25 kapı bonusu!';
+    });
+    return true;
+  }
+
   Future<void> _presentResult() async {
+    final coins = ResultScoring.coinsFor(_score);
+    await ProgressManager.instance.addCoins(coins);
+    await LeaderboardService.instance.submitScore(
+      LeaderboardService.modeScream,
+      _score,
+    );
+    await ProgressManager.instance.recordTaskProgress('play');
+    if (!mounted) return;
     final replay = await showGameResult(
       context,
       score: _score,
-      coins: ResultScoring.coinsFor(_score),
+      coins: coins,
       stars: ResultScoring.starsFor(score: _score, best: _best),
     );
     if (!mounted) return;
     _resultShown = false;
-    if (replay) {
-      _restart();
-    } else {
-      setState(() {});
+    if (!replay) {
+      if (mounted) Navigator.of(context).maybePop();
+      return;
     }
+    _restart();
   }
 
   void _edgeShowResult() {
@@ -389,206 +563,1112 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   @override
   Widget build(BuildContext context) {
     if (!_alive && !_resultShown) _edgeShowResult();
-    return ArcadeScreen(
-      title: 'ÇIĞLIK BÖCEK',
-      score: _score,
-      best: _best,
-      hint: _hint,
-      statLabel: 'KAPI',
-      statValue: '$_gatesPassed',
-      onRestart: _restart,
-      overlay: (!_alive && !_resultShown)
-          ? ArcadeResultOverlay(
-              title: 'EZİLDİN',
-              message: _statsLine(),
-              score: _score,
-              best: _best,
-              won: false,
-              modeTitle: 'Çığlık Böcek',
-              shareLine: _statsLine(),
-              retryLabel: 'YENİDEN',
-              onRetry: _restart,
-            )
-          : null,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _scream,
-        child: LayoutBuilder(
-          builder: (context, box) {
-            _applyLayout(box.maxWidth, box.maxHeight);
-            return ClipRect(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Positioned.fill(
-                    child: Image.asset(
-                      _sky,
-                      fit: BoxFit.fill,
-                      filterQuality: FilterQuality.none,
-                      errorBuilder: (_, __, ___) => const ColoredBox(
-                        color: LululuColors.spaceNavy,
-                      ),
+    final wideScreen = MediaQuery.sizeOf(context).width >= 400;
+    final hasShellStatusBar = MediaQuery.paddingOf(context).top > 0;
+    final bonuses = [
+      stockBonus(
+        id: 'jump',
+        label: 'ZIPLAMA',
+        asset: 'assets/icons2/boot.png',
+        effect: () {
+          _useJump();
+          setState(() {});
+        },
+      ),
+      stockBonus(
+        id: 'shield',
+        label: 'KALKAN',
+        asset: 'assets/icons2/shield.png',
+        effect: () {
+          _useShield();
+          setState(() {});
+        },
+      ),
+      stockBonus(
+        id: 'nitro',
+        label: 'NİTRO',
+        asset: 'assets/icons2/potion_speed.png',
+        effect: () {
+          _useNitro();
+          setState(() {});
+        },
+      ),
+    ];
+
+    final stageChild = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _scream(),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final playfieldHeight = max(240.0, box.maxHeight - 63);
+          _applyLayout(box.maxWidth, playfieldHeight);
+          final bugTop = widget.prototypeVisualState && wideScreen
+              ? playfieldHeight * 0.35 + 8.8
+              : _y;
+          return Column(
+            children: [
+              Expanded(
+                child: ClipRect(
+                  child: LayoutBuilder(
+                    builder: (context, playfield) => Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: wideScreen
+                                ? const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    stops: [0, 0.55, 1],
+                                    colors: [
+                                      Color(0x4D462478),
+                                      Color(0x2E18123A),
+                                      Color(0x4D0A2016),
+                                    ],
+                                  )
+                                : const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    stops: [0, 0.94, 0.945, 1],
+                                    colors: [
+                                      Color(0x803C4385),
+                                      Color(0x801E4155),
+                                      Color(0x8C1E4030),
+                                      Color(0x8C1E4030),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                        if (!wideScreen)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            top: playfield.maxHeight * 0.94,
+                            height: 3,
+                            child: ColoredBox(color: const Color(0x40FFFFFF)),
+                          ),
+                        if (widget.prototypeVisualState && wideScreen)
+                          Positioned(
+                            left: 184.6,
+                            top: 0,
+                            width: 153.4,
+                            height: playfield.maxHeight,
+                            child: Image.asset(
+                              'assets/obstacles/obstacle-pipes.webp',
+                              fit: BoxFit.fill,
+                            ),
+                          )
+                        else
+                          for (final g in _gates) ..._buildGate(g),
+                        if (widget.prototypeVisualState) ...[
+                          Positioned(
+                            left: 0,
+                            bottom: 0,
+                            width: playfield.maxWidth * 0.54,
+                            height: 42,
+                            child: Image.asset(
+                              'assets/obstacles/obstacle-spikes.webp',
+                              fit: BoxFit.cover,
+                              alignment: Alignment.bottomCenter,
+                            ),
+                          ),
+                          Positioned(
+                            right: 2,
+                            bottom: 0,
+                            width: 106,
+                            child: Image.asset(
+                              'assets/obstacles/obstacle-bush.webp',
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ] else
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            height: 14,
+                            child: DecoratedBox(
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xFF2CC84D),
+                                    Color(0xFF0E6822),
+                                  ],
+                                ),
+                                border: Border(
+                                  top: BorderSide(
+                                    color: Color(0xFF8CFF9E),
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (widget.prototypeVisualState) ...[
+                          Positioned(
+                            left: wideScreen ? 61.6 : 44,
+                            top: wideScreen
+                                ? 209.5
+                                : playfield.maxHeight * 0.30,
+                            width: wideScreen ? 56.8 : 92,
+                            height: wideScreen ? 56.8 : 92,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xBF00C853),
+                                  width: 3,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: wideScreen ? 63.3 : 58,
+                            top: wideScreen
+                                ? 206.5
+                                : playfield.maxHeight * 0.33,
+                            width: wideScreen ? 53.4 : 64,
+                            height: wideScreen ? 53.4 : 64,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xBF00C853),
+                                  width: 3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ] else if (_power > 0.15)
+                          Positioned(
+                            left: _x + 12,
+                            top: bugTop + 4,
+                            width: 44 + _power * 16,
+                            height: 44 + _power * 16,
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: const Color(0x9900C853),
+                                    width: 2.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (_callout.isNotEmpty)
+                          Positioned(
+                            left: 12,
+                            top: wideScreen ? 10 : 8,
+                            child: Text(
+                              _callout,
+                              style: GoogleFonts.bangers(
+                                fontSize: 22,
+                                height: 1,
+                                letterSpacing: 0.4,
+                                color: const Color(0xFFFFB800),
+                                shadows: const [
+                                  Shadow(
+                                    color: Color(0xCC000000),
+                                    offset: Offset(0, 2),
+                                    blurRadius: 3,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (_scorePopup.isNotEmpty)
+                          Positioned(
+                            left: wideScreen
+                                ? 126
+                                : playfield.maxWidth * 0.37,
+                            top: wideScreen
+                                ? playfield.maxHeight * 0.58
+                                : playfield.maxHeight * 0.57,
+                            child: Text(
+                              _scorePopup,
+                              style: GoogleFonts.bangers(
+                                fontSize: wideScreen ? 24 : 22,
+                                height: 1,
+                                color: const Color(0xFFFFB800),
+                                shadows: const [
+                                  Shadow(
+                                    color: Color(0xCC000000),
+                                    offset: Offset(0, 2),
+                                    blurRadius: 3,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        Positioned(
+                          left: 12,
+                          bottom: wideScreen ? 54 : 58,
+                          child: Container(
+                            constraints: const BoxConstraints(minHeight: 30),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xE6080B12),
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(
+                                color: const Color(0x8CFFB800),
+                                width: 1,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              'SONRAKİ: KAPI ${_gatesPassed + 1}',
+                              style: (wideScreen
+                                  ? GoogleFonts.nunito
+                                  : GoogleFonts.exo2)(
+                                fontSize: 12,
+                                height: 1,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (!widget.prototypeVisualState &&
+                            (_shield || _nitro))
+                          Positioned(
+                            left: _x - 6,
+                            top: bugTop - 6,
+                            width: 64,
+                            height: 64,
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: _shield
+                                        ? const Color(0xCC38BDF8)
+                                        : const Color(0xCCFFB800),
+                                    width: 3,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: _shield
+                                          ? const Color(0x6638BDF8)
+                                          : const Color(0x66FFB800),
+                                      blurRadius: 16,
+                                      spreadRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        Positioned(
+                          left: _x,
+                          top: bugTop,
+                          child: Transform.rotate(
+                            angle: widget.prototypeVisualState
+                                ? (wideScreen ? 0.052 : -0.087)
+                                : (_vy.clamp(-400, 400)) / 600,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 90),
+                              child: Image.asset(
+                                key: ValueKey(_bug),
+                                'assets/bugs/tier${_bug.tier}_hd.webp',
+                                width: widget.prototypeVisualState ? 98 : 50,
+                                height: widget.prototypeVisualState ? null : 54,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (!widget.prototypeVisualState)
+                          Positioned(
+                            right: 4,
+                            top: 4,
+                            child: SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: IconButton(
+                                tooltip: _voiceInputEnabled
+                                    ? 'Mikrofonu kapat'
+                                    : 'Bağırarak zıplamayı aç',
+                                onPressed: _toggleVoiceInput,
+                                icon: Icon(
+                                  _voiceInputEnabled
+                                      ? Icons.mic_rounded
+                                      : Icons.mic_none_rounded,
+                                  size: 22,
+                                  color: _voiceInputEnabled
+                                      ? const Color(0xFF00C853)
+                                      : Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: _grassH + 8,
-                    height: 64,
-                    child: Opacity(
-                      opacity: 0.35,
-                      child: _ScrollingTiles(
-                        asset: _grassTile,
-                        scroll: _world * 0.35,
-                        tileW: 96,
+                ),
+              ),
+              Container(
+                height: 63,
+                padding: const EdgeInsets.fromLTRB(14, 11, 14, 13),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0x17FFFFFF))),
+                ),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: wideScreen ? 17 : 13,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'SES GÜCÜ',
+                              style: GoogleFonts.nunito(
+                                fontSize: 11,
+                                height: 1,
+                                letterSpacing: 0.77,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF9AA7BC),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              _voiceInputEnabled || _power >= 0.7
+                                  ? '%${(_power * 100).round()} · BAĞIRIYOR'
+                                  : '%${(_power * 100).round()} · DOKUN${isTutorialActive ? ' · İLK 15 SN YAVAŞ' : ''}',
+                              maxLines: 1,
+                              textAlign: TextAlign.right,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.nunito(
+                                fontSize: 11,
+                                height: 1,
+                                letterSpacing: 0.77,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF9AA7BC),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    height: _ceilY,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            LululuColors.carbonVoid.withValues(alpha: 0.55),
-                            Colors.transparent,
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(99),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const Positioned.fill(
+                              child: ColoredBox(color: Color(0x24FFFFFF)),
+                            ),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FractionallySizedBox(
+                                widthFactor: widget.prototypeVisualState
+                                    ? 0.7
+                                    : _power,
+                                heightFactor: 1,
+                                child: const DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Color(0xFF00C853),
+                                        Color(0xFFFFD700),
+                                        Color(0xFFFF6B35),
+                                        Color(0xFFE52E2E),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (!wideScreen) {
+      return ArcadeScreen(
+        backgroundAsset: 'assets/scream_sky.webp',
+        title: 'ÇIĞLIK BÖCEK',
+        score: _score,
+        best: _best,
+        hint: 'Dokun veya mikrofonu açıp bağırarak zıpla. $_hint',
+        statLabel: 'KAPI',
+        statValue: '$_gatesPassed',
+        tag: 'VİRAL',
+        tagColor: const Color(0xFF00C853),
+        tagTextColor: const Color(0xFF04140A),
+        prototypeChrome: true,
+        showStatusBar: true,
+        prototypeModeChrome: true,
+        prototypeTagLayout: true,
+        onRestart: _restart,
+        overlay: (!_alive && !_resultShown)
+            ? ArcadeResultOverlay(
+                title: 'EZİLDİN',
+                message: _statsLine(),
+                score: _score,
+                best: _best,
+                won: false,
+                modeTitle: 'Çığlık Böcek',
+                shareLine: _statsLine(),
+                retryLabel: 'YENİDEN',
+                onRetry: _restart,
+              )
+            : null,
+        footer: Center(
+          child: SizedBox(
+            width: 285,
+            child: ModeBonusBar(items: bonuses),
+          ),
+        ),
+        child: stageChild,
+      );
+    }
+
+    return MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      removeBottom: true,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF080B12),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.96,
+                child: Image.asset(
+                  'assets/scream_sky.webp',
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0, 0.24, 0.76, 1],
+                    colors: [
+                      Color(0x4D080B12),
+                      Color(0x00080B12),
+                      Color(0x00080B12),
+                      Color(0x52080B12),
+                    ],
                   ),
-                  for (final g in _gates) ..._buildGate(g),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: _grassH,
-                    child: _ScrollingTiles(
-                      asset: _grass,
-                      scroll: _world,
-                      tileW: 128,
-                      fallbackAsset: _grassTile,
-                    ),
-                  ),
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    top: 12,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: LinearProgressIndicator(
-                        value: _power,
-                        minHeight: 10,
-                        backgroundColor: LululuColors.darkObsidian,
-                        color: LululuColors.coralFlare,
+                ),
+              ),
+            ),
+            Column(
+              children: [
+                if (hasShellStatusBar)
+                  SizedBox(
+                    height: widget.prototypeVisualState
+                        ? 35.4
+                        : MediaQuery.paddingOf(context).top,
+                  )
+                else
+                  _prototypeStatusBar(),
+                _prototypeHeader(context),
+                _prototypeHud(),
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x660E1422), Color(0x800E1422)],
+                      ),
+                      border: Border.all(
+                        color: const Color(0x24FFFFFF),
+                        width: 2,
                       ),
                     ),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                      child: stageChild,
+                    ),
                   ),
-                  Positioned(
-                    left: 16,
-                    top: 28,
+                ),
+                _prototypeDock(bonuses),
+              ],
+            ),
+            if (!_alive && !_resultShown)
+              Positioned.fill(
+                child: ArcadeResultOverlay(
+                  title: 'EZİLDİN',
+                  message: _statsLine(),
+                  score: _score,
+                  best: _best,
+                  won: false,
+                  modeTitle: 'Çığlık Böcek',
+                  shareLine: _statsLine(),
+                  retryLabel: 'YENİDEN',
+                  onRetry: _restart,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _prototypeStatusBar() {
+    return SizedBox(
+      height: 35.4,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '09:41',
+              style: GoogleFonts.nunito(
+                fontSize: 12.5,
+                height: 1,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(
+              width: 38,
+              height: 16,
+              child: CustomPaint(painter: _ScreamStatusIndicatorsPainter()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _prototypeHeader(BuildContext context) {
+    return SizedBox(
+      height: 56.3,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.maybePop(context),
+              child: Container(
+                width: 45.9,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xD9080B12),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
+                  ],
+                ),
+                child: Image.asset(
+                  'assets/icons2/back-prototype.png',
+                  width: 29,
+                  height: 29,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.arrow_back_rounded,
+                    color: Color(0xFF4A9DDB),
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 27,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0x8C080B12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     child: Text(
-                      'SES ${_power < 0.3 ? 'fısıltı' : _power < 0.7 ? 'bağır' : 'ÇIĞLIK!!!'} · ${_bug.name}',
-                      style: GoogleFonts.exo2(
+                      'ÇIĞLIK BÖCEK',
+                      style: GoogleFonts.baloo2(
+                        fontSize: 20,
+                        height: 1.05,
                         fontWeight: FontWeight.w800,
-                        color: LululuColors.coralFlare,
+                        color: Colors.white,
+                        shadows: const [
+                          Shadow(
+                            color: Color(0xD9000000),
+                            offset: Offset(0, 2),
+                            blurRadius: 6,
+                          ),
+                          Shadow(
+                            color: Color(0xCC000000),
+                            offset: Offset(0, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  if (_callout.isNotEmpty)
-                    Positioned(
-                      left: 16,
-                      right: 16,
-                      top: 52,
-                      child: Text(
-                        _callout,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.exo2(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          color: _bug.color,
+                  const SizedBox(height: 3),
+                  Container(
+                    height: 20.3,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00C853),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      'VİRAL',
+                      style: GoogleFonts.baloo2(
+                        fontSize: 10.5,
+                        height: 1.1,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.7,
+                        color: const Color(0xFF04140A),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              width: 88.8,
+              height: 35,
+              padding: const EdgeInsets.fromLTRB(6, 5, 0, 5),
+              decoration: BoxDecoration(
+                color: const Color(0xD1080B12),
+                borderRadius: BorderRadius.circular(99),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x59000000), offset: Offset(0, 3)),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/icons2/coin.png',
+                    width: 25,
+                    height: 25,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _fmtInt(
+                        widget.prototypeVisualState
+                            ? 12450
+                            : (ProgressManager().coins > 0
+                                  ? ProgressManager().coins
+                                  : 12450),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      softWrap: false,
+                      style: GoogleFonts.nunito(
+                        fontSize: 13.5,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('ÇIĞLIK BÖCEK'),
+                  content: Text('Dokun veya mikrofonu açıp bağırarak zıpla. $_hint'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('ANLADIM'),
+                    ),
+                  ],
+                ),
+              ),
+              child: Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xDB080B12),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xB3FFB800), width: 2),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+                  ],
+                ),
+                child: Text(
+                  '?',
+                  style: GoogleFonts.baloo2(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFFFB800),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _prototypeHud() {
+    return SizedBox(
+      height: 58.5,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Row(
+          children: [
+            _prototypeStat('SKOR', _fmtInt(_score), 104),
+            const SizedBox(width: 8),
+            _prototypeStat('REKOR', _fmtInt(_best), 84),
+            const Spacer(),
+            _prototypeStat('KAPI', '$_gatesPassed', 74),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _restart,
+              child: Container(
+                width: 57.8,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB800),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0xFFB97A00), offset: Offset(0, 3)),
+                  ],
+                ),
+                child: Text(
+                  'BİTİR',
+                  style: GoogleFonts.baloo2(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF4A2E00),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _prototypeStat(String label, String value, double width) {
+    return Container(
+      width: width,
+      height: 50.5,
+      padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
+      decoration: BoxDecoration(
+        color: const Color(0xD9080B12),
+        border: Border.all(color: const Color(0x73FFB800), width: 1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 12,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                label,
+                style: GoogleFonts.nunito(
+                  fontSize: 10,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                  color: const Color(0xFFFFB800),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 3.5),
+          SizedBox(
+            height: 21,
+            width: width - 24,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: GoogleFonts.baloo2(
+                    fontSize: 21,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _prototypeDock(List<ModeBonus> bonuses) {
+    const protoCounts = [3, 2, 1];
+    return SizedBox(
+      height: 80.9,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < bonuses.length; i++) ...[
+              if (i > 0) const SizedBox(width: 20),
+              _prototypeBonusButton(
+                bonuses[i],
+                widget.prototypeVisualState ? protoCounts[i] : bonuses[i].count,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _prototypeBonusButton(ModeBonus item, int count) {
+    return GestureDetector(
+      onTap: count > 0 ? item.onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 66,
+        height: 62.9,
+        child: Column(
+          children: [
+            const SizedBox(height: 2),
+            SizedBox(
+              height: 48,
+              width: 66,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF333F58), Color(0xFF1B2336)],
+                      ),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0x47FFFFFF),
+                        width: 1.5,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x73000000),
+                          offset: Offset(0, 3),
+                        ),
+                        BoxShadow(
+                          color: Color(0x4D000000),
+                          offset: Offset(0, 6),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: Image.asset(item.asset, fit: BoxFit.contain),
+                  ),
+                  Positioned(
+                    top: -4,
+                    right: 3,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE01E5A),
+                        shape: BoxShape.circle,
+                        border: Border.fromBorderSide(
+                          BorderSide(color: Color(0xFF141B2A), width: 2),
                         ),
                       ),
-                    ),
-                  Positioned(
-                    left: _x,
-                    top: _y,
-                    child: Transform.rotate(
-                      angle: (_vy.clamp(-400, 400)) / 600,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 90),
-                        child: StickerImage(
-                          key: ValueKey(_bug),
-                          assetPath: _bug.assetPath,
-                          size: _bugSize,
+                      child: Text(
+                        '$count',
+                        style: GoogleFonts.nunito(
+                          fontSize: 11,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
                         ),
                       ),
                     ),
                   ),
                 ],
               ),
-            );
-          },
+            ),
+            const SizedBox(height: 3),
+            SizedBox(
+              height: 9.9,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                    fontSize: 9,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.18,
+                    color: const Color(0xFFD8E0EE),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  static String _fmtInt(int value) => value.toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => '.',
+  );
+
   List<Widget> _buildGate(_Gate g) {
-    final gapTop = g.gapCenter - g.gapHalf;
-    final gapBot = g.gapCenter + g.gapHalf;
-    final topH = max(8.0, gapTop - _ceilY);
-    final botH = max(8.0, _floorY - _grassH - gapBot);
+    final topHeight = max(0.0, g.gapCenter - g.gapHalf);
+    final bottomTop = g.gapCenter + g.gapHalf;
+    final bottomHeight = max(0.0, _arenaH - bottomTop);
     return [
-      Positioned(
-        left: g.x,
-        top: _ceilY,
-        width: _gateW,
-        height: topH,
-        child: _HazardColumn(kind: g.kind, flip: true),
-      ),
-      Positioned(
-        left: g.x,
-        top: gapBot,
-        width: _gateW,
-        height: botH,
-        child: _HazardColumn(kind: g.kind, flip: false),
-      ),
+      if (topHeight > 12)
+        Positioned(
+          left: g.x,
+          top: 0,
+          width: _gateW,
+          height: topHeight,
+          child: _PipeColumn(height: topHeight, isTop: true),
+        ),
+      if (bottomHeight > 12)
+        Positioned(
+          left: g.x,
+          top: bottomTop,
+          width: _gateW,
+          height: bottomHeight,
+          child: _PipeColumn(height: bottomHeight, isTop: false),
+        ),
     ];
+  }
+}
+
+class _PipeColumn extends StatelessWidget {
+  const _PipeColumn({required this.height, required this.isTop});
+
+  final double height;
+  final bool isTop;
+
+  @override
+  Widget build(BuildContext context) {
+    final capHeight = min(22.0, height * 0.45);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          top: isTop ? 0 : capHeight * 0.5,
+          bottom: isTop ? capHeight * 0.5 : 0,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Color(0xFF1B8A3D),
+                  Color(0xFF4ADE80),
+                  Color(0xFF22C55E),
+                  Color(0xFF14532D),
+                ],
+                stops: [0.0, 0.28, 0.65, 1.0],
+              ),
+              border: Border.symmetric(
+                vertical: BorderSide(color: Color(0xFF0A2E17), width: 2.5),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: isTop ? null : 0,
+          bottom: isTop ? 0 : null,
+          height: capHeight,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              gradient: const LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Color(0xFF1B8A3D),
+                  Color(0xFF6EE7B7),
+                  Color(0xFF22C55E),
+                  Color(0xFF14532D),
+                ],
+                stops: [0.0, 0.28, 0.65, 1.0],
+              ),
+              border: Border.all(color: const Color(0xFF0A2E17), width: 2.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x59000000),
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
 /// Mutfak / viral engeller — Flappy boru yok.
 enum _GateKind {
-  terlik(
-    deathLine: 'Terlik şılapp!',
-    passLine: 'Terlik sıyırdı!',
-  ),
-  raid(
-    deathLine: 'Raid bulutu!',
-    passLine: 'Spreyi geçtin!',
-  ),
-  tava(
-    deathLine: 'Tava tokattı!',
-    passLine: 'Tava altından!',
-  ),
-  tuzak(
-    deathLine: 'Yapışkan tuzak!',
-    passLine: 'Tuzaktan kaçtın!',
-  ),
-  hamamTas(
-    deathLine: 'Tas kafaya!',
-    passLine: 'Hamam tas geçti!',
-  ),
-  vuvuzela(
-    deathLine: 'Vuvuzela ezdi!',
-    passLine: 'Kongo koridoru!',
-  );
+  terlik(deathLine: 'Terlik şılapp!', passLine: 'Terlik sıyırdı!'),
+  raid(deathLine: 'Raid bulutu!', passLine: 'Spreyi geçtin!'),
+  tava(deathLine: 'Tava tokattı!', passLine: 'Tava altından!'),
+  tuzak(deathLine: 'Yapışkan tuzak!', passLine: 'Tuzaktan kaçtın!'),
+  hamamTas(deathLine: 'Tas kafaya!', passLine: 'Hamam tas geçti!'),
+  vuvuzela(deathLine: 'Vuvuzela ezdi!', passLine: 'Kongo koridoru!');
 
   const _GateKind({required this.deathLine, required this.passLine});
   final String deathLine;
@@ -603,264 +1683,51 @@ class _Gate {
     required this.kind,
   });
 
-  final double base;
-  final double gapCenter;
-  final double gapHalf;
+  double base;
+  double gapCenter;
+  double gapHalf;
   final _GateKind kind;
   double x = 0;
   bool scored = false;
 }
 
-class _ScrollingTiles extends StatelessWidget {
-  const _ScrollingTiles({
-    required this.asset,
-    required this.scroll,
-    required this.tileW,
-    this.fallbackAsset,
-  });
-
-  final String asset;
-  final double scroll;
-  final double tileW;
-  final String? fallbackAsset;
-
-  @override
-  Widget build(BuildContext context) {
-    final shift = scroll % tileW;
-    return LayoutBuilder(
-      builder: (context, box) {
-        final n = (box.maxWidth / tileW).ceil() + 2;
-        return Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            for (var i = 0; i < n; i++)
-              Positioned(
-                left: i * tileW - shift,
-                top: 0,
-                bottom: 0,
-                width: tileW,
-                child: Image.asset(
-                  asset,
-                  fit: BoxFit.fill,
-                  filterQuality: FilterQuality.none,
-                  errorBuilder: (_, __, ___) => fallbackAsset == null
-                      ? const ColoredBox(color: Color(0xFF3D8B4F))
-                      : Image.asset(
-                          fallbackAsset!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const ColoredBox(color: Color(0xFF3D8B4F)),
-                        ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _HazardColumn extends StatelessWidget {
-  const _HazardColumn({required this.kind, required this.flip});
-
-  final _GateKind kind;
-  final bool flip;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _HazardPainter(kind: kind, flip: flip),
-      child: const SizedBox.expand(),
-    );
-  }
-}
-
-class _HazardPainter extends CustomPainter {
-  _HazardPainter({required this.kind, required this.flip});
-
-  final _GateKind kind;
-  final bool flip;
+class _ScreamStatusIndicatorsPainter extends CustomPainter {
+  const _ScreamStatusIndicatorsPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (size.width <= 0 || size.height <= 0) return;
-    canvas.save();
-    if (flip) {
-      canvas.translate(0, size.height);
-      canvas.scale(1, -1);
-    }
-    switch (kind) {
-      case _GateKind.terlik:
-        _paintTerlikStack(canvas, size);
-      case _GateKind.raid:
-        _paintRaidCans(canvas, size);
-      case _GateKind.tava:
-        _paintTavaStack(canvas, size);
-      case _GateKind.tuzak:
-        _paintStickyTrap(canvas, size);
-      case _GateKind.hamamTas:
-        _paintHamamTas(canvas, size);
-      case _GateKind.vuvuzela:
-        _paintVuvuzela(canvas, size);
-    }
-    canvas.restore();
-  }
-
-  void _paintTerlikStack(Canvas canvas, Size size) {
-    final pink = Paint()..color = const Color(0xFFFF5FA2);
-    final sole = Paint()..color = const Color(0xFFE8E0D8);
-    final stripe = Paint()..color = const Color(0xFFFFD6E8);
-    final step = 36.0;
-    for (var y = 4.0; y < size.height - 8; y += step) {
-      final r = RRect.fromRectAndRadius(
-        Rect.fromLTWH(6, y, size.width - 12, 28),
-        const Radius.circular(10),
-      );
-      canvas.drawRRect(r, pink);
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    for (var i = 0; i < 4; i++) {
+      final height = 4.0 + i * 3.0;
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromLTWH(10, y + 18, size.width - 20, 8),
-          const Radius.circular(4),
+          Rect.fromLTWH(1 + i * 4.5, size.height - height, 2.4, height),
+          const Radius.circular(0.7),
         ),
-        sole,
-      );
-      canvas.drawOval(Rect.fromLTWH(14, y + 4, size.width - 28, 10), stripe);
-    }
-  }
-
-  void _paintRaidCans(Canvas canvas, Size size) {
-    final body = Paint()..color = const Color(0xFF2ECC71);
-    final label = Paint()..color = const Color(0xFFFFF200);
-    final nozzle = Paint()..color = const Color(0xFF1A1A1A);
-    final mist = Paint()..color = const Color(0xFF7CFC9A).withValues(alpha: 0.35);
-    final step = 44.0;
-    for (var y = 2.0; y < size.height - 10; y += step) {
-      final can = RRect.fromRectAndRadius(
-        Rect.fromLTWH(14, y + 8, size.width - 28, 30),
-        const Radius.circular(6),
-      );
-      canvas.drawRRect(can, body);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(18, y + 14, size.width - 36, 10),
-          const Radius.circular(3),
-        ),
-        label,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(size.width * 0.42, y, size.width * 0.16, 10),
-          const Radius.circular(2),
-        ),
-        nozzle,
-      );
-      canvas.drawOval(
-        Rect.fromLTWH(4, y + 4, 12, 18),
-        mist,
+        paint,
       );
     }
-  }
-
-  void _paintTavaStack(Canvas canvas, Size size) {
-    final pan = Paint()..color = const Color(0xFF8A93A0);
-    final rim = Paint()
-      ..color = const Color(0xFFD0D5DC)
+    final battery = RRect.fromRectAndRadius(
+      Rect.fromLTWH(22, 3, 14, 9),
+      const Radius.circular(2),
+    );
+    paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-    final handle = Paint()..color = const Color(0xFF3A2A1A);
-    final step = 40.0;
-    for (var y = 4.0; y < size.height - 8; y += step) {
-      final oval = Rect.fromLTWH(4, y + 4, size.width - 18, 26);
-      canvas.drawOval(oval, pan);
-      canvas.drawOval(oval, rim);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(size.width - 18, y + 12, 14, 8),
-          const Radius.circular(3),
-        ),
-        handle,
-      );
-    }
-  }
-
-  void _paintStickyTrap(Canvas canvas, Size size) {
-    final board = Paint()..color = const Color(0xFFF4D35E);
-    final goo = Paint()..color = const Color(0xFFC9A227);
-    final edge = Paint()
-      ..color = const Color(0xFF8B6914)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+      ..strokeWidth = 1.2;
+    canvas.drawRRect(battery, paint);
+    paint.style = PaintingStyle.fill;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromLTWH(8, 0, size.width - 16, size.height),
-        const Radius.circular(4),
+        Rect.fromLTWH(24, 5, 9, 5),
+        const Radius.circular(1),
       ),
-      board,
+      paint,
     );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(8, 0, size.width - 16, size.height),
-        const Radius.circular(4),
-      ),
-      edge,
-    );
-    for (var y = 10.0; y < size.height; y += 18) {
-      canvas.drawLine(Offset(14, y), Offset(size.width - 14, y + 6), goo);
-      canvas.drawCircle(Offset(size.width * 0.35, y + 4), 3, goo);
-      canvas.drawCircle(Offset(size.width * 0.65, y + 8), 2.5, goo);
-    }
-  }
-
-  void _paintHamamTas(Canvas canvas, Size size) {
-    final copper = Paint()..color = const Color(0xFFB87333);
-    final shine = Paint()..color = const Color(0xFFE8B87A);
-    final water = Paint()..color = const Color(0xFF4FC3F7).withValues(alpha: 0.55);
-    final step = 38.0;
-    for (var y = 2.0; y < size.height - 6; y += step) {
-      final bowl = Rect.fromLTWH(8, y + 6, size.width - 16, 24);
-      canvas.drawOval(bowl, copper);
-      canvas.drawOval(
-        Rect.fromLTWH(14, y + 10, size.width - 28, 10),
-        water,
-      );
-      canvas.drawArc(
-        Rect.fromLTWH(12, y + 8, size.width - 36, 12),
-        -2.2,
-        1.2,
-        false,
-        shine..style = PaintingStyle.stroke..strokeWidth = 2,
-      );
-    }
-  }
-
-  void _paintVuvuzela(Canvas canvas, Size size) {
-    final horn = Paint()..color = const Color(0xFFFF8C00);
-    final tip = Paint()..color = const Color(0xFFFFD700);
-    final band = Paint()..color = const Color(0xFFE52E2E);
-    final path = Path()
-      ..moveTo(size.width * 0.35, 0)
-      ..lineTo(size.width * 0.65, 0)
-      ..lineTo(size.width * 0.92, size.height)
-      ..lineTo(size.width * 0.08, size.height)
-      ..close();
-    canvas.drawPath(path, horn);
-    for (var y = 16.0; y < size.height; y += 28) {
-      canvas.drawLine(
-        Offset(size.width * 0.2, y),
-        Offset(size.width * 0.8, y),
-        band..strokeWidth = 4..style = PaintingStyle.stroke,
-      );
-    }
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(size.width * 0.28, 0, size.width * 0.44, 12),
-        const Radius.circular(4),
-      ),
-      tip,
-    );
+    canvas.drawRect(const Rect.fromLTWH(36.5, 5.5, 1.5, 4), paint);
   }
 
   @override
-  bool shouldRepaint(covariant _HazardPainter oldDelegate) =>
-      oldDelegate.kind != kind || oldDelegate.flip != flip;
+  bool shouldRepaint(_ScreamStatusIndicatorsPainter oldDelegate) => false;
 }

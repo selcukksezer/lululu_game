@@ -23,7 +23,7 @@ class OnlineComingSoonCard extends StatefulWidget {
 }
 
 class _OnlineComingSoonCardState extends State<OnlineComingSoonCard> {
-  bool _pressed = false;
+  final bool _pressed = false;
 
   @override
   void initState() {
@@ -252,6 +252,7 @@ class _CtaButtonState extends State<_CtaButton> {
         duration: const Duration(milliseconds: 110),
         child: Container(
           constraints: const BoxConstraints(minHeight: LululuMotion.minTap),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             gradient: widget.primary
@@ -282,15 +283,19 @@ class _CtaButtonState extends State<_CtaButton> {
                     ),
                   ],
           ),
-          child: Text(
-            widget.label,
-            style: GoogleFonts.exo2(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.8,
-              color: widget.primary
-                  ? LululuColors.carbonVoid
-                  : LululuColors.ink,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              style: GoogleFonts.exo2(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.8,
+                color: widget.primary
+                    ? LululuColors.carbonVoid
+                    : LululuColors.ink,
+              ),
             ),
           ),
         ),

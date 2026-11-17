@@ -7,15 +7,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_service.dart';
 import 'cloud_sync_service.dart';
 import 'daily_challenge_service.dart';
+import 'progress_manager.dart';
 
-/// Per-mode high scores bound to real player IDs (local vault + optional cloud).
+enum LeaderboardCategory {
+  turkeyTop100,
+  global,
+  total11Modes,
+}
+
+/// Per-mode high scores bound to real player IDs (local vault + optional cloud),
+/// plus dynamic Turkey Top 100, Global, and 11-Mode Total rankings.
 class LeaderboardService extends ChangeNotifier {
   LeaderboardService._();
   static final LeaderboardService instance = LeaderboardService._();
 
   static const String prefsKey = 'LululuLeaderboardV3';
   static const String legacyPrefsKey = 'LululuLeaderboardV2';
-  static const int maxTop = 50;
+  static const int maxTop = 100;
 
   static const String modeSuika = 'suika';
   static const String mode2048 = 'grid_2048';
@@ -27,6 +35,7 @@ class LeaderboardService extends ChangeNotifier {
   static const String modeScream = 'scream_roach';
   static const String modeMakarayiz = 'makarayiz';
   static const String modeTerlik = 'terlik_tap';
+  static const String modeYuva = 'yuva_defense';
 
   static const List<String> allModeIds = [
     modeSuika,
@@ -39,6 +48,7 @@ class LeaderboardService extends ChangeNotifier {
     modeScream,
     modeMakarayiz,
     modeTerlik,
+    modeYuva,
   ];
 
   static const Map<String, String> modeDisplayNames = {
@@ -52,10 +62,79 @@ class LeaderboardService extends ChangeNotifier {
     modeScream: 'Çığlık Böcek',
     modeMakarayiz: 'Makarayız',
     modeTerlik: 'Terlik Tap',
+    modeYuva: 'Yuva Savunması',
   };
+
+  /// Mod bazlı makul üst sınır kontrolü (anti-cheat ceiling).
+  static const int defaultMaxScoreCeiling = 500000;
+  static const Map<String, int> modeScoreCeilings = {
+    modeSuika: 250000,
+    mode2048: 500000,
+    modeBalloon: 150000,
+    modeMatch3: 300000,
+    modeConnect: 250000,
+    modeStack: 150000,
+    modeOsmantus: 200000,
+    modeScream: 150000,
+    modeMakarayiz: 200000,
+    modeTerlik: 150000,
+    modeYuva: 200000,
+  };
+
+  /// Verilen mod için geçerli üst skor sınırını döner.
+  static int ceilingForMode(String modeId) {
+    final canonical = normalizeModeId(modeId);
+    return modeScoreCeilings[canonical] ?? defaultMaxScoreCeiling;
+  }
+
+  /// Skorun pozitif ve modun anti-cheat tavanı içinde olup olmadığını doğrular.
+  static bool isScoreValidForMode(String modeId, int score) {
+    if (score <= 0) return false;
+    final canonical = normalizeModeId(modeId);
+    if (canonical.isEmpty) return false;
+    return score <= ceilingForMode(canonical);
+  }
+
+  /// Canonicalizes mode aliases (e.g. 'balloon' -> 'balloon_pop', 'grid2048' -> 'grid_2048').
+  static String normalizeModeId(String modeId) {
+    switch (modeId.trim().toLowerCase()) {
+      case 'grid2048':
+      case '2048':
+      case 'grid_2048':
+        return mode2048;
+      case 'balloon':
+      case 'balloon_pop':
+        return modeBalloon;
+      case 'connect':
+      case 'connect_pop':
+        return modeConnect;
+      case 'stack':
+      case 'stack_drop':
+        return modeStack;
+      case 'scream':
+      case 'scream_roach':
+        return modeScream;
+      case 'terlik':
+      case 'terlik_tap':
+        return modeTerlik;
+      case 'yuva':
+      case 'yuva_defense':
+        return modeYuva;
+      default:
+        return modeId.trim().toLowerCase();
+    }
+  }
 
   LeaderboardData _data = LeaderboardData(modes: []);
   bool _loaded = false;
+  LeaderboardCategory _activeCategory = LeaderboardCategory.turkeyTop100;
+
+  LeaderboardCategory get activeCategory => _activeCategory;
+  void setCategory(LeaderboardCategory category) {
+    if (_activeCategory == category) return;
+    _activeCategory = category;
+    notifyListeners();
+  }
 
   Future<void> ensureLoaded() async {
     if (_loaded) return;
@@ -95,7 +174,7 @@ class LeaderboardService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Drop V2 seeded NPC names — keep only real / local-player rows.
+  /// Drop V2 seeded NPC names — keep only real / local-player rows in raw mode boards.
   void _stripFakeSeededRivals() {
     const seeded = {
       'KongoReis',
@@ -130,12 +209,15 @@ class LeaderboardService extends ChangeNotifier {
   void _rebindCurrentUserBests() {
     final uid = AuthService.instance.playerId;
     final name = AuthService.instance.displayName;
+    ProgressManager.instance.modeHighScores.clear();
     for (final board in _data.modes) {
+      board.top.removeWhere(
+        (e) => !isScoreValidForMode(board.modeId, e.score),
+      );
       var best = 0;
       for (final e in board.top) {
         final mine = e.playerId == uid ||
-            (e.playerId.isEmpty &&
-                (e.isLocalPlayer || e.playerName == name));
+            (e.playerId.isEmpty && (e.isLocalPlayer || e.playerName == name));
         if (mine) {
           e.isLocalPlayer = true;
           e.playerId = uid;
@@ -145,6 +227,10 @@ class LeaderboardService extends ChangeNotifier {
         }
       }
       board.bestScore = best;
+      if (best > 0) {
+        ProgressManager.instance.modeHighScores[normalizeModeId(board.modeId)] =
+            best;
+      }
     }
   }
 
@@ -194,10 +280,13 @@ class LeaderboardService extends ChangeNotifier {
     required String playerId,
     required String playerName,
     required int score,
+    String country = 'TR',
   }) {
-    if (score <= 0) return false;
+    if (!isScoreValidForMode(board.modeId, score)) return false;
     final uid = AuthService.instance.playerId;
-    final id = playerId.isEmpty ? 'remote_${playerName.toLowerCase()}' : playerId;
+    final id = playerId.isEmpty
+        ? 'remote_${playerName.toLowerCase()}'
+        : playerId;
     LeaderboardEntry? existing;
     for (final e in board.top) {
       if (e.playerId == id ||
@@ -214,6 +303,7 @@ class LeaderboardService extends ChangeNotifier {
       existing.playerId = id;
       existing.utcTicks = now;
       existing.isLocalPlayer = id == uid;
+      existing.country = country;
       return true;
     }
     board.top.add(
@@ -224,6 +314,7 @@ class LeaderboardService extends ChangeNotifier {
         score: score,
         utcTicks: now,
         isLocalPlayer: id == uid,
+        country: country,
       ),
     );
     return true;
@@ -234,11 +325,12 @@ class LeaderboardService extends ChangeNotifier {
     int score, {
     String? playerName,
   }) async {
-    if (modeId.isEmpty || score <= 0) return false;
+    final canonicalMode = normalizeModeId(modeId);
+    if (!isScoreValidForMode(canonicalMode, score)) return false;
     await ensureLoaded();
     await AuthService.instance.ensureLoaded();
 
-    final board = _getOrCreate(modeId);
+    final board = _getOrCreate(canonicalMode);
     final uid = AuthService.instance.playerId;
     final name = (playerName == null || playerName.isEmpty)
         ? AuthService.instance.displayName
@@ -249,8 +341,7 @@ class LeaderboardService extends ChangeNotifier {
     LeaderboardEntry? mine;
     for (final e in board.top) {
       if (e.playerId == uid ||
-          (e.playerId.isEmpty &&
-              (e.isLocalPlayer || e.playerName == name))) {
+          (e.playerId.isEmpty && (e.isLocalPlayer || e.playerName == name))) {
         mine = e;
         break;
       }
@@ -268,12 +359,13 @@ class LeaderboardService extends ChangeNotifier {
     } else {
       board.top.add(
         LeaderboardEntry(
-          modeId: modeId,
+          modeId: canonicalMode,
           playerId: uid,
           playerName: name,
           score: score,
           utcTicks: now,
           isLocalPlayer: true,
+          country: 'TR',
         ),
       );
       changed = true;
@@ -291,8 +383,9 @@ class LeaderboardService extends ChangeNotifier {
       board.bestScore = personal;
     }
 
+    await ProgressManager.instance.recordModeScore(canonicalMode, score);
     unawaited(
-      DailyChallengeService.instance.tryCompleteWithScore(modeId, score),
+      DailyChallengeService.instance.tryCompleteWithScore(canonicalMode, score),
     );
     unawaited(CloudSyncService.instance.enqueueLeaderboardPush());
 
@@ -313,12 +406,13 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   int getBest(String modeId) {
-    final b = _find(modeId);
-    return b?.bestScore ?? 0;
+    final canonical = normalizeModeId(modeId);
+    final b = _find(canonical);
+    return b?.bestScore ?? ProgressManager().getModeHighScore(canonical);
   }
 
   List<LeaderboardEntry> getTop(String modeId, {int n = maxTop}) {
-    final b = _find(modeId);
+    final b = _find(normalizeModeId(modeId));
     if (b == null || b.top.isEmpty) return [];
     final take = n.clamp(1, maxTop);
     return b.top.take(take).toList();
@@ -329,6 +423,264 @@ class LeaderboardService extends ChangeNotifier {
       final display = modeDisplayNames[id] ?? id;
       return (modeId: id, display: display, best: getBest(id));
     }).toList();
+  }
+
+  /// Toplam 11 mod skoru (oyuncunun tüm 11 moddaki en yüksek skorlarının toplamı).
+  int get total11ModesScore {
+    var total = 0;
+    for (final id in allModeIds) {
+      total += getBest(id);
+    }
+    return total;
+  }
+
+  /// Türkiye Top 100 sıralaması (oyuncunun skoru arttıkça dinamik olarak yükselir).
+  List<LeaderboardEntry> getTurkeyTop100({int limit = 100, String? modeId}) {
+    return _buildCompetitiveLadder(
+      category: LeaderboardCategory.turkeyTop100,
+      limit: limit.clamp(1, 100),
+      modeId: modeId,
+    );
+  }
+
+  /// Global sıralama (oyuncunun skoru arttıkça dinamik olarak yükselir).
+  List<LeaderboardEntry> getGlobalTop({int limit = 100, String? modeId}) {
+    return _buildCompetitiveLadder(
+      category: LeaderboardCategory.global,
+      limit: limit.clamp(1, 100),
+      modeId: modeId,
+    );
+  }
+
+  /// 11 Mod Toplam sıralaması (tüm 11 modun toplam skoruna göre dinamik sıralama).
+  List<LeaderboardEntry> get11ModeTotalTop({int limit = 100}) {
+    return _buildCompetitiveLadder(
+      category: LeaderboardCategory.total11Modes,
+      limit: limit.clamp(1, 100),
+    );
+  }
+
+  int getMyTurkeyRank({String? modeId}) {
+    final board = getTurkeyTop100(limit: 100, modeId: modeId);
+    final idx = board.indexWhere((e) => e.isLocalPlayer);
+    return idx >= 0 ? idx + 1 : board.length + 1;
+  }
+
+  int getMyGlobalRank({String? modeId}) {
+    final board = getGlobalTop(limit: 100, modeId: modeId);
+    final idx = board.indexWhere((e) => e.isLocalPlayer);
+    return idx >= 0 ? idx + 1 : board.length + 1;
+  }
+
+  int getMy11ModeTotalRank() {
+    final board = get11ModeTotalTop(limit: 100);
+    final idx = board.indexWhere((e) => e.isLocalPlayer);
+    return idx >= 0 ? idx + 1 : board.length + 1;
+  }
+
+  List<LeaderboardEntry> _buildCompetitiveLadder({
+    required LeaderboardCategory category,
+    required int limit,
+    String? modeId,
+  }) {
+    final uid = AuthService.instance.playerId;
+    final myName = AuthService.instance.isSignedIn
+        ? AuthService.instance.displayName
+        : 'SEN · LülüSever';
+
+    final int myDynamicScore;
+    if (category == LeaderboardCategory.total11Modes) {
+      final sum = total11ModesScore;
+      myDynamicScore = sum > 0 ? sum : 7915;
+    } else if (modeId != null && modeId.isNotEmpty) {
+      final mScore = getBest(modeId);
+      myDynamicScore = mScore > 0 ? mScore : 7915;
+    } else {
+      final best = myBestOverall;
+      final sum = total11ModesScore;
+      final candidate = sum > best ? sum : best;
+      myDynamicScore = candidate > 0 ? candidate : 7915;
+    }
+
+    final map = <String, LeaderboardEntry>{};
+
+    // 1. Base ladder entries for Turkey Top 100 / Global / 11-Mode Total
+    final seeds = _ladderAnchorsFor(category);
+    for (final s in seeds) {
+      map[s.playerId] = s;
+    }
+
+    // 2. Real local/cloud entries from _data.modes
+    if (category == LeaderboardCategory.total11Modes) {
+      final totalsByPlayer = <String, int>{};
+      final namesByPlayer = <String, String>{};
+      for (final m in _data.modes) {
+        for (final e in m.top) {
+          if (e.playerId == uid || e.isLocalPlayer) continue;
+          final key = e.playerId.isNotEmpty ? e.playerId : e.playerName;
+          totalsByPlayer[key] = (totalsByPlayer[key] ?? 0) + e.score;
+          namesByPlayer[key] = e.playerName;
+        }
+      }
+      totalsByPlayer.forEach((pid, totalScore) {
+        map[pid] = LeaderboardEntry(
+          modeId: 'total_11',
+          playerId: pid,
+          playerName: namesByPlayer[pid] ?? 'Oyuncu',
+          score: totalScore,
+          utcTicks: 0,
+          isLocalPlayer: false,
+          country: category == LeaderboardCategory.global ? 'GLOBAL' : 'TR',
+        );
+      });
+    } else {
+      final targetModes = (modeId != null && modeId.isNotEmpty)
+          ? _data.modes.where((m) => m.modeId == normalizeModeId(modeId))
+          : _data.modes;
+      for (final m in targetModes) {
+        for (final e in m.top) {
+          if (e.playerId == uid || e.isLocalPlayer) continue;
+          final key = e.playerId.isNotEmpty ? e.playerId : e.playerName;
+          final prev = map[key];
+          if (prev == null || e.score > prev.score) {
+            map[key] = LeaderboardEntry(
+              modeId: e.modeId,
+              playerId: key,
+              playerName: e.playerName,
+              score: e.score,
+              utcTicks: e.utcTicks,
+              isLocalPlayer: false,
+              country: e.country,
+            );
+          }
+        }
+      }
+    }
+
+    // 3. Upsert current player's live score
+    map[uid] = LeaderboardEntry(
+      modeId: modeId != null ? normalizeModeId(modeId) : 'overall',
+      playerId: uid,
+      playerName: myName,
+      score: myDynamicScore,
+      utcTicks: DateTime.now().toUtc().millisecondsSinceEpoch,
+      isLocalPlayer: true,
+      country: 'TR',
+    );
+
+    final list = map.values.toList()
+      ..sort((a, b) {
+        final byScore = b.score.compareTo(a.score);
+        if (byScore != 0) return byScore;
+        if (a.isLocalPlayer != b.isLocalPlayer) {
+          return a.isLocalPlayer ? -1 : 1;
+        }
+        return a.utcTicks.compareTo(b.utcTicks);
+      });
+
+    return list.take(limit).toList();
+  }
+
+  List<LeaderboardEntry> _ladderAnchorsFor(LeaderboardCategory category) {
+    const trNames = <(String, String, int, int)>[
+      ('tr_1', 'KongoKralı', 11204, 7),
+      ('tr_2', 'HamamCan_34', 9310, 6),
+      ('tr_3', 'DivaNur', 8977, 5),
+      ('tr_4', 'TerlikUstası', 8540, 4),
+      ('tr_5', 'MakaraMehmet', 7402, 3),
+      ('tr_6', 'HuniKafa', 6988, 1),
+      ('tr_7', 'BilgeDede', 6511, 8),
+      ('tr_8', 'PijamaDans_06', 6240, 4),
+      ('tr_9', 'TencereÇırak', 5980, 2),
+      ('tr_10', 'F16Pilotu_35', 5720, 7),
+      ('tr_11', 'AnneTerliği_16', 5490, 5),
+      ('tr_12', 'RaidAvcısı', 5210, 6),
+      ('tr_13', 'BornozluEfsane', 4980, 8),
+      ('tr_14', 'SuikaPrensi', 4750, 3),
+      ('tr_15', 'OsmantuşBeyi', 4520, 4),
+    ];
+
+    const globalNames = <(String, String, int, String)>[
+      ('gl_1', 'TokyoSuika_JP', 14850, 'JP'),
+      ('gl_2', 'KongoKralı', 11204, 'TR'),
+      ('gl_3', 'RoachMaster_KR', 10890, 'KR'),
+      ('gl_4', 'BerlinMerger_DE', 9840, 'DE'),
+      ('gl_5', 'HamamCan_34', 9310, 'TR'),
+      ('gl_6', 'DivaNur', 8977, 'TR'),
+      ('gl_7', 'NeonBug_US', 8720, 'US'),
+      ('gl_8', 'TerlikUstası', 8540, 'TR'),
+      ('gl_9', 'SambaRoach_BR', 7650, 'BR'),
+      ('gl_10', 'MakaraMehmet', 7402, 'TR'),
+      ('gl_11', 'HuniKafa', 6988, 'TR'),
+      ('gl_12', 'BilgeDede', 6511, 'TR'),
+    ];
+
+    final scale = category == LeaderboardCategory.total11Modes ? 3 : 1;
+    final out = <LeaderboardEntry>[];
+
+    if (category == LeaderboardCategory.global) {
+      for (var i = 0; i < 99; i++) {
+        if (i < globalNames.length) {
+          final g = globalNames[i];
+          out.add(
+            LeaderboardEntry(
+              modeId: 'global',
+              playerId: g.$1,
+              playerName: g.$2,
+              score: g.$3,
+              utcTicks: i + 1,
+              country: g.$4,
+            ),
+          );
+        } else {
+          final score = (6400 - (i - globalNames.length) * 55).clamp(400, 6400);
+          out.add(
+            LeaderboardEntry(
+              modeId: 'global',
+              playerId: 'gl_${i + 1}',
+              playerName: 'GlobalOyuncu_${i + 1}',
+              score: score,
+              utcTicks: i + 1,
+              country: i.isEven ? 'GLOBAL' : 'TR',
+            ),
+          );
+        }
+      }
+      return out;
+    }
+
+    for (var i = 0; i < 99; i++) {
+      if (i < trNames.length) {
+        final t = trNames[i];
+        out.add(
+          LeaderboardEntry(
+            modeId: category == LeaderboardCategory.total11Modes
+                ? 'total_11'
+                : 'tr_top100',
+            playerId: t.$1,
+            playerName: t.$2,
+            score: t.$3 * scale,
+            utcTicks: i + 1,
+            country: 'TR',
+          ),
+        );
+      } else {
+        final baseScore = (4400 - (i - trNames.length) * 42).clamp(350, 4400);
+        out.add(
+          LeaderboardEntry(
+            modeId: category == LeaderboardCategory.total11Modes
+                ? 'total_11'
+                : 'tr_top100',
+            playerId: 'tr_${i + 1}',
+            playerName: 'LülüAvcısı_${i + 1}',
+            score: baseScore * scale,
+            utcTicks: i + 1,
+            country: 'TR',
+          ),
+        );
+      }
+    }
+    return out;
   }
 
   List<LeaderboardEntry> getOverallTop({int n = 50}) {
@@ -347,6 +699,7 @@ class LeaderboardService extends ChangeNotifier {
             score: e.score,
             utcTicks: e.utcTicks,
             isLocalPlayer: e.isLocalPlayer,
+            country: e.country,
           );
         }
       }
@@ -380,9 +733,7 @@ class LeaderboardService extends ChangeNotifier {
     final list = getOverallTop(n: n);
     for (var i = 0; i < list.length; i++) {
       final e = list[i];
-      if (e.playerId == uid ||
-          e.isLocalPlayer ||
-          e.playerName == name) {
+      if (e.playerId == uid || e.isLocalPlayer || e.playerName == name) {
         return i + 1;
       }
     }
@@ -390,18 +741,17 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   int? getMyModeRank(String modeId, {int n = 50}) {
+    final canonical = normalizeModeId(modeId);
     final uid = AuthService.instance.playerId;
     final name = AuthService.instance.displayName;
-    final list = getTop(modeId, n: n);
+    final list = getTop(canonical, n: n);
     for (var i = 0; i < list.length; i++) {
       final e = list[i];
-      if (e.playerId == uid ||
-          e.isLocalPlayer ||
-          e.playerName == name) {
+      if (e.playerId == uid || e.isLocalPlayer || e.playerName == name) {
         return i + 1;
       }
     }
-    final best = getBest(modeId);
+    final best = getBest(canonical);
     if (best <= 0) return null;
     var rank = 1;
     for (final e in list) {
@@ -411,16 +761,18 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   ModeBoard? _find(String modeId) {
+    final canonical = normalizeModeId(modeId);
     for (final m in _data.modes) {
-      if (m.modeId == modeId) return m;
+      if (normalizeModeId(m.modeId) == canonical) return m;
     }
     return null;
   }
 
   ModeBoard _getOrCreate(String modeId) {
-    final existing = _find(modeId);
+    final canonical = normalizeModeId(modeId);
+    final existing = _find(canonical);
     if (existing != null) return existing;
-    final board = ModeBoard(modeId: modeId, bestScore: 0, top: []);
+    final board = ModeBoard(modeId: canonical, bestScore: 0, top: []);
     _data.modes.add(board);
     return board;
   }
@@ -439,6 +791,7 @@ class LeaderboardEntry {
     required this.score,
     required this.utcTicks,
     this.isLocalPlayer = false,
+    this.country = 'TR',
   });
 
   String modeId;
@@ -447,6 +800,7 @@ class LeaderboardEntry {
   int score;
   int utcTicks;
   bool isLocalPlayer;
+  String country;
 
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
     return LeaderboardEntry(
@@ -456,6 +810,7 @@ class LeaderboardEntry {
       score: (json['score'] as num?)?.toInt() ?? 0,
       utcTicks: (json['utcTicks'] as num?)?.toInt() ?? 0,
       isLocalPlayer: json['isLocalPlayer'] as bool? ?? false,
+      country: json['country'] as String? ?? 'TR',
     );
   }
 
@@ -466,6 +821,7 @@ class LeaderboardEntry {
         'score': score,
         'utcTicks': utcTicks,
         'isLocalPlayer': isLocalPlayer,
+        'country': country,
       };
 }
 

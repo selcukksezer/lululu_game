@@ -1,0 +1,491 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — LÜLÜLÜ: Böcek Birleştirme Maniası
+// ===============================================================
+//
+// This security rules file enforces strict, red-team hardened schemas
+// and anti-cheat business logic for the following collections:
+//
+// 1. Collection: users/{userId} (and players/{userId})
+//    Document ID: Firebase Auth UID (userId)
+//    Access: Owner-only read/write (contains private save state & economy)
+//    Fields:
+//      - uid: string (optional, must match userId, immutable)
+//      - displayName: string (required, 1..32 chars)
+//      - username: string (optional, 1..32 chars)
+//      - country: string (optional, 2..8 chars, e.g. 'TR')
+//      - coins: int (required, 0..10000000, max +50000 delta per update, initial <= 50000)
+//      - energy: int (optional, 0..100)
+//      - level: int (optional, 1..80)
+//      - unlockedLevel: int (optional, 1..80)
+//      - totalStars: int (optional, 0..240)
+//      - total11ModesScore: int (optional, 0..5500000)
+//      - bestOverallScore: int (optional, 0..500000)
+//      - f16Count: int (optional, 0..9999)
+//      - raidCount: int (optional, 0..9999)
+//      - terlikCount: int (optional, 0..9999)
+//      - extraPowers: map<string, int> (optional, max 40 keys)
+//      - streak: int (optional, 0..3650)
+//      - unlockedTiers: list<int> (optional, max 16 items)
+//      - modeHighScores: map<string, int> (optional, max 16 keys)
+//      - integrityHash: string (optional, 64..64 chars HMAC-SHA256 hex digest)
+//      - role: string (optional, must be 'player' on create, immutable on update)
+//      - isBanned: bool (optional, must be false on create, immutable on update)
+//      - isAdmin: bool (optional, must be false on create, immutable on update)
+//      - createdAt: timestamp (optional, immutable on update)
+//      - updatedAt: timestamp (optional, must equal request.time if present)
+//
+// 2. Collection: leaderboards/{modeId}/scores/{userId}
+//    ( plus scores/{userId}/modes/{modeId} and leaderboard_entries/{entryId} )
+//    Access: Authenticated read; Owner-only create/update with anti-cheat guards
+//    Fields:
+//      - uid / playerId: string (optional/required, must match request.auth.uid, immutable)
+//      - modeId: string (required, valid mode enum, 1..32 chars, immutable)
+//      - score: int (required, 0..500000, non-decreasing on update: score >= resource.data.score)
+//      - displayName / playerName: string (optional, 1..32 chars)
+//      - country: string (optional, 2..8 chars)
+//      - utcTicks: int (optional, >= 0)
+//      - integrityHash: string (optional, 64..64 chars HMAC-SHA256 hex digest)
+//      - updatedAt: timestamp (required, must equal request.time)
+//
+// 3. Collection: chat_messages/{messageId}, rooms/{roomId}/messages/{messageId},
+//    and chat_channels/{channelId}/messages/{messageId}
+//    Access: Authenticated read; Owner-only create; Immutable (update: false); Owner-only delete
+//    Fields:
+//      - id: string (optional, 1..64 chars)
+//      - senderId / authorId: string (required, must match request.auth.uid)
+//      - senderName / authorName: string (optional, 1..32 chars)
+//      - text / body: string (required, 1..240 chars)
+//      - channel: string (required, in ['lobby', 'clan', 'vsChallenge', 'vs'])
+//      - utcTicks: int (optional, >= 0)
+//      - isSystem: bool (optional, must be false for user creations)
+//      - stickerTier: int (optional, 1..13)
+//      - stickerAsset: string (optional, 1..128 chars)
+//      - voiceLine: string (optional, 1..120 chars)
+//      - challengeModeId: string (optional, 1..32 chars)
+//      - challengeTargetScore: int (optional, 0..500000)
+//      - createdAt: timestamp (optional, must equal request.time if present)
+//
+// 4. Collection: studio_posts/{postId}
+//    Access: Authenticated read (if public or owner); Owner-only create/update/delete
+//    Fields:
+//      - id: string (optional, 1..64 chars, immutable)
+//      - ownerId / authorId: string (required, must match request.auth.uid, immutable)
+//      - authorName: string (required, 1..32 chars)
+//      - title: string (required, 1..80 chars)
+//      - caption: string (optional, 1..240 chars)
+//      - storagePath / filePath: string (required, 1..256 chars, scoped to studio_uploads/{uid}/...)
+//      - contentType: string (required, in ['video/mp4', 'image/gif', 'image/webp', 'image/png'])
+//      - fileSizeBytes: int (optional, > 0 && < 15 * 1024 * 1024)
+//      - isPublic: bool (required)
+//      - likes: int (optional, >= 0)
+//      - createdAtMs: int (optional, >= 0, immutable)
+//      - createdAt: timestamp (optional, immutable)
+//      - updatedAt: timestamp (optional, must equal request.time)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null && request.auth.uid.size() > 0;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedFields(allowedFields) {
+      return request.resource.data.keys().hasOnly(allowedFields);
+    }
+
+    function hasRequiredFields(requiredFields) {
+      return request.resource.data.keys().hasAll(requiredFields);
+    }
+
+    function areImmutableFieldsUnchanged(immutableFields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFields);
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             isValidString(request.resource.data[field], minLen, maxLen);
+    }
+
+    function isValidOptionalInt(field, minVal, maxVal) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is int &&
+              request.resource.data[field] >= minVal &&
+              request.resource.data[field] <= maxVal);
+    }
+
+    function isValidModeId(modeId) {
+      return modeId is string && modeId in [
+        'suika',
+        'grid_2048',
+        'balloon_pop',
+        'match3',
+        'connect_pop',
+        'stack_drop',
+        'osmantus',
+        'scream_roach',
+        'makarayiz',
+        'terlik_tap',
+        'yuva_defense',
+        'total_11',
+        'overall'
+      ];
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update)
+    // ===============================================================
+
+    // 1. User / Player Save Document Validator
+    function isValidUserDoc(userId) {
+      let data = request.resource.data;
+      let allowedKeys = [
+        'uid',
+        'displayName',
+        'username',
+        'country',
+        'coins',
+        'energy',
+        'level',
+        'unlockedLevel',
+        'totalStars',
+        'total11ModesScore',
+        'bestOverallScore',
+        'f16Count',
+        'raidCount',
+        'terlikCount',
+        'extraPowers',
+        'streak',
+        'unlockedTiers',
+        'modeHighScores',
+        'integrityHash',
+        'role',
+        'isBanned',
+        'isAdmin',
+        'createdAt',
+        'updatedAt'
+      ];
+      return hasOnlyAllowedFields(allowedKeys) &&
+             hasRequiredFields(['displayName', 'coins']) &&
+             isValidString(data.displayName, 1, 32) &&
+             isValidOptionalString('username', 1, 32) &&
+             isValidOptionalString('country', 2, 8) &&
+             (!('uid' in data) || data.uid == userId) &&
+             (data.coins is int && data.coins >= 0 && data.coins <= 10000000) &&
+             isValidOptionalInt('energy', 0, 100) &&
+             isValidOptionalInt('level', 1, 80) &&
+             isValidOptionalInt('unlockedLevel', 1, 80) &&
+             isValidOptionalInt('totalStars', 0, 240) &&
+             isValidOptionalInt('total11ModesScore', 0, 5500000) &&
+             isValidOptionalInt('bestOverallScore', 0, 500000) &&
+             isValidOptionalInt('f16Count', 0, 9999) &&
+             isValidOptionalInt('raidCount', 0, 9999) &&
+             isValidOptionalInt('terlikCount', 0, 9999) &&
+             (!('extraPowers' in data) || (data.extraPowers is map && data.extraPowers.size() <= 40)) &&
+             isValidOptionalInt('streak', 0, 3650) &&
+             (!('unlockedTiers' in data) || (data.unlockedTiers is list && data.unlockedTiers.size() <= 16)) &&
+             (!('modeHighScores' in data) || (data.modeHighScores is map && data.modeHighScores.size() <= 16)) &&
+             isValidOptionalString('integrityHash', 64, 64) &&
+             (!('role' in data) || data.role == 'player') &&
+             (!('isBanned' in data) || data.isBanned == false) &&
+             (!('isAdmin' in data) || data.isAdmin == false) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('updatedAt' in data) || data.updatedAt == request.time);
+    }
+
+    function isValidUserCreate(userId) {
+      return isValidUserDoc(userId) &&
+             request.resource.data.coins <= 50000;
+    }
+
+    function isValidUserUpdate(userId) {
+      return isValidUserDoc(userId) &&
+             areImmutableFieldsUnchanged(['uid', 'role', 'isBanned', 'isAdmin', 'createdAt']) &&
+             (request.resource.data.coins - resource.data.coins <= 50000);
+    }
+
+    // 2. Anti-Cheat Leaderboard Score Validator
+    function isValidScoreDoc(expectedUid, expectedModeId) {
+      let data = request.resource.data;
+      let allowedKeys = [
+        'uid',
+        'playerId',
+        'modeId',
+        'score',
+        'displayName',
+        'playerName',
+        'country',
+        'utcTicks',
+        'integrityHash',
+        'updatedAt'
+      ];
+      return hasOnlyAllowedFields(allowedKeys) &&
+             hasRequiredFields(['modeId', 'score', 'updatedAt']) &&
+             isValidModeId(data.modeId) &&
+             (expectedModeId == '' || data.modeId == expectedModeId) &&
+             (!('uid' in data) || data.uid == expectedUid) &&
+             (!('playerId' in data) || data.playerId == expectedUid) &&
+             (data.score is int && data.score >= 0 && data.score <= 500000) &&
+             isValidOptionalString('displayName', 1, 32) &&
+             isValidOptionalString('playerName', 1, 32) &&
+             isValidOptionalString('country', 2, 8) &&
+             isValidOptionalInt('utcTicks', 0, 9999999999999) &&
+             isValidOptionalString('integrityHash', 64, 64) &&
+             (data.updatedAt is timestamp && data.updatedAt == request.time);
+    }
+
+    function isValidScoreUpdate(expectedUid, expectedModeId) {
+      return isValidScoreDoc(expectedUid, expectedModeId) &&
+             areImmutableFieldsUnchanged(['uid', 'playerId', 'modeId']) &&
+             request.resource.data.score >= resource.data.score;
+    }
+
+    // 3. Live Chat Message Validator
+    function isValidChatMessage() {
+      let data = request.resource.data;
+      let allowedKeys = [
+        'id',
+        'senderId',
+        'authorId',
+        'senderName',
+        'authorName',
+        'text',
+        'body',
+        'channel',
+        'utcTicks',
+        'isSystem',
+        'stickerTier',
+        'stickerAsset',
+        'voiceLine',
+        'challengeModeId',
+        'challengeTargetScore',
+        'createdAt'
+      ];
+      let hasValidSender =
+        (('senderId' in data) && data.senderId == request.auth.uid) ||
+        (('authorId' in data) && data.authorId == request.auth.uid);
+      let senderConsistent =
+        (!('senderId' in data) || data.senderId == request.auth.uid) &&
+        (!('authorId' in data) || data.authorId == request.auth.uid);
+      let hasValidText =
+        (('text' in data) && isValidString(data.text, 1, 240)) ||
+        (('body' in data) && isValidString(data.body, 1, 240));
+      let textBoundsOk =
+        isValidOptionalString('text', 1, 240) &&
+        isValidOptionalString('body', 1, 240);
+
+      return hasOnlyAllowedFields(allowedKeys) &&
+             hasValidSender &&
+             senderConsistent &&
+             hasValidText &&
+             textBoundsOk &&
+             ('channel' in data) &&
+             (data.channel in ['lobby', 'clan', 'vsChallenge', 'vs']) &&
+             isValidOptionalString('id', 1, 64) &&
+             isValidOptionalString('senderName', 1, 32) &&
+             isValidOptionalString('authorName', 1, 32) &&
+             isValidOptionalInt('utcTicks', 0, 9999999999999) &&
+             (!('isSystem' in data) || data.isSystem == false) &&
+             isValidOptionalInt('stickerTier', 1, 13) &&
+             isValidOptionalString('stickerAsset', 1, 128) &&
+             isValidOptionalString('voiceLine', 1, 120) &&
+             isValidOptionalString('challengeModeId', 1, 32) &&
+             isValidOptionalInt('challengeTargetScore', 0, 500000) &&
+             (!('createdAt' in data) || data.createdAt == request.time);
+    }
+
+    function isMessageSender(resData) {
+      return isAuthenticated() && (
+        (('senderId' in resData) && resData.senderId == request.auth.uid) ||
+        (('authorId' in resData) && resData.authorId == request.auth.uid)
+      );
+    }
+
+    // 4. Bug Studio Video & GIF Post Validator
+    function isValidStudioPost() {
+      let data = request.resource.data;
+      let allowedKeys = [
+        'id',
+        'ownerId',
+        'authorId',
+        'authorName',
+        'title',
+        'caption',
+        'storagePath',
+        'filePath',
+        'contentType',
+        'fileSizeBytes',
+        'isPublic',
+        'durationText',
+        'metaText',
+        'thumbnailAsset',
+        'stickerAsset',
+        'trimPercent',
+        'likes',
+        'createdAtMs',
+        'createdAt',
+        'updatedAt'
+      ];
+      let hasValidOwner =
+        (('ownerId' in data) && data.ownerId == request.auth.uid) ||
+        (('authorId' in data) && data.authorId == request.auth.uid);
+      let ownerConsistent =
+        (!('ownerId' in data) || data.ownerId == request.auth.uid) &&
+        (!('authorId' in data) || data.authorId == request.auth.uid);
+      let validStorageScope =
+        (!('storagePath' in data) ||
+         (isValidString(data.storagePath, 1, 256) &&
+          data.storagePath.matches('^studio_uploads/' + request.auth.uid + '/[a-zA-Z0-9._-]+$')));
+
+      return hasOnlyAllowedFields(allowedKeys) &&
+             hasRequiredFields(['title', 'authorName', 'isPublic', 'contentType']) &&
+             hasValidOwner &&
+             ownerConsistent &&
+             validStorageScope &&
+             isValidString(data.title, 1, 80) &&
+             isValidString(data.authorName, 1, 32) &&
+             isValidOptionalString('id', 1, 64) &&
+             isValidOptionalString('caption', 1, 240) &&
+             isValidOptionalString('filePath', 1, 256) &&
+             (data.contentType in ['video/mp4', 'image/gif', 'image/webp', 'image/png']) &&
+             isValidOptionalInt('fileSizeBytes', 1, 15 * 1024 * 1024 - 1) &&
+             (data.isPublic is bool) &&
+             isValidOptionalString('durationText', 1, 16) &&
+             isValidOptionalString('metaText', 1, 64) &&
+             isValidOptionalString('thumbnailAsset', 1, 128) &&
+             isValidOptionalString('stickerAsset', 1, 128) &&
+             (!('trimPercent' in data) || (data.trimPercent is number && data.trimPercent >= 0 && data.trimPercent <= 100)) &&
+             isValidOptionalInt('likes', 0, 10000000) &&
+             isValidOptionalInt('createdAtMs', 0, 9999999999999) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('updatedAt' in data) || data.updatedAt == request.time);
+    }
+
+    function isStudioPostOwner(resData) {
+      return isAuthenticated() && (
+        (('ownerId' in resData) && resData.ownerId == request.auth.uid) ||
+        (('authorId' in resData) && resData.authorId == request.auth.uid)
+      );
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // 1. Authentication, Ownership & Anti-Cheat Economy (users & players)
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserCreate(userId);
+      allow update: if isOwner(userId) && isValidUserUpdate(userId);
+      allow delete: if false;
+    }
+
+    match /players/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserCreate(userId);
+      allow update: if isOwner(userId) && isValidUserUpdate(userId);
+      allow delete: if false;
+    }
+
+    // 2. Anti-Cheat Leaderboards
+    match /leaderboards/{modeId}/scores/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidScoreDoc(userId, modeId);
+      allow update: if isOwner(userId) && isValidScoreUpdate(userId, modeId);
+      allow delete: if false;
+    }
+
+    match /leaderboard_entries/{entryId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                    (entryId == request.auth.uid || entryId.matches('^' + request.auth.uid + '_.*')) &&
+                    isValidScoreDoc(request.auth.uid, '');
+      allow update: if isAuthenticated() &&
+                    (
+                      (('uid' in resource.data) && resource.data.uid == request.auth.uid) ||
+                      (('playerId' in resource.data) && resource.data.playerId == request.auth.uid)
+                    ) &&
+                    isValidScoreUpdate(request.auth.uid, '');
+      allow delete: if false;
+    }
+
+    // Support for CloudSyncService collectionGroup('modes') & per-user score subcollection
+    match /scores/{userId}/modes/{modeId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidScoreDoc(userId, modeId);
+      allow update: if isOwner(userId) && isValidScoreUpdate(userId, modeId);
+      allow delete: if false;
+    }
+
+    match /{path=**}/modes/{modeId} {
+      allow read: if isAuthenticated();
+    }
+
+    // 3. Live Chat (chat_messages, rooms/{roomId}/messages, chat_channels/{channelId}/messages)
+    match /chat_messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidChatMessage();
+      allow update: if false;
+      allow delete: if isMessageSender(resource.data);
+    }
+
+    match /rooms/{roomId}/messages/{messageId} {
+      allow read: if isAuthenticated() && roomId in ['lobby', 'clan', 'vsChallenge', 'vs'];
+      allow create: if isAuthenticated() &&
+                    roomId in ['lobby', 'clan', 'vsChallenge', 'vs'] &&
+                    isValidChatMessage();
+      allow update: if false;
+      allow delete: if isMessageSender(resource.data);
+    }
+
+    match /chat_channels/{channelId}/messages/{messageId} {
+      allow read: if isAuthenticated() && channelId in ['lobby', 'clan', 'vsChallenge', 'vs'];
+      allow create: if isAuthenticated() &&
+                    channelId in ['lobby', 'clan', 'vsChallenge', 'vs'] &&
+                    request.resource.data.channel == channelId &&
+                    isValidChatMessage();
+      allow update: if false;
+      allow delete: if isMessageSender(resource.data);
+    }
+
+    // 4. Bug Studio Videos & GIFs
+    match /studio_posts/{postId} {
+      allow read: if isAuthenticated() &&
+                  (resource.data.isPublic == true || isStudioPostOwner(resource.data));
+      allow create: if isAuthenticated() && isValidStudioPost();
+      allow update: if isStudioPostOwner(resource.data) &&
+                    isValidStudioPost() &&
+                    areImmutableFieldsUnchanged([
+                      'id',
+                      'ownerId',
+                      'authorId',
+                      'storagePath',
+                      'filePath',
+                      'contentType',
+                      'createdAtMs',
+                      'createdAt'
+                    ]);
+      allow delete: if isStudioPostOwner(resource.data);
+    }
+
+    // 5. Default Deny-All Fallback
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

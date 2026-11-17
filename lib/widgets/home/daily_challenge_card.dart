@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../models/lululu_game_mode.dart';
 import '../../navigation/game_routes.dart';
 import '../../services/daily_challenge_service.dart';
 import '../../theme/lululu_theme.dart';

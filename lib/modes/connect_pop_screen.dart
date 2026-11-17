@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,28 +8,48 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
+import '../services/progress_manager.dart';
 import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
-import '../widgets/sticker_image.dart';
+import '../widgets/mode_bonus_bar.dart';
 
 /// Drag through orthogonal neighbors of the same bug.
 /// A loop (back to the start) clears every bug of that kind.
 class ConnectPopScreen extends StatefulWidget {
-  const ConnectPopScreen({super.key});
+  const ConnectPopScreen({
+    super.key,
+    @visibleForTesting this.prototypeVisualState = false,
+    @visibleForTesting this.gameplayTestState = false,
+  });
+
+  final bool prototypeVisualState;
+  final bool gameplayTestState;
 
   @override
   State<ConnectPopScreen> createState() => _ConnectPopScreenState();
 }
 
 class _ConnectPopScreenState extends State<ConnectPopScreen> {
-  static const int rows = 7;
-  static const int cols = 7;
-  /// Softer starter — fewer kinds + seeded cluster (playtest V2).
-  static const int kinds = 3;
+  int get rows => (widget.prototypeVisualState || widget.gameplayTestState) ? 6 : 8;
+  static const int cols = 6;
+  static const int maxKinds = 5;
+  static const _tileColors = [
+    Color(0xFFFFE9C9),
+    Color(0xFFFFE3D6),
+    Color(0xFFE4F0FF),
+    Color(0xFFF3E4FF),
+    Color(0xFFFFE0EC),
+  ];
+
+  /// Difficulty ramp: starts with 3 kinds, a new kind every 14 cleared bugs.
+  int get kinds => kindsForCleared(_clearTotal);
+
+  @visibleForTesting
+  static int kindsForCleared(int cleared) => min(maxKinds, 3 + cleared ~/ 14);
   static const int minLen = 3;
   static const int startLines = 24;
-  static const int target = 1200;
+  static const int target = 1600;
 
   final _rng = Random();
   late List<List<int>> _grid;
@@ -63,6 +82,13 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   Set<Point<int>> _flashCells = {};
   Timer? _flashTimer;
   double _gridBurst = 1.0;
+  String? _popText;
+  String? _chainText;
+  int _popLen = 0;
+  Timer? _popTimer;
+  Offset? _lastTouch;
+  String? _activePowerFx;
+  Timer? _powerFxTimer;
 
   bool get _ended => _won || _lost;
 
@@ -71,7 +97,75 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     super.initState();
     AudioManager().initialize();
     _fill();
-    _loadBest();
+    if (widget.prototypeVisualState) {
+      _applyPrototypeState();
+    } else if (widget.gameplayTestState) {
+      _applyGameplayTestState();
+    } else {
+      _ensureDefaultPowers();
+      _loadBest();
+    }
+  }
+
+  void _ensureDefaultPowers() {
+    final pm = ProgressManager();
+    if (pm.powerCount('chain') == 0 &&
+        pm.powerCount('bolt') == 0 &&
+        pm.powerCount('magnet') == 0) {
+      pm.extraPowers['chain'] = 3;
+      pm.extraPowers['bolt'] = 1;
+      pm.extraPowers['magnet'] = 1;
+    }
+  }
+
+  void _applyGameplayTestState() {
+    _grid = List.generate(
+      rows,
+      (r) => List.generate(cols, (_) => (r * 2) % 5 + 1),
+    );
+    for (final p in const [
+      Point(1, 1),
+      Point(1, 2),
+      Point(2, 2),
+      Point(2, 3),
+      Point(3, 3),
+    ]) {
+      _grid[p.x][p.y] = 3;
+    }
+    _score = 0;
+    _best = 0;
+    _lines = startLines;
+    _streak = 0;
+  }
+
+  void _applyPrototypeState() {
+    _grid = List.generate(
+      rows,
+      (r) => List.generate(cols, (_) => (r * 2) % 5 + 1),
+    );
+    for (final p in const [
+      Point(1, 1),
+      Point(1, 2),
+      Point(2, 2),
+      Point(2, 3),
+      Point(3, 3),
+    ]) {
+      _grid[p.x][p.y] = 3;
+      _path.add(p);
+      _pathSet.add(p);
+    }
+    _paint = 3;
+    _score = 1610;
+    _best = 2870;
+    _lines = 7;
+    _streak = 2;
+    _popText = '+150 X2';
+    _chainText = 'ZİNCİR X2 · +150';
+    _popLen = 5;
+    final pm = ProgressManager();
+    pm.extraPowers['chain'] = 3;
+    pm.extraPowers['bolt'] = 1;
+    pm.extraPowers['magnet'] = 1;
   }
 
   @override
@@ -80,6 +174,8 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     _milestoneTimer?.cancel();
     _hintTimer?.cancel();
     _flashTimer?.cancel();
+    _popTimer?.cancel();
+    _powerFxTimer?.cancel();
     super.dispose();
   }
 
@@ -87,18 +183,22 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     await LeaderboardService.instance.ensureLoaded();
     if (!mounted) return;
     setState(() {
-      _best =
-          LeaderboardService.instance.getBest(LeaderboardService.modeConnect);
+      _best = LeaderboardService.instance.getBest(
+        LeaderboardService.modeConnect,
+      );
     });
   }
 
   Future<void> _persist() async {
     if (_score <= 0) return;
     await LeaderboardService.instance.ensureLoaded();
-    await LeaderboardService.instance
-        .submitScore(LeaderboardService.modeConnect, _score);
-    final best =
-        LeaderboardService.instance.getBest(LeaderboardService.modeConnect);
+    await LeaderboardService.instance.submitScore(
+      LeaderboardService.modeConnect,
+      _score,
+    );
+    final best = LeaderboardService.instance.getBest(
+      LeaderboardService.modeConnect,
+    );
     if (mounted && best > _best) setState(() => _best = best);
   }
 
@@ -109,6 +209,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     _busy = false;
     _won = false;
     _lost = false;
+    _resultShown = false;
     _paused = false;
     _streak = 0;
     _maxStreak = 0;
@@ -263,7 +364,8 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       for (var c = 0; c < cols; c++) {
         final cx = c * stride + cell / 2;
         final cy = r * stride + cell / 2;
-        final d = (local.dx - cx) * (local.dx - cx) +
+        final d =
+            (local.dx - cx) * (local.dx - cx) +
             (local.dy - cy) * (local.dy - cy);
         if (d < bestD) {
           bestD = d;
@@ -374,8 +476,10 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
             .round();
     _score += gained;
     if (_score > _best) _best = _score;
+    _showPop(pathLen, gained, loop);
     _comboMeter = min(1.0, 0.25 + _streak * 0.12 + pathLen * 0.04);
     _lines--;
+    if (pathLen >= 6 && !loop) _lines++;
     _checkScoreMilestones();
     final insect = InsectTier.values[(tier - 1).clamp(0, 7)];
     _hint = loop
@@ -394,9 +498,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       HapticFeedback.mediumImpact();
     }
     setState(() {});
-    await Future<void>.delayed(
-      Duration(milliseconds: loop ? 200 : 130),
-    );
+    await Future<void>.delayed(Duration(milliseconds: loop ? 200 : 130));
     if (!mounted || epoch != _epoch) return;
     _gridBurst = 1.0;
     _collapse();
@@ -436,6 +538,21 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     setState(() {
       _paused = !_paused;
       if (_paused) _clearPath();
+    });
+  }
+
+  void _showPop(int len, int gained, bool loop) {
+    _popTimer?.cancel();
+    _popLen = len;
+    _popText = '+$gained X$_streak';
+    _chainText = loop ? 'KARE · +$gained' : 'ZİNCİR X$_streak · +$gained';
+    _popTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (mounted) {
+        setState(() {
+          _popText = null;
+          _chainText = null;
+        });
+      }
     });
   }
 
@@ -499,20 +616,139 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+
+  List<Point<int>> _cluster(int r, int c) {
+    final tier = _grid[r][c];
+    final out = <Point<int>>[];
+    final seen = <int>{};
+    final queue = <Point<int>>[Point(r, c)];
+    while (queue.isNotEmpty) {
+      final pt = queue.removeLast();
+      if (pt.x < 0 || pt.y < 0 || pt.x >= rows || pt.y >= cols) continue;
+      if (!seen.add(pt.x * cols + pt.y)) continue;
+      if (_grid[pt.x][pt.y] != tier) continue;
+      out.add(pt);
+      queue.add(Point(pt.x + 1, pt.y));
+      queue.add(Point(pt.x - 1, pt.y));
+      queue.add(Point(pt.x, pt.y + 1));
+      queue.add(Point(pt.x, pt.y - 1));
+    }
+    return out;
+  }
+
+  void _triggerPowerFx(String kind, String milestoneText) {
+    _powerFxTimer?.cancel();
+    _activePowerFx = kind;
+    _showMilestone(milestoneText);
+    _powerFxTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _activePowerFx = null);
+    });
+  }
+
+  bool _useChain() {
+    if (_ended || _paused) return false;
+    HapticFeedback.mediumImpact();
+    AudioManager().playMerge(tierNumber: 2);
+    setState(() {
+      _lines += 3;
+      _hint = 'Zincir Uzatıcı aktif · +3 çizgi hakkı!';
+      _triggerPowerFx('chain', 'ZİNCİR UZATICI · +3 ÇİZGİ!');
+    });
+    _showHint();
+    return true;
+  }
+
+  bool _useBolt() {
+    if (_ended || _paused || _busy) return false;
+    var best = <Point<int>>[];
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        if (_grid[r][c] == 0) continue;
+        final group = _cluster(r, c);
+        if (group.length > best.length) best = group;
+      }
+    }
+    if (best.isEmpty) return false;
+    HapticFeedback.heavyImpact();
+    AudioManager().playMerge(tierNumber: 4);
+    final gained = best.length * 28;
+    setState(() {
+      _flashCells = best.toSet();
+      for (final p in best) {
+        _grid[p.x][p.y] = 0;
+      }
+      _score += gained;
+      if (_score > _best) _best = _score;
+      _clearTotal += best.length;
+      _collapse();
+      _showPop(best.length, gained, false);
+      _hint = 'Yıldırım / Tür Temizleyici ${best.length} böceği çarptı!';
+      _triggerPowerFx('bolt', 'YILDIRIM · +$gained PUAN!');
+      _checkScoreMilestones();
+    });
+    unawaited(_endCheck(_epoch));
+    return true;
+  }
+
+  bool _useMagnet() {
+    if (_ended || _paused || _busy) return false;
+    final counts = List<int>.filled(maxKinds + 1, 0);
+    for (final row in _grid) {
+      for (final value in row) {
+        if (value > 0 && value <= maxKinds) counts[value]++;
+      }
+    }
+    var tier = 1;
+    for (var i = 2; i <= maxKinds; i++) {
+      if (counts[i] > counts[tier]) tier = i;
+    }
+    HapticFeedback.mediumImpact();
+    AudioManager().playMerge(tierNumber: tier);
+    setState(() {
+      for (var i = 0; i < 4 && 1 + i < cols; i++) {
+        _grid[3][1 + i] = tier;
+      }
+      _grid[2][2] = tier;
+      _grid[2][3] = tier;
+      _hintCells = {
+        const Point(2, 2),
+        const Point(2, 3),
+        const Point(3, 2),
+        const Point(3, 3),
+      };
+      _hint = 'Mıknatıs / Bomba Halkası kare zinciri kurdu!';
+      _triggerPowerFx('magnet', 'MIKNATIS HALKASI · KARE HAZIR!');
+    });
+    return true;
+  }
+
   Future<void> _presentResult() async {
+    final coins = _score > 0 ? max(1, ResultScoring.coinsFor(_score)) : 0;
+    final stars = ResultScoring.starsFor(score: _score, best: _best);
+    if (coins > 0) {
+      await ProgressManager.instance.addCoins(coins);
+    }
+    if (_score > 0) {
+      await LeaderboardService.instance.submitScore(
+        LeaderboardService.modeConnect,
+        _score,
+      );
+    }
+    await ProgressManager.instance.recordTaskProgress('play');
+    if (!mounted) return;
     final replay = await showGameResult(
       context,
       score: _score,
-      coins: ResultScoring.coinsFor(_score),
-      stars: ResultScoring.starsFor(score: _score, best: _best),
+      coins: coins,
+      stars: stars,
     );
     if (!mounted) return;
-    _resultShown = false;
-    if (replay) {
-      _newGame();
-    } else {
-      setState(() {});
+    if (!replay) {
+      if (mounted) Navigator.of(context).maybePop();
+      return;
     }
+    _resultShown = false;
+    _newGame();
   }
 
   void _edgeShowResult() {
@@ -527,12 +763,19 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   Widget build(BuildContext context) {
     if (_ended && !_resultShown) _edgeShowResult();
     return ArcadeScreen(
-      title: 'BAĞLA PATLAT',
+      backgroundAsset: 'assets/design/backgrounds/connect_workshop.webp',
+      title: 'Bağla Patlat',
+      tag: 'ZİNCİR',
+      tagColor: const Color(0xFFFFD700),
+      tagTextColor: const Color(0xFF4A2E00),
+      showStatusBar: true,
       hint: _paused ? 'DURAKLATILDI' : _hint,
       score: _score,
       best: _best,
-      statLabel: _streak > 0 ? 'STREAK' : 'ÇİZGİ',
-      statValue: _streak > 0 ? 'x$_streak' : '$_lines',
+      statLabel: 'ÇİZGİ',
+      statValue: '$_lines',
+      prototypeChrome: true,
+      prototypeBaglaChrome: true,
       onRestart: _newGame,
       overlay: (_ended && !_resultShown)
           ? ArcadeResultOverlay(
@@ -547,143 +790,264 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
               onRetry: _newGame,
             )
           : _paused
-              ? Positioned.fill(
-                  child: ColoredBox(
-                    color: LululuColors.carbonVoid.withValues(alpha: 0.72),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'DURAKLATILDI',
-                            style: GoogleFonts.exo2(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
-                              color: LululuColors.liquidGold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _statsLine(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: LululuColors.mutedTitanium,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
-                        ],
+          ? Positioned.fill(
+              child: ColoredBox(
+                color: LululuColors.carbonVoid.withValues(alpha: 0.72),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'DURAKLATILDI',
+                        style: GoogleFonts.exo2(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: LululuColors.liquidGold,
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _statsLine(),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: LululuColors.mutedTitanium,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                    ],
                   ),
-                )
-              : null,
-      footer: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: _comboMeter,
-              minHeight: 5,
-              backgroundColor: LululuColors.darkObsidian,
-              color: Color.lerp(
-                LululuColors.liquidGold,
-                _loop ? LululuColors.toxicNeon : LululuColors.cyberFuchsia,
-                _comboMeter,
+                ),
               ),
-            ),
+            )
+          : null,
+      footer: ModeBonusBar(
+        items: [
+          stockBonus(
+            id: 'chain',
+            label: 'ZİNCİR +',
+            asset: 'assets/icons2/flame.png',
+            effect: () {
+              _useChain();
+              setState(() {});
+            },
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: ArcadeButton(
-                  label: 'İPUCU',
-                  primary: false,
-                  onPressed: (_busy || _ended || _paused) ? null : _showHint,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ArcadeButton(
-                  label: _paused ? 'DEVAM' : 'DURAKLAT',
-                  primary: false,
-                  onPressed: _busy ? null : _togglePause,
-                ),
-              ),
-            ],
+          stockBonus(
+            id: 'bolt',
+            label: 'YILDIRIM',
+            asset: 'assets/icons2/bolt.png',
+            effect: () {
+              _useBolt();
+              setState(() {});
+            },
+          ),
+          stockBonus(
+            id: 'magnet',
+            label: 'MIKNATIS',
+            asset: 'assets/icons2/magnet.png',
+            effect: () {
+              _useMagnet();
+              setState(() {});
+            },
           ),
         ],
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          const gap = 6.0;
-          final side = min(constraints.maxWidth - 8, constraints.maxHeight - 4);
-          final cell = (side - gap * (cols - 1)) / cols;
-          final gridW = cell * cols + gap * (cols - 1);
+          const gap = 5.0;
+          final bool compactFixed =
+              widget.prototypeVisualState || widget.gameplayTestState;
+          final double cell = compactFixed
+              ? (min(
+                      284.0,
+                      min(constraints.maxWidth - 24, constraints.maxHeight - 24),
+                    ) -
+                    gap * (cols - 1)) /
+                  cols
+              : min(
+                  (constraints.maxWidth - 16 - gap * (cols - 1)) / cols,
+                  (constraints.maxHeight - 58 - gap * (rows - 1)) / rows,
+                );
           final stride = cell + gap;
+          final boardW = cell * cols + gap * (cols - 1);
+          final boardH = cell * rows + gap * (rows - 1);
+          final popSize = widget.prototypeVisualState
+              ? 24.0
+              : 20.0 + min(10, max(0, _popLen - 3) * 2.0);
           return Stack(
             children: [
-              Center(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanStart: (d) {
-                    final p = _cellAt(d.localPosition, cell, gap);
-                    if (p != null) _begin(p);
-                  },
-                  onPanUpdate: (d) {
-                    final p = _cellAt(d.localPosition, cell, gap);
-                    if (p != null) _extend(p);
-                  },
-                  onPanEnd: (_) {
-                    if (_streak > 0 && _path.length < minLen) {
-                      // failed short path breaks streak only on commit fail
-                    }
-                    unawaited(_commit());
-                  },
-                  child: AnimatedScale(
-                    scale: _gridBurst,
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOutBack,
-                    child: SizedBox(
-                      width: gridW,
-                      height: gridW,
-                      child: Stack(
-                        children: [
-                          for (var r = 0; r < rows; r++)
-                            for (var c = 0; c < cols; c++)
-                              Positioned(
-                                left: c * stride,
-                                top: r * stride,
-                                width: cell,
-                                height: cell,
-                                child: _tile(r, c),
-                              ),
-                          if (_path.length >= 2)
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: CustomPaint(
-                                  painter: _PathPainter(
-                                    path: _path,
-                                    cell: cell,
-                                    gap: gap,
-                                    loop: _loop,
-                                    hot: _comboMeter,
+              Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onPanStart: (d) {
+                          final p = _cellAt(d.localPosition, cell, gap);
+                          _lastTouch = d.localPosition;
+                          if (p != null) _begin(p);
+                        },
+                        onPanUpdate: (d) {
+                          final from = _lastTouch ?? d.localPosition;
+                          _lastTouch = d.localPosition;
+                          final dist = (d.localPosition - from).distance;
+                          final steps = max(
+                            1,
+                            (dist / (cell * 0.4)).ceil(),
+                          );
+                          for (var i = 1; i <= steps; i++) {
+                            final p = _cellAt(
+                              Offset.lerp(
+                                from,
+                                d.localPosition,
+                                i / steps,
+                              )!,
+                              cell,
+                              gap,
+                            );
+                            if (p != null) _extend(p);
+                          }
+                        },
+                        onPanEnd: (_) => unawaited(_commit()),
+                        onPanCancel: () => unawaited(_commit()),
+                        child: AnimatedScale(
+                          scale: _gridBurst,
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutBack,
+                          child: SizedBox(
+                            key: const ValueKey('connect-pop-board'),
+                            width: boardW,
+                            height: boardH,
+                            child: Stack(
+                              children: [
+                                for (var r = 0; r < rows; r++)
+                                  for (var c = 0; c < cols; c++)
+                                    Positioned(
+                                      left: c * stride,
+                                      top: r * stride,
+                                      width: cell,
+                                      height: cell,
+                                      child: _tile(r, c),
+                                    ),
+                                if (_path.length >= 2)
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: CustomPaint(
+                                        painter: _PathPainter(
+                                          path: _path,
+                                          cell: cell,
+                                          gap: gap,
+                                          loop: _loop,
+                                          hot: _comboMeter,
+                                        ),
+                                      ),
+                                    ),
                                   ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!compactFixed)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'HEDEF 1.600 · EN UZUN ZİNCİR $_longestPath',
+                                style: GoogleFonts.nunito(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.7,
+                                  color: const Color(0xBDFFFFFF),
+                                ),
+                              ),
+                              Text(
+                                '%${((_score / target).clamp(0.0, 1.0) * 100).round()}',
+                                style: GoogleFonts.nunito(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w900,
+                                  color: const Color(0xFFFFD700),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: SizedBox(
+                              height: 11,
+                              child: LinearProgressIndicator(
+                                value: (_score / target).clamp(0.03, 1.0),
+                                backgroundColor: const Color(0x66080B12),
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Color(0xFFFFD700),
                                 ),
                               ),
                             ),
+                          ),
                         ],
+                      ),
+                    ),
+                ],
+              ),
+              if (_popText != null)
+                Positioned(
+                  left: 16,
+                  top: 190.5,
+                  child: IgnorePointer(
+                    child: _comboText(_popText!, popSize),
+                  ),
+                ),
+              if (_chainText != null)
+                Positioned(
+                  right: 12,
+                  bottom: 54,
+                  child: IgnorePointer(child: _comboText(_chainText!, 22)),
+                ),
+              if (_activePowerFx != null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Container(
+                        width: 150,
+                        height: 150,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _activePowerFx == 'chain'
+                                ? const Color(0xFFFFD700)
+                                : _activePowerFx == 'bolt'
+                                ? const Color(0xFF00E5FF)
+                                : const Color(0xFF00C853),
+                            width: 5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_activePowerFx == 'chain'
+                                      ? const Color(0xFFFFD700)
+                                      : _activePowerFx == 'bolt'
+                                      ? const Color(0xFF00E5FF)
+                                      : const Color(0xFF00C853))
+                                  .withValues(alpha: 0.55),
+                              blurRadius: 28,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
               if (_milestone != null)
                 Positioned(
-                  top: 4,
+                  top: 56,
                   left: 24,
                   right: 24,
                   child: IgnorePointer(
@@ -715,57 +1079,86 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     );
   }
 
+  Widget _comboText(String text, double size) {
+    return Text(
+      text,
+      style: GoogleFonts.bangers(
+        fontSize: size,
+        height: 1,
+        letterSpacing: 0.6,
+        color: const Color(0xFFFFB800),
+        shadows: const [
+          Shadow(color: Color(0xEB080B12), offset: Offset(0, 3)),
+          Shadow(color: Color(0xE6FF6B35), blurRadius: 14),
+          Shadow(color: Color(0x8CFF6B35), blurRadius: 32),
+          Shadow(color: Color(0x52FF6B35), blurRadius: 54),
+        ],
+      ),
+    );
+  }
+
   Widget _tile(int r, int c) {
     final tier = _grid[r][c];
     final onPath = _pathSet.contains(Point(r, c));
     final hinted = _hintCells.contains(Point(r, c));
     final flashed = _flashCells.contains(Point(r, c));
-    final insect = tier == 0 ? null : InsectTier.values[tier - 1];
+    final lit = onPath || hinted || flashed;
     return AnimatedScale(
-      scale: onPath || hinted || flashed ? 1.06 : 1,
-      duration: const Duration(milliseconds: 120),
+      scale: lit ? 1.04 : 1,
+      duration: const Duration(milliseconds: 100),
       curve: Curves.easeOutCubic,
-      child: DecoratedBox(
+      child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: flashed
-              ? LululuColors.liquidGold.withValues(alpha: 0.35)
-              : LululuColors.spaceNavy,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: flashed
-                ? Colors.white
-                : hinted
-                    ? LululuColors.toxicNeon
-                    : onPath
-                        ? (_loop
-                            ? LululuColors.toxicNeon
-                            : LululuColors.liquidGold)
-                        : LululuColors.darkObsidian,
-            width: onPath || hinted || flashed ? 2.2 : 1,
-          ),
-          boxShadow: onPath || hinted || flashed
-              ? [
-                  BoxShadow(
-                    color: (flashed
-                            ? Colors.white
-                            : _loop
-                                ? LululuColors.toxicNeon
-                                : LululuColors.liquidGold)
-                        .withValues(alpha: 0.45),
-                    blurRadius: 12,
-                  ),
-                ]
-              : null,
+          color: tier == 0
+              ? Colors.white10
+              : _tileColors[(tier - 1) % _tileColors.length],
+          borderRadius: BorderRadius.circular(10),
         ),
-        child: insect == null
-            ? const SizedBox.shrink()
-            : Padding(
-                padding: const EdgeInsets.all(4),
-                child: StickerImage(assetPath: insect.assetPath),
+        foregroundDecoration: lit
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: flashed
+                      ? Colors.white
+                      : hinted
+                      ? const Color(0xFF00C853)
+                      : _loop
+                      ? const Color(0xFF00C853)
+                      : const Color(0xFFFFD700),
+                  width: 3,
+                ),
+              )
+            : null,
+        child: tier == 0
+            ? null
+            : Stack(
+                children: [
+                  Positioned.fill(
+                    child: Padding(
+                      padding: EdgeInsets.all(_cellInset),
+                      child: Image.asset(
+                        'assets/bugs/tier${tier}_hd.webp',
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+                  const Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 3,
+                    child: ColoredBox(color: Color(0x24000000)),
+                  ),
+                ],
               ),
       ),
     );
   }
+
+  static const double _cellInset = 3.0;
 }
 
 class _PathPainter extends CustomPainter {
@@ -787,19 +1180,18 @@ class _PathPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (path.length < 2) return;
     final stride = cell + gap;
-    Offset center(Point<int> p) => Offset(
-          p.y * stride + cell / 2,
-          p.x * stride + cell / 2,
-        );
+    Offset center(Point<int> p) =>
+        Offset(p.y * stride + cell / 2, p.x * stride + cell / 2);
+    final gold = loop ? const Color(0xFF00C853) : const Color(0xFFFFD700);
     final paint = Paint()
-      ..color = (loop ? LululuColors.toxicNeon : LululuColors.liquidGold)
-          .withValues(alpha: 0.55 + hot * 0.35)
-      ..strokeWidth = 3.5 + hot * 2
+      ..color = gold.withValues(alpha: 0.92)
+      ..strokeWidth = 5
       ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke
-      ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 1.5);
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
 
-    final pathDraw = Path()..moveTo(center(path.first).dx, center(path.first).dy);
+    final pathDraw = Path()
+      ..moveTo(center(path.first).dx, center(path.first).dy);
     for (var i = 1; i < path.length; i++) {
       final o = center(path[i]);
       pathDraw.lineTo(o.dx, o.dy);
@@ -809,6 +1201,12 @@ class _PathPainter extends CustomPainter {
       pathDraw.lineTo(o.dx, o.dy);
     }
     canvas.drawPath(pathDraw, paint);
+    final dot = Paint()..color = gold.withValues(alpha: 0.92);
+    for (var i = 0; i < path.length; i++) {
+      if (i.isEven || i == path.length - 1) {
+        canvas.drawCircle(center(path[i]), 7, dot);
+      }
+    }
   }
 
   @override

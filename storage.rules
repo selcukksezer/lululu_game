@@ -1,0 +1,58 @@
+rules_version = '2';
+
+// ===============================================================
+// Cloud Storage Security Rules — LÜLÜLÜ: Böcek Birleştirme Maniası
+// ===============================================================
+//
+// Enforces strict owner-only write/delete, 15 MB maximum upload size,
+// and explicit MIME content-type validation for Bug Studio videos & GIFs.
+// All unlisted storage paths are denied by default.
+// ===============================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null && request.auth.uid.size() > 0;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidStudioContentType() {
+      return request.resource.contentType in [
+        'video/mp4',
+        'image/gif',
+        'image/webp',
+        'image/png'
+      ];
+    }
+
+    function isValidStudioFileSize() {
+      return request.resource.size > 0 &&
+             request.resource.size < 15 * 1024 * 1024;
+    }
+
+    function isValidFileName(fileName) {
+      return fileName.size() >= 3 &&
+             fileName.size() <= 128 &&
+             fileName.matches('^[a-zA-Z0-9._-]+\\.(mp4|gif|webp|png)$');
+    }
+
+    // Bug Studio Videos & GIFs (/studio_uploads/{userId}/{fileName})
+    match /studio_uploads/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId) &&
+                            isValidFileName(fileName) &&
+                            isValidStudioFileSize() &&
+                            isValidStudioContentType();
+      allow delete: if isOwner(userId);
+    }
+
+    // Default Deny-All Fallback
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

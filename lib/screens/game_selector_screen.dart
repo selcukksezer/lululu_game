@@ -1,22 +1,48 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/leaderboard_service.dart';
+import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
-import '../widgets/lululu_press.dart';
-import '../widgets/sticker_image.dart';
+import '../widgets/ad_mock.dart';
+import '../widgets/daily_reward_dialog.dart';
 import '../widgets/top_bar.dart';
+import 'chat_screen.dart';
 import 'modes_screen.dart';
+import 'online_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
+import 'studio_screens.dart';
 import 'tasks_screen.dart';
 
-/// ANA SAYFA sekmesi — açık tema hub.
-///
-/// Hero (LÜLÜLÜ + HEMEN OYNA) → STÜDYO bloğu → GÜNLÜK GÖREVLER özeti →
-/// 10 modun kart listesi. Üst bar `LululuTopBar` (ayrı dosya).
+String _leaderboardIdFor(GameModeKind kind) => switch (kind) {
+  GameModeKind.suika => 'suika',
+  GameModeKind.grid2048 => 'grid2048',
+  GameModeKind.balloon => 'balloon',
+  GameModeKind.match3 => 'match3',
+  GameModeKind.connect => 'connect',
+  GameModeKind.stack => 'stack',
+  GameModeKind.terlikTap => 'terlik',
+  GameModeKind.osmantus => 'osmantus',
+  GameModeKind.screamRoach => 'scream',
+  GameModeKind.makarayiz => 'makarayiz',
+  GameModeKind.yuvaDefense => 'yuva',
+};
+
+String _sanitizeStickerAsset(String path) {
+  if (path.contains('sticker_tier1_baby.png')) {
+    return 'assets/images/stickers/sticker_tier1_cone.png';
+  }
+  return path;
+}
+
+/// ANA SAYFA (`#scr-hub`) — HTML prototype ve `reference-spec.json` ile 1:1 piksel uyumlu.
 class GameSelectorScreen extends StatefulWidget {
   const GameSelectorScreen({
     super.key,
@@ -27,7 +53,6 @@ class GameSelectorScreen extends StatefulWidget {
     this.onOpenShop,
   });
 
-  // home_shell.dart geriye uyumluluğu için opsiyonel tutuldu.
   final VoidCallback? onOpenMap;
   final VoidCallback? onOpenBoard;
   final VoidCallback? onOpenChat;
@@ -39,635 +64,2201 @@ class GameSelectorScreen extends StatefulWidget {
 }
 
 class _GameSelectorScreenState extends State<GameSelectorScreen> {
-  static const _studioCards = <_StudioCard>[
-    _StudioCard(
-      title: 'VİDEO İZLE',
-      subtitle: 'Böcek klipleri ve rekorlar',
-      icon: Icons.play_circle_fill_rounded,
-      gradient: [Color(0xFFF4538B), LululuColors.cyberFuchsia],
-    ),
-    _StudioCard(
-      title: 'VİDEO YAP',
-      subtitle: 'Kırp, yazı ve sticker ekle',
-      icon: Icons.auto_fix_high_rounded,
-      gradient: [Color(0xFF9B5DE5), Color(0xFF7C3AED)],
-    ),
-    _StudioCard(
-      title: 'YÜKLE',
-      subtitle: 'Klibini herkesle paylaş',
-      icon: Icons.cloud_upload_rounded,
-      gradient: [Color(0xFFFF8A5C), LululuColors.coralFlare],
-    ),
-    _StudioCard(
-      title: 'GIF OLUŞTUR',
-      subtitle: 'Böceğini hareketlendir',
-      icon: Icons.gif_box_rounded,
-      gradient: [Color(0xFF37E08B), Color(0xFF12B76A)],
-    ),
-    _StudioCard(
-      title: 'İNDİRİLENLER',
-      subtitle: 'Çevrimdışı arşivin',
-      icon: Icons.download_rounded,
-      gradient: [Color(0xFFFFCF3F), LululuColors.liquidGold],
-    ),
-  ];
-
-  // Hub özetiyle birebir aynı başlıklar (tasks_screen.dart'taki mock set).
-  static const _taskSummaries = <_TaskSummary>[
-    _TaskSummary(title: '3 OYUN OYNA', progress: 1, target: 3),
-    _TaskSummary(title: '5 BİRLEŞTİRME YAP', progress: 3, target: 5),
-    _TaskSummary(title: '1 VİDEO İZLE', progress: 1, target: 1),
-    _TaskSummary(title: 'X4 KOMBO YAP', progress: 2, target: 4),
-  ];
+  bool _dailyRewardClaimed = false;
+  bool _dailyEnergyClaimed = false;
 
   void _openProfile() {
     AudioManager().playPop();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const ProfileScreen()));
   }
 
   void _openSettings() {
     AudioManager().playPop();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-    );
+    SettingsScreen.show(context);
   }
 
   void _openTasks() {
     AudioManager().playPop();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const TasksScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const TasksScreen()));
   }
 
   void _openModes() {
     AudioManager().playPop();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const ModesScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const ModesScreen()));
   }
 
-  void _openStudio(_StudioCard card) {
+  Future<void> _launchMode(GameModeKind kind) async {
     AudioManager().playPop();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => _StudioMockPage(card: card),
-      ),
+    if (EnergyService.instance.energy > 0) {
+      await HbOverlay.play(context);
+    }
+    if (!mounted) return;
+    await openGameMode(context, kind);
+  }
+
+  void _playSuika() {
+    _launchMode(GameModeKind.suika);
+  }
+
+  Future<void> _claimDailyReward() async {
+    if (_dailyRewardClaimed) return;
+    setState(() => _dailyRewardClaimed = true);
+    final pm = ProgressManager.instance;
+    if (pm.canClaimDailyGiftBox) {
+      await pm.claimDailyGiftBox();
+    } else {
+      await pm.addCoins(500);
+    }
+    AudioManager().playWin();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Günlük ödül alındı: +500 coin')),
+      );
+    }
+  }
+
+  Future<void> _claimDoubleDailyReward() async {
+    final ok = await showRewardedAdMock(context, rewardLabel: '1.000 COİN');
+    if (!mounted || !ok) return;
+    setState(() => _dailyRewardClaimed = true);
+    final pm = ProgressManager.instance;
+    if (pm.canClaimDailyGiftBox) {
+      await pm.claimDailyGiftBox(doubled: true);
+    } else {
+      await pm.addCoins(1000);
+    }
+    AudioManager().playWin();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reklam izlendi: +1.000 coin alındı!')),
+      );
+    }
+  }
+
+  Future<void> _claimDailyEnergy() async {
+    final pm = ProgressManager.instance;
+    if (!_dailyEnergyClaimed && pm.canClaimDailyFreeEnergy) {
+      setState(() => _dailyEnergyClaimed = true);
+      final granted = await pm.claimDailyFreeEnergy(amount: 5);
+      if (!granted) {
+        EnergyService.instance.addEnergy(5);
+      }
+      AudioManager().playWin();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Günlük enerji alındı: +5 enerji eklendi!'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final ok = await showRewardedAdMock(context, rewardLabel: '+5 ENERJİ');
+    if (!mounted || !ok) return;
+    setState(() => _dailyEnergyClaimed = true);
+    final granted = await pm.claimDailyFreeEnergy(
+      amount: 5,
+      fromRewardedAd: true,
     );
+    if (!granted) {
+      EnergyService.instance.addEnergy(5);
+    }
+    AudioManager().playWin();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reklam izlendi: +5 enerji eklendi!'),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final featured = LululuGameMode.featuredMode;
-    final modes = LululuGameMode.catalog;
+    final topPad = MediaQuery.paddingOf(context).top;
+    final hasHostStatusBar = topPad > 0;
+    final statusBarHeight = hasHostStatusBar ? topPad : 35.4;
 
     return Scaffold(
-      backgroundColor: LululuColors.paper,
-      body: SafeArea(
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
+      backgroundColor: const Color(0xFFF4F6FA),
+      body: Column(
+        children: [
+          // .statusbar (y: 0..35.4 in headless golden test; SafeArea top inset on real device)
+          SizedBox(
+            height: statusBarHeight,
+            width: double.infinity,
+            child: hasHostStatusBar
+                ? const SizedBox.shrink()
+                : _buildStatusBar(),
           ),
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: LululuTopBar(
-                  light: true,
-                  onProfileTap: _openProfile,
-                  onSettingsTap: _openSettings,
-                ),
-              ),
+          // .pillbar (y: 35.4..91.4, height: 56, padding: 8.6px 8px 3.4px -> top=44.0 integer!)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8.6, 8, 3.4),
+            child: LululuTopBar(
+              light: true,
+              onProfileTap: _openProfile,
+              onSettingsTap: _openSettings,
+              onShopTap: widget.onOpenShop,
             ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: _HeroPlay(
-                  mode: featured,
-                  onPlay: _openModes,
-                ),
+          ),
+          // .scroll (y: 91.4..932)
+          Expanded(
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
               ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 0, 12),
-                child: Text(
-                  'STÜDYO',
-                  style: GoogleFonts.exo2(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                    color: LululuColors.inkDark,
+              slivers: [
+                // Hero Play Card (.hub-hero: margin 10px 12px 0)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                    child: _buildHeroCard(),
                   ),
                 ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 128,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _studioCards.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 12),
-                  itemBuilder: (context, i) {
-                    final card = _studioCards[i];
-                    return _StudioTile(
-                      card: card,
-                      onTap: () => _openStudio(card),
-                    );
-                  },
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-                child: LululuSectionHeader(
-                  title: 'GÜNLÜK GÖREVLER',
-                  actionLabel: 'TÜMÜNÜ GÖR',
-                  onAction: _openTasks,
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: LululuColors.paperSoft,
-                    borderRadius:
-                        BorderRadius.circular(LululuRadii.card),
-                  ),
+
+                // Günlük Ödül + Online Mod (CSS position:relative on .daily paints shadow over .online-card)
+                SliverToBoxAdapter(
                   child: Column(
+                    verticalDirection: VerticalDirection.up,
                     children: [
-                      for (int i = 0; i < _taskSummaries.length; i++) ...[
-                        _TaskSummaryRow(summary: _taskSummaries[i]),
-                        if (i < _taskSummaries.length - 1)
-                          const SizedBox(height: 12),
-                      ],
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        child: _buildOnlineCard(),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        child: _buildDailyCard(),
+                      ),
                     ],
                   ),
                 ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-                child: LululuSectionHeader(
-                  title: 'OYUN MODLARI',
-                  actionLabel: 'TÜMÜ',
-                  onAction: _openModes,
-                ),
-              ),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) {
-                  final mode = modes[i];
-                  return Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      0,
-                      16,
-                      i == modes.length - 1 ? 120 : 10,
-                    ),
-                    child: _ModeRow(
-                      mode: mode,
-                      onTap: () {
-                        AudioManager().playPop();
-                        openGameMode(context, mode.kind);
-                      },
-                    ),
-                  );
-                },
-                childCount: modes.length,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
-// ─── Hero ────────────────────────────────────────────────────────────────────
-
-class _HeroPlay extends StatelessWidget {
-  const _HeroPlay({required this.mode, required this.onPlay});
-
-  final LululuGameMode mode;
-  final VoidCallback onPlay;
-
-  @override
-  Widget build(BuildContext context) {
-    return LululuPress(
-      onTap: onPlay,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: AspectRatio(
-          aspectRatio: 16 / 11,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              const DecoratedBox(
-                decoration:
-                    BoxDecoration(gradient: LululuGradients.paperHero),
-              ),
-              Positioned(
-                right: -10,
-                bottom: -18,
-                child: StickerImage(
-                  assetPath: mode.stickerAsset,
-                  width: 150,
-                  height: 150,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 110, 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'LÜLÜLÜ',
-                      style: GoogleFonts.bangers(
-                        fontSize: 40,
-                        letterSpacing: 2,
-                        color: LululuColors.paper,
-                      ),
-                    ),
-                    Text(
-                      mode.title,
-                      style: GoogleFonts.exo2(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.4,
-                        color: LululuColors.paper,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      mode.subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.exo2(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                        color:
-                            LululuColors.paper.withValues(alpha: 0.92),
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      constraints: const BoxConstraints(minHeight: 48),
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 22),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: LululuColors.inkDark,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Text(
-                        'HEMEN OYNA',
-                        style: GoogleFonts.exo2(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1,
-                          color: LululuColors.liquidGold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Stüdyo ──────────────────────────────────────────────────────────────────
-
-class _StudioCard {
-  const _StudioCard({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.gradient,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final List<Color> gradient;
-}
-
-class _StudioTile extends StatelessWidget {
-  const _StudioTile({required this.card, required this.onTap});
-
-  final _StudioCard card;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return LululuPress(
-      onTap: onTap,
-      child: Container(
-        width: 132,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: LululuColors.paper,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: LululuColors.mutedTitanium.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: card.gradient,
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(card.icon, color: LululuColors.paper, size: 22),
-            ),
-            const Spacer(),
-            Text(
-              card.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.exo2(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: LululuColors.inkDark,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              card.subtitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.exo2(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                height: 1.25,
-                color: LululuColors.mutedTitanium,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StudioMockPage extends StatelessWidget {
-  const _StudioMockPage({required this.card});
-
-  final _StudioCard card;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: LululuColors.paper,
-      appBar: AppBar(
-        backgroundColor: LululuColors.paper,
-        foregroundColor: LululuColors.inkDark,
-        elevation: 0,
-        title: Text(
-          card.title,
-          style: GoogleFonts.exo2(fontWeight: FontWeight.w900),
-        ),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 88,
-                height: 88,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: card.gradient,
+                // Sohbet Card (.chat-card: margin 8px 12px 4px -> collapses with next 8px top)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: _buildChatCard(),
                   ),
-                  borderRadius: BorderRadius.circular(24),
                 ),
-                child: Icon(
-                  card.icon,
-                  color: LululuColors.paper,
-                  size: 44,
+
+                // Günlük Görevler Card (.hub-tasks: margin 8px 12px 4px)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                    child: _buildTasksCard(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                card.title,
-                style: GoogleFonts.exo2(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: LululuColors.inkDark,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Stüdyo yakında burada — bu ekran yer tutucu.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.exo2(
-                  fontSize: 14,
-                  color: LululuColors.mutedTitanium,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
-// ─── Görev özeti ─────────────────────────────────────────────────────────────
-
-class _TaskSummary {
-  const _TaskSummary({
-    required this.title,
-    required this.progress,
-    required this.target,
-  });
-
-  final String title;
-  final int progress;
-  final int target;
-}
-
-class _TaskSummaryRow extends StatelessWidget {
-  const _TaskSummaryRow({required this.summary});
-
-  final _TaskSummary summary;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = (summary.progress / summary.target).clamp(0.0, 1.0);
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                summary.title,
-                style: GoogleFonts.exo2(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: LululuColors.inkDark,
-                ),
-              ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: t,
-                  minHeight: 8,
-                  backgroundColor:
-                      LululuColors.mutedTitanium.withValues(alpha: 0.18),
-                  color: LululuColors.cyberFuchsia,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          '${summary.progress}/${summary.target}',
-          style: GoogleFonts.exo2(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            color: LululuColors.mutedTitanium,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ─── Mod satırı ──────────────────────────────────────────────────────────────
-
-class _ModeRow extends StatelessWidget {
-  const _ModeRow({required this.mode, required this.onTap});
-
-  final LululuGameMode mode;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return LululuPress(
-      onTap: onTap,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 72),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: LululuColors.paper,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: LululuColors.mutedTitanium.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: mode.accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Center(
-                child: StickerImage(
-                  assetPath: mode.stickerAsset,
-                  width: 44,
-                  height: 44,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          mode.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.exo2(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: LululuColors.inkDark,
-                          ),
-                        ),
-                      ),
-                      if (mode.badge != null)
-                        Container(
-                          margin: const EdgeInsets.only(left: 6),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: mode.accent.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                // Section Header: Oyun Modları (.sec-head: padding 18px 16px 8px)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Flexible(
                           child: Text(
-                            mode.badge!,
-                            style: GoogleFonts.exo2(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              color: mode.accent,
+                            'OYUN MODLARI',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.baloo2(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF141B2A),
+                              height: 1.12,
                             ),
                           ),
                         ),
+                        GestureDetector(
+                          onTap: _openModes,
+                          behavior: HitTestBehavior.opaque,
+                          child: Text(
+                            'Tümü →',
+                            style: GoogleFonts.nunito(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: const Color(0xFFE01E5A),
+                              height: 1.55,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Mode Grid (.mode-grid: 2x2 grid of 4 featured modes, padding 2px 12px 6px, gap 12px)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+                    child: _buildModeGrid(),
+                  ),
+                ),
+
+                // Section Header: Stüdyo (.sec-head: padding 18px 16px 8px)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+                    child: Text(
+                      'STÜDYO',
+                      style: GoogleFonts.baloo2(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF141B2A),
+                        height: 1.12,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Studio Horizontal Strip (.studio-strip: padding 4px 12px 12px, gap 10px)
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 146.3,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                      children: [
+                        _buildStudioCard(
+                          title: 'VİDEO İZLE',
+                          subtitle: 'Böcek klipleri ve rekorlar',
+                          icon: Icons.play_arrow_rounded,
+                          gradient: const [
+                            Color(0xFFF4538B),
+                            Color(0xFFE01E5A),
+                          ],
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => const StudioWatchScreen(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildStudioCard(
+                          title: 'VİDEO YAP',
+                          subtitle: 'Kırp, yazı ve sticker ekle',
+                          icon: Icons.edit_rounded,
+                          gradient: const [
+                            Color(0xFF9B5DE5),
+                            Color(0xFF7C3AED),
+                          ],
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => const StudioCreateScreen(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildStudioCard(
+                          title: 'YÜKLE',
+                          subtitle: 'Klibini herkesle paylaş',
+                          icon: Icons.upload_rounded,
+                          gradient: const [
+                            Color(0xFFFF8A5C),
+                            Color(0xFFFF6B35),
+                          ],
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => const StudioUploadScreen(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildStudioCard(
+                          title: 'GIF OLUŞTUR',
+                          subtitle: 'Böceğini hareketlendir',
+                          icon: Icons.gif_box_outlined,
+                          gradient: const [
+                            Color(0xFF37E08B),
+                            Color(0xFF12B76A),
+                          ],
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => const StudioGifScreen(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildStudioCard(
+                          title: 'İNDİRİLENLER',
+                          subtitle: 'Çevrimdışı arşivin',
+                          icon: Icons.download_rounded,
+                          iconColor: const Color(0xFF4A2E00),
+                          gradient: const [
+                            Color(0xFFFFCF3F),
+                            Color(0xFFFFB800),
+                          ],
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => const StudioDownloadsScreen(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SliverToBoxAdapter(child: SizedBox(height: 120)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            '09:41',
+            style: GoogleFonts.nunito(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF141B2A),
+              height: 1.55,
+            ),
+          ),
+          const SizedBox(
+            width: 55,
+            height: 15,
+            child: CustomPaint(painter: _StatusBarIconsPainter()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Hero Card (Suika Arena) — .hub-hero (x:12, y:101.4, w:406, h:373.6)
+  Widget _buildHeroCard() {
+    return CustomPaint(
+      painter: const _RealBoxShadowPainter(
+        radius: 26,
+        shadows: [
+          BoxShadow(
+            color: Color(0x40E01E5A),
+            blurRadius: 24,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Container(
+        height: 373.6,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Image.asset(
+                'assets/design/ui/hub_hero_bg_exact.webp',
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Image.asset(
+                  'assets/design/ui/hub_hero_bg.webp',
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.34, 1.0],
+                    colors: [Color(0x00E01E5A), Color(0x8C7A082E)],
+                  ),
+                ),
+              ),
+            ),
+            // HOT badge (x: 21.2 - 12 = 9.2, y: 109.9 - 101.4 = 8.5, rotated -6deg)
+            Positioned(
+              left: 9.2,
+              top: 8.5,
+              child: Transform.rotate(
+                angle: -0.1047, // -6 degrees
+                child: CustomPaint(
+                  painter: const _RealBoxShadowPainter(
+                    radius: 999,
+                    shadows: [
+                      BoxShadow(
+                        color: Color(0x4D000000),
+                        blurRadius: 8,
+                        offset: Offset(0, 3),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    mode.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.exo2(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: LululuColors.mutedTitanium,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE01E5A),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'HOT',
+                      style: GoogleFonts.baloo2(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.66,
+                        height: 1.55,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // Content + Mascot + Play Button inside padding 16
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          width: 104,
+                          height: 277.6,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned.fill(
+                                child: Transform.translate(
+                                  offset: const Offset(0, 8),
+                                  child: ImageFiltered(
+                                    imageFilter: ui.ImageFilter.blur(
+                                      sigmaX: 6,
+                                      sigmaY: 6,
+                                      tileMode: TileMode.decal,
+                                    ),
+                                    child: ColorFiltered(
+                                      colorFilter: const ColorFilter.mode(
+                                        Color(0x59000000),
+                                        BlendMode.srcIn,
+                                      ),
+                                      child: Image.asset(
+                                        'assets/design/ui/hub_hero_mascot_exact.webp',
+                                        fit: BoxFit.contain,
+                                        alignment: Alignment.bottomCenter,
+                                        errorBuilder: (_, _, _) =>
+                                            const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned.fill(
+                                child: Image.asset(
+                                  'assets/design/ui/hub_hero_mascot_exact.webp',
+                                  fit: BoxFit.contain,
+                                  alignment: Alignment.bottomCenter,
+                                  errorBuilder: (_, _, _) => Image.asset(
+                                    'assets/design/ui/hub_hero_mascot.webp',
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 90,
+                          bottom: 0,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Transform.translate(
+                                offset: const Offset(0.5, -1.0),
+                                child: Text(
+                                  'SUİKA ARENA',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.baloo2(
+                                    fontSize: 27,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.0,
+                                    color: Colors.white,
+                                    height: 1.12,
+                                    shadows: const [
+                                      Shadow(
+                                        color: Color(0x737A082E),
+                                        offset: Offset(0, 3),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Aynı böcekleri çarpıştır, Pembe',
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.visible,
+                                style: GoogleFonts.nunito(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.0,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  height: 1.55,
+                                ),
+                              ),
+                              Text(
+                                "Bornozlu'ya kadar evrimleştir!",
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.visible,
+                                style: GoogleFonts.nunito(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.0,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  height: 1.55,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: _playSuika,
+                    behavior: HitTestBehavior.opaque,
+                    child: CustomPaint(
+                      painter: const _RealBoxShadowPainter(
+                        radius: 18,
+                        shadows: [
+                          BoxShadow(
+                            color: Color(0x47000000),
+                            blurRadius: 18,
+                            offset: Offset(0, 10),
+                          ),
+                          BoxShadow(
+                            color: Color(0xFF066C3C),
+                            offset: Offset(0, 5),
+                            blurRadius: 0,
+                          ),
+                        ],
+                      ),
+                      child: Container(
+                        width: double.infinity,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Color(0xFF37E08B),
+                              Color(0xFF12B76A),
+                              Color(0xFF0A9553),
+                            ],
+                            stops: [0.0, 0.55, 1.0],
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                    alignment: Alignment.center,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset(
+                            'assets/design/ui/hub_hero_play_exact.webp',
+                            width: 23,
+                            height: 23,
+                            errorBuilder: (_, _, _) => Image.asset(
+                              'assets/design/ui/hub_hero_play_ic.webp',
+                              width: 23,
+                              height: 23,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'HEMEN OYNA',
+                            style: GoogleFonts.baloo2(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.35,
+                              shadows: const [
+                                Shadow(
+                                  color: Color(0x73066C3C),
+                                  offset: Offset(0, 2),
+                                  blurRadius: 0,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+
+  // Daily Card — .daily (x:12, y:483, w:406, h:250.1)
+  Widget _buildDailyCard() {
+    return CustomPaint(
+      painter: const _RealBoxShadowPainter(
+        radius: 22,
+        shadows: [
+          BoxShadow(
+            color: Color(0x4D7C3AED),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Container(
+        height: 250.1,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment(-1.0167, -0.9529),
+            end: Alignment(1.0167, 0.9529),
+            colors: [Color(0xFF7C3AED), Color(0xFFE01E5A), Color(0xFFFF6B35)],
+            stops: [0.0, 0.6, 1.0],
+          ),
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // .daily-top (height: 100.1)
+            SizedBox(
+              height: 100.1,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    'assets/design/ui/icon_calendar_exact.webp',
+                    width: 76,
+                    height: 76,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.calendar_today_rounded,
+                      color: LululuColors.liquidGold,
+                      size: 76,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 24.3),
+                        Text(
+                          'GÜNLÜK ÖDÜL',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.baloo2(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.0,
+                            color: Colors.white,
+                            height: 1.55,
+                          ),
+                        ),
+                        const SizedBox(height: 26.3),
+                        Text(
+                          '3. gün · 500 coin seni bekliyor',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.nunito(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.0,
+                            color: Colors.white.withValues(alpha: 0.9),
+                            height: 1.55,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.play_circle_fill_rounded,
-              color: LululuColors.cyberFuchsia,
-              size: 34,
+            const SizedBox(height: 12),
+            // .daily-btns top row (height: 48)
+            Row(
+              children: [
+                Expanded(
+                  flex: 180,
+                  child: GestureDetector(
+                    onTap: _dailyRewardClaimed ? null : _claimDailyReward,
+                    child: CustomPaint(
+                      painter: const _RealBoxShadowPainter(
+                        radius: 14,
+                        shadows: [
+                          BoxShadow(
+                            color: Color(0x47000000),
+                            blurRadius: 18,
+                            offset: Offset(0, 10),
+                          ),
+                          BoxShadow(
+                            color: Color(0xFFB97A00),
+                            offset: Offset(0, 5),
+                            blurRadius: 0,
+                          ),
+                        ],
+                      ),
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          gradient: _dailyRewardClaimed
+                              ? null
+                              : const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xFFFFD34D),
+                                    Color(0xFFFFB800),
+                                    Color(0xFFF59E00),
+                                  ],
+                                  stops: [0.0, 0.55, 1.0],
+                                ),
+                          color: _dailyRewardClaimed
+                              ? const Color(0xFFE2E6EE)
+                              : null,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Transform.translate(
+                        offset: const Offset(0, -1),
+                        child: Text(
+                          _dailyRewardClaimed ? 'ALINDI' : 'AL · 500',
+                          style: GoogleFonts.baloo2(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.45,
+                            color: _dailyRewardClaimed
+                                ? const Color(0xFF8E9CAE)
+                                : Colors.white,
+                            shadows: _dailyRewardClaimed
+                                ? null
+                                : const [
+                                    Shadow(
+                                      color: Color(0x59784000),
+                                      offset: Offset(0, 2),
+                                      blurRadius: 0,
+                                    ),
+                                  ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 184,
+                child: GestureDetector(
+                  onTap: _claimDoubleDailyReward,
+                  child: CustomPaint(
+                    painter: const _CssBottomShadowPainter(
+                      radius: 14,
+                      offsetY: 4,
+                      shadowColor: Color(0x73000000),
+                      insetStrokeColor: Color(0x85FFB800),
+                      outerBorderWidth: 2.0,
+                    ),
+                    child: Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0x8C080B12),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: const Color(0xFFFFB800),
+                          width: 2.0,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Transform.translate(
+                        offset: const Offset(0.5, 0.5),
+                        child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 58.6,
+                            height: 19,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF7C3AED),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'REKLAM',
+                              style: GoogleFonts.baloo2(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 0.6,
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '2X · 1.000',
+                            style: GoogleFonts.baloo2(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.39,
+                            ),
+                          ),
+                        ],
+                      ),
+                      ),
+                    ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // #dailyEnergy button (height: 48)
+          GestureDetector(
+            onTap: _claimDailyEnergy,
+            child: CustomPaint(
+              painter: const _RealBoxShadowPainter(
+                radius: 14,
+                shadows: [
+                  BoxShadow(
+                    color: Color(0x47000000),
+                    blurRadius: 18,
+                    offset: Offset(0, 10),
+                  ),
+                  BoxShadow(
+                    color: Color(0xFF066C3C),
+                    offset: Offset(0, 5),
+                    blurRadius: 0,
+                  ),
+                ],
+              ),
+              child: Container(
+                width: double.infinity,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFF37E08B),
+                      Color(0xFF12B76A),
+                      Color(0xFF0A9553),
+                    ],
+                    stops: [0.0, 0.55, 1.0],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/design/ui/icon_energy_bolt_exact.webp',
+                        width: 23,
+                        height: 23,
+                        errorBuilder: (_, _, _) => Image.asset(
+                          'assets/design/ui/icon_heart_exact.webp',
+                          width: 23,
+                          height: 23,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'ENERJİ AL · +5',
+                        style: GoogleFonts.baloo2(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: 0.39,
+                          shadows: const [
+                            Shadow(
+                              color: Color(0x73066C3C),
+                              offset: Offset(0, 2),
+                              blurRadius: 0,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+
+  // Online Mod Card — .online-card (x:12, y:741.1, w:406, h:183.5)
+  Widget _buildOnlineCard() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute<void>(builder: (_) => const OnlineScreen()));
+      },
+      behavior: HitTestBehavior.opaque,
+      child: CustomPaint(
+        painter: const _RealBoxShadowPainter(
+          radius: 22,
+          shadows: [
+            BoxShadow(
+              color: Color(0x14141B2A),
+              blurRadius: 20,
+              offset: Offset(0, 12),
+            ),
+            BoxShadow(
+              color: Color(0x14141B2A),
+              offset: Offset(0, 6),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: Container(
+          height: 187.5,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 91.5,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 76,
+                      height: 76,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Opacity(
+                            opacity: 0.75,
+                            child: ColorFiltered(
+                              colorFilter: const ColorFilter.matrix(<double>[
+                                0.3086, 0.5180, 0.0609, 0, 0, //
+                                0.1806, 0.6460, 0.0609, 0, 0, //
+                                0.1806, 0.5180, 0.1889, 0, 0, //
+                                0, 0, 0, 1, 0, //
+                              ]),
+                              child: Image.asset(
+                                'assets/design/ui/online_locked_bug_exact.webp',
+                                width: 76,
+                                height: 76,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) => Image.asset(
+                                  'assets/design/ui/online_locked_bug.webp',
+                                  width: 76,
+                                  height: 76,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            right: -4,
+                            bottom: -4,
+                            child: CustomPaint(
+                              painter: const _RealBoxShadowPainter(
+                                radius: 15,
+                                shadows: [
+                                  BoxShadow(
+                                    color: Color(0x4D000000),
+                                    blurRadius: 6,
+                                    offset: Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Container(
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: const Color(0xFF141B2A),
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2.5,
+                                  ),
+                                ),
+                                alignment: Alignment.center,
+                                child: const SizedBox(
+                                  width: 15,
+                                  height: 15,
+                                  child: CustomPaint(painter: _LockIconPainter()),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            height: 70.5,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: SizedBox(
+                                    width: 110.0,
+                                    child: Transform.translate(
+                                      offset: const Offset(0, -1),
+                                      child: Text(
+                                        'ONLİNE MOD',
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.visible,
+                                        style: GoogleFonts.baloo2(
+                                          fontSize: 19,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.05,
+                                          color: const Color(0xFF141B2A),
+                                          height: 1.05,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Transform.rotate(
+                                  angle: -0.05236, // -3deg
+                                  child: CustomPaint(
+                                    painter: const _RealBoxShadowPainter(
+                                      radius: 999,
+                                      shadows: [
+                                        BoxShadow(
+                                          color: Color(0x2E000000),
+                                          blurRadius: 5,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFB800),
+                                        borderRadius: BorderRadius.circular(999),
+                                      ),
+                                      child: Text(
+                                        'YAKINDA',
+                                        style: GoogleFonts.baloo2(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFF4A2E00),
+                                          letterSpacing: 0.66,
+                                          height: 1.55,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Transform.translate(
+                            offset: const Offset(0, 3.8),
+                            child: Text(
+                              'Çok yakında arkadaşlarınla çevrimiçi oyna!',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.nunito(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.04,
+                                color: const Color(0xFF66738A),
+                                height: 1.38,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Kaydın alındı! Online mod açılır açılmaz sana haber vereceğiz.',
+                        style: GoogleFonts.nunito(fontWeight: FontWeight.w700),
+                      ),
+                      backgroundColor: const Color(0xFF141B2A),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  );
+                },
+                behavior: HitTestBehavior.opaque,
+                child: CustomPaint(
+                  painter: const _RealBoxShadowPainter(
+                    radius: 14,
+                    shadows: [
+                      BoxShadow(
+                        color: Color(0x38000000),
+                        blurRadius: 14,
+                        offset: Offset(0, 8),
+                      ),
+                      BoxShadow(
+                        color: Color(0x8C000000),
+                        offset: Offset(0, 4),
+                        blurRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: Container(
+                    width: double.infinity,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF141B2A),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/design/ui/icon_bell_exact.webp',
+                        width: 21,
+                        height: 21,
+                        errorBuilder: (_, _, _) => const Icon(
+                          Icons.notifications_active_rounded,
+                          color: Color(0xFFFF6B35),
+                          size: 21,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'HABERDAR ET',
+                        style: GoogleFonts.baloo2(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFFFF6B35),
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              ),
+            ),
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+
+  // Chat Card — .chat-card (x:12, y:932.6, w:406, h:126.5)
+  Widget _buildChatCard() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute<void>(builder: (_) => const ChatScreen()));
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 126.5,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF4538B), Color(0xFF9B5DE5), Color(0xFF7C3AED)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF9B5DE5).withValues(alpha: 0.32),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              right: -6,
+              bottom: -24,
+              child: Opacity(
+                opacity: 0.16,
+                child: const Icon(
+                  Icons.chat_bubble_rounded,
+                  size: 76,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  height: 70.5,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'SOHBET',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.baloo2(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            height: 1.05,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF080B12).withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFF37E08B),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Color(0x2037E08B),
+                                    blurRadius: 0,
+                                    spreadRadius: 4.9,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '5 ÇEVRİMİÇİ',
+                              style: GoogleFonts.baloo2(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Lonca muhabbet et, rekorları konuş',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.92),
+                    height: 1.38,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
   }
+
+  // Daily Tasks Preview Card — .hub-tasks
+  Widget _buildTasksCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 7),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14141B2A),
+            offset: Offset(0, 6),
+            blurRadius: 0,
+          ),
+          BoxShadow(
+            color: Color(0x14141B2A),
+            blurRadius: 20,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 80.9,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Image.asset(
+                  'assets/design/ui/hub_12_img.webp',
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.emoji_events_rounded,
+                    color: LululuColors.liquidGold,
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'GÜNLÜK GÖREVLER',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF141B2A),
+                          height: 1.05,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Görevleri bitir, ödülü kap!',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF66738A),
+                          height: 1.55,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _openTasks,
+                  child: Container(
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 13,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFB800),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xFFB97A00),
+                          offset: Offset(0, 3),
+                          blurRadius: 0,
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      'TÜMÜNÜ GÖR',
+                      style: GoogleFonts.baloo2(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF4A2E00),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListenableBuilder(
+            listenable: ProgressManager.instance,
+            builder: (context, _) {
+              final pm = ProgressManager.instance;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildTaskItem(
+                    title: '3 OYUN OYNA',
+                    current: pm.getTaskProgress('play').clamp(0, 3),
+                    target: 3,
+                    iconAsset: 'assets/design/ui/hub_13_img.webp',
+                  ),
+                  _buildTaskItem(
+                    title: '5 BİRLEŞTİRME YAP',
+                    current: pm.getTaskProgress('merge').clamp(0, 5),
+                    target: 5,
+                    iconAsset: 'assets/design/ui/hub_14_img.webp',
+                  ),
+                  _buildTaskItem(
+                    title: '1 VİDEO İZLE',
+                    current: pm.getTaskProgress('video').clamp(0, 1),
+                    target: 1,
+                    iconAsset: 'assets/design/ui/hub_15_img.webp',
+                  ),
+                  _buildTaskItem(
+                    title: 'X4 KOMBO YAP',
+                    current: pm.getTaskProgress('combo').clamp(0, 4),
+                    target: 4,
+                    iconAsset: 'assets/design/ui/hub_16_img.webp',
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskItem({
+    required String title,
+    required int current,
+    required int target,
+    required String iconAsset,
+  }) {
+    final t = (current / target).clamp(0.0, 1.0);
+    return Container(
+      height: 59,
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: const BoxDecoration(
+        border: Border(
+          top: BorderSide(color: Color(0xFFEDF0F6), width: 1),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: Image.asset(
+              iconAsset,
+              width: 27,
+              height: 27,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const Icon(
+                Icons.check_circle_outline_rounded,
+                size: 24,
+                color: Color(0xFFE01E5A),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF141B2A),
+                          height: 1.05,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '$current',
+                            style: GoogleFonts.baloo2(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF141B2A),
+                            ),
+                          ),
+                          TextSpan(
+                            text: '/$target',
+                            style: GoogleFonts.baloo2(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF66738A),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Container(
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEDF0F6),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: t,
+                    heightFactor: 1.0,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        color: const Color(0xFFE01E5A),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 2x2 Mode Grid (#hubModes) matching reference-spec.json
+  Widget _buildModeGrid() {
+    final modes = LululuGameMode.catalog;
+    final items = <_HubModeData>[
+      _HubModeData(
+        mode: modes[0],
+        title: 'SUİKA ARENA',
+        subtitle: 'Birleştirme klasiği',
+        badge: 'HOT',
+        badgeBg: const Color(0xFFE01E5A),
+        badgeFg: Colors.white,
+        artBg: const Color(0xFFFFE9C9),
+        bugAsset: 'assets/design/ui/hub_6_mascot.webp',
+        defaultBest: '4.820',
+      ),
+      _HubModeData(
+        mode: modes[1],
+        title: '2048 GRİD',
+        subtitle: 'Kaydır, birleştir, 2048 yap',
+        badge: '2048',
+        badgeBg: const Color(0xFFFFB800),
+        badgeFg: const Color(0xFF4A2E00),
+        artBg: const Color(0xFFFFF0D6),
+        bugAsset: _sanitizeStickerAsset(modes[1].stickerAsset),
+        defaultBest: '12.480',
+      ),
+      _HubModeData(
+        mode: modes[2],
+        title: 'BALON PATLAT',
+        subtitle: 'Nişan al, 3 aynı balonu patlat',
+        badge: 'BONUS',
+        badgeBg: const Color(0xFFFF6B35),
+        badgeFg: Colors.white,
+        artBg: const Color(0xFFFFE3D6),
+        bugAsset: 'assets/design/ui/hub_6_mascot.webp',
+        defaultBest: '3.260',
+      ),
+      _HubModeData(
+        mode: modes[3],
+        title: 'MATCH 3',
+        subtitle: 'Komşuyu kaydır, 3\'lü patlat',
+        badge: 'NEON',
+        badgeBg: const Color(0xFF00C853),
+        badgeFg: const Color(0xFF04140A),
+        artBg: const Color(0xFFDFF7EA),
+        bugAsset: _sanitizeStickerAsset(modes[3].stickerAsset),
+        defaultBest: '5.940',
+      ),
+    ];
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: _buildModeCard(items[0])),
+            const SizedBox(width: 12),
+            Expanded(child: _buildModeCard(items[1])),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildModeCard(items[2])),
+            const SizedBox(width: 12),
+            Expanded(child: _buildModeCard(items[3])),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModeCard(_HubModeData item) {
+    final kind = LululuRoutes.fromModeId(item.mode.id);
+    final bestVal = LeaderboardService.instance.getBest(
+      _leaderboardIdFor(kind),
+    );
+    final bestText = bestVal > 0 ? '$bestVal' : item.defaultBest;
+
+    return GestureDetector(
+      onTap: () => _launchMode(kind),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 205,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14141B2A),
+              offset: Offset(0, 6),
+              blurRadius: 0,
+            ),
+            BoxShadow(
+              color: Color(0x14141B2A),
+              blurRadius: 20,
+              offset: Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // .art (height: 74, borderRadius: 16, marginBottom: 9)
+                Container(
+                  height: 74,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: item.artBg,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Image.asset(
+                        _sanitizeStickerAsset(item.bugAsset),
+                        height: 74,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => Image.asset(
+                          'assets/images/stickers/sticker_tier1_cone.png',
+                          height: 64,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      Positioned(
+                        right: 6,
+                        bottom: 5,
+                        child: Image.asset(
+                          'assets/design/ui/hub_15_img.webp',
+                          width: 33,
+                          height: 33,
+                          errorBuilder: (_, _, _) => const Icon(
+                            Icons.play_circle_fill_rounded,
+                            size: 33,
+                            color: Color(0xFFE01E5A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.baloo2(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF141B2A),
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  item.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF66738A),
+                  ),
+                ),
+                const Spacer(),
+                Row(
+                  children: [
+                    Image.asset(
+                      'assets/design/ui/hub_19_img.webp',
+                      width: 18,
+                      height: 18,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.emoji_events_rounded,
+                        size: 18,
+                        color: Color(0xFF8A6D00),
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        'Rekor: $bestText',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.nunito(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: const Color(0xFF8A6D00),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Positioned(
+              left: -3,
+              top: -3,
+              child: Transform.rotate(
+                angle: -0.1047,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: item.badgeBg,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x4D000000),
+                        blurRadius: 8,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    item.badge,
+                    style: GoogleFonts.baloo2(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: item.badgeFg,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Studio Card — .studio-card (w: 106, h: 130.3, r: 20)
+  Widget _buildStudioCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Color> gradient,
+    required VoidCallback onTap,
+    Color iconColor = Colors.white,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 106,
+        height: 130.3,
+        padding: const EdgeInsets.fromLTRB(8, 13, 8, 11),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14141B2A),
+              offset: Offset(0, 6),
+              blurRadius: 0,
+            ),
+            BoxShadow(
+              color: Color(0x14141B2A),
+              blurRadius: 20,
+              offset: Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: gradient,
+                ),
+                borderRadius: BorderRadius.circular(17),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x2E000000),
+                    offset: Offset(0, 4),
+                    blurRadius: 0,
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, color: iconColor, size: 29),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.baloo2(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF141B2A),
+                height: 1.05,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Expanded(
+              child: Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.nunito(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF66738A),
+                  height: 1.15,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HubModeData {
+  const _HubModeData({
+    required this.mode,
+    required this.title,
+    required this.subtitle,
+    required this.badge,
+    required this.badgeBg,
+    required this.badgeFg,
+    required this.artBg,
+    required this.bugAsset,
+    required this.defaultBest,
+  });
+
+  final LululuGameMode mode;
+  final String title;
+  final String subtitle;
+  final String badge;
+  final Color badgeBg;
+  final Color badgeFg;
+  final Color artBg;
+  final String bugAsset;
+  final String defaultBest;
+}
+
+class _StatusBarIconsPainter extends CustomPainter {
+  const _StatusBarIconsPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const color = Color(0xFF141B2A);
+    final fillPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    // 1. Signal bars (0..15, 0..15) based on viewBox 0 0 24 24
+    const s = 15.0 / 24.0;
+    canvas.drawRect(
+      const Rect.fromLTWH(2 * s, 17 * s, 3 * s, 4 * s),
+      fillPaint,
+    );
+    canvas.drawRect(
+      const Rect.fromLTWH(7.5 * s, 13 * s, 3 * s, 8 * s),
+      fillPaint,
+    );
+    canvas.drawRect(
+      const Rect.fromLTWH(13 * s, 9 * s, 3 * s, 12 * s),
+      fillPaint,
+    );
+    canvas.drawRect(
+      const Rect.fromLTWH(18.5 * s, 5 * s, 3 * s, 16 * s),
+      fillPaint,
+    );
+
+    // 2. Wifi icon (x offset 20, 0..15)
+    canvas.save();
+    canvas.translate(20, 0);
+    final wifiStroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4 * s
+      ..strokeCap = StrokeCap.round;
+    final wifiPath = Path()
+      ..moveTo(4 * s, 10.5 * s)
+      ..quadraticBezierTo(12 * s, 4.5 * s, 20 * s, 10.5 * s)
+      ..moveTo(7 * s, 14 * s)
+      ..quadraticBezierTo(12 * s, 10.2 * s, 17 * s, 14 * s);
+    canvas.drawPath(wifiPath, wifiStroke);
+    canvas.drawCircle(Offset(12 * s, 17.6 * s), 1.4 * s, fillPaint);
+    canvas.restore();
+
+    // 3. Battery icon (x offset 40, 0..15)
+    canvas.save();
+    canvas.translate(40, 0);
+    final batStroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0 * s;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(2.5 * s, 8 * s, 17 * s, 9 * s),
+        const Radius.circular(2.5 * s),
+      ),
+      batStroke,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(4.5 * s, 10 * s, 10 * s, 5 * s),
+        const Radius.circular(1.0 * s),
+      ),
+      fillPaint,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _CssBottomShadowPainter extends CustomPainter {
+  const _CssBottomShadowPainter({
+    required this.radius,
+    required this.offsetY,
+    required this.shadowColor,
+    this.insetStrokeColor,
+    this.outerBorderWidth = 2.0,
+  });
+
+  final double radius;
+  final double offsetY;
+  final Color shadowColor;
+  final Color? insetStrokeColor;
+  final double outerBorderWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final baseRRect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+    final shiftedRRect = baseRRect.shift(Offset(0, offsetY));
+    final shadowPath = Path.combine(
+      PathOperation.difference,
+      Path()..addRRect(shiftedRRect),
+      Path()..addRRect(baseRRect),
+    );
+    canvas.drawPath(
+      shadowPath,
+      Paint()
+        ..color = shadowColor
+        ..style = PaintingStyle.fill,
+    );
+
+    if (insetStrokeColor != null) {
+      final insetRect = (Offset.zero & size).deflate(outerBorderWidth + 0.5);
+      final insetRRect = RRect.fromRectAndRadius(
+        insetRect,
+        Radius.circular((radius - outerBorderWidth - 0.5).clamp(0.0, radius)),
+      );
+      canvas.drawRRect(
+        insetRRect,
+        Paint()
+          ..color = insetStrokeColor!
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CssBottomShadowPainter oldDelegate) =>
+      oldDelegate.radius != radius ||
+      oldDelegate.offsetY != offsetY ||
+      oldDelegate.shadowColor != shadowColor ||
+      oldDelegate.insetStrokeColor != insetStrokeColor;
+}
+
+class _LockIconPainter extends CustomPainter {
+  const _LockIconPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const color = Color(0xFFFFCF3F);
+    final s = size.width / 24.0;
+    final fillPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final strokePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4 * s
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(5 * s, 10.5 * s, 14 * s, 9.5 * s),
+        Radius.circular(2.5 * s),
+      ),
+      fillPaint,
+    );
+
+    final shackle = Path()
+      ..moveTo(8 * s, 10.5 * s)
+      ..lineTo(8 * s, 7.8 * s)
+      ..arcToPoint(
+        Offset(16 * s, 7.8 * s),
+        radius: Radius.circular(4 * s),
+        clockwise: true,
+      )
+      ..lineTo(16 * s, 10.5 * s);
+    canvas.drawPath(shackle, strokePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _RealBoxShadowPainter extends CustomPainter {
+  const _RealBoxShadowPainter({
+    required this.radius,
+    required this.shadows,
+  });
+
+  final double radius;
+  final List<BoxShadow> shadows;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    for (final s in shadows) {
+      final spreadRect = rect.inflate(s.spreadRadius).shift(s.offset);
+      final rrect = RRect.fromRectAndRadius(
+        spreadRect,
+        Radius.circular((radius + s.spreadRadius).clamp(0.0, 999.0)),
+      );
+      final paint = Paint()..color = s.color;
+      if (s.blurRadius > 0) {
+        paint.maskFilter = MaskFilter.blur(BlurStyle.normal, s.blurSigma);
+      }
+      canvas.drawRRect(rrect, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RealBoxShadowPainter oldDelegate) => false;
 }

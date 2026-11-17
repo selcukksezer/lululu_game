@@ -22,7 +22,11 @@ Future<void> playBonusFx(
 }) async {
   final key = bonusId.trim().toLowerCase();
   final Widget fx;
-  if (key == 'terlik' || key == 'terlik sarsıntısı') {
+  if (key == 'terlik' ||
+      key == 'terlik sarsıntısı' ||
+      key == 'anne terliği' ||
+      key == 'sarsıntı' ||
+      key == 'sarsinti') {
     fx = const _TerlikFx();
   } else if (key == 'sprey' ||
       key == 'raid' ||
@@ -31,6 +35,8 @@ Future<void> playBonusFx(
     fx = const _SpreyFx();
   } else if (key == 'aydınlat' ||
       key == 'aydınlat hele!' ||
+      key == 'f16' ||
+      key == 'f16 bombardıman' ||
       key == 'bomba' ||
       key == 'aydinlat') {
     fx = const _BombaFx();
@@ -41,12 +47,18 @@ Future<void> playBonusFx(
     fx = const _YildirimFx();
   } else if (key.contains('buz') || key.contains('dondur')) {
     fx = const _BuzFx();
-  } else if (key.contains('mıknatıs') || key.contains('miknatis')) {
+  } else if (key.contains('mıknatıs') ||
+      key.contains('miknatis') ||
+      key.contains('çiftleştir') ||
+      key.contains('ciftlestir')) {
     fx = const _MiknatisFx();
   } else if (key.contains('yıldız') ||
       key.contains('yildiz') ||
       key.contains('kombo') ||
-      key.contains('combo')) {
+      key.contains('combo') ||
+      key.contains('karıştır') ||
+      key.contains('karistir') ||
+      key.contains('geri al')) {
     fx = const _YildizFx();
   } else {
     fx = const _GoldBurstFx();
@@ -232,17 +244,18 @@ class _SpreyFx extends StatelessWidget {
   }
 }
 
-/// Patlama flaşı + ışık hüzmesi + ekran sarsıntısı.
+/// F-16 Sorti + 3 bomba + patlama flaşı + ışık hüzmesi + ekran sarsıntısı.
 class _BombaFx extends StatelessWidget {
   const _BombaFx();
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 280,
-      height: 280,
+      width: 320,
+      height: 300,
       child: Stack(
         alignment: Alignment.center,
+        clipBehavior: Clip.none,
         children: [
           // Işık hüzmesi (alttan yukarı).
           Container(
@@ -268,7 +281,50 @@ class _BombaFx extends StatelessWidget {
                 alignment: Alignment.bottomCenter,
               )
               .fadeOut(delay: 300.ms, duration: 240.ms),
-          // Genişleyen halka.
+          // 3 adet F-16 bombası yukarıdan hedeflere düşer.
+          for (int b = 0; b < 3; b++)
+            Positioned(
+              left: 72.0 + b * 68.0,
+              top: 18,
+              child: CustomPaint(
+                size: const Size(24, 34),
+                painter: const _F16BombPainter(),
+              )
+                  .animate()
+                  .fadeIn(duration: 40.ms, delay: (b * 70).ms)
+                  .moveY(
+                    begin: -40,
+                    end: 118,
+                    delay: (b * 70).ms,
+                    duration: 240.ms,
+                    curve: Curves.easeIn,
+                  )
+                  .fadeOut(delay: (b * 70 + 220).ms, duration: 90.ms),
+            ),
+          // F-16 savaş uçağı soldan sağa sorti yapar (JET_SVG karşılığı).
+          Positioned(
+            top: 8,
+            child: CustomPaint(
+              size: const Size(136, 62),
+              painter: const _F16JetPainter(),
+            )
+                .animate()
+                .fadeIn(duration: 40.ms)
+                .moveX(
+                  begin: -180,
+                  end: 180,
+                  duration: 540.ms,
+                  curve: Curves.easeInOut,
+                )
+                .moveY(
+                  begin: 12,
+                  end: -14,
+                  duration: 540.ms,
+                  curve: Curves.easeOut,
+                )
+                .fadeOut(delay: 460.ms, duration: 120.ms),
+          ),
+          // Genişleyen şok halkaları.
           for (int i = 0; i < 2; i++)
             Container(
               width: 120,
@@ -319,6 +375,130 @@ class _BombaFx extends StatelessWidget {
       ).animate().shake(hz: 4, duration: 380.ms, offset: const Offset(9, 0)),
     );
   }
+}
+
+class _F16JetPainter extends CustomPainter {
+  const _F16JetPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sx = size.width / 120.0;
+    final sy = size.height / 56.0;
+    canvas.save();
+    canvas.scale(sx, sy);
+
+    // Afterburner alevleri
+    final flameOuter = Paint()
+      ..color = const Color(0xFFFF6B00)
+      ..style = PaintingStyle.fill;
+    final flameInner = Paint()
+      ..color = const Color(0xFFFFE566)
+      ..style = PaintingStyle.fill;
+    final f1 = Path()
+      ..moveTo(14, 24)
+      ..lineTo(0, 28)
+      ..lineTo(14, 32)
+      ..close();
+    canvas.drawPath(f1, flameOuter);
+    final f2 = Path()
+      ..moveTo(16, 26)
+      ..lineTo(5, 28)
+      ..lineTo(16, 30)
+      ..close();
+    canvas.drawPath(f2, flameInner);
+
+    // Ana gövde ve delta kanatlar (JET_SVG)
+    final bodyPaint = Paint()
+      ..color = const Color(0xFFD6DFEC)
+      ..style = PaintingStyle.fill;
+    final wingPaint = Paint()
+      ..color = const Color(0xFF8C9BB5)
+      ..style = PaintingStyle.fill;
+    final strokePaint = Paint()
+      ..color = const Color(0xFF232C3D)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    final wings = Path()
+      ..moveTo(36, 28)
+      ..lineTo(24, 6)
+      ..lineTo(44, 6)
+      ..lineTo(68, 24)
+      ..lineTo(68, 32)
+      ..lineTo(44, 50)
+      ..lineTo(24, 50)
+      ..close();
+    canvas.drawPath(wings, wingPaint);
+    canvas.drawPath(wings, strokePaint);
+
+    final fuselage = Path()
+      ..moveTo(14, 23)
+      ..lineTo(84, 21)
+      ..lineTo(116, 28)
+      ..lineTo(84, 35)
+      ..lineTo(14, 33)
+      ..close();
+    canvas.drawPath(fuselage, bodyPaint);
+    canvas.drawPath(fuselage, strokePaint);
+
+    // Kokpit camı
+    final canopyPaint = Paint()
+      ..color = const Color(0xFF38BDF8)
+      ..style = PaintingStyle.fill;
+    canvas.drawOval(
+      Rect.fromCenter(center: const Offset(76, 28), width: 24, height: 8),
+      canopyPaint,
+    );
+
+    // Kırmızı-beyaz arma
+    canvas.drawCircle(
+      const Offset(42, 15),
+      3.5,
+      Paint()..color = const Color(0xFFE52E2E),
+    );
+    canvas.drawCircle(
+      const Offset(42, 41),
+      3.5,
+      Paint()..color = const Color(0xFFE52E2E),
+    );
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _F16BombPainter extends CustomPainter {
+  const _F16BombPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final body = Paint()..color = const Color(0xFF2B3548);
+    final band = Paint()..color = const Color(0xFFFFB800);
+    final r = Rect.fromLTWH(
+      size.width * 0.2,
+      size.height * 0.18,
+      size.width * 0.6,
+      size.height * 0.72,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(r, const Radius.circular(8)),
+      body,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(
+        size.width * 0.2,
+        size.height * 0.45,
+        size.width * 0.6,
+        4,
+      ),
+      band,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Şimşek çizgisi + ekran flaşı.

@@ -1,120 +1,271 @@
 import 'package:flutter/material.dart';
+import '../navigation/game_routes.dart';
 
-import '../theme/lululu_theme.dart';
-
-enum GameModeKind {
-  suika,
+/// Master enum of the 11 playable LÜLÜLÜ arcade game modes.
+enum LululuGameModeId {
+  suikaArena,
   grid2048,
-  balloon,
+  bubblePop,
   match3,
-  connect,
-  stack,
-  osmantus,
-  screamRoach,
-  makarayiz,
+  connectBlast,
+  stackDrop,
   terlikTap,
+  yuvaDefense,
+  osmantus,
+  screamBug,
+  makarayiz,
 }
 
+/// Complete metadata for each of the 11 LÜLÜLÜ arcade modes.
 class LululuGameMode {
-  const LululuGameMode({
-    required this.kind,
-    required this.title,
-    required this.subtitle,
-    required this.stickerAsset,
-    required this.accent,
-    this.badge,
-    this.featured = false,
-  });
-
-  final GameModeKind kind;
+  final LululuGameModeId id;
+  final int index;
   final String title;
   final String subtitle;
+  final String badgeLabel;
+  final Color badgeColor;
+  final Color badgeTextColor;
+  final Color thumbBgColor;
+  final Color accentColor;
+  final Color cardDarkColor;
   final String stickerAsset;
-  final Color accent;
-  final String? badge;
-  final bool featured;
+  final String badgeIconAsset;
+  final String mechanicSummary;
+  final String bestScoreKey;
+  final int defaultBestScore;
+  final bool isHot;
 
-  static const catalog = <LululuGameMode>[
+  const LululuGameMode({
+    required this.id,
+    required this.index,
+    required this.title,
+    required this.subtitle,
+    required this.badgeLabel,
+    required this.badgeColor,
+    this.badgeTextColor = const Color(0xFFFFFFFF),
+    this.thumbBgColor = const Color(0xFFFFE9C9),
+    required this.accentColor,
+    required this.cardDarkColor,
+    required this.stickerAsset,
+    required this.badgeIconAsset,
+    required this.mechanicSummary,
+    required this.bestScoreKey,
+    this.defaultBestScore = 0,
+    this.isHot = false,
+  });
+
+  /// Legacy compatibility getters for GameSelectorScreen & other callers.
+  GameModeKind get kind => LululuRoutes.fromModeId(id);
+  Color get accent => accentColor;
+  String? get badge => badgeLabel;
+
+  /// Canonical catalog of all 11 modes in prototype order (`LÜLÜLÜ UI:UX Tasarım.html` L2841-2853).
+  static const List<LululuGameMode> catalog = [
     LululuGameMode(
-      kind: GameModeKind.suika,
+      id: LululuGameModeId.suikaArena,
+      index: 1,
       title: 'Suika Arena',
-      subtitle: 'Aynı böceği bırak, birleşsin. Taşarsa biter.',
-      stickerAsset: 'assets/images/stickers/sticker_tier6_can.png',
-      accent: LululuColors.cyberFuchsia,
-      badge: 'HOT',
-      featured: true,
+      subtitle: 'Birleştirme klasiği',
+      badgeLabel: 'HOT',
+      badgeColor: Color(0xFFE01E5A),
+      badgeTextColor: Color(0xFFFFFFFF),
+      thumbBgColor: Color(0xFFFFE9C9),
+      accentColor: Color(0xFFFFB800),
+      cardDarkColor: Color(0xFF2B1B0E),
+      stickerAsset: 'assets/bugs/tier1_hd.webp',
+      badgeIconAsset: 'assets/icons2/target.png',
+      mechanicSummary:
+          'Böcekleri kavanoza bırak, aynı seviyeleri çarpıştırarak Kral Böceğe ulaş!',
+      bestScoreKey: 'suika',
+      defaultBestScore: 4820,
+      isHot: true,
     ),
     LululuGameMode(
-      kind: GameModeKind.grid2048,
+      id: LululuGameModeId.grid2048,
+      index: 2,
       title: '2048 Grid',
-      subtitle: 'Kaydır. Aynı sayı birleşir. Hedef 2048.',
-      stickerAsset: 'assets/images/stickers/sticker_tier3_fan.png',
-      accent: LululuColors.liquidGold,
+      subtitle: 'Kaydır, birleştir, 2048 yap',
+      badgeLabel: '2048',
+      badgeColor: Color(0xFFFFB800),
+      badgeTextColor: Color(0xFF4A2E00),
+      thumbBgColor: Color(0xFFFFF0D6),
+      accentColor: Color(0xFF00E5FF),
+      cardDarkColor: Color(0xFF102536),
+      stickerAsset: 'assets/bugs/tier2_hd.webp',
+      badgeIconAsset: 'assets/icons/level_up.png',
+      mechanicSummary:
+          '4x4 tahtayı 4 yöne kaydır! Eşleşen böcekler bir üst seviyeye evrimleşir.',
+      bestScoreKey: 'grid_2048',
+      defaultBestScore: 12480,
     ),
     LululuGameMode(
-      kind: GameModeKind.balloon,
+      id: LululuGameModeId.bubblePop,
+      index: 3,
       title: 'Balon Patlat',
-      subtitle: 'Nişan al. 3 aynı balon patlar, kopan düşer.',
-      stickerAsset: 'assets/images/stickers/sticker_tier2_helmet.png',
-      accent: LululuColors.coralFlare,
-      badge: 'BONUS',
+      subtitle: 'Nişan al, 3 aynı balonu patlat',
+      badgeLabel: 'BONUS',
+      badgeColor: Color(0xFFFF6B35),
+      badgeTextColor: Color(0xFFFFFFFF),
+      thumbBgColor: Color(0xFFFFE3D6),
+      accentColor: Color(0xFFFF4081),
+      cardDarkColor: Color(0xFF2D122B),
+      stickerAsset: 'assets/bugs/tier1_hd.webp',
+      badgeIconAsset: 'assets/icons2/boom.png',
+      mechanicSummary:
+          'Aşağıdan nişan al, aynı böcek balonundan en az 3 tanesini vur ve düşür!',
+      bestScoreKey: 'balloon_pop',
+      defaultBestScore: 3260,
     ),
     LululuGameMode(
-      kind: GameModeKind.match3,
+      id: LululuGameModeId.match3,
+      index: 4,
       title: 'Match 3',
-      subtitle: 'Komşuyu takas et. 3 yatay ya da dikey patlar.',
-      stickerAsset: 'assets/images/stickers/sticker_tier4_dancer.png',
-      accent: LululuColors.toxicNeon,
+      subtitle: "Komşuyu kaydır, 3'lü patlat",
+      badgeLabel: 'NEON',
+      badgeColor: Color(0xFF00C853),
+      badgeTextColor: Color(0xFF04140A),
+      thumbBgColor: Color(0xFFDFF7EA),
+      accentColor: Color(0xFF69F0AE),
+      cardDarkColor: Color(0xFF0E291E),
+      stickerAsset: 'assets/bugs/tier5_hd.webp',
+      badgeIconAsset: 'assets/icons2/gem_blue.png',
+      mechanicSummary:
+          "Komşu böcekleri yer değiştir, yatay veya dikey 3'lü dizileri patlat!",
+      bestScoreKey: 'match3',
+      defaultBestScore: 5940,
     ),
     LululuGameMode(
-      kind: GameModeKind.connect,
+      id: LululuGameModeId.connectBlast,
+      index: 5,
       title: 'Bağla Patlat',
-      subtitle: 'Aynı böceği çiz. Kare, o türün hepsini siler.',
-      stickerAsset: 'assets/images/stickers/sticker_tier5_diva.png',
-      accent: LululuColors.warningSolar,
+      subtitle: 'Aynı böceği çiz, zinciri patlat',
+      badgeLabel: 'ZİNCİR',
+      badgeColor: Color(0xFFFFD700),
+      badgeTextColor: Color(0xFF4A2E00),
+      thumbBgColor: Color(0xFFFFF6D8),
+      accentColor: Color(0xFFCE93D8),
+      cardDarkColor: Color(0xFF211332),
+      stickerAsset: 'assets/bugs/tier3_hd.webp',
+      badgeIconAsset: 'assets/icons2/magnet.png',
+      mechanicSummary:
+          'Parmağını kaldırmadan komşu aynı böcekler arasında uzun zincirler çiz!',
+      bestScoreKey: 'connect_pop',
+      defaultBestScore: 2870,
     ),
     LululuGameMode(
-      kind: GameModeKind.stack,
+      id: LululuGameModeId.stackDrop,
+      index: 6,
       title: 'Stack Drop',
-      subtitle: 'Dilim bırak. Üst üste gelsin, kenar kesilir.',
-      stickerAsset: 'assets/images/stickers/sticker_tier7_kongo.png',
-      accent: LululuColors.mysticRuby,
-      badge: 'KULE',
+      subtitle: 'Kuleyi diz, kenarı kesme',
+      badgeLabel: 'KULE',
+      badgeColor: Color(0xFFE52E2E),
+      badgeTextColor: Color(0xFFFFFFFF),
+      thumbBgColor: Color(0xFFFFE0E0),
+      accentColor: Color(0xFFFFAB40),
+      cardDarkColor: Color(0xFF2B1911),
+      stickerAsset: 'assets/bugs/tier6_hd.webp',
+      badgeIconAsset: 'assets/icons2/block.png',
+      mechanicSummary:
+          'Sallanan böcek bloklarını tam üst üste bırak, gökdeleni devirmeden yüksel!',
+      bestScoreKey: 'stack_drop',
+      defaultBestScore: 1540,
     ),
     LululuGameMode(
-      kind: GameModeKind.terlikTap,
+      id: LululuGameModeId.terlikTap,
+      index: 7,
       title: 'Terlik Tap',
-      subtitle: 'Uçan böceği ez. Combo büyüsün — günlük seed.',
-      stickerAsset: 'assets/images/stickers/sticker_tier1_baby.png',
-      accent: LululuColors.coralFlare,
-      badge: 'YENİ',
+      subtitle: 'Delikten çıkanı terlikle ez',
+      badgeLabel: 'YENİ',
+      badgeColor: Color(0xFFFF6B35),
+      badgeTextColor: Color(0xFFFFFFFF),
+      thumbBgColor: Color(0xFFFFE3D6),
+      accentColor: Color(0xFFFF5252),
+      cardDarkColor: Color(0xFF331114),
+      stickerAsset: 'assets/powerup_terlik.webp',
+      badgeIconAsset: 'assets/icons2/boot.png',
+      mechanicSummary:
+          'Deliklerden fırlayan böceklere anne terliğiyle şaplak indir, bombalara dokunma!',
+      bestScoreKey: 'terlik_tap',
+      defaultBestScore: 1150,
+      isHot: true,
     ),
     LululuGameMode(
-      kind: GameModeKind.osmantus,
+      id: LululuGameModeId.yuvaDefense,
+      index: 8,
+      title: 'Yuva Savunması',
+      subtitle: 'Yuvaya ulaşanı terlikle ez',
+      badgeLabel: 'YENİ',
+      badgeColor: Color(0xFFE01E5A),
+      badgeTextColor: Color(0xFFFFFFFF),
+      thumbBgColor: Color(0xFFFFE3D6),
+      accentColor: Color(0xFFFF9100),
+      cardDarkColor: Color(0xFF2A180D),
+      stickerAsset: 'assets/bugs/tier2_hd.webp',
+      badgeIconAsset: 'assets/icons2/target.png',
+      mechanicSummary:
+          '4 koridordan mutfak tezgahına koşan böcekleri terlikle durdur, pastayı koru!',
+      bestScoreKey: 'yuva_defense',
+      defaultBestScore: 1240,
+    ),
+    LululuGameMode(
+      id: LululuGameModeId.osmantus,
+      index: 9,
       title: 'Osmantuş',
-      subtitle: 'Videodaki ikili! Yeşil halkada dokun — dıkkış dıkkış.',
-      stickerAsset: 'assets/images/stickers/osmantus_kisi_a.png',
-      accent: LululuColors.warningSolar,
-      badge: 'VİRAL',
+      subtitle: 'Yeşil halkada ikili tuş!',
+      badgeLabel: 'VİRAL',
+      badgeColor: Color(0xFFFFD700),
+      badgeTextColor: Color(0xFF4A2E00),
+      thumbBgColor: Color(0xFFFFF6D8),
+      accentColor: Color(0xFFFFD740),
+      cardDarkColor: Color(0xFF281F0C),
+      stickerAsset: 'assets/osman/osmantus_kisi_a.webp',
+      badgeIconAsset: 'assets/icons2/crown.png',
+      mechanicSummary:
+          'Daralan zamanlama halkasını tam yeşil çizgide yakala, Osman Tuşu indir!',
+      bestScoreKey: 'osmantus',
+      defaultBestScore: 980,
+      isHot: true,
     ),
     LululuGameMode(
-      kind: GameModeKind.screamRoach,
+      id: LululuGameModeId.screamBug,
+      index: 10,
       title: 'Çığlık Böcek',
-      subtitle: 'Spam dokun, zıpla, engelleri aş. Scream tarzı.',
-      stickerAsset: 'assets/images/stickers/sticker_tier2_helmet.png',
-      accent: LululuColors.toxicNeon,
-      badge: 'VİRAL',
+      subtitle: 'Bağır, kapılardan geç, ezilme',
+      badgeLabel: 'VİRAL',
+      badgeColor: Color(0xFF00C853),
+      badgeTextColor: Color(0xFF04140A),
+      thumbBgColor: Color(0xFFE4F0FF),
+      accentColor: Color(0xFF40C4FF),
+      cardDarkColor: Color(0xFF0D2233),
+      stickerAsset: 'assets/bugs/tier7_hd.webp',
+      badgeIconAsset: 'assets/icons2/bolt.png',
+      mechanicSummary:
+          'Mikrofona bağırarak veya basılı tutarak böceği uçur, borulara çarpma!',
+      bestScoreKey: 'scream_roach',
+      defaultBestScore: 2105,
+      isHot: true,
     ),
     LululuGameMode(
-      kind: GameModeKind.makarayiz,
+      id: LululuGameModeId.makarayiz,
+      index: 11,
       title: 'Makarayız',
-      subtitle: 'Beat’te kaydır. Doğru şerit = makara.',
-      stickerAsset: 'assets/images/stickers/sticker_tier3_fan.png',
-      accent: LululuColors.coralFlare,
-      badge: 'VİRAL',
+      subtitle: "Beat'te kaydır, makarayı sar",
+      badgeLabel: 'VİRAL',
+      badgeColor: Color(0xFFFF6B35),
+      badgeTextColor: Color(0xFFFFFFFF),
+      thumbBgColor: Color(0xFFFFE0EC),
+      accentColor: Color(0xFFE040FB),
+      cardDarkColor: Color(0xFF290F30),
+      stickerAsset: 'assets/bugs/tier3_hd.webp',
+      badgeIconAsset: 'assets/icons2/wheel.png',
+      mechanicSummary:
+          'Ritim notalarını çizgide yakala, makarayı döndürerek kombo çarpanını katla!',
+      bestScoreKey: 'makarayiz',
+      defaultBestScore: 1760,
     ),
   ];
 
-  static LululuGameMode get featuredMode =>
-      catalog.firstWhere((m) => m.featured, orElse: () => catalog.first);
+  static LululuGameMode byId(LululuGameModeId id) {
+    return catalog.firstWhere((m) => m.id == id, orElse: () => catalog.first);
+  }
 }

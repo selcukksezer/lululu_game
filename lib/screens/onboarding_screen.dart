@@ -3,8 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/lululu_theme.dart';
-import '../widgets/dot_scaffold.dart';
-import '../widgets/sticker_image.dart';
 import 'home_shell.dart';
 
 /// İlk açılış 3 ekran — marka / oyun / viral.
@@ -23,26 +21,9 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final _page = PageController();
+  final PageController _page = PageController();
   int _index = 0;
-
-  static const _pages = [
-    (
-      'LÜLÜLÜ',
-      'Viral hamamböceği. Merge, ritm, çığlık.',
-      'assets/images/stickers/sticker_tier1_cone.png',
-    ),
-    (
-      'OYNA',
-      'Suika + 8 arcade mod. Kampanya 80 seviye.',
-      'assets/images/stickers/sticker_tier6_can.png',
-    ),
-    (
-      'PAYLAŞ',
-      'Skor kartı, GIF, böcek videosu. Stories’e at.',
-      'assets/images/stickers/sticker_tier3_fan.png',
-    ),
-  ];
+  double _progress = 0.78;
 
   Future<void> _finish() async {
     final prefs = await SharedPreferences.getInstance();
@@ -53,6 +34,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
+  void _nextSlide() {
+    if (_index < 2) {
+      _page.animateToPage(
+        _index + 1,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      setState(() => _index = 0);
+      _page.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   @override
   void dispose() {
     _page.dispose();
@@ -61,96 +59,654 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DotScaffold(
-      body: Column(
+    return Scaffold(
+      backgroundColor: LululuColors.carbonVoid,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          Expanded(
-            child: PageView.builder(
-              controller: _page,
-              itemCount: _pages.length,
-              onPageChanged: (i) => setState(() => _index = i),
-              itemBuilder: (context, i) {
-                final p = _pages[i];
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(28, 48, 28, 16),
-                  child: Column(
-                    children: [
-                      const Spacer(),
-                      StickerImage(assetPath: p.$3, size: 160),
-                      const SizedBox(height: 28),
-                      Text(
-                        p.$1,
-                        style: GoogleFonts.exo2(
-                          fontSize: 40,
-                          fontWeight: FontWeight.w900,
-                          color: LululuColors.liquidGold,
-                          letterSpacing: 2,
-                        ),
+          Image.asset(
+            'assets/design/splash/bg_splash.png',
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                const ColoredBox(color: LululuColors.carbonVoid),
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x88080B12),
+                  Color(0xD8080B12),
+                  Color(0xF2080B12),
+                ],
+              ),
+            ),
+          ),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxHeight < 700;
+                return SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        18,
+                        isCompact ? 6 : 12,
+                        18,
+                        isCompact ? 8 : 14,
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        p.$2,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.exo2(
-                          fontSize: 16,
-                          height: 1.35,
-                          color: LululuColors.mutedTitanium,
-                        ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // 1. Header: LÜLÜLÜ banner logo + h1 + COCKROACH MERGE MANIA subtitle
+                          _buildHeader(isCompact: isCompact),
+                          SizedBox(height: isCompact ? 6 : 10),
+
+                          // 2. Center 3-slide onb-card
+                          _buildOnboardingCard(isCompact: isCompact),
+                          SizedBox(height: isCompact ? 8 : 12),
+
+                          // 3. Bottom splash-loader + DOKUN VE BAŞLA! + version
+                          _buildBottomSection(),
+                        ],
                       ),
-                      const Spacer(flex: 2),
-                    ],
+                    ),
                   ),
                 );
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader({bool isCompact = false}) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: isCompact ? 68 : 92,
+          child: Image.asset(
+            'assets/design/splash/splash_logo.png',
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'LÜLÜLÜ',
+          style: GoogleFonts.bangers(
+            fontSize: isCompact ? 32 : 38,
+            letterSpacing: 2.0,
+            height: 1.0,
+            color: const Color(0xFFFFD34D),
+            shadows: const [
+              Shadow(
+                color: Color(0xB3000000),
+                offset: Offset(0, 4),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'COCKROACH MERGE MANIA',
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2.2,
+            color: const Color(0xFFE01E5A),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOnboardingCard({bool isCompact = false}) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        isCompact ? 10 : 14,
+        16,
+        isCompact ? 10 : 14,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xD9121826),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: const Color(0x4DFFD34D),
+          width: 2,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x80000000),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: isCompact ? 220 : 250,
+            child: PageView(
+              controller: _page,
+              onPageChanged: (i) => setState(() => _index = i),
+              children: [
+                _buildSlide1(),
+                _buildSlide2(),
+                _buildSlide3(),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          // onb-dots
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(_pages.length, (i) {
-              final on = i == _index;
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                width: on ? 22 : 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: on
-                      ? LululuColors.liquidGold
-                      : LululuColors.darkObsidian,
+            children: List.generate(3, (i) {
+              final active = i == _index;
+              return GestureDetector(
+                onTap: () => _page.animateToPage(
+                  i,
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                ),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: active ? 26 : 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: active
+                        ? const Color(0xFFFFB800)
+                        : const Color(0x4DFFFFFF),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
               );
             }),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-            child: SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: FilledButton(
-                onPressed: () {
-                  if (_index >= _pages.length - 1) {
-                    _finish();
-                  } else {
-                    _page.nextPage(
-                      duration: const Duration(milliseconds: 320),
-                      curve: Curves.easeOutCubic,
-                    );
-                  }
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: LululuColors.cyberFuchsia,
-                  foregroundColor: LululuColors.ink,
-                ),
-                child: Text(
-                  _index >= _pages.length - 1 ? 'BAŞLA' : 'DEVAM',
-                  style: GoogleFonts.exo2(fontWeight: FontWeight.w900),
+          const SizedBox(height: 12),
+          // SONRAKİ ADIM → / Atla buttons
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: GestureDetector(
+                  onTap: _nextSlide,
+                  child: Container(
+                    height: 48,
+                    constraints: const BoxConstraints(
+                      minHeight: 48,
+                      minWidth: 48,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFCF3F), Color(0xFFF59E00)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xFF9E6500),
+                          offset: Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'SONRAKİ ADIM →',
+                        style: GoogleFonts.baloo2(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF2E1A00),
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: GestureDetector(
+                  onTap: _finish,
+                  child: Container(
+                    height: 48,
+                    constraints: const BoxConstraints(
+                      minHeight: 48,
+                      minWidth: 48,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0x26FFFFFF),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0x4DFFFFFF),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Atla',
+                        style: GoogleFonts.nunito(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Slayt 1 (1 / 3): Böcekleri Birleştir, Evrimleştir! + tier 1 → 2 → 8 görsel akışı + açıklama
+  Widget _buildSlide1() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildStepBadge('1 / 3'),
+        const SizedBox(height: 8),
+        Text(
+          'Böcekleri Birleştir, Evrimleştir!',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.baloo2(
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFFFFD34D),
+            height: 1.15,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildTierBox('assets/design/bugs_hd/tier1_hd.png', 'Tier 1'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Text(
+                '→',
+                style: GoogleFonts.baloo2(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFFFFB800),
+                ),
+              ),
+            ),
+            _buildTierBox('assets/design/bugs_hd/tier2_hd.png', 'Tier 2'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Text(
+                '→',
+                style: GoogleFonts.baloo2(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFFE01E5A),
+                ),
+              ),
+            ),
+            _buildTierBox(
+              'assets/design/bugs_hd/tier8_hd.png',
+              'Tier 8',
+              highlight: true,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          "Aynı seviyedeki böcekleri çarpıştırarak 13 aşamalı evrim zincirinde efsanevi Pembe Bornozlu'ya ulaş!",
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunito(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xD9FFFFFF),
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Slayt 2 (2 / 3): 11 Farklı Oyun Modu & 3'er Bonus! + F16, Raid, Terlik mini kartları + açıklama
+  Widget _buildSlide2() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildStepBadge('2 / 3'),
+        const SizedBox(height: 8),
+        Text(
+          "11 Farklı Oyun Modu & 3'er Bonus!",
+          textAlign: TextAlign.center,
+          style: GoogleFonts.baloo2(
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFFFFD34D),
+            height: 1.15,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildBoosterMiniCard('✈️', 'F16', 'Hava Saldırısı'),
+            const SizedBox(width: 8),
+            _buildBoosterMiniCard('🧴', 'Raid', 'Sprey Fırtınası'),
+            const SizedBox(width: 8),
+            _buildBoosterMiniCard('🩴', 'Terlik', 'Anne Terliği'),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Suika, 2048, Match-3, Balon Patlat ve daha fazlası! Sıkıştığında F16, Raid ve Anne Terliği güçlendiricilerini ateşle.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunito(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xD9FFFFFF),
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Slayt 3 (3 / 3): Böcek Stüdyo, GIF & Liderlik! + stüdyo önizleme kartları + açıklama
+  Widget _buildSlide3() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildStepBadge('3 / 3'),
+        const SizedBox(height: 8),
+        Text(
+          'Böcek Stüdyo, GIF & Liderlik!',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.baloo2(
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFFFFD34D),
+            height: 1.15,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildBoosterMiniCard('🎨', 'Stüdyo', 'Böcek Tasarla'),
+            const SizedBox(width: 8),
+            _buildBoosterMiniCard('🎬', 'GIF Üret', 'Stories Paylaş'),
+            const SizedBox(width: 8),
+            _buildBoosterMiniCard('🏆', 'Liderlik', 'Haftalık Lig'),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Kendi böceğini giydir, komik GIF ve çıkartmalar üret, arkadaşlarınla paylaş ve liderlik tablosunda zirveye çık!',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunito(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xD9FFFFFF),
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepBadge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE01E5A),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.baloo2(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          letterSpacing: 1.0,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTierBox(String asset, String label, {bool highlight = false}) {
+    return Container(
+      width: 74,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      decoration: BoxDecoration(
+        color: highlight ? const Color(0x33FFB800) : const Color(0x1FFFFFFF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlight ? const Color(0xFFFFB800) : const Color(0x40FFFFFF),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            asset,
+            width: 44,
+            height: 44,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const Icon(
+              Icons.bug_report_rounded,
+              color: Colors.white,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: GoogleFonts.baloo2(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: highlight ? const Color(0xFFFFD34D) : Colors.white,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBoosterMiniCard(String emoji, String title, String sub) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        decoration: BoxDecoration(
+          color: const Color(0x1FFFFFFF),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: const Color(0x40FFFFFF),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 24)),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              style: GoogleFonts.baloo2(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFFFFD34D),
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              sub,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.nunito(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xB3FFFFFF),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomSection() {
+    final pct = (_progress * 100).round();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // splash-loader (%78 progress bar)
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0x99121826),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x33FFFFFF)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Böcek sesleri ve 11 oyun sahnesi hazırlanıyor...',
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.nunito(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xD9FFFFFF),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '%$pct',
+                    style: GoogleFonts.baloo2(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFFFD34D),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: SizedBox(
+                  height: 10,
+                  width: double.infinity,
+                  child: ColoredBox(
+                    color: const Color(0x33FFFFFF),
+                    child: FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: _progress.clamp(0.0, 1.0),
+                      child: const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xFFFFB800),
+                              Color(0xFFFF6B4A),
+                              Color(0xFFE01E5A),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // DOKUN VE BAŞLA! (btn-green)
+        GestureDetector(
+          onTap: () {
+            setState(() => _progress = 1.0);
+            _finish();
+          },
+          child: Container(
+            width: double.infinity,
+            height: 54,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF37E08B),
+                  Color(0xFF12B76A),
+                  Color(0xFF0A9553),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0xFF066C3C),
+                  offset: Offset(0, 5),
+                ),
+                BoxShadow(
+                  color: Color(0x59000000),
+                  blurRadius: 16,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Text(
+              'DOKUN VE BAŞLA!',
+              style: GoogleFonts.baloo2(
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Version text
+        Text(
+          'v3.0 · Mobil & Masaüstü Dokunmatik Uyumlu',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunito(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: const Color(0x8CFFFFFF),
+          ),
+        ),
+      ],
     );
   }
 }

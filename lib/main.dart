@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+
+import 'navigation/game_routes.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
@@ -56,7 +59,11 @@ class _BootAppState extends State<_BootApp> {
   @override
   void initState() {
     super.initState();
-    // Splash önce gösterilir; onDone → mevcut _boot akışı başlar.
+    // Splash sırasında kritik görselleri <2ms frame bütçesiyle precacheImage'e al.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ZeroJankPreloader.instance.precacheCriticalAssets(context));
+    });
   }
 
   void _onSplashDone() {
@@ -96,40 +103,55 @@ class _BootAppState extends State<_BootApp> {
 
   @override
   Widget build(BuildContext context) {
-    // Önce animasyonlu açılış; bitince mevcut boot akışı.
-    if (!_splashDone) {
-      return MaterialApp(
+    final activeChild = !_splashDone
+        ? SplashScreen(
+            key: const ValueKey('scr-splash'),
+            onDone: _onSplashDone,
+          )
+        : (_home ??
+              Scaffold(
+                key: const ValueKey('scr-boot-loading'),
+                backgroundColor: LululuColors.carbonVoid,
+                body: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(
+                        color: LululuColors.liquidGold,
+                      ),
+                      if (_bootError != null) ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Yükleniyor…',
+                          style: TextStyle(color: LululuColors.mutedTitanium),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ));
+
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => ZeroJankPreloader.instance.notePointerDown(),
+      onPointerUp: (_) => ZeroJankPreloader.instance.notePointerUp(),
+      onPointerCancel: (_) => ZeroJankPreloader.instance.notePointerUp(),
+      child: MaterialApp(
         title: 'Lülülü Hamamböceği',
         debugShowCheckedModeBanner: false,
         theme: buildLululuTheme(),
-        home: SplashScreen(onDone: _onSplashDone),
-      );
-    }
-    return MaterialApp(
-      title: 'Lülülü Hamamböceği',
-      debugShowCheckedModeBanner: false,
-      theme: buildLululuTheme(),
-      home: _home ??
-          Scaffold(
-            backgroundColor: LululuColors.carbonVoid,
-            body: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(
-                    color: LululuColors.liquidGold,
-                  ),
-                  if (_bootError != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Yükleniyor…',
-                      style: TextStyle(color: LululuColors.mutedTitanium),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+        onGenerateRoute: LululuRoutes.onGenerateRoute,
+        home: AnimatedSwitcher(
+          duration: LululuMotion.screenTransitionDuration,
+          switchInCurve: LululuMotion.smoothOut,
+          switchOutCurve: Curves.easeInCubic,
+          child: RepaintBoundary(
+            key: ValueKey<bool>(_splashDone && _home != null),
+            child: activeChild,
           ),
+        ),
+      ),
     );
   }
 }
+

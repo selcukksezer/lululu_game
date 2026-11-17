@@ -289,7 +289,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: _chapters.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, idx) {
           final ch = _chapters[idx];
           final isSelected = ch.$1 == _selectedChapter;

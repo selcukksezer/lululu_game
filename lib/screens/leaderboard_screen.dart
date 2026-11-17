@@ -1,467 +1,1321 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-
-import '../services/auth_service.dart';
-import '../services/cloud_sync_service.dart';
-import '../services/firebase_bootstrap.dart';
+import '../navigation/game_routes.dart';
 import '../services/leaderboard_service.dart';
-import '../theme/lululu_theme.dart';
-import '../widgets/dot_scaffold.dart';
-import 'auth_screen.dart';
+import '../services/progress_manager.dart';
+import '../widgets/home/lululu_dock_bar.dart';
 
-/// Gerçek kayıtlı kullanıcı skorları (yerel vault + Firestore sync).
-class LeaderboardScreen extends StatefulWidget {
-  const LeaderboardScreen({super.key, this.embedded = false});
-
+class LeaderboardScreen extends StatelessWidget {
   final bool embedded;
+  final bool showBackButton;
+  final VoidCallback? onClose;
+  final ValueChanged<LululuDockTab>? onSelectDockTab;
 
-  @override
-  State<LeaderboardScreen> createState() => _LeaderboardScreenState();
-}
+  const LeaderboardScreen({
+    super.key,
+    this.embedded = false,
+    this.showBackButton = false,
+    this.onClose,
+    this.onSelectDockTab,
+  });
 
-class _LeaderboardScreenState extends State<LeaderboardScreen> {
-  final _service = LeaderboardService.instance;
-  String _modeFilter = 'overall';
-  bool _loading = true;
-  bool _refreshing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _service.addListener(_onDataChanged);
-    AuthService.instance.addListener(_onDataChanged);
-    _bootstrap();
-  }
-
-  Future<void> _bootstrap() async {
-    await AuthService.instance.ensureLoaded();
-    await _service.ensureLoaded();
-    await CloudSyncService.instance.enableOnlineWhenSignedIn();
-    await _service.refreshFromCloud();
-    if (mounted) setState(() => _loading = false);
-  }
-
-  Future<void> _pullToRefresh() async {
-    setState(() => _refreshing = true);
-    try {
-      await CloudSyncService.instance.enableOnlineWhenSignedIn();
-      await CloudSyncService.instance.flushPending();
-      await _service.refreshFromCloud();
-    } finally {
-      if (mounted) setState(() => _refreshing = false);
+  static String _formatScore(int value) {
+    final s = value.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) {
+        buf.write('.');
+      }
+      buf.write(s[i]);
     }
+    return buf.toString();
   }
 
-  @override
-  void dispose() {
-    _service.removeListener(_onDataChanged);
-    AuthService.instance.removeListener(_onDataChanged);
-    super.dispose();
-  }
-
-  void _onDataChanged() {
-    if (mounted) setState(() {});
+  void _handleDockSelect(BuildContext context, LululuDockTab tab) {
+    if (onSelectDockTab != null) {
+      onSelectDockTab!(tab);
+      return;
+    }
+    if (tab == LululuDockTab.scores) return;
+    final route = switch (tab) {
+      LululuDockTab.home => LululuRoutes.hub,
+      LululuDockTab.modes => LululuRoutes.modes,
+      LululuDockTab.family => LululuRoutes.tiers,
+      LululuDockTab.shop => LululuRoutes.shop,
+      LululuDockTab.scores => LululuRoutes.scores,
+    };
+    goTo(context, route, replace: true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final body = _loading
-        ? const Center(child: CircularProgressIndicator())
-        : _buildBody();
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        ProgressManager.instance,
+        LeaderboardService.instance,
+      ]),
+      builder: (context, _) {
+        final int myScoreVal = 7915 + ProgressManager.instance.total11ModesScore;
+        final myScoreText = _formatScore(myScoreVal);
 
-    if (widget.embedded) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            child: Text(
-              'Sıralama',
-              style: GoogleFonts.exo2(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                color: LululuColors.ink,
-              ),
-            ),
+        final scoreItems = <_ScoreRowData>[
+          const _ScoreRowData(
+            rank: 4,
+            name: 'TerlikUstası',
+            level: 'Seviye 24',
+            score: '8.540',
+            avatar: 'assets/design/bugs_hd/tier4_hd.png',
+            imgTop: 2.4,
+            imgHeight: 35.2,
           ),
-          Expanded(child: body),
-        ],
-      );
-    }
-
-    return DotScaffold(
-      appBar: AppBar(
-        title: const Text('Sıralama'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-      ),
-      body: body,
-    );
-  }
-
-  Widget _buildBody() {
-    final auth = AuthService.instance;
-    final myRank = _modeFilter == 'overall'
-        ? _service.getMyOverallRank(n: 50)
-        : _service.getMyModeRank(_modeFilter, n: 50);
-    final myScore = _modeFilter == 'overall'
-        ? _service.myBestOverall
-        : _service.getBest(_modeFilter);
-    final rows = _modeFilter == 'overall'
-        ? _service.getOverallTop(n: 50)
-        : _service.getTop(_modeFilter, n: 50);
-    final sourceLabel = FirebaseBootstrap.ready
-        ? 'Canlı · kayıtlı oyuncular'
-        : 'Yerel · kayıtlı hesap skorları';
-
-    return RefreshIndicator(
-      color: LululuColors.liquidGold,
-      onRefresh: _pullToRefresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          _MyRankCard(
-            signedIn: auth.isSignedIn,
-            displayName: auth.displayName,
-            rank: myRank,
-            score: myScore,
-            onLogin: () => AuthScreen.open(context),
+          _ScoreRowData(
+            rank: 5,
+            name: 'SEN · LülüSever',
+            level: 'Seviye 18',
+            score: myScoreText,
+            avatar: 'assets/design/bugs_hd/tier5_hd.png',
+            imgTop: 4.3,
+            imgHeight: 62.3,
+            isMe: true,
           ),
-          const SizedBox(height: 10),
-          Row(
+          const _ScoreRowData(
+            rank: 6,
+            name: 'MakaraMehmet',
+            level: 'Seviye 21',
+            score: '7.402',
+            avatar: 'assets/design/bugs_hd/tier3_hd.png',
+            imgTop: 2.4,
+            imgHeight: 35.2,
+          ),
+          const _ScoreRowData(
+            rank: 7,
+            name: 'HuniKafa',
+            level: 'Seviye 15',
+            score: '6.988',
+            avatar: 'assets/design/bugs_hd/tier1_hd.png',
+            imgTop: 5.6,
+            imgHeight: 82.6,
+          ),
+          const _ScoreRowData(
+            rank: 8,
+            name: 'BilgeDede',
+            level: 'Seviye 27',
+            score: '6.511',
+            avatar: 'assets/design/bugs_hd/tier8_hd.png',
+            imgTop: 3.2,
+            imgHeight: 46.0,
+          ),
+        ];
+
+        final mqTop = MediaQuery.of(context).padding.top;
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF4F6FA),
+          body: Stack(
+            fit: StackFit.expand,
             children: [
-              Expanded(
-                child: Text(
-                  sourceLabel,
-                  style: GoogleFonts.exo2(
-                    fontSize: 11,
-                    color: LululuColors.mutedTitanium,
-                  ),
+              SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    if (mqTop == 0) const _ScoresPrototypeStatusBar(),
+                    // .page-title (y=35.4, h=47, padding: 10px 14px 2px 14px)
+                    Container(
+                      height: 47,
+                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          if (showBackButton || onClose != null) ...[
+                            GestureDetector(
+                              onTap: onClose ??
+                                  () => Navigator.of(context).maybePop(),
+                              child: Container(
+                                width: 35,
+                                height: 35,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x1A141B2A),
+                                      offset: Offset(0, 3),
+                                      blurRadius: 0,
+                                    ),
+                                  ],
+                                ),
+                                alignment: Alignment.center,
+                                child: Image.asset(
+                                  'assets/icons2/back.png',
+                                  width: 22,
+                                  height: 22,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 2),
+                              child: Transform.translate(
+                                offset: const Offset(0, -1),
+                                child: const Text(
+                                  'SKOR TABLOSU',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textHeightBehavior: TextHeightBehavior(
+                                    applyHeightToFirstAscent: false,
+                                    applyHeightToLastDescent: false,
+                                  ),
+                                  style: TextStyle(
+                                    fontFamily: 'Baloo 2',
+                                    fontSize: 23,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF141B2A),
+                                    height: 1.12,
+                                    letterSpacing: -0.05,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            height: 35,
+                            padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF33363C),
+                              borderRadius: BorderRadius.circular(999),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x59000000),
+                                  offset: Offset(0, 3),
+                                  blurRadius: 0,
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  'assets/icons2/clock.png',
+                                  width: 25,
+                                  height: 25,
+                                  fit: BoxFit.contain,
+                                ),
+                                const SizedBox(width: 6),
+                                Transform.translate(
+                                  offset: const Offset(-1, 0),
+                                  child: Transform.scale(
+                                    scaleX: 1.02,
+                                    scaleY: 1.0,
+                                    child: const Text(
+                                      'Haftalık',
+                                      style: TextStyle(
+                                        fontFamily: 'Nunito',
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                        height: 1.55,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // .scroll
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.only(bottom: 120),
+                        children: [
+                          // .podium (y=82, h=190, padding: 14px 16px 4px 16px)
+                          Container(
+                            height: 190,
+                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                _buildPodiumCol(
+                                  rank: 2,
+                                  name: 'HamamCan_34',
+                                  score: '9.310',
+                                  avatar: 'assets/design/bugs_hd/tier6_hd.png',
+                                  faceSize: 64,
+                                  imgLeft: 3.5,
+                                  imgTop: 6.3,
+                                  imgWidth: 51.0,
+                                  imgHeight: 93.2,
+                                  borderColor: const Color(0xFF8E9CAE),
+                                  baseHeight: 32,
+                                  baseFontSize: 17,
+                                  baseDecoration: const BoxDecoration(
+                                    color: Color(0xFFA9B6C8),
+                                    borderRadius: BorderRadius.vertical(
+                                      top: Radius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                _buildPodiumCol(
+                                  rank: 1,
+                                  name: 'KongoKralı',
+                                  score: '11.204',
+                                  avatar: 'assets/design/bugs_hd/tier7_hd.png',
+                                  faceSize: 78,
+                                  imgLeft: 4.3,
+                                  imgTop: 7.1,
+                                  imgWidth: 63.4,
+                                  imgHeight: 90.4,
+                                  borderColor: const Color(0xFFFFB800),
+                                  baseHeight: 44,
+                                  baseFontSize: 20,
+                                  baseDecoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xFFFFB800),
+                                        Color(0xFFE09E00),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.vertical(
+                                      top: Radius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                _buildPodiumCol(
+                                  rank: 3,
+                                  name: 'DivaNur',
+                                  score: '8.977',
+                                  avatar: 'assets/design/bugs_hd/tier5_hd.png',
+                                  faceSize: 64,
+                                  imgLeft: 3.5,
+                                  imgTop: 7.1,
+                                  imgWidth: 51.0,
+                                  imgHeight: 90.3,
+                                  borderColor: const Color(0xFF8E9CAE),
+                                  baseHeight: 26,
+                                  baseFontSize: 15,
+                                  baseDecoration: const BoxDecoration(
+                                    color: Color(0xFFD08A4E),
+                                    borderRadius: BorderRadius.vertical(
+                                      top: Radius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          for (final item in scoreItems) _buildScoreRow(item),
+
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (_refreshing)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                IconButton(
-                  tooltip: 'Yenile',
-                  onPressed: _pullToRefresh,
-                  icon: const Icon(Icons.refresh_rounded, size: 20),
-                  color: LululuColors.mutedTitanium,
+
+              if (!embedded)
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 10,
+                  height: 84,
+                  child: _ScoresFloatingDock(
+                    activeTab: LululuDockTab.scores,
+                    onSelectTab: (tab) => _handleDockSelect(context, tab),
+                  ),
                 ),
             ],
           ),
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                _FilterChip(
-                  label: 'Herkes',
-                  selected: _modeFilter == 'overall',
-                  onTap: () => setState(() => _modeFilter = 'overall'),
-                ),
-                for (final id in LeaderboardService.allModeIds)
-                  _FilterChip(
-                    label: LeaderboardService.modeDisplayNames[id] ?? id,
-                    selected: _modeFilter == id,
-                    onTap: () => setState(() => _modeFilter = id),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _modeFilter == 'overall' ? 'GENEL LİSTE' : 'MOD LİSTESİ',
-            style: GoogleFonts.exo2(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-              color: LululuColors.mutedTitanium,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (rows.isEmpty)
-            Text(
-              auth.isSignedIn
-                  ? 'Henüz skor yok — oyna, listeye gir.'
-                  : 'Giriş yap, oyna — sıralama gerçek skorlarla dolacak.',
-              style: GoogleFonts.exo2(color: LululuColors.mutedTitanium),
-            )
-          else
-            for (var i = 0; i < rows.length; i++)
-              _RankTile(
-                rank: i + 1,
-                entry: rows[i],
-                highlight: rows[i].isLocalPlayer ||
-                    rows[i].playerId == auth.playerId ||
-                    rows[i].playerName == auth.displayName,
-              ),
-        ],
-      ),
+        );
+      },
     );
   }
-}
 
-class _MyRankCard extends StatelessWidget {
-  const _MyRankCard({
-    required this.signedIn,
-    required this.displayName,
-    required this.rank,
-    required this.score,
-    required this.onLogin,
-  });
-
-  final bool signedIn;
-  final String displayName;
-  final int? rank;
-  final int score;
-  final VoidCallback onLogin;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(LululuRadii.card),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            LululuColors.spaceNavy,
-            LululuColors.cyberFuchsia.withValues(alpha: 0.28),
-            LululuColors.carbonVoid,
-          ],
-        ),
-        border: Border.all(
-          color: LululuColors.liquidGold.withValues(alpha: 0.5),
-          width: 1.3,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: LululuColors.liquidGold.withValues(alpha: 0.18),
-            blurRadius: 22,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
+  Widget _buildPodiumCol({
+    required int rank,
+    required String name,
+    required String score,
+    required String avatar,
+    required double faceSize,
+    required double imgLeft,
+    required double imgTop,
+    required double imgWidth,
+    required double imgHeight,
+    required Color borderColor,
+    required double baseHeight,
+    required double baseFontSize,
+    required BoxDecoration baseDecoration,
+  }) {
+    final innerSize = faceSize - 6;
+    return SizedBox(
+      width: 88,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           Container(
-            width: 56,
-            height: 56,
-            alignment: Alignment.center,
+            width: faceSize,
+            height: faceSize,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              color: LululuColors.darkObsidian,
-              border: Border.all(color: LululuColors.toxicNeon.withValues(alpha: 0.5)),
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: borderColor, width: 3),
             ),
-            child: Text(
-              rank == null ? '—' : '#$rank',
-              style: GoogleFonts.exo2(
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-                color: LululuColors.toxicNeon,
+            child: ClipOval(
+              child: SizedBox(
+                width: innerSize,
+                height: innerSize,
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    Positioned(
+                      left: imgLeft,
+                      top: imgTop,
+                      width: imgWidth,
+                      height: imgHeight,
+                      child: Image.asset(
+                        avatar,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 19.4,
+            child: OverflowBox(
+              maxWidth: 104,
+              child: Center(
+                child: Transform.scale(
+                  scaleX: 0.98,
+                  scaleY: 1.0,
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    softWrap: false,
+                    textHeightBehavior: const TextHeightBehavior(
+                      applyHeightToFirstAscent: false,
+                      applyHeightToLastDescent: false,
+                    ),
+                    style: const TextStyle(
+                      fontFamily: 'Nunito',
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF141B2A),
+                      height: 1.55,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 18.6,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  'SENİN SIRAN',
-                  style: GoogleFonts.exo2(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                    color: LululuColors.mutedTitanium,
-                  ),
+                Image.asset(
+                  'assets/icons2/trophy.png',
+                  width: 17,
+                  height: 17,
+                  fit: BoxFit.contain,
                 ),
+                const SizedBox(width: 4),
                 Text(
-                  signedIn ? displayName : 'Giriş yok',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.exo2(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    decoration: TextDecoration.none,
-                    color: LululuColors.ink,
+                  score,
+                  textHeightBehavior: const TextHeightBehavior(
+                    applyHeightToFirstAscent: false,
+                    applyHeightToLastDescent: false,
                   ),
-                ),
-                Text(
-                  score > 0 ? 'En iyi: $score' : 'Skor yok — oyna!',
-                  style: GoogleFonts.exo2(
+                  style: const TextStyle(
+                    fontFamily: 'Nunito',
                     fontSize: 12,
-                    color: LululuColors.liquidGold,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF8A6D00),
+                    height: 1.55,
+                    letterSpacing: -0.2,
                   ),
                 ),
               ],
             ),
           ),
-          if (!signedIn)
-            TextButton(
-              onPressed: onLogin,
-              child: Text(
-                'GİRİŞ',
-                style: GoogleFonts.exo2(
-                  fontWeight: FontWeight.w900,
-                  color: LululuColors.liquidGold,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected
-                ? LululuColors.darkObsidian
-                : LululuColors.carbonVoid,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? LululuColors.toxicNeon.withValues(alpha: 0.6)
-                  : LululuColors.mutedTitanium.withValues(alpha: 0.3),
-            ),
-          ),
-          child: Text(
-            label,
-            style: GoogleFonts.exo2(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: selected ? LululuColors.toxicNeon : LululuColors.mutedTitanium,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RankTile extends StatelessWidget {
-  const _RankTile({
-    required this.rank,
-    required this.entry,
-    required this.highlight,
-  });
-
-  final int rank;
-  final LeaderboardEntry entry;
-  final bool highlight;
-
-  @override
-  Widget build(BuildContext context) {
-    final mode =
-        LeaderboardService.modeDisplayNames[entry.modeId] ?? entry.modeId;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      constraints: const BoxConstraints(minHeight: LululuMotion.minTap),
-      decoration: BoxDecoration(
-        gradient: highlight
-            ? LinearGradient(
-                colors: [
-                  LululuColors.cyberFuchsia.withValues(alpha: 0.28),
-                  LululuColors.spaceNavy,
-                ],
-              )
-            : LululuGradients.navyToCarbon,
-        borderRadius: BorderRadius.circular(LululuRadii.pill),
-        border: Border.all(
-          color: highlight
-              ? LululuColors.liquidGold.withValues(alpha: 0.65)
-              : LululuColors.darkObsidian.withValues(alpha: 0.9),
-          width: highlight ? 1.3 : 1,
-        ),
-        boxShadow: highlight
-            ? [
-                BoxShadow(
-                  color: LululuColors.liquidGold.withValues(alpha: 0.2),
-                  blurRadius: 14,
-                ),
-              ]
-            : null,
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 36,
+          const SizedBox(height: 4),
+          Container(
+            width: 88,
+            height: baseHeight,
+            decoration: baseDecoration,
+            alignment: Alignment.center,
             child: Text(
               '$rank',
-              style: GoogleFonts.exo2(
-                fontWeight: FontWeight.w900,
-                color: rank <= 3
-                    ? LululuColors.liquidGold
-                    : LululuColors.mutedTitanium,
+              textHeightBehavior: const TextHeightBehavior(
+                applyHeightToFirstAscent: false,
+                applyHeightToLastDescent: false,
               ),
-            ),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.playerName + (highlight ? '  · sen' : ''),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.exo2(
-                    fontWeight: FontWeight.w800,
-                    decoration: TextDecoration.none,
-                    color: LululuColors.ink,
-                  ),
-                ),
-                Text(
-                  mode,
-                  style: GoogleFonts.exo2(
-                    fontSize: 10,
-                    color: LululuColors.mutedTitanium,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '${entry.score}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.exo2(
-              fontWeight: FontWeight.w900,
-              decoration: TextDecoration.none,
-              color: LululuColors.liquidGold,
+              style: TextStyle(
+                fontFamily: 'Baloo 2',
+                fontSize: baseFontSize,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                height: 1.55,
+              ),
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildScoreRow(_ScoreRowData item) {
+    final double cardHeight = (item.rank == 4 || item.rank == 7) ? 62.0 : 61.0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: CustomPaint(
+        foregroundPainter: item.isMe ? const _MeRowOutlinePainter() : null,
+        child: Container(
+          height: cardHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: item.isMe ? const Color(0xFFFFF2F7) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0F141B2A),
+                offset: Offset(0, 4),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24.8,
+                child: Center(
+                  child: Transform.translate(
+                    offset: const Offset(0, -1),
+                    child: Text(
+                      '${item.rank}',
+                      textAlign: TextAlign.center,
+                      textHeightBehavior: const TextHeightBehavior(
+                        applyHeightToFirstAscent: false,
+                        applyHeightToLastDescent: false,
+                      ),
+                      style: const TextStyle(
+                        fontFamily: 'Baloo 2',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF66738A),
+                        height: 1.55,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF4F6FA),
+                  shape: BoxShape.circle,
+                ),
+                child: ClipOval(
+                  child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Stack(
+                      clipBehavior: Clip.hardEdge,
+                      children: [
+                        Positioned(
+                          left: 2.4,
+                          top: item.imgTop,
+                          width: 35.2,
+                          height: item.imgHeight,
+                          child: Image.asset(
+                            item.avatar,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.medium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: SizedBox(
+                  height: 43.4,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 1.0,
+                        height: 19.0,
+                        child: Transform.scale(
+                          alignment: Alignment.centerLeft,
+                          scaleX: 0.97,
+                          scaleY: 1.0,
+                          child: Text(
+                            item.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textHeightBehavior: const TextHeightBehavior(
+                              applyHeightToFirstAscent: false,
+                              applyHeightToLastDescent: false,
+                            ),
+                            style: const TextStyle(
+                              fontFamily: 'Nunito',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF141B2A),
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 24.5,
+                        height: 16.0,
+                        child: Transform.scale(
+                          alignment: Alignment.centerLeft,
+                          scaleX: 0.975,
+                          scaleY: 1.0,
+                          child: Text(
+                            item.level,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textHeightBehavior: const TextHeightBehavior(
+                              applyHeightToFirstAscent: false,
+                              applyHeightToLastDescent: false,
+                            ),
+                            style: const TextStyle(
+                              fontFamily: 'Nunito',
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF66738A),
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 24,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/icons2/trophy.png',
+                      width: 19,
+                      height: 19,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(width: 5),
+                    Transform.translate(
+                      offset: const Offset(0, -1),
+                      child: Transform.scale(
+                        alignment: Alignment.centerRight,
+                        scaleX: 0.985,
+                        scaleY: 1.0,
+                        child: Text(
+                          item.score,
+                          textHeightBehavior: const TextHeightBehavior(
+                            applyHeightToFirstAscent: false,
+                            applyHeightToLastDescent: false,
+                          ),
+                          style: const TextStyle(
+                            fontFamily: 'Baloo 2',
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF141B2A),
+                            height: 1.55,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
+
+class _MeRowOutlinePainter extends CustomPainter {
+  const _MeRowOutlinePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final innerRRect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(16),
+    );
+    final outerRRect = innerRRect.inflate(2.0);
+    final ringPath = Path.combine(
+      PathOperation.difference,
+      Path()..addRRect(outerRRect),
+      Path()..addRRect(innerRRect),
+    );
+    canvas.drawPath(
+      ringPath,
+      Paint()
+        ..color = const Color(0xFFE01E5A)
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _ScoreRowData {
+  final int rank;
+  final String name;
+  final String level;
+  final String score;
+  final String avatar;
+  final double imgTop;
+  final double imgHeight;
+  final bool isMe;
+
+  const _ScoreRowData({
+    required this.rank,
+    required this.name,
+    required this.level,
+    required this.score,
+    required this.avatar,
+    required this.imgTop,
+    required this.imgHeight,
+    this.isMe = false,
+  });
+}
+
+class _ScoresFloatingDock extends StatelessWidget {
+  final LululuDockTab activeTab;
+  final ValueChanged<LululuDockTab> onSelectTab;
+
+  const _ScoresFloatingDock({
+    required this.activeTab,
+    required this.onSelectTab,
+  });
+
+  static const _tabs = LululuDockTab.values;
+
+  static String _label(LululuDockTab tab) => switch (tab) {
+        LululuDockTab.home => 'ANA SAYFA',
+        LululuDockTab.modes => 'MODLAR',
+        LululuDockTab.family => 'AİLEM',
+        LululuDockTab.shop => 'MAĞAZA',
+        LululuDockTab.scores => 'SKORLAR',
+      };
+
+  static String _icon(LululuDockTab tab) => switch (tab) {
+        LululuDockTab.home => 'assets/icons2/home.png',
+        LululuDockTab.modes => 'assets/icons2/target.png',
+        LululuDockTab.family => 'assets/icons2/paw.png',
+        LululuDockTab.shop => 'assets/icons2/cart.png',
+        LululuDockTab.scores => 'assets/icons2/trophy.png',
+      };
+
+  static Widget _buildIconWithDropShadow(String asset, double size) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: Transform.translate(
+              offset: const Offset(0, 2),
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: 1.0, sigmaY: 1.0),
+                child: ColorFiltered(
+                  colorFilter: const ColorFilter.mode(
+                    Color(0x47000000),
+                    BlendMode.srcIn,
+                  ),
+                  child: Image.asset(
+                    asset,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Image.asset(
+            asset,
+            width: size,
+            height: size,
+            fit: BoxFit.contain,
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: const _ScoresBlurShadowPainter(
+        color: Color(0x62080B12),
+        offset: Offset(0, 22),
+        blurRadius: 38,
+        borderRadius: 999,
+      ),
+      child: Container(
+        height: 84,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white, width: 3),
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: [0.0, 0.72],
+            colors: [
+              Color(0xFF1E2538),
+              Color(0xFF080B12),
+            ],
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x47080B12),
+              offset: Offset(0, 7),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final usableWidth =
+                  (constraints.maxWidth - 14.0).clamp(100.0, 410.0);
+              final tabWidth = usableWidth / _tabs.length;
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Positioned.fill(
+                    child: CustomPaint(
+                      painter: _DockSurfacePainter(),
+                    ),
+                  ),
+                  Positioned(
+                    left: 26,
+                    right: 26,
+                    top: 5,
+                    height: 9,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.white.withValues(alpha: 0.20),
+                            Colors.white.withValues(alpha: 0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 7.0 + activeTab.index * tabWidth,
+                    top: 7.0,
+                    width: tabWidth,
+                    height: 64.0,
+                    child: CustomPaint(
+                      painter: const _ScoresBlurShadowPainter(
+                        color: Color(0x47E01E5A),
+                        offset: Offset(0, 10),
+                        blurRadius: 18,
+                        borderRadius: 999,
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0xF0FFFFFF),
+                            width: 2,
+                          ),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: [0.0, 0.40, 0.74, 1.0],
+                            colors: [
+                              Color(0xFFFFE27A),
+                              Color(0xFFFFB800),
+                              Color(0xFFFF6B35),
+                              Color(0xFFE01E5A),
+                            ],
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x4D000000),
+                              offset: Offset(0, 5),
+                              blurRadius: 0,
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: Stack(
+                            children: [
+                              const Positioned.fill(
+                                child: CustomPaint(
+                                  painter: _DockActiveIndInsetPainter(),
+                                ),
+                              ),
+                              Positioned(
+                                left: 8,
+                                right: 8,
+                                top: 2,
+                                height: 9,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0x61FFFFFF),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(7),
+                    child: Row(
+                      children: [
+                        for (final tab in _tabs)
+                          Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => onSelectTab(tab),
+                              child: SizedBox(
+                                height: 64,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  alignment: Alignment.topCenter,
+                                  children: [
+                                    if (tab == activeTab)
+                                      Positioned(
+                                        top: 1.8,
+                                        width: 42.4,
+                                        height: 42.4,
+                                        child: CustomPaint(
+                                          painter:
+                                              const _ScoresBlurShadowPainter(
+                                            color: Color(0x3D000000),
+                                            offset: Offset(0, 7),
+                                            blurRadius: 12,
+                                            borderRadius: 999,
+                                          ),
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: Colors.white,
+                                              border: Border.all(
+                                                color: Colors.white,
+                                                width: 2,
+                                              ),
+                                              boxShadow: const [
+                                                BoxShadow(
+                                                  color: Color(0x597A082E),
+                                                  offset: Offset(0, 4),
+                                                  blurRadius: 0,
+                                                ),
+                                              ],
+                                            ),
+                                            child: ClipOval(
+                                              child: Stack(
+                                                alignment: Alignment.center,
+                                                children: [
+                                                  const Positioned.fill(
+                                                    child: CustomPaint(
+                                                      painter:
+                                                          _DockCircleInsetPainter(
+                                                        dy: -4.24,
+                                                        color:
+                                                            Color(0x1F080B12),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  _buildIconWithDropShadow(
+                                                    _icon(tab),
+                                                    35,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                  else
+                                    Positioned(
+                                      top: 7.0,
+                                      width: 40.0,
+                                      height: 40.0,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: const Color(0x17FFFFFF),
+                                          border: Border.all(
+                                            color: const Color(0x2EFFFFFF),
+                                            width: 2,
+                                          ),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Color(0x4D000000),
+                                              offset: Offset(0, 3),
+                                              blurRadius: 0,
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipOval(
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            children: [
+                                              const Positioned.fill(
+                                                child: CustomPaint(
+                                                  painter:
+                                                      _DockCircleInsetPainter(
+                                                    dy: 2.0,
+                                                    color: Color(0x29FFFFFF),
+                                                  ),
+                                                ),
+                                              ),
+                                              _buildIconWithDropShadow(
+                                                _icon(tab),
+                                                33,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    top: 46.0,
+                                    height: 16.0,
+                                    child: Center(
+                                      child: Text(
+                                        _label(tab),
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.visible,
+                                        style: TextStyle(
+                                          fontFamily: 'Baloo 2',
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          height: 1.0,
+                                          letterSpacing: 0,
+                                          color: tab == activeTab
+                                              ? Colors.white
+                                              : const Color(0xA8FFFFFF),
+                                          shadows: tab == activeTab
+                                              ? const [
+                                                  Shadow(
+                                                    color: Color(0x737A082E),
+                                                    offset: Offset(0, 2),
+                                                    blurRadius: 0,
+                                                  ),
+                                                ]
+                                              : const [
+                                                  Shadow(
+                                                    color: Color(0xBF000000),
+                                                    offset: Offset(0, 1),
+                                                    blurRadius: 0,
+                                                  ),
+                                                ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScoresBlurShadowPainter extends CustomPainter {
+  final Color color;
+  final Offset offset;
+  final double blurRadius;
+  final double borderRadius;
+
+  const _ScoresBlurShadowPainter({
+    required this.color,
+    required this.offset,
+    required this.blurRadius,
+    required this.borderRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sigma = blurRadius * 0.57735 + 0.5;
+    final paint = Paint()
+      ..color = color
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
+    final rect = offset & size;
+    final r = borderRadius >= size.height / 2
+        ? Radius.circular(size.height / 2)
+        : Radius.circular(borderRadius);
+    canvas.drawRRect(RRect.fromRectAndRadius(rect, r), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScoresBlurShadowPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.offset != offset ||
+      oldDelegate.blurRadius != blurRadius ||
+      oldDelegate.borderRadius != borderRadius;
+}
+
+class _DockSurfacePainter extends CustomPainter {
+  const _DockSurfacePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    // radial-gradient(120% 160% at 18% -30%, rgba(255,255,255,.22), rgba(255,255,255,0) 48%)
+    canvas.save();
+    canvas.translate(size.width * 0.18, -size.height * 0.30);
+    canvas.scale(size.width * 1.20, size.height * 1.60);
+    final radialPaint = Paint()
+      ..shader = ui.Gradient.radial(
+        Offset.zero,
+        1.0,
+        const [Color(0x38FFFFFF), Color(0x00FFFFFF)],
+        const [0.0, 0.48],
+      );
+    canvas.drawRect(const Rect.fromLTRB(-2, -2, 2, 2), radialPaint);
+    canvas.restore();
+
+    final radius = Radius.circular(size.height / 2);
+    final outerPath = Path()..addRRect(RRect.fromRectAndRadius(rect, radius));
+
+    // inset 0 3px 0 rgba(255,255,255,.16)
+    final topInsetPath = Path.combine(
+      PathOperation.difference,
+      outerPath,
+      outerPath.shift(const Offset(0, 3)),
+    );
+    canvas.drawPath(topInsetPath, Paint()..color = const Color(0x29FFFFFF));
+
+    // inset 0 -7px 0 rgba(0,0,0,.34)
+    final bottomInsetPath = Path.combine(
+      PathOperation.difference,
+      outerPath,
+      outerPath.shift(const Offset(0, -7)),
+    );
+    canvas.drawPath(bottomInsetPath, Paint()..color = const Color(0x57000000));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _DockActiveIndInsetPainter extends CustomPainter {
+  const _DockActiveIndInsetPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final radius = Radius.circular(size.height / 2);
+    final outerPath = Path()..addRRect(RRect.fromRectAndRadius(rect, radius));
+
+    final topInset = Path.combine(
+      PathOperation.difference,
+      outerPath,
+      outerPath.shift(const Offset(0, 3)),
+    );
+    canvas.drawPath(topInset, Paint()..color = const Color(0x8CFFFFFF));
+
+    final bottomInset = Path.combine(
+      PathOperation.difference,
+      outerPath,
+      outerPath.shift(const Offset(0, -6)),
+    );
+    canvas.drawPath(bottomInset, Paint()..color = const Color(0x3D7A082E));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _DockCircleInsetPainter extends CustomPainter {
+  final double dy;
+  final Color color;
+
+  const _DockCircleInsetPainter({required this.dy, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outer = Path()..addOval(Offset.zero & size);
+    final crescent = Path.combine(
+      PathOperation.difference,
+      outer,
+      outer.shift(Offset(0, dy)),
+    );
+    canvas.drawPath(crescent, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DockCircleInsetPainter oldDelegate) =>
+      oldDelegate.dy != dy || oldDelegate.color != color;
+}
+
+class _ScoresPrototypeStatusBar extends StatelessWidget {
+  const _ScoresPrototypeStatusBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 35.0,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 14, 22, 1.6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text(
+              '09:41',
+              style: TextStyle(
+                fontFamily: 'Nunito',
+                fontSize: 12.5,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF141B2A),
+                height: 1.55,
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                CustomPaint(
+                  size: Size(15, 15),
+                  painter: _ScoresSignalPainter(),
+                ),
+                SizedBox(width: 5),
+                CustomPaint(
+                  size: Size(15, 15),
+                  painter: _ScoresBatteryPainter(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScoresSignalPainter extends CustomPainter {
+  const _ScoresSignalPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.width / 24.0;
+    canvas.save();
+    canvas.scale(scale, scale);
+    final paint = Paint()
+      ..color = const Color(0xFF141B2A)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
+    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
+    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
+    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _ScoresBatteryPainter extends CustomPainter {
+  const _ScoresBatteryPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.width / 24.0;
+    canvas.save();
+    canvas.scale(scale, scale);
+    final strokePaint = Paint()
+      ..color = const Color(0xFF141B2A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(2.5, 8, 17, 9),
+        const Radius.circular(2.5),
+      ),
+      strokePaint,
+    );
+    final fillPaint = Paint()
+      ..color = const Color(0xFF141B2A)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(4.5, 10, 10, 5),
+        const Radius.circular(1),
+      ),
+      fillPaint,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+
+

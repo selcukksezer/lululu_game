@@ -8,11 +8,7 @@ class MergeEvent {
   final double x;
   final double y;
 
-  const MergeEvent({
-    required this.tier,
-    required this.x,
-    required this.y,
-  });
+  const MergeEvent({required this.tier, required this.x, required this.y});
 }
 
 class InsectParticle {
@@ -62,6 +58,7 @@ class InsectBody {
   bool isStatic;
   bool isMarkedForRemoval;
   double spawnScale;
+  double mergeSquash;
 
   InsectBody({
     required this.id,
@@ -75,25 +72,27 @@ class InsectBody {
     this.isStatic = false,
     this.isMarkedForRemoval = false,
     this.spawnScale = 0.2,
-  })  : prevX = prevX ?? x,
-        prevY = prevY ?? y;
+    this.mergeSquash = 0,
+  }) : prevX = prevX ?? x,
+       prevY = prevY ?? y;
 
   double get radius => tier.radius;
   double get mass => tier.mass;
 
   InsectBody copy() => InsectBody(
-        id: id,
-        tier: tier,
-        x: x,
-        y: y,
-        prevX: prevX,
-        prevY: prevY,
-        angle: angle,
-        angularVelocity: angularVelocity,
-        isStatic: isStatic,
-        isMarkedForRemoval: isMarkedForRemoval,
-        spawnScale: spawnScale,
-      );
+    id: id,
+    tier: tier,
+    x: x,
+    y: y,
+    prevX: prevX,
+    prevY: prevY,
+    angle: angle,
+    angularVelocity: angularVelocity,
+    isStatic: isStatic,
+    isMarkedForRemoval: isMarkedForRemoval,
+    spawnScale: spawnScale,
+    mergeSquash: mergeSquash,
+  );
 
   void respawn({
     required InsectTier nextTier,
@@ -110,6 +109,7 @@ class InsectBody {
     isStatic = false;
     isMarkedForRemoval = false;
     spawnScale = 0.2;
+    mergeSquash = 0;
   }
 
   void applyImpulse(double ix, double iy) {
@@ -135,6 +135,8 @@ class ArenaBlock {
 class CircularPhysicsEngine {
   Offset arenaCenter;
   double arenaRadius;
+  double arenaWidth;
+  double arenaHeight;
   final double gravity;
 
   /// Flat floor and straight walls. Round bowl when false.
@@ -147,36 +149,57 @@ class CircularPhysicsEngine {
 
   static const double maxAngularVelocity = 3.5;
   static const double _angularDamping = 0.62;
+
   /// Below this Verlet step length, body sleeps (stops micro-jitter).
   static const double _sleepSpeed = 0.55;
 
   CircularPhysicsEngine({
     required this.arenaCenter,
     required this.arenaRadius,
+    double? arenaWidth,
+    double? arenaHeight,
     this.gravity = 980.0,
     this.squareArena = false,
-  });
+  }) : arenaWidth = arenaWidth ?? arenaRadius * 2,
+       arenaHeight = arenaHeight ?? arenaRadius * 2;
 
   /// Keep bodies when play-area size changes (HUD / SafeArea reflow).
-  void remountLayout(Offset newCenter, double newRadius) {
+  void remountLayout(
+    Offset newCenter,
+    double newRadius, {
+    double? newArenaWidth,
+    double? newArenaHeight,
+  }) {
+    final nextWidth = newArenaWidth ?? newRadius * 2;
+    final nextHeight = newArenaHeight ?? newRadius * 2;
     if ((newCenter - arenaCenter).distance < 0.5 &&
-        (newRadius - arenaRadius).abs() < 0.5) {
+        (newRadius - arenaRadius).abs() < 0.5 &&
+        (nextWidth - arenaWidth).abs() < 0.5 &&
+        (nextHeight - arenaHeight).abs() < 0.5) {
       return;
     }
     final oldC = arenaCenter;
-    final oldR = arenaRadius;
-    final scale = oldR > 1 ? newRadius / oldR : 1.0;
+    final scaleX = arenaWidth > 1 ? nextWidth / arenaWidth : 1.0;
+    final scaleY = arenaHeight > 1 ? nextHeight / arenaHeight : 1.0;
     for (final b in bodies) {
-      b.x = newCenter.dx + (b.x - oldC.dx) * scale;
-      b.y = newCenter.dy + (b.y - oldC.dy) * scale;
-      b.prevX = newCenter.dx + (b.prevX - oldC.dx) * scale;
-      b.prevY = newCenter.dy + (b.prevY - oldC.dy) * scale;
+      b.x = newCenter.dx + (b.x - oldC.dx) * scaleX;
+      b.y = newCenter.dy + (b.y - oldC.dy) * scaleY;
+      b.prevX = newCenter.dx + (b.prevX - oldC.dx) * scaleX;
+      b.prevY = newCenter.dy + (b.prevY - oldC.dy) * scaleY;
     }
     final blockCount = blocks.length;
     arenaCenter = newCenter;
     arenaRadius = newRadius;
+    arenaWidth = nextWidth;
+    arenaHeight = nextHeight;
     if (blockCount > 0) layoutBlocks(blockCount);
   }
+
+  Rect get arenaBounds => Rect.fromCenter(
+    center: arenaCenter,
+    width: arenaWidth,
+    height: arenaHeight,
+  );
 
   void clear() {
     for (final b in bodies) {
@@ -214,7 +237,8 @@ class CircularPhysicsEngine {
     return true;
   }
 
-  double get dangerY => arenaCenter.dy - arenaRadius * 0.72;
+  double get dangerY =>
+      squareArena ? arenaBounds.top + 10 : arenaCenter.dy - arenaRadius * 0.72;
 
   bool get isOverflowing {
     for (final b in bodies) {
@@ -233,7 +257,7 @@ class CircularPhysicsEngine {
     final maxDy = sqrt(max(0.0, arenaRadius * arenaRadius - dx * dx));
     var land = arenaCenter.dy + maxDy - radius;
     if (squareArena) {
-      land = arenaCenter.dy + arenaRadius - radius - 4;
+      land = arenaBounds.bottom - radius - 4;
     }
     for (final b in bodies) {
       if (b.isMarkedForRemoval || b.spawnScale < 0.55) continue;
@@ -248,7 +272,7 @@ class CircularPhysicsEngine {
   /// Only resting pile bodies — mid-fall drops must NOT flash "yaklaştın".
   double get dangerProximity {
     var worst = 0.0;
-    final band = arenaRadius * 0.22;
+    final band = squareArena ? arenaHeight * 0.12 : arenaRadius * 0.22;
     for (final b in bodies) {
       if (b.isMarkedForRemoval || b.spawnScale < 0.9) continue;
       // Falling / bouncing: ignore (prevY delta + speed).
@@ -269,13 +293,7 @@ class CircularPhysicsEngine {
       body = _pool.removeLast();
       body.respawn(nextTier: tier, nx: x, ny: y);
     } else {
-      body = InsectBody(
-        id: _nextId++,
-        tier: tier,
-        x: x,
-        y: y,
-        spawnScale: 0.2,
-      );
+      body = InsectBody(id: _nextId++, tier: tier, x: x, y: y, spawnScale: 0.2);
       body.prevY = y - 4.5;
     }
     bodies.add(body);
@@ -297,9 +315,7 @@ class CircularPhysicsEngine {
           vx: cos(angle) * speed,
           vy: sin(angle) * speed * 0.72 + upBias,
           life: 0.55 + rand.nextDouble() * 0.55,
-          color: i.isEven
-              ? color
-              : Color.lerp(color, Colors.white, 0.35)!,
+          color: i.isEven ? color : Color.lerp(color, Colors.white, 0.35)!,
           size: 1.8 + rand.nextDouble() * 4.2,
           angle: rand.nextDouble() * pi,
           spin: (rand.nextDouble() - 0.5) * 16,
@@ -323,6 +339,7 @@ class CircularPhysicsEngine {
       } else if (b.spawnScale > 1.0) {
         b.spawnScale = max(1.0, b.spawnScale - dt * 4.5);
       }
+      b.mergeSquash = max(0, b.mergeSquash - dt * 5.5);
 
       var vx = (b.x - b.prevX) * 0.972;
       var vy = (b.y - b.prevY) * 0.972 + (gravity * dt * dt);
@@ -345,8 +362,10 @@ class CircularPhysicsEngine {
       if (b.angularVelocity.abs() < 0.18) {
         b.angularVelocity = 0;
       } else {
-        b.angularVelocity =
-            b.angularVelocity.clamp(-maxAngularVelocity, maxAngularVelocity);
+        b.angularVelocity = b.angularVelocity.clamp(
+          -maxAngularVelocity,
+          maxAngularVelocity,
+        );
       }
     }
 
@@ -438,10 +457,11 @@ class CircularPhysicsEngine {
   }
 
   void _resolveSquareBounds() {
-    final left = arenaCenter.dx - arenaRadius;
-    final right = arenaCenter.dx + arenaRadius;
-    final top = arenaCenter.dy - arenaRadius;
-    final floorY = arenaCenter.dy + arenaRadius;
+    final bounds = arenaBounds;
+    final left = bounds.left;
+    final right = bounds.right;
+    final top = bounds.top;
+    final floorY = bounds.bottom;
     for (final b in bodies) {
       final r = b.radius * b.spawnScale;
       final inBin = b.y + r > top;
@@ -496,6 +516,7 @@ class CircularPhysicsEngine {
             b1.prevX = midX;
             b1.prevY = midY;
             b1.spawnScale = 0.55;
+            b1.mergeSquash = 1;
             b1.angularVelocity = 0;
             final cx = arenaCenter.dx - midX;
             final cy = arenaCenter.dy - midY;
@@ -527,16 +548,15 @@ class CircularPhysicsEngine {
           // Unstable perch: roll toward freer side so pile fills gaps.
           final upper = b1.y <= b2.y ? b1 : b2;
           final lower = identical(upper, b1) ? b2 : b1;
-          final stacked = ny.abs() > 0.5 &&
+          final stacked =
+              ny.abs() > 0.5 &&
               upper.y < lower.y &&
               (lower.y - upper.y) < targetDist * 1.05;
           if (stacked) {
             final dxOff = upper.x - lower.x;
             final balance = lower.radius * 0.38;
             if (dxOff.abs() < balance) {
-              final dir = dxOff.abs() < 0.6
-                  ? _freerSide(upper)
-                  : dxOff.sign;
+              final dir = dxOff.abs() < 0.6 ? _freerSide(upper) : dxOff.sign;
               upper.prevX = upper.x - dir * 2.6;
             } else {
               // Keep rolling off the shoulder; light friction only.
@@ -599,12 +619,7 @@ class CircularPhysicsEngine {
   }
 
   /// Soft radial blast from a merge epicenter — mostly lateral, little lift.
-  void applyMergeBlast(
-    double ox,
-    double oy,
-    double force, {
-    double? radius,
-  }) {
+  void applyMergeBlast(double ox, double oy, double force, {double? radius}) {
     final blastR = radius ?? arenaRadius * 0.42;
     for (final b in bodies) {
       if (b.isMarkedForRemoval || b.isStatic) continue;
@@ -623,8 +638,10 @@ class CircularPhysicsEngine {
       final maxDown = force * 0.2 * b.mass * 0.22;
       iy = iy.clamp(-maxUp, maxDown);
       b.applyImpulse(ix, iy);
-      b.angularVelocity =
-          (b.angularVelocity * 0.7).clamp(-maxAngularVelocity, maxAngularVelocity);
+      b.angularVelocity = (b.angularVelocity * 0.7).clamp(
+        -maxAngularVelocity,
+        maxAngularVelocity,
+      );
     }
   }
 
@@ -638,13 +655,56 @@ class CircularPhysicsEngine {
       if (distSq < 1.0 || distSq > reach * reach) continue;
       final dist = sqrt(distSq);
       final w = 1.0 - dist / reach;
-      b.applyImpulse(dx / dist * 2.2 * w * b.mass, dy / dist * 1.2 * w * b.mass);
+      b.applyImpulse(
+        dx / dist * 2.2 * w * b.mass,
+        dy / dist * 1.2 * w * b.mass,
+      );
     }
   }
 
-  @Deprecated('Use applyMergeBlast — random full-field shake launches insects off-screen')
+  @Deprecated(
+    'Use applyMergeBlast — random full-field shake launches insects off-screen',
+  )
   void applyShakeImpulse(double force) {
     applyMergeBlast(arenaCenter.dx, arenaCenter.dy, force * 0.35);
+  }
+
+  /// "Anne Terliği" — hedef böceği ezer ve çevresini sarsar.
+  InsectBody? crushTargetInsect({double? targetX}) {
+    final active = bodies.where((b) => !b.isMarkedForRemoval).toList();
+    if (active.isEmpty) return null;
+    active.sort((a, b) {
+      if (targetX != null) {
+        final da = (a.x - targetX).abs() + a.y * 0.25;
+        final db = (b.x - targetX).abs() + b.y * 0.25;
+        return da.compareTo(db);
+      }
+      // En üstteki (en tehlikeli) böceği ez
+      return a.y.compareTo(b.y);
+    });
+    final target = active.first;
+    target.isMarkedForRemoval = true;
+    spawnParticles(target.x, target.y, LululuColors.warningSolar, count: 22);
+    applyMergeBlast(target.x, target.y, 16, radius: arenaRadius * 0.85);
+    bodies.removeWhere((b) => b.isMarkedForRemoval);
+    return target;
+  }
+
+  /// "F-16 Bombardıman" — küçük böcekleri (T1..T4) hava bombardımanıyla patlatır.
+  List<InsectBody> f16Bombardment({int maxCount = 3}) {
+    final active = bodies.where((b) => !b.isMarkedForRemoval).toList();
+    if (active.isEmpty) return const [];
+    final small = active.where((b) => b.tier.tier <= 4).toList()
+      ..sort((a, b) => a.tier.tier.compareTo(b.tier.tier));
+    final pool = small.isNotEmpty ? small : active;
+    final blasted = pool.take(maxCount).toList();
+    for (final b in blasted) {
+      b.isMarkedForRemoval = true;
+      spawnParticles(b.x, b.y, LululuColors.warningSolar, count: 22);
+      applyMergeBlast(b.x, b.y, 12, radius: b.radius * 3.5);
+    }
+    bodies.removeWhere((b) => b.isMarkedForRemoval);
+    return blasted;
   }
 
   /// "Şuraları Bir Aydınlat Hele!" Mega Airstrike/Spotlight Bonus
@@ -658,6 +718,7 @@ class CircularPhysicsEngine {
         cleared++;
       }
     }
+    bodies.removeWhere((b) => b.isMarkedForRemoval);
     return cleared;
   }
 
@@ -672,6 +733,7 @@ class CircularPhysicsEngine {
         if (vaporized >= count) break;
       }
     }
+    bodies.removeWhere((b) => b.isMarkedForRemoval);
     return vaporized;
   }
 }

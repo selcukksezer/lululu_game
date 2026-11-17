@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -9,25 +11,76 @@ import '../models/osmantus_cast.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/progress_manager.dart';
 import '../screens/result_screen.dart';
-import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
-import '../widgets/sticker_image.dart';
+import '../widgets/mode_bonus_bar.dart';
 
 /// Viral Osmantuş ritmi: videodaki iki kişiyle “TUŞ!” anında dokun.
+///
+/// Refleks modu: vuruş zamanı bir [Ticker] + [Stopwatch] ile ölçülür, dokunuş
+/// `onTapDown` anında değerlendirilir (parmak kalkmasını beklemez).
 class OsmantusScreen extends StatefulWidget {
-  const OsmantusScreen({super.key});
+  const OsmantusScreen({
+    super.key,
+    @visibleForTesting this.prototypeVisualState = false,
+    @visibleForTesting this.clockForTesting,
+  });
+
+  final bool prototypeVisualState;
+  final int Function()? clockForTesting;
 
   @override
   State<OsmantusScreen> createState() => _OsmantusScreenState();
 }
 
+/// Oyun temposu: ilk [tutorialMs] boyunca yavaş ve geniş pencere, sonra hızlanır.
+class OsmantusPacing {
+  const OsmantusPacing._();
+
+  static const tutorialMs = 15000;
+  static const rampMs = 60000;
+  static const tutorialIntervalMs = 1100;
+  static const minIntervalMs = 620;
+  static const tutorialWindowMs = 190;
+  static const minWindowMs = 110;
+
+  @visibleForTesting
+  static Color ringColorAt(double phase) {
+    final progress = Curves.easeInOut.transform(
+      ((phase - 0.3) / 0.7).clamp(0.0, 1.0),
+    );
+    return Color.lerp(
+      const Color(0xFF5B6B86),
+      const Color(0xFF12B76A),
+      progress,
+    )!;
+  }
+
+  static double _ramp(int elapsedMs) =>
+      ((elapsedMs - tutorialMs) / rampMs).clamp(0.0, 1.0);
+
+  static int intervalMs(int elapsedMs) =>
+      (tutorialIntervalMs -
+              (tutorialIntervalMs - minIntervalMs) * _ramp(elapsedMs))
+          .round();
+
+  static int windowMs(int elapsedMs) =>
+      (tutorialWindowMs - (tutorialWindowMs - minWindowMs) * _ramp(elapsedMs))
+          .round();
+
+  static bool isTutorial(int elapsedMs) => elapsedMs < tutorialMs;
+}
+
 class _OsmantusScreenState extends State<OsmantusScreen>
     with SingleTickerProviderStateMixin {
-  static const _beatMs = 780;
-  static const _windowMs = 140;
+  static const _green = Color(0xFF12B76A);
+  static const _ruby = Color(0xFFFF5A6E);
+  static const _firstBeatMs = 1600;
 
-  late final AnimationController _pulse;
+  late final Ticker _ticker;
+  final Stopwatch _clock = Stopwatch();
+  final ValueNotifier<double> _phase = ValueNotifier<double>(0);
   final _rng = Random();
 
   int _score = 0;
@@ -38,34 +91,65 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   int _dayStreak = 0;
   bool _alive = true;
   bool _resultShown = false;
-  String _callout = 'OSMAN TUŞ!';
-  String _hint = 'İki kişi — yeşil halkada dokun, dıkkış dıkkış!';
-  DateTime _nextBeat = DateTime.now().add(const Duration(milliseconds: 1400));
-  final DateTime _startedAt = DateTime.now();
+  String _hint = 'Halka yeşile dönünce dokun!';
+
+  int _beatStartMs = 0;
+  int _beatAtMs = _firstBeatMs;
   bool _hitThisBeat = false;
-  bool _introDone = false;
-  Timer? _loop;
-  late final int _beatBaseMs;
-
-  /// Aktif konuşan: 0 = Osman, 1 = Tuş.
   int _speakerIndex = 0;
+  final List<String> _lines = [
+    OsmantusCast.duo[0].lines[0],
+    OsmantusCast.duo[1].lines[2],
+  ];
 
-  OsmantusPerson get _speaker => OsmantusCast.duo[_speakerIndex];
-  OsmantusPerson get _partner =>
-      OsmantusCast.duo[1 - _speakerIndex];
+  String _bandText = '';
+  bool _bandBad = false;
+  int _bandUntilMs = 0;
+  int _face = -1;
+  int _flashUntilMs = 0;
+  bool _flashBad = false;
+  String? _breakReason;
+
+  int _boostUntilMs = 0;
+  int _ringUntilMs = 0;
+  bool _micShield = false;
+
+  int get _nowMs =>
+      widget.clockForTesting?.call() ?? _clock.elapsedMilliseconds;
+  int get _playMs => _nowMs;
+
+  bool get _boostOn => _nowMs < _boostUntilMs;
+  bool get _ringOn => _nowMs < _ringUntilMs;
+
+  int get _window =>
+      OsmantusPacing.windowMs(_playMs) +
+      (_boostOn ? 60 : 0) +
+      (_ringOn ? 60 : 0);
+
+  bool get _tutorial => OsmantusPacing.isTutorial(_playMs);
 
   @override
   void initState() {
     super.initState();
-    final day = DateTime.now();
-    final seed = day.year * 10000 + day.month * 100 + day.day;
-    _beatBaseMs = (_beatMs - 40) + (seed % 81); // daily tempo nudge
-    _pulse = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: _beatBaseMs),
-    )..repeat();
+    AudioManager().initialize();
+    _ticker = createTicker(_onFrame);
+    if (widget.prototypeVisualState) {
+      _score = 640;
+      _best = 980;
+      _combo = 5;
+      _maxCombo = 5;
+      _dayStreak = 5;
+      _bandText = 'MÜKEMMEL! X5';
+      _bandUntilMs = 1 << 30;
+      _phase.value = 1;
+      _lines[1] = 'DIKKIŞ DIKKIŞ!';
+      _hint = '';
+      _loadBest();
+      return;
+    }
+    _clock.start();
+    _ticker.start();
     _loadBest();
-    _loop = Timer.periodic(const Duration(milliseconds: 32), _tick);
   }
 
   Future<void> _loadBest() async {
@@ -73,97 +157,136 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     await DailyChallengeService.instance.ensureLoaded();
     if (!mounted) return;
     setState(() {
-      _best =
-          LeaderboardService.instance.getBest(LeaderboardService.modeOsmantus);
-      _dayStreak = DailyChallengeService.instance.streak;
+      final stored = LeaderboardService.instance.getBest(
+        LeaderboardService.modeOsmantus,
+      );
+      _best = widget.prototypeVisualState ? max(stored, 980) : stored;
+      _dayStreak = widget.prototypeVisualState
+          ? 5
+          : DailyChallengeService.instance.streak;
     });
   }
 
   @override
   void dispose() {
     AudioManager().stopAll();
-    _loop?.cancel();
-    _pulse.dispose();
+    _ticker.dispose();
+    _phase.dispose();
     super.dispose();
   }
 
-  void _tick(Timer _) {
-    if (!_alive || !mounted) return;
-    final now = DateTime.now();
-    // Intro grace: no life drain while player reads the first cue.
-    if (!_introDone) {
-      if (now.difference(_startedAt).inMilliseconds < 1200) return;
-      _introDone = true;
-    }
-    if (now.isAfter(_nextBeat.add(const Duration(milliseconds: _windowMs)))) {
+  void _onFrame(Duration _) {
+    if (!_alive) return;
+    final now = _nowMs;
+    final span = max(1, _beatAtMs - _beatStartMs);
+    _phase.value = ((now - _beatStartMs) / span).clamp(0.0, 1.0);
+
+    if (now > _beatAtMs + _window) {
       if (!_hitThisBeat) {
-        _miss();
-        if (!_alive) return;
+        if (_tutorial && _score == 0 && _combo == 0 && widget.clockForTesting == null) {
+          _showBand('YEŞİLDE BAS!', bad: false, ms: 900);
+        } else {
+          _miss('KAÇIRDIN');
+          if (!_alive) return;
+        }
       }
-      _scheduleNext();
+      _advanceBeat();
+    } else if (_bandUntilMs != 0 && now > _bandUntilMs && _bandText != '') {
+      setState(() => _bandText = '');
     }
   }
 
-  void _scheduleNext() {
-    _nextBeat = DateTime.now()
-        .add(Duration(milliseconds: _beatBaseMs - _rng.nextInt(80)));
+  void _advanceBeat() {
+    final interval = OsmantusPacing.intervalMs(_playMs);
+    _beatStartMs = _beatAtMs;
+    _beatAtMs = _beatAtMs + interval;
     _hitThisBeat = false;
     _speakerIndex = 1 - _speakerIndex;
-    final lines = _speaker.lines;
-    _callout = lines[_rng.nextInt(lines.length)];
-    _pulse
-      ..duration = Duration(milliseconds: _beatBaseMs)
-      ..forward(from: 0);
+    final lines = OsmantusCast.duo[_speakerIndex].lines;
+    _lines[_speakerIndex] = lines[_rng.nextInt(lines.length)];
+    if (_face != -1 && _nowMs > _flashUntilMs) _face = -1;
     setState(() {});
   }
 
-  void _miss() {
+  void _showBand(String text, {required bool bad, int ms = 1500}) {
+    _bandText = text;
+    _bandBad = bad;
+    _bandUntilMs = _nowMs + ms;
+  }
+
+  void _miss(String reason, {bool costsLife = true}) {
     HapticFeedback.heavyImpact();
+    final lostCombo = _combo;
     _combo = 0;
-    _lives -= 1;
-    _hint = 'Kaçırdın! ${_speaker.displayName} kaçtı.';
+    _breakReason = reason;
+    _face = 0;
+    _flashBad = true;
+    _flashUntilMs = _nowMs + 320;
+    _showBand(lostCombo >= 2 ? 'KOMBO BOZULDU · $reason' : reason, bad: true);
+    if (_micShield) {
+      _micShield = false;
+      _hint = 'Mikrofon tuttu, can gitmedi.';
+      setState(() {});
+      return;
+    }
+    if (costsLife && !_tutorial) {
+      _lives -= 1;
+      _hint = '$reason · ${_lives > 0 ? '$_lives can kaldı' : 'son can gitti'}';
+    } else {
+      _hint = '$reason · ısınma turu, can gitmedi';
+    }
     if (_lives <= 0) {
       _alive = false;
       _hint = 'Bitti. Osman & Tuş seni yendi.';
+      unawaited(AudioManager().playLose());
       unawaited(
-        LeaderboardService.instance
-            .submitScore(LeaderboardService.modeOsmantus, _score),
+        LeaderboardService.instance.submitScore(
+          LeaderboardService.modeOsmantus,
+          _score,
+        ),
       );
       if (_score > _best) _best = _score;
     }
     setState(() {});
   }
 
-  void _onTap() {
-    if (!_alive) {
-      _restart();
-      return;
-    }
-    final delta = DateTime.now().difference(_nextBeat).inMilliseconds.abs();
-    if (delta <= _windowMs) {
+  void _onTapDown() {
+    if (!_alive) return;
+    final now = _nowMs;
+    final delta = now - _beatAtMs;
+    final win = _window;
+    if (delta.abs() <= win) {
       if (_hitThisBeat) return;
       _hitThisBeat = true;
-      final perfect = delta <= 55;
+      final perfect = delta.abs() <= win * 0.35;
       _combo += 1;
+      _breakReason = null;
       if (_combo > _maxCombo) _maxCombo = _combo;
-      final gain = (perfect ? 120 : 70) + _combo * 8;
-      _score += gain;
-      _hint = perfect
-          ? 'MÜKEMMEL ${_speaker.displayName}! x$_combo'
-          : 'İyi tuş · ${_speaker.displayName}! x$_combo';
+      final basePts = (perfect ? 120 : 70) + min(_combo, 30) * 8;
+      _score += _boostOn ? basePts * 2 : basePts;
+      _face = perfect ? 4 : 2;
+      _flashBad = false;
+      _flashUntilMs = now + 280;
+      _showBand(perfect ? 'MÜKEMMEL! X$_combo' : 'İYİ! X$_combo', bad: false);
+      _hint = delta < 0
+          ? 'Biraz erken (${-delta}ms)'
+          : 'Biraz geç (+${delta}ms)';
+      if (perfect) _hint = 'Tam zamanında!';
       AudioManager().triggerHaptic();
       HapticFeedback.mediumImpact();
+      unawaited(
+        AudioManager().playOsmantusBeat(
+          isPersonB: _speakerIndex == 1,
+          perfect: perfect,
+          comboCount: _combo,
+        ),
+      );
       setState(() {});
-    } else if (DateTime.now().isBefore(_nextBeat)) {
-      _hint = 'Erkenci! ${_partner.displayName} bekliyor yeşili.';
-      HapticFeedback.selectionClick();
-      setState(() {});
-    } else if (delta <= _windowMs * 3) {
-      // Near-miss after the window — life cost. Far taps ignored (scroll/noise).
-      _miss();
-    } else {
-      _hint = 'Bekle yeşil halkayı — ikili tuş anında bas.';
-      HapticFeedback.selectionClick();
+    } else if (delta < 0 && delta >= -win * 2.2) {
+      _hitThisBeat = true;
+      _miss('ERKEN BASTIN');
+    } else if (delta < 0) {
+      _hint = 'Bekle, halka yeşile dönsün.';
       setState(() {});
     }
   }
@@ -175,34 +298,86 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _maxCombo = 0;
       _lives = 3;
       _alive = true;
-      _introDone = false;
+      _resultShown = false;
       _speakerIndex = 0;
-      _callout = 'OSMAN TUŞ!';
-      _hint = 'İki kişi — yeşil halkada dokun, dıkkış dıkkış!';
+      _lines[0] = OsmantusCast.duo[0].lines[0];
+      _lines[1] = OsmantusCast.duo[1].lines[2];
+      _bandText = '';
+      _face = -1;
+      _breakReason = null;
+      _hint = 'Halka yeşile dönünce dokun!';
       _hitThisBeat = false;
-      _nextBeat = DateTime.now().add(const Duration(milliseconds: 1400));
+      _boostUntilMs = 0;
+      _ringUntilMs = 0;
+      _micShield = false;
+      _clock
+        ..reset()
+        ..start();
+      _beatStartMs = 0;
+      _beatAtMs = _firstBeatMs;
     });
+    if (!_ticker.isActive) _ticker.start();
   }
 
   String _statsLine() =>
-      'Max combo x$_maxCombo · Günlük streak $_dayStreak · tempo ${_beatBaseMs}ms';
+      'Max combo x$_maxCombo · Günlük streak $_dayStreak'
+      '${_breakReason == null ? '' : ' · Son hata: $_breakReason'}';
 
-  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
-  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
+  void _useDikkis() {
+    if (!_alive) return;
+    HapticFeedback.mediumImpact();
+    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    setState(() {
+      _boostUntilMs = _nowMs + 12000;
+      _showBand('DIKKIŞ 2X PUAN!', bad: false);
+      _hint = 'DIKKIŞ aktif · 12 sn 2X sahne puanı ve geniş ritim!';
+    });
+  }
+
+  void _useRing() {
+    if (!_alive) return;
+    HapticFeedback.mediumImpact();
+    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    setState(() {
+      _ringUntilMs = _nowMs + 12000;
+      _showBand('HALKA + AKTİF!', bad: false);
+      _hint = 'Halka + aktif · 12 sn geniş zamanlama penceresi!';
+    });
+  }
+
+  void _useMic() {
+    if (!_alive || _micShield) return;
+    HapticFeedback.mediumImpact();
+    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    setState(() {
+      _micShield = true;
+      _showBand('MİKROFON KALKANI!', bad: false);
+      _hint = 'Mikrofon kalkanı hazır · sıradaki kaçışta can gitmez!';
+    });
+  }
+
   Future<void> _presentResult() async {
+    final coins = ResultScoring.coinsFor(_score);
+    await ProgressManager.instance.addCoins(coins);
+    await LeaderboardService.instance.submitScore(
+      LeaderboardService.modeOsmantus,
+      _score,
+    );
+    await ProgressManager.instance.recordTaskProgress('play');
+    if (!mounted) return;
     final replay = await showGameResult(
       context,
       score: _score,
-      coins: ResultScoring.coinsFor(_score),
+      coins: coins,
       stars: ResultScoring.starsFor(score: _score, best: _best),
     );
     if (!mounted) return;
     _resultShown = false;
-    if (replay) {
-      _restart();
-    } else {
-      setState(() {});
+    if (!replay) {
+      if (mounted) Navigator.of(context).maybePop();
+      return;
     }
+    _restart();
   }
 
   void _edgeShowResult() {
@@ -213,136 +388,930 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     });
   }
 
+  Color _ringColor(double t) {
+    final now = _nowMs;
+    if (now < _flashUntilMs) return _flashBad ? _ruby : _green;
+    return OsmantusPacing.ringColorAt(t);
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!_alive && !_resultShown) _edgeShowResult();
-    final until = _nextBeat.difference(DateTime.now()).inMilliseconds;
-    final inWindow = until.abs() <= _windowMs;
-
-    return ArcadeScreen(
-      title: 'OSMANTUŞ',
-      score: _score,
-      best: _best,
-      hint: _hint,
-      statLabel: 'STREAK',
-      statValue: '$_dayStreak',
-      onRestart: _restart,
-      overlay: (!_alive && !_resultShown)
-          ? ArcadeResultOverlay(
-              title: 'İKİLİ YENDİ',
-              message: _statsLine(),
-              score: _score,
-              best: _best,
-              won: false,
-              modeTitle: 'Osmantuş',
-              shareLine: _statsLine(),
-              retryLabel: 'YENİDEN',
-              onRetry: _restart,
-            )
-          : null,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _onTap,
-        child: Column(
+    if (!_alive && !_resultShown && !widget.prototypeVisualState) {
+      _edgeShowResult();
+    }
+    final topPad = MediaQuery.paddingOf(context).top;
+    final hasShellStatusBar = topPad > 0;
+    final wideScreen = MediaQuery.sizeOf(context).width >= 400;
+    final shiftOffset = wideScreen ? Offset.zero : const Offset(3, 0);
+    return MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      removeBottom: true,
+      child: Scaffold(
+        backgroundColor: wideScreen
+            ? const Color(0xFF080B12)
+            : const Color(0xFFEEF1F7),
+        body: Stack(
+          fit: StackFit.expand,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Row(
-                children: [
-                  Text(
-                    'Can: ${'❤️' * _lives}${'🖤' * (3 - _lives)}',
-                    style: GoogleFonts.exo2(
-                      color: LululuColors.mysticRuby,
-                      fontWeight: FontWeight.w800,
+            ColoredBox(
+              color: wideScreen
+                  ? const Color(0xFF080B12)
+                  : const Color(0xFFEEF1F7),
+            ),
+            Positioned.fill(
+              child: Transform.translate(
+                offset: shiftOffset,
+                child: Opacity(
+                  opacity: 0.96,
+                  child: Image.asset(
+                    'assets/design/backgrounds/osmantus_mansion.webp',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Transform.translate(
+                offset: shiftOffset,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: const [0, 0.24, 0.76, 1],
+                      colors: [
+                        const Color(0x4D080B12),
+                        const Color(0x00080B12),
+                        const Color(0x00080B12),
+                        const Color(0x52080B12),
+                      ],
                     ),
                   ),
-                  const Spacer(),
+                ),
+              ),
+            ),
+            ClipRect(
+              child: Transform.translate(
+                offset: shiftOffset,
+                child: Column(
+                  children: [
+                    _statusBar(
+                      hasShellStatusBar: hasShellStatusBar,
+                      topPad: topPad,
+                    ),
+                    _modeHeader(wideScreen: wideScreen),
+                    _statsBar(),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                        child: Semantics(
+                          label: _hint,
+                          child: Listener(
+                            behavior: HitTestBehavior.opaque,
+                            onPointerDown: (_) => _onTapDown(),
+                            child: _stage(wideScreen: wideScreen),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _powerDock(),
+                  ],
+                ),
+              ),
+            ),
+            if (!_alive && !_resultShown)
+              Positioned.fill(
+                child: ArcadeResultOverlay(
+                  title: 'İKİLİ YENDİ',
+                  message: _statsLine(),
+                  score: _score,
+                  best: _best,
+                  won: false,
+                  modeTitle: 'Osmantuş',
+                  shareLine: _statsLine(),
+                  retryLabel: 'YENİDEN',
+                  onRetry: _restart,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusBar({
+    required bool hasShellStatusBar,
+    required double topPad,
+  }) {
+    if (hasShellStatusBar) {
+      return SizedBox(height: widget.prototypeVisualState ? 35.38 : topPad);
+    }
+    return SizedBox(
+      height: 35.38,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '09:41',
+              style: GoogleFonts.nunito(
+                fontSize: 12.5,
+                height: 1,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(
+              width: 38,
+              height: 16,
+              child: CustomPaint(painter: _OsmantusStatusIndicatorsPainter()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _modeHeader({required bool wideScreen}) {
+    return SizedBox(
+      height: wideScreen ? 54 : 56.27,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.maybePop(context),
+              child: Container(
+                width: wideScreen ? 48 : 41.42,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xD9080B12),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
+                  ],
+                ),
+                child: Image.asset(
+                  'assets/icons2/back-prototype.png',
+                  width: 29,
+                  height: 29,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.arrow_back_rounded,
+                    color: Color(0xFF4A9DDB),
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        height: 27,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0x8C080B12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          'OSMANTUŞ',
+                          style: GoogleFonts.baloo2(
+                            fontSize: 20,
+                            height: 1.05,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            shadows: const [
+                              Shadow(
+                                color: Color(0xD9000000),
+                                offset: Offset(0, 2),
+                                blurRadius: 6,
+                              ),
+                              Shadow(
+                                color: Color(0xCC000000),
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Container(
+                        height: 20.27,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFD700),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          'VİRAL',
+                          style: GoogleFonts.baloo2(
+                            fontSize: 10.5,
+                            height: 1.1,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.7,
+                            color: const Color(0xFF4A2E00),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              height: 35,
+              padding: EdgeInsets.fromLTRB(wideScreen ? 6 : 11, 5, 12, 5),
+              decoration: BoxDecoration(
+                color: const Color(0xD1080B12),
+                borderRadius: BorderRadius.circular(99),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x59000000), offset: Offset(0, 3)),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/icons2/coin.png',
+                    width: wideScreen ? 25 : 14,
+                    height: wideScreen ? 25 : 14,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.monetization_on,
+                      color: Color(0xFFFFD700),
+                      size: 14,
+                    ),
+                  ),
+                  SizedBox(width: wideScreen ? 6 : 10),
                   Text(
-                    'x$_combo',
-                    style: GoogleFonts.exo2(
-                      color: LululuColors.toxicNeon,
+                    widget.prototypeVisualState
+                        ? '12.450'
+                        : ProgressManager().coins.toString().replaceAllMapped(
+                            RegExp(r'\B(?=(\d{3})+(?!\d))'),
+                            (_) => '.',
+                          ),
+                    style: GoogleFonts.nunito(
+                      fontSize: 13.5,
+                      height: 1,
                       fontWeight: FontWeight.w900,
-                      fontSize: 18,
+                      color: Colors.white,
                     ),
                   ),
                 ],
               ),
             ),
-            Expanded(
-              child: Center(
-                child: AnimatedBuilder(
-                  animation: _pulse,
-                  builder: (context, _) {
-                    final t = _pulse.value;
-                    final ring = 40.0 + (1 - t) * 110;
-                    return Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(
-                          width: ring + 24,
-                          height: ring + 24,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: inWindow
-                                  ? LululuColors.toxicNeon
-                                  : LululuColors.cyberFuchsia
-                                      .withValues(alpha: 0.55),
-                              width: inWindow ? 5 : 2,
-                            ),
-                            boxShadow: inWindow
-                                ? [
-                                    BoxShadow(
-                                      color: LululuColors.toxicNeon
-                                          .withValues(alpha: 0.45),
-                                      blurRadius: 24,
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                        ),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                for (var i = 0;
-                                    i < OsmantusCast.duo.length;
-                                    i++) ...[
-                                  if (i > 0) const SizedBox(width: 12),
-                                  _DuoSlot(
-                                    person: OsmantusCast.duo[i],
-                                    active: i == _speakerIndex,
-                                    inWindow: inWindow,
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _callout,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.exo2(
-                                fontSize: 26,
-                                fontWeight: FontWeight.w900,
-                                color: LululuColors.liquidGold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${_speaker.displayName} · ${_partner.displayName}',
-                              style: GoogleFonts.exo2(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: LululuColors.mutedTitanium,
-                              ),
-                            ),
-                          ],
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('OSMANTUŞ'),
+                  content: const Text(
+                    'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! '
+                    'Zamanında basarak kombo yap ve özel sahne güçlerini kullan.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('ANLADIM'),
+                    ),
+                  ],
+                ),
+              ),
+              child: Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xDB080B12),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xB3FFB800), width: 2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x66000000),
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '?',
+                  style: GoogleFonts.baloo2(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFFFB800),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statsBar() {
+    return SizedBox(
+      height: 58.5,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: LayoutBuilder(
+          builder: (context, statsBox) {
+            final row = Row(
+              children: [
+                _scoreBox('SKOR', '$_score', width: 104),
+                const SizedBox(width: 8),
+                _scoreBox('REKOR', '$_best', width: 84),
+                const Spacer(),
+                _scoreBox('COMBO', 'x$_combo', width: 74),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _restart,
+                  child: Container(
+                    width: 57.81,
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFB800),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xFFB97A00),
+                          offset: Offset(0, 3),
                         ),
                       ],
-                    );
-                  },
+                    ),
+                    child: Text(
+                      'BİTİR',
+                      style: GoogleFonts.baloo2(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF4A2E00),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+            if (statsBox.maxWidth >= 350) return row;
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.center,
+              child: SizedBox(width: 350, height: 50.5, child: row),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _scoreBox(String label, String value, {required double width}) {
+    return Container(
+      width: width,
+      height: 50.5,
+      padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
+      decoration: BoxDecoration(
+        color: const Color(0xD9080B12),
+        border: Border.all(color: const Color(0x73FFB800), width: 1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 12,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                label,
+                style: GoogleFonts.nunito(
+                  fontSize: 10,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                  color: const Color(0xFFFFB800),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 3.5),
+          SizedBox(
+            height: 21,
+            width: width - 24,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: GoogleFonts.baloo2(
+                    fontSize: 21,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _powerDock() {
+    final items = [
+      stockBonus(
+        id: 'dik',
+        label: 'DIKKIŞ',
+        asset: 'assets/icons2/fist.png',
+        effect: _useDikkis,
+      ),
+      stockBonus(
+        id: 'ring',
+        label: 'HALKA +',
+        asset: 'assets/icons2/wheel.png',
+        effect: _useRing,
+      ),
+      stockBonus(
+        id: 'mic',
+        label: 'MİKROFON',
+        asset: 'assets/icons2/star.png',
+        effect: _useMic,
+      ),
+    ];
+    return SizedBox(
+      height: 80.89,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const SizedBox(width: 20),
+              _powerButton(items[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _powerButton(ModeBonus item) {
+    return GestureDetector(
+      onTap: item.count > 0 ? item.onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 66,
+        height: 62.89,
+        child: Column(
+          children: [
+            const SizedBox(height: 2),
+            SizedBox(
+              height: 48,
+              width: 66,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF333F58), Color(0xFF1B2336)],
+                      ),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0x47FFFFFF),
+                        width: 1.5,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x73000000),
+                          offset: Offset(0, 3),
+                        ),
+                        BoxShadow(
+                          color: Color(0x4D000000),
+                          offset: Offset(0, 6),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: Image.asset(
+                      item.asset,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: Color(0xFFFFB800),
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: -4,
+                    right: 3,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE01E5A),
+                        shape: BoxShape.circle,
+                        border: Border.fromBorderSide(
+                          BorderSide(color: Color(0xFF141B2A), width: 2),
+                        ),
+                      ),
+                      child: Text(
+                        '${item.count}',
+                        style: GoogleFonts.nunito(
+                          fontSize: 11,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 3),
+            SizedBox(
+              height: 9.89,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.nunito(
+                    fontSize: 9,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.18,
+                    color: const Color(0xFFD8E0EE),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stage({required bool wideScreen}) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        const contentOverflow = 49.1;
+        return Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0x24FFFFFF), width: 2),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x660E1422), Color(0x800E1422)],
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    if (wideScreen)
+                      Column(
+                        children: [
+                          _cards(),
+                          _faces(),
+                          Expanded(child: _arena(wideScreen: true)),
+                          _tapButton(),
+                        ],
+                      )
+                    else
+                      OverflowBox(
+                        alignment: Alignment.topCenter,
+                        minHeight: 0,
+                        maxHeight: max(485.0, box.maxHeight + contentOverflow),
+                        child: SizedBox(
+                          height: max(485.0, box.maxHeight + contentOverflow),
+                          child: Column(
+                            children: [
+                              _cards(),
+                              _faces(),
+                              SizedBox(
+                                height: 189.94,
+                                child: _arena(wideScreen: false),
+                              ),
+                              _tapButton(),
+                            ],
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      top: 2,
+                      left: 0,
+                      right: 0,
+                      height: 25,
+                      child: _comboBand(wideScreen: wideScreen),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _comboBand({required bool wideScreen}) {
+    final visible = _bandText.isNotEmpty;
+    final color = _bandBad
+        ? const Color(0xFFE5334A)
+        : (wideScreen ? const Color(0xFFFFB800) : const Color(0xFFFFD700));
+    final glow = _bandBad ? const Color(0xFFFFD700) : const Color(0xFFFF6B35);
+    return Align(
+      alignment: Alignment.topCenter,
+      child: AnimatedOpacity(
+        opacity: visible
+            ? (widget.prototypeVisualState && !wideScreen ? 0.55 : 1)
+            : 0,
+        duration: const Duration(milliseconds: 120),
+        child: Text(
+          _bandText.isEmpty ? ' ' : _bandText,
+          maxLines: 1,
+          overflow: TextOverflow.visible,
+          style: GoogleFonts.bangers(
+            fontSize: _bandBad
+                ? 18
+                : (widget.prototypeVisualState && !wideScreen ? 18 : 22),
+            height: 1,
+            letterSpacing: 0.6,
+            color: color,
+            shadows: [
+              const Shadow(color: Color(0xEB080B12), offset: Offset(0, 3)),
+              Shadow(color: glow.withValues(alpha: 0.9), blurRadius: 14),
+              Shadow(color: glow.withValues(alpha: 0.55), blurRadius: 32),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cards() {
+    const subs = ['Tuşçu · işaretçi', 'Makara · dinleyen'];
+    return SizedBox(
+      height: 163.16,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        child: Row(
+          children: [
+            for (var i = 0; i < 2; i++) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(
+                child: _PersonCard(
+                  person: OsmantusCast.duo[i],
+                  sub: subs[i],
+                  on: i == _speakerIndex,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _faces() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (var n = 1; n <= 7; n++) ...[
+            if (n > 1) const SizedBox(width: 6),
+            Container(
+              width: 35,
+              height: 46,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: const Color(0x12FFFFFF),
+                borderRadius: BorderRadius.circular(9),
+                border: _face == n - 1
+                    ? Border.all(color: _green, width: 2)
+                    : null,
+              ),
+              child: Image.asset(
+                'assets/images/stickers/osman_$n.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const SizedBox(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _arena({required bool wideScreen}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _Fig(
+            line: _lines[0],
+            asset: OsmantusCast.duo[0].assetPath,
+            wideScreen: wideScreen,
+          ),
+          if (wideScreen)
+            Align(
+              alignment: Alignment.center,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _phase,
+                builder: (context, t, _) => _ring(t, wideScreen: true),
+              ),
+            )
+          else
+            SizedBox(
+              width: 84,
+              height: 181.94,
+              child: Align(
+                alignment: Alignment.center,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _phase,
+                  builder: (context, t, _) => _ring(t, wideScreen: false),
+                ),
+              ),
+            ),
+          _Fig(
+            line: _lines[1],
+            asset: OsmantusCast.duo[1].assetPath,
+            wideScreen: wideScreen,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ring(double t, {required bool wideScreen}) {
+    final color = _ringColor(t);
+    final k = Curves.easeInOut.transform(((t - 0.3) / 0.7).clamp(0.0, 1.0));
+    final scale = widget.prototypeVisualState
+        ? (wideScreen ? 1.065 : 1.0)
+        : 1 + 0.07 * k;
+    // Yaklaşan halo: vuruşa doğru küçülür, tam anda prototipteki 7px halkaya oturur.
+    final halo = 7.0 + (1 - t) * 26;
+    return Transform.scale(
+      scale: scale,
+      child: Container(
+        width: 84,
+        height: 84,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: color, width: 6),
+          boxShadow: [
+            BoxShadow(color: color.withValues(alpha: 0.22), spreadRadius: halo),
+            BoxShadow(
+              color: color.withValues(alpha: 0.2 + 0.35 * k),
+              blurRadius: 26,
+            ),
+          ],
+        ),
+        child: Text(
+          'YEŞİLDE\nBAS!',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.baloo2(
+            fontSize: 12.5,
+            height: 1.2,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF7CF2B8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tapButton() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 13),
+      child: Container(
+        height: 52,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF37E08B), Color(0xFF12B76A), Color(0xFF0A9553)],
+            stops: [0, 0.55, 1],
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x47000000),
+              offset: Offset(0, 10),
+              blurRadius: 18,
+            ),
+            BoxShadow(color: Color(0xFF066C3C), offset: Offset(0, 5)),
+          ],
+        ),
+        child: Text(
+          'İKİLİ TUŞ',
+          style: GoogleFonts.baloo2(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.36,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonCard extends StatelessWidget {
+  const _PersonCard({
+    required this.person,
+    required this.sub,
+    required this.on,
+  });
+
+  final OsmantusPerson person;
+  final String sub;
+  final bool on;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 151.16,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(6, 8, 6, 7),
+        decoration: BoxDecoration(
+          color: on ? const Color(0x2112B76A) : const Color(0x0FFFFFFF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: on ? const Color(0xFF12B76A) : const Color(0x29FFFFFF),
+            width: 2,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 86,
+              child: Image.asset(person.assetPath, fit: BoxFit.contain),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              person.displayName,
+              style: GoogleFonts.baloo2(
+                fontSize: 14.5,
+                height: 1.4,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  sub,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: GoogleFonts.nunito(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF9AA7BC),
+                  ),
                 ),
               ),
             ),
@@ -353,57 +1322,108 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 }
 
-class _DuoSlot extends StatelessWidget {
-  const _DuoSlot({
-    required this.person,
-    required this.active,
-    required this.inWindow,
+class _Fig extends StatelessWidget {
+  const _Fig({
+    required this.line,
+    required this.asset,
+    required this.wideScreen,
   });
 
-  final OsmantusPerson person;
-  final bool active;
-  final bool inWindow;
+  final String line;
+  final String asset;
+  final bool wideScreen;
 
   @override
   Widget build(BuildContext context) {
-    final scale = active ? (inWindow ? 1.12 : 1.05) : 0.88;
-    final glow = active && inWindow
-        ? [
-            BoxShadow(
-              color: LululuColors.toxicNeon.withValues(alpha: 0.4),
-              blurRadius: 18,
+    return SizedBox(
+      width: 86,
+      height: 181.94,
+      child: Column(
+        children: [
+          Container(
+            width: 86,
+            height: 58.94,
+            alignment: Alignment.center,
+            margin: const EdgeInsets.only(bottom: 5),
+            padding: EdgeInsets.symmetric(
+              horizontal: wideScreen ? 10 : 6,
+              vertical: 5,
             ),
-          ]
-        : null;
-    return AnimatedScale(
-      scale: scale,
-      duration: const Duration(milliseconds: 120),
-      child: Opacity(
-        opacity: active ? 1 : 0.55,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              decoration: BoxDecoration(boxShadow: glow),
-              child: StickerImage(
-                assetPath: person.assetPath,
-                size: active ? 128 : 100,
+            decoration: BoxDecoration(
+              color: const Color(0xF0080B12),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: const Color(0xBFE01E5A), width: 2),
+              boxShadow: const [
+                BoxShadow(color: Color(0x80E01E5A), blurRadius: 12),
+                BoxShadow(
+                  color: Color(0x4D000000),
+                  offset: Offset(0, 4),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            child: Text(
+              line,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.clip,
+              style: GoogleFonts.bangers(
+                fontSize: wideScreen ? 14.5 : 16.5,
+                height: wideScreen ? 1.55 : 1.05,
+                letterSpacing: 0.6,
+                color: wideScreen
+                    ? const Color(0xFFFFB800)
+                    : const Color(0xFFFFD700),
+                shadows: const [
+                  Shadow(color: Color(0x99E01E5A), blurRadius: 9),
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              person.displayName,
-              style: GoogleFonts.exo2(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: active
-                    ? LululuColors.toxicNeon
-                    : LululuColors.mutedTitanium,
-              ),
-            ),
-          ],
-        ),
+          ),
+          SizedBox(height: 118, child: Image.asset(asset, fit: BoxFit.contain)),
+        ],
       ),
     );
   }
+}
+
+class _OsmantusStatusIndicatorsPainter extends CustomPainter {
+  const _OsmantusStatusIndicatorsPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    for (var i = 0; i < 4; i++) {
+      final height = 4.0 + i * 3.0;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(1 + i * 4.5, size.height - height, 2.4, height),
+          const Radius.circular(0.7),
+        ),
+        paint,
+      );
+    }
+    final battery = RRect.fromRectAndRadius(
+      Rect.fromLTWH(22, 3, 14, 9),
+      const Radius.circular(2),
+    );
+    paint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    canvas.drawRRect(battery, paint);
+    paint.style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(24, 5, 9, 5),
+        const Radius.circular(1),
+      ),
+      paint,
+    );
+    canvas.drawRect(const Rect.fromLTWH(36.5, 5.5, 1.5, 4), paint);
+  }
+
+  @override
+  bool shouldRepaint(_OsmantusStatusIndicatorsPainter oldDelegate) => false;
 }

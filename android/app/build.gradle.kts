@@ -24,10 +24,10 @@ android {
         applicationId = "com.lululu.game.lululu_game"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionCode = flutter.versionCode ?: 1
+        versionName = flutter.versionName ?: "1.0.0"
     }
 
     buildTypes {

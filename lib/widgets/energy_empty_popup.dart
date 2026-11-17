@@ -1,18 +1,20 @@
 import 'dart:async';
-
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
-import '../theme/lululu_theme.dart';
-import '../widgets/shop_dialog.dart';
+import '../services/progress_manager.dart';
 import 'ad_mock.dart';
 
-/// Enerji bitince gösterilen popup: sayaç + reklam/mağaza seçenekleri.
+/// 1:1 Pixel-Perfect Energy Empty Popup matching `#energyOverlay` (`.energy-card`).
 Future<void> showEnergyEmptyPopup(BuildContext context) {
+  AudioManager().playPop();
   return showDialog<void>(
     context: context,
     barrierDismissible: true,
+    barrierColor: const Color(0xB805070C),
     builder: (_) => const _EnergyEmptyDialog(),
   );
 }
@@ -25,164 +27,348 @@ class _EnergyEmptyDialog extends StatefulWidget {
 }
 
 class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
-  late Timer _timer;
-  bool _rewarding = false;
+  final EnergyService _energy = EnergyService.instance;
+  final ProgressManager _pm = ProgressManager();
+  Timer? _ticker;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      final svc = EnergyService.instance;
-      // Sayaç dolduysa (enerji doldu) popup kendiliğinden kapanır.
-      if (svc.energy > 0) {
-        if (mounted) Navigator.of(context).pop();
+    _energy.addListener(_onChanged);
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_energy.current > 0) {
+        Navigator.of(context).maybePop();
         return;
       }
-      if (mounted) setState(() {});
+      setState(() {});
     });
+  }
+
+  void _onChanged() {
+    if (!mounted) return;
+    if (_energy.current > 0) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _ticker?.cancel();
+    _energy.removeListener(_onChanged);
     super.dispose();
   }
 
-  static String _mmss(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
   Future<void> _watchAd() async {
-    if (_rewarding) return;
-    setState(() => _rewarding = true);
-    final granted = await showRewardedAdMock(context, rewardLabel: '+5 ENERJİ');
+    if (_busy) return;
+    AudioManager().playPop();
+    setState(() => _busy = true);
+    final granted = await showRewardedAdMock(
+      context,
+      rewardLabel: '+5 ENERJİ',
+    );
     if (!mounted) return;
-    setState(() => _rewarding = false);
+    setState(() => _busy = false);
     if (granted) {
-      EnergyService.instance.addEnergy(5);
-      Navigator.of(context).pop();
+      await _energy.grantFull(5);
+      if (mounted) Navigator.of(context).maybePop();
     }
   }
 
-  void _openShop() {
-    Navigator.of(context).pop();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const ShopScreen()),
-    );
+  Future<void> _buyEnergyPack() async {
+    if (_busy) return;
+    AudioManager().playPop();
+    setState(() => _busy = true);
+    if (_pm.coins >= 100) {
+      await _pm.spendCoins(100);
+    }
+    await _energy.grantFull(5);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    Navigator.of(context).maybePop();
+  }
+
+  String _formatWait(Duration d) {
+    final total = d.inSeconds.clamp(0, 3599);
+    final m = (total ~/ 60).toString().padLeft(2, '0');
+    final s = (total % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
   Widget build(BuildContext context) {
-    final svc = EnergyService.instance;
+    final wait = _energy.timeUntilNextPoint;
+    final waitLabel = wait != null ? _formatWait(wait) : '05:00';
+
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-        decoration: BoxDecoration(
-          gradient: LululuGradients.carbonToNavy,
-          borderRadius: BorderRadius.circular(LululuRadii.panel),
-          border: Border.all(
-            color: LululuColors.mysticRuby.withValues(alpha: 0.55),
-            width: 2,
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 382),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(
+              color: const Color(0xFFFFB800),
+              width: 3,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x80000000),
+                offset: Offset(0, 18),
+                blurRadius: 40,
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: LululuColors.mysticRuby.withValues(alpha: 0.35),
-              blurRadius: 28,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.heart_broken_rounded,
-              size: 64,
-              color: LululuColors.mysticRuby,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'ENERJİN BİTTİ!',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.bangers(
-                fontSize: 34,
-                color: LululuColors.warningSolar,
-                letterSpacing: 1.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ValueListenableBuilder<int>(
-              valueListenable: svc.energyNotifier,
-              builder: (_, energy, __) => Text(
-                '$energy/${EnergyService.maxEnergy}',
-                style: GoogleFonts.exo2(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: LululuColors.paper,
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Sonraki enerji: ${_mmss(svc.timeToNext)}',
-              style: GoogleFonts.exo2(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: LululuColors.mutedTitanium,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: LululuMotion.minTap,
-              child: ElevatedButton(
-                onPressed: _watchAd,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: LululuColors.toxicNeon,
-                  foregroundColor: LululuColors.carbonVoid,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(LululuRadii.pill),
-                  ),
-                ),
-                child: _rewarding
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 3),
-                      )
-                    : Text(
-                        'REKLAM İZLE (+5)',
-                        style: GoogleFonts.exo2(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // `.en-broken` -> 88x88 3D heart PNG split into two 44x88 halves
+                Container(
+                  width: 88,
+                  height: 88,
+                  margin: const EdgeInsets.only(bottom: 4),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      // `.hb-half.hb-l`: `width: 44px; height: 88px; transform: translate(-5px, 4px) rotate(-15deg)`
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        width: 44,
+                        height: 88,
+                        child: Transform.translate(
+                          offset: const Offset(-5, 4),
+                          child: Transform.rotate(
+                            angle: -15 * math.pi / 180,
+                            child: ClipRect(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: 0.5,
+                                child: Image.asset(
+                                  'assets/design/ui/hub_3_ep-heart.webp',
+                                  width: 88,
+                                  height: 88,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: LululuMotion.minTap,
-              child: OutlinedButton(
-                onPressed: _openShop,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: LululuColors.liquidGold,
-                  side: const BorderSide(
-                      color: LululuColors.liquidGold, width: 1.6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(LululuRadii.pill),
+                      // `.hb-half.hb-r`: `width: 44px; height: 88px; transform: translate(5px, 4px) rotate(15deg); img { margin-left: -44px }`
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        width: 44,
+                        height: 88,
+                        child: Transform.translate(
+                          offset: const Offset(5, 4),
+                          child: Transform.rotate(
+                            angle: 15 * math.pi / 180,
+                            child: ClipRect(
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                widthFactor: 0.5,
+                                child: Image.asset(
+                                  'assets/design/ui/hub_3_ep-heart.webp',
+                                  width: 88,
+                                  height: 88,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Text(
-                  'MAĞAZA',
-                  style: GoogleFonts.exo2(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                const SizedBox(height: 2),
+                Text(
+                  'ENERJİN BİTTİ!',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.baloo2(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFE01E5A),
+                    height: 1.12,
                   ),
+                ),
+                const SizedBox(height: 6),
+                RichText(
+                  textAlign: TextAlign.center,
+                  text: TextSpan(
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF5B6B82),
+                      height: 1.5,
+                    ),
+                    children: [
+                      const TextSpan(text: 'Kalbin '),
+                      TextSpan(
+                        text: '0/30',
+                        style: GoogleFonts.baloo2(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF141B2A),
+                        ),
+                      ),
+                      const TextSpan(
+                        text: ' — oynamak için 1 enerji gerekir.\nSonraki enerji: ',
+                      ),
+                      TextSpan(
+                        text: waitLabel,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF141B2A),
+                        ),
+                      ),
+                      const TextSpan(
+                        text: ' · her 5 dakikada +1 dolar.',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // `#energyAdBtn` (.btn.green) with 20x20 Play SVG icon (`M8 5.5v13l11-6.5z`)
+                _buildActionBtn(
+                  label: 'REKLAM İZLE · +5 ENERJİ',
+                  leadingIcon: const CustomPaint(
+                    size: Size(20, 20),
+                    painter: _PlayTriangleIconPainter(),
+                  ),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.0, 0.55, 1.0],
+                    colors: [
+                      Color(0xFF37E08B),
+                      Color(0xFF12B76A),
+                      Color(0xFF0A9553),
+                    ],
+                  ),
+                  shadowColor: const Color(0xFF066C3C),
+                  hasBlurShadow: true,
+                  textColor: Colors.white,
+                  hasTextShadow: true,
+                  onTap: _busy ? null : _watchAd,
+                ),
+                const SizedBox(height: 10),
+                // `#energyShopBtn` (.btn gold)
+                _buildActionBtn(
+                  label: 'MAĞAZA · ENERJİ PAKETİ',
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.0, 0.55, 1.0],
+                    colors: [
+                      Color(0xFFFFCF3F),
+                      Color(0xFFFFB800),
+                      Color(0xFFF59E00),
+                    ],
+                  ),
+                  shadowColor: const Color(0xFFB97A00),
+                  hasBlurShadow: true,
+                  textColor: Colors.white,
+                  hasTextShadow: true,
+                  onTap: _busy ? null : _buyEnergyPack,
+                ),
+                const SizedBox(height: 10),
+                // `#energyWaitBtn` (.btn.soft)
+                _buildActionBtn(
+                  label: 'SAYACI BEKLE',
+                  solidColor: const Color(0xFFEEF1F7),
+                  shadowColor: const Color(0x29141B2A),
+                  shadowOffsetY: 4,
+                  hasBlurShadow: false,
+                  textColor: const Color(0xFF141B2A),
+                  hasTextShadow: false,
+                  onTap: () {
+                    AudioManager().playPop();
+                    Navigator.of(context).maybePop();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionBtn({
+    required String label,
+    Widget? leadingIcon,
+    Gradient? gradient,
+    Color? solidColor,
+    required Color shadowColor,
+    double shadowOffsetY = 5,
+    required bool hasBlurShadow,
+    required Color textColor,
+    required bool hasTextShadow,
+    required VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(minHeight: 52),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: solidColor,
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: shadowColor,
+              offset: Offset(0, shadowOffsetY),
+              blurRadius: 0,
+            ),
+            if (hasBlurShadow)
+              const BoxShadow(
+                color: Color(0x47000000),
+                offset: Offset(0, 10),
+                blurRadius: 18,
+              ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (leadingIcon != null) ...[
+              leadingIcon,
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.baloo2(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: textColor,
+                  letterSpacing: 0.36,
+                  height: 1.0,
+                  shadows: hasTextShadow
+                      ? const [
+                          Shadow(
+                            color: Color(0x59784000),
+                            offset: Offset(0, 1),
+                            blurRadius: 0,
+                          ),
+                        ]
+                      : null,
                 ),
               ),
             ),
@@ -191,4 +377,27 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
       ),
     );
   }
+}
+
+/// Renders `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>` (`20x20`).
+class _PlayTriangleIconPainter extends CustomPainter {
+  const _PlayTriangleIconPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sx = size.width / 24.0;
+    final sy = size.height / 24.0;
+    final path = Path()
+      ..moveTo(8.0 * sx, 5.5 * sy)
+      ..lineTo(8.0 * sx, 18.5 * sy)
+      ..lineTo(19.0 * sx, 12.0 * sy)
+      ..close();
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlayTriangleIconPainter oldDelegate) => false;
 }

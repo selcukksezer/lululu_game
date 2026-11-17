@@ -12,6 +12,7 @@ import 'package:lululu_game/modes/osmantus_screen.dart';
 import 'package:lululu_game/modes/scream_roach_screen.dart';
 import 'package:lululu_game/modes/stack_drop_screen.dart';
 import 'package:lululu_game/modes/terlik_tap_screen.dart';
+import 'package:lululu_game/modes/yuva_defense_screen.dart';
 import 'package:lululu_game/screens/game_screen.dart';
 import 'package:lululu_game/screens/grid_2048_screen.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
@@ -28,15 +29,17 @@ void main() {
   Future<void> playMount(
     WidgetTester tester,
     Widget home,
-    String title,
+    String? title,
   ) async {
-    await tester.pumpWidget(
-      MaterialApp(theme: buildLululuTheme(), home: home),
-    );
+    await tester.pumpWidget(MaterialApp(theme: buildLululuTheme(), home: home));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
     expect(tester.takeException(), isNull, reason: '$title threw');
-    expect(find.text(title), findsOneWidget, reason: '$title title missing');
+    if (title == null) {
+      expect(find.byType(GameScreen), findsOneWidget);
+    } else {
+      expect(find.textContaining(title.toUpperCase()), findsWidgets, reason: '$title title missing');
+    }
     // Soft interaction: tap center if possible.
     final size = tester.getSize(find.byType(MaterialApp));
     await tester.tapAt(Offset(size.width / 2, size.height * 0.55));
@@ -50,7 +53,7 @@ void main() {
     await playMount(
       tester,
       GameScreen(level: CampaignDatabase.kitchenLevel1, arcade: true),
-      'Suika Arena',
+      null,
     );
     await playMount(tester, const Grid2048Screen(), '2048 Grid');
     await playMount(tester, const BalloonPopScreen(), 'Balon Patlat');
@@ -61,5 +64,6 @@ void main() {
     await playMount(tester, const ScreamRoachScreen(), 'Çığlık Böcek');
     await playMount(tester, const MakarayizScreen(), 'Makarayız');
     await playMount(tester, const TerlikTapScreen(), 'Terlik Tap');
+    await playMount(tester, const YuvaDefenseScreen(), 'YUVA SAVUNMASI');
   });
 }

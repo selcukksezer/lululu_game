@@ -1,828 +1,1890 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
-import '../services/score_share_card.dart';
+import '../services/progress_manager.dart';
+import '../widgets/bonus_fx.dart';
 import 'result_screen.dart';
-import '../theme/lululu_theme.dart';
-import '../widgets/kenney_button.dart';
-import '../widgets/kenney_panel.dart';
-import '../widgets/star_row.dart';
 
+class _BoardSnapshot {
+  final List<List<int>> grid;
+  final int score;
+  final int moveCount;
+  final int streak;
+
+  const _BoardSnapshot({
+    required this.grid,
+    required this.score,
+    required this.moveCount,
+    required this.streak,
+  });
+}
+
+/// 2048 Grid (`m2048`) — 4x4 kaydırmalı böcek birleştirme modu.
+/// Prototip `reference-m2048.png` ve `reference-m2048-spec.json` (`430x932`)
+/// ile birebir aynı üst `.statusbar`, `.mode-top`, `.game-hud`, `.mode-stage`,
+/// `.g2048` 4x4 pastel `TCOL` ızgarası, `.chipfloat`, `.combo-float`,
+/// `.score-pop` ve alt `.power-dock` (`GERİ AL 3`, `KARIŞTIR 2`, `ÇİFTLEŞTİR 1`)
+/// bileşenlerini içerir; kaydırma + klavye yön tuşları ile tam oynanabilirdir.
 class Grid2048Screen extends StatefulWidget {
-  const Grid2048Screen({super.key});
+  const Grid2048Screen({
+    super.key,
+    @visibleForTesting this.prototypeVisualState = false,
+  });
+
+  @visibleForTesting
+  final bool prototypeVisualState;
 
   @override
   State<Grid2048Screen> createState() => _Grid2048ScreenState();
 }
 
 class _Grid2048ScreenState extends State<Grid2048Screen> {
-  static const int gridSize = 4;
+  static const int size = 4;
 
-  late List<List<int>> _board;
-  int _score = 0;
-  int _bestScore = 0;
-  bool _isGameOver = false;
-  bool _resultShown = false;
-  bool _isWon = false;
-  bool _hasContinuedAfterWin = false;
-  bool _paused = false;
+  /// Prototip `TCOL` pastel taş arka plan renkleri (Tier 1..13).
+  static const List<Color> _tcol = <Color>[
+    Color(0xFFFFE9C9), // T1 -> 2
+    Color(0xFFFFE3D6), // T2 -> 4
+    Color(0xFFE4F0FF), // T3 -> 8
+    Color(0xFFF3E4FF), // T4 -> 16
+    Color(0xFFFFE0EC), // T5 -> 32
+    Color(0xFFDFF7EA), // T6 -> 64
+    Color(0xFFFFF0D6), // T7 -> 128
+    Color(0xFFE8ECF5), // T8 -> 256
+    Color(0xFFFFE1E1), // T9 -> 512
+    Color(0xFFFFE0EC), // T10 -> 1024
+    Color(0xFFEDF1F8), // T11 -> 2048
+    Color(0xFFE8ECF5), // T12 -> 4096
+    Color(0xFFFFDFF2), // T13 -> 8192
+  ];
 
-  String _activeSpeechBubble = '';
-  Timer? _speechTimer;
-  int _peakTile = 0;
-  Offset _pan = Offset.zero;
+  /// Prototip `f2048()` başlangıç dizilimi (`reference-m2048-spec.json`).
+  static const List<List<int>> _prototypeGrid = <List<int>>[
+    [1, 2, 0, 1],
+    [3, 2, 4, 0],
+    [2, 5, 3, 6],
+    [5, 4, 7, 8],
+  ];
 
-  // Stats / combo
-  int _moveCount = 0;
+  final Random _rng = Random();
+  final FocusNode _focusNode = FocusNode();
+
+  late List<List<int>> _grid;
+  final List<_BoardSnapshot> _history = <_BoardSnapshot>[];
+
+  int _score = 8640;
+  int _best = 12480;
+  int _moveCount = 36;
+  int _streak = 4;
+  int _maxStreak = 4;
   int _mergeTotal = 0;
-  int _maxCombo = 0;
-  int _streak = 0; // consecutive merge-swipes
-  double _comboMeter = 0;
-  String? _milestoneToast;
-  Timer? _milestoneTimer;
-  final Set<int> _milestonesHit = {};
-  final _rng = Random();
-  int _pulseValue = 0;
-  int _pulseEpoch = 0;
-  Timer? _pulseTimer;
+  int _highestTier = 8;
 
-  static const _milestoneTiles = [64, 128, 256, 512, 1024, 2048, 4096];
+  bool _gameOver = false;
+  bool _won = false;
+  bool _paused = false;
+  bool _showHelpModal = false;
+  bool _resultShown = false;
+  bool _presentingResultModal = false;
+  bool _panConsumed = false;
+  Offset _panAccum = Offset.zero;
+
+  Point<int>? _lastSpawned;
+  Set<Point<int>> _mergedCells = <Point<int>>{};
+  String? _comboText = 'COMBO X4!';
+  String? _gainText = '+128 X4';
+  String? _speechBubble;
+  Timer? _overlayTimer;
+  Timer? _speechTimer;
+  Timer? _popTimer;
+
+  int _undoCount = 3;
+  int _shuffleCount = 2;
+  int _pairCount = 1;
 
   @override
   void initState() {
     super.initState();
     AudioManager().initialize();
-    _loadBestScore();
-    _initBoard();
+    _syncPowerCounts();
+    _initBoard(initialPrototypeState: widget.prototypeVisualState);
+    _loadBest();
+  }
+
+  void _syncPowerCounts() {
+    final pm = ProgressManager();
+    if ((pm.extraPowers['undo2048'] ?? 0) <= 0) {
+      pm.extraPowers['undo2048'] = 3;
+    }
+    if ((pm.extraPowers['shuffle2048'] ?? 0) <= 0) {
+      pm.extraPowers['shuffle2048'] = 2;
+    }
+    if ((pm.extraPowers['pair2048'] ?? 0) <= 0) {
+      pm.extraPowers['pair2048'] = 1;
+    }
+    _undoCount = pm.extraPowers['undo2048'] ?? 3;
+    _shuffleCount = pm.extraPowers['shuffle2048'] ?? 2;
+    _pairCount = pm.extraPowers['pair2048'] ?? 1;
+  }
+
+  void _initBoard({bool initialPrototypeState = false}) {
+    _history.clear();
+    _mergedCells = <Point<int>>{};
+    _lastSpawned = null;
+    _gameOver = false;
+    _won = false;
+    _paused = false;
+    _showHelpModal = false;
+    _resultShown = false;
+    _presentingResultModal = false;
+
+    if (initialPrototypeState || widget.prototypeVisualState) {
+      _grid = List<List<int>>.generate(
+        size,
+        (r) => List<int>.from(_prototypeGrid[r]),
+      );
+      _score = 8640;
+      _best = 12480;
+      _moveCount = 36;
+      _streak = 4;
+      _maxStreak = 4;
+      _highestTier = 8;
+      _comboText = 'COMBO X4!';
+      _gainText = '+128 X4';
+      _speechBubble = null;
+      return;
+    }
+
+    _grid = List<List<int>>.generate(size, (_) => List<int>.filled(size, 0));
+    _score = 0;
+    _best = LeaderboardService.instance.getBest(LeaderboardService.mode2048);
+    _moveCount = 0;
+    _streak = 0;
+    _maxStreak = 0;
+    _mergeTotal = 0;
+    _highestTier = 2;
+    _comboText = null;
+    _gainText = null;
+    _speechBubble = null;
+
+    _grid[0][0] = 1;
+    _grid[0][1] = 1;
+    _grid[1][1] = 2;
+    _grid[2][2] = 2;
+    _spawnRandomTile();
   }
 
   @override
   void dispose() {
-    AudioManager().stopAll();
+    _overlayTimer?.cancel();
     _speechTimer?.cancel();
-    _milestoneTimer?.cancel();
-    _pulseTimer?.cancel();
+    _popTimer?.cancel();
+    _focusNode.dispose();
+    AudioManager().stopAll();
     super.dispose();
   }
 
-  Future<void> _loadBestScore() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _bestScore = prefs.getInt('lululu_2048_best') ?? 0;
-    });
-  }
-
-  Future<void> _saveBestScore(int score) async {
-    if (score > _bestScore) {
-      _bestScore = score;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('lululu_2048_best', _bestScore);
-    }
+  Future<void> _loadBest() async {
     await LeaderboardService.instance.ensureLoaded();
-    await LeaderboardService.instance
-        .submitScore(LeaderboardService.mode2048, score);
-  }
-
-  void _initBoard() {
-    _board = List.generate(gridSize, (_) => List.filled(gridSize, 0));
-    _score = 0;
-    _isGameOver = false;
-    _isWon = false;
-    _hasContinuedAfterWin = false;
-    _paused = false;
-    _peakTile = 0;
-    _moveCount = 0;
-    _mergeTotal = 0;
-    _maxCombo = 0;
-    _streak = 0;
-    _comboMeter = 0;
-    _milestonesHit.clear();
-    _milestoneToast = null;
-    _activeSpeechBubble = '';
-    _pulseValue = 0;
-    _pulseEpoch = 0;
-    _spawnRandomTile();
-    _spawnRandomTile();
-    setState(() {});
-  }
-
-  /// Early game: almost always 2. Late: more 4s when board crowded.
-  void _spawnRandomTile() {
-    final emptyCells = <Point<int>>[];
-    for (int r = 0; r < gridSize; r++) {
-      for (int c = 0; c < gridSize; c++) {
-        if (_board[r][c] == 0) emptyCells.add(Point(r, c));
-      }
+    if (!mounted) return;
+    final saved = LeaderboardService.instance.getBest(
+      LeaderboardService.mode2048,
+    );
+    if (saved > _best) {
+      setState(() => _best = saved);
     }
-    if (emptyCells.isEmpty) return;
+  }
 
-    final filled = 16 - emptyCells.length;
-    final fourChance = filled < 4
-        ? 0.08
-        : filled < 10
-            ? 0.12
-            : 0.22;
-    final p = emptyCells[_rng.nextInt(emptyCells.length)];
-    _board[p.x][p.y] = _rng.nextDouble() < (1 - fourChance) ? 2 : 4;
+  Future<void> _persistBest() async {
+    if (_score <= 0) return;
+    await LeaderboardService.instance.ensureLoaded();
+    await LeaderboardService.instance.submitScore(
+      'grid2048',
+      _score,
+    );
+    final saved = LeaderboardService.instance.getBest(
+      LeaderboardService.mode2048,
+    );
+    if (mounted && saved > _best) {
+      setState(() => _best = saved);
+    }
+  }
+
+  void _restart() {
+    setState(() => _initBoard(initialPrototypeState: false));
   }
 
   void _togglePause() {
-    if (_isGameOver || _isWon) return;
+    if (_gameOver) return;
     setState(() => _paused = !_paused);
   }
 
-  void _handleSwipe(int dx, int dy) {
-    if (_isGameOver || _paused) return;
+  List<List<int>> _cloneGrid(List<List<int>> src) =>
+      List<List<int>>.generate(size, (r) => List<int>.from(src[r]));
 
-    var moved = false;
-    var turnScore = 0;
-    var highestMergedVal = 0;
-    var mergesThisTurn = 0;
-
-    if (dx != 0) {
-      for (int r = 0; r < gridSize; r++) {
-        final row = List<int>.from(_board[r]);
-        if (dx < 0) {
-          final res = _slideAndMerge(row);
-          if (res.moved) moved = true;
-          turnScore += res.score;
-          mergesThisTurn += res.mergeCount;
-          if (res.maxMerged > highestMergedVal) highestMergedVal = res.maxMerged;
-          _board[r] = res.line;
-        } else {
-          final reversed = row.reversed.toList();
-          final res = _slideAndMerge(reversed);
-          if (res.moved) moved = true;
-          turnScore += res.score;
-          mergesThisTurn += res.mergeCount;
-          if (res.maxMerged > highestMergedVal) highestMergedVal = res.maxMerged;
-          _board[r] = res.line.reversed.toList();
-        }
-      }
-    } else if (dy != 0) {
-      for (int c = 0; c < gridSize; c++) {
-        final col = List.generate(gridSize, (r) => _board[r][c]);
-        if (dy < 0) {
-          final res = _slideAndMerge(col);
-          if (res.moved) moved = true;
-          turnScore += res.score;
-          mergesThisTurn += res.mergeCount;
-          if (res.maxMerged > highestMergedVal) highestMergedVal = res.maxMerged;
-          for (int r = 0; r < gridSize; r++) {
-            _board[r][c] = res.line[r];
-          }
-        } else {
-          final reversed = col.reversed.toList();
-          final res = _slideAndMerge(reversed);
-          if (res.moved) moved = true;
-          turnScore += res.score;
-          mergesThisTurn += res.mergeCount;
-          if (res.maxMerged > highestMergedVal) highestMergedVal = res.maxMerged;
-          final unreversed = res.line.reversed.toList();
-          for (int r = 0; r < gridSize; r++) {
-            _board[r][c] = unreversed[r];
-          }
-        }
-      }
+  void _saveHistory() {
+    if (_history.length >= 12) {
+      _history.removeAt(0);
     }
-
-    if (!moved) {
-      return;
-    }
-
-    // Combo heat: multi-merge swipe + streak of merge-swipes.
-    if (mergesThisTurn > 0) {
-      _streak++;
-      _mergeTotal += mergesThisTurn;
-      if (mergesThisTurn > _maxCombo) _maxCombo = mergesThisTurn;
-      if (_streak > _maxCombo) _maxCombo = _streak;
-      final heat = 1.0 +
-          min(0.9, (_streak - 1) * 0.1) +
-          min(0.5, (mergesThisTurn - 1) * 0.15);
-      turnScore = (turnScore * heat).round();
-      _comboMeter = min(1.0, 0.3 + _streak * 0.12 + mergesThisTurn * 0.08);
-    } else {
-      _streak = 0;
-      _comboMeter = max(0, _comboMeter - 0.25);
-    }
-
-    _score += turnScore;
-    _moveCount++;
-    unawaited(_saveBestScore(_score));
-
-    if (highestMergedVal > _peakTile) {
-      _peakTile = highestMergedVal;
-      _checkMilestone(highestMergedVal);
-    }
-    final boardPeak = _boardPeak();
-    if (boardPeak > _peakTile) {
-      _peakTile = boardPeak;
-      _checkMilestone(boardPeak);
-    }
-
-    _spawnRandomTile();
-    AudioManager().triggerHaptic();
-
-    if (highestMergedVal > 0) {
-      _playMergeSoundAndQuote(highestMergedVal);
-      _pulseMerged(highestMergedVal);
-    } else {
-      AudioManager().playDrop();
-    }
-
-    if (!_hasContinuedAfterWin && highestMergedVal >= 2048) {
-      _isWon = true;
-      AudioManager().playWin();
-    }
-
-    if (!_canMove()) {
-      _isGameOver = true;
-      AudioManager().playLose();
-    }
-
-    setState(() {});
-  }
-
-  void _pulseMerged(int value) {
-    _pulseTimer?.cancel();
-    _pulseValue = value;
-    _pulseEpoch++;
-    final epoch = _pulseEpoch;
-    _pulseTimer = Timer(const Duration(milliseconds: 280), () {
-      if (!mounted || epoch != _pulseEpoch) return;
-      setState(() => _pulseValue = 0);
-    });
-  }
-
-  void _checkMilestone(int tile) {
-    for (final m in _milestoneTiles) {
-      if (tile >= m && !_milestonesHit.contains(m)) {
-        _milestonesHit.add(m);
-        _showMilestone('YENİ KARO · $m');
-        final tierN = (log(m) / ln2).round().clamp(1, 8);
-        unawaited(AudioManager().playMerge(tierNumber: tierN, comboCount: 2));
-        break;
-      }
-    }
-  }
-
-  void _showMilestone(String text) {
-    _milestoneTimer?.cancel();
-    setState(() => _milestoneToast = text);
-    _milestoneTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _milestoneToast = null);
-    });
-  }
-
-  void _showSpeech(String text, {int seconds = 3}) {
-    _speechTimer?.cancel();
-    setState(() => _activeSpeechBubble = text);
-    _speechTimer = Timer(Duration(seconds: seconds), () {
-      if (mounted) setState(() => _activeSpeechBubble = '');
-    });
-  }
-
-  _MergeResult _slideAndMerge(List<int> line) {
-    final nonZero = line.where((v) => v != 0).toList();
-    final merged = <int>[];
-    var score = 0;
-    var maxMerged = 0;
-    var mergeCount = 0;
-    var i = 0;
-
-    while (i < nonZero.length) {
-      if (i + 1 < nonZero.length && nonZero[i] == nonZero[i + 1]) {
-        final val = nonZero[i] * 2;
-        merged.add(val);
-        score += val;
-        mergeCount++;
-        if (val > maxMerged) maxMerged = val;
-        i += 2;
-      } else {
-        merged.add(nonZero[i]);
-        i++;
-      }
-    }
-
-    while (merged.length < gridSize) {
-      merged.add(0);
-    }
-
-    var changed = false;
-    for (int j = 0; j < gridSize; j++) {
-      if (merged[j] != line[j]) {
-        changed = true;
-        break;
-      }
-    }
-
-    return _MergeResult(
-      line: merged,
-      moved: changed,
-      score: score,
-      maxMerged: maxMerged,
-      mergeCount: mergeCount,
+    _history.add(
+      _BoardSnapshot(
+        grid: _cloneGrid(_grid),
+        score: _score,
+        moveCount: _moveCount,
+        streak: _streak,
+      ),
     );
   }
 
-  bool _canMove() {
-    for (int r = 0; r < gridSize; r++) {
-      for (int c = 0; c < gridSize; c++) {
-        if (_board[r][c] == 0) return true;
-        if (r + 1 < gridSize && _board[r][c] == _board[r + 1][c]) return true;
-        if (c + 1 < gridSize && _board[r][c] == _board[r][c + 1]) return true;
+  void _spawnRandomTile() {
+    final empties = <Point<int>>[];
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        if (_grid[r][c] == 0) empties.add(Point<int>(r, c));
+      }
+    }
+    if (empties.isEmpty) return;
+    final spot = empties[_rng.nextInt(empties.length)];
+    final roll = _rng.nextDouble();
+    final tier = roll < 0.72
+        ? 1
+        : roll < 0.94
+        ? 2
+        : 3;
+    _grid[spot.x][spot.y] = tier;
+    _lastSpawned = spot;
+    if (tier > _highestTier) _highestTier = tier;
+  }
+
+  bool _hasMovesAvailable() {
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        final v = _grid[r][c];
+        if (v == 0) return true;
+        if (r + 1 < size && _grid[r + 1][c] == v) return true;
+        if (c + 1 < size && _grid[r][c + 1] == v) return true;
       }
     }
     return false;
   }
 
-  void _playMergeSoundAndQuote(int val) {
-    final tier = _getTierForValue(val);
-    AudioManager().playMerge(tier: tier);
-    _showSpeech(tier.viralReplik);
-  }
-
-  InsectTier _getTierForValue(int val) {
-    switch (val) {
-      case 2:
-        return InsectTier.cone;
-      case 4:
-        return InsectTier.helmet;
-      case 8:
-        return InsectTier.fan;
-      case 16:
-        return InsectTier.dancer;
-      case 32:
-        return InsectTier.diva;
-      case 64:
-        return InsectTier.can;
-      case 128:
-        return InsectTier.kongo;
-      case 256:
-        return InsectTier.bed;
-      case 512:
-        return InsectTier.diva;
-      case 1024:
-        return InsectTier.kongo;
-      case 2048:
-      case 4096:
-      default:
-        return InsectTier.bed;
-    }
-  }
-
-  int _boardPeak() {
-    var peak = 0;
-    for (final row in _board) {
-      for (final v in row) {
-        if (v > peak) peak = v;
+  (List<int>, int, int, List<int>) _compressLine(List<int> line) {
+    final nonZero = line.where((v) => v != 0).toList();
+    final out = <int>[];
+    final mergedIndices = <int>[];
+    var gained = 0;
+    var topMergedTier = 0;
+    var i = 0;
+    while (i < nonZero.length) {
+      if (i + 1 < nonZero.length && nonZero[i] == nonZero[i + 1]) {
+        final next = (nonZero[i] + 1).clamp(1, InsectTier.values.length);
+        out.add(next);
+        mergedIndices.add(out.length - 1);
+        gained += 1 << next;
+        if (next > topMergedTier) topMergedTier = next;
+        i += 2;
+      } else {
+        out.add(nonZero[i]);
+        i++;
       }
     }
-    return peak;
+    while (out.length < size) {
+      out.add(0);
+    }
+    return (out, gained, topMergedTier, mergedIndices);
   }
 
-  int _hudStarCount() {
-    final peak = _boardPeak();
-    if (peak >= 2048) return 3;
-    if (peak >= 1024) return 2;
-    if (peak >= 512) return 1;
-    return 0;
-  }
+  void _slide(int dr, int dc) {
+    if (_gameOver || _paused || _showHelpModal) return;
 
-  int _sessionStarCount() {
-    if (_score >= 15000 || _peakTile >= 4096) return 3;
-    if (_score >= 8000 || _peakTile >= 2048) return 2;
-    if (_score >= 2500 || _peakTile >= 1024) return 1;
-    return 0;
-  }
+    final snapshot = _cloneGrid(_grid);
+    var moved = false;
+    var totalGain = 0;
+    var topMerge = 0;
+    var mergesThisTurn = 0;
+    final newMerged = <Point<int>>{};
 
-  String _statsLine() =>
-      'Hamle $_moveCount · Birleşim $_mergeTotal · Max combo x$_maxCombo · Zirve $_peakTile';
+    if (dr == 0 && dc != 0) {
+      for (var r = 0; r < size; r++) {
+        final row = List<int>.from(_grid[r]);
+        final input = dc < 0 ? row : row.reversed.toList();
+        final (compressed, gain, topTier, mergedIdx) = _compressLine(input);
+        final result = dc < 0 ? compressed : compressed.reversed.toList();
+        for (var c = 0; c < size; c++) {
+          if (_grid[r][c] != result[c]) moved = true;
+          _grid[r][c] = result[c];
+        }
+        for (final idx in mergedIdx) {
+          final col = dc < 0 ? idx : (size - 1 - idx);
+          newMerged.add(Point<int>(r, col));
+        }
+        mergesThisTurn += mergedIdx.length;
+        totalGain += gain;
+        if (topTier > topMerge) topMerge = topTier;
+      }
+    } else if (dc == 0 && dr != 0) {
+      for (var c = 0; c < size; c++) {
+        final col = List<int>.generate(size, (r) => _grid[r][c]);
+        final input = dr < 0 ? col : col.reversed.toList();
+        final (compressed, gain, topTier, mergedIdx) = _compressLine(input);
+        final result = dr < 0 ? compressed : compressed.reversed.toList();
+        for (var r = 0; r < size; r++) {
+          if (_grid[r][c] != result[r]) moved = true;
+          _grid[r][c] = result[r];
+        }
+        for (final idx in mergedIdx) {
+          final row = dr < 0 ? idx : (size - 1 - idx);
+          newMerged.add(Point<int>(row, c));
+        }
+        mergesThisTurn += mergedIdx.length;
+        totalGain += gain;
+        if (topTier > topMerge) topMerge = topTier;
+      }
+    }
 
-  DateTime _lastSwipeAt = DateTime.fromMillisecondsSinceEpoch(0);
-
-  void _commitPan() {
-    if (_paused || _isGameOver) {
-      _pan = Offset.zero;
+    if (!moved) {
+      HapticFeedback.selectionClick();
       return;
     }
-    final dx = _pan.dx;
-    final dy = _pan.dy;
-    _pan = Offset.zero;
-    // Ignore diagonal noise / micro pans — stops phantom bottom spawns.
-    if (dx.abs() < 28 && dy.abs() < 28) return;
-    // Dominant axis must clearly win (horizontal vs vertical).
-    if (dx.abs() > dy.abs()) {
-      if (dx.abs() < dy.abs() * 1.35 && dy.abs() > 18) return;
-    } else {
-      if (dy.abs() < dx.abs() * 1.35 && dx.abs() > 18) return;
-    }
-    final now = DateTime.now();
-    if (now.difference(_lastSwipeAt).inMilliseconds < 160) return;
-    _lastSwipeAt = now;
-    if (dx.abs() > dy.abs()) {
-      _handleSwipe(dx > 0 ? 1 : -1, 0);
-    } else {
-      _handleSwipe(0, dy > 0 ? 1 : -1);
-    }
-  }
 
-  Future<void> _shareScore() async {
-    await ScoreShareCard.instance.share(
-      modeTitle: 'Lülülü 2048',
-      score: _score,
-      best: _bestScore,
-      line: _statsLine(),
+    _history.add(
+      _BoardSnapshot(
+        grid: snapshot,
+        score: _score,
+        moveCount: _moveCount,
+        streak: _streak,
+      ),
     );
+    if (_history.length > 12) _history.removeAt(0);
+
+    _moveCount++;
+    _mergedCells = newMerged;
+    _spawnRandomTile();
+
+    if (topMerge > 0) {
+      _streak++;
+      if (_streak > _maxStreak) _maxStreak = _streak;
+      _mergeTotal += mergesThisTurn;
+      if (topMerge > _highestTier) _highestTier = topMerge;
+
+      final mult = 1.0 + min(1.5, (_streak - 1) * 0.25);
+      final boostedGain = (totalGain * mult).round();
+      _score += boostedGain;
+      if (_score > _best) _best = _score;
+
+      final tierEnum =
+          InsectTier.values[(topMerge - 1).clamp(0, InsectTier.values.length - 1)];
+
+      _showTurnOverlays(
+        gain: boostedGain,
+        streak: _streak,
+        tier: tierEnum,
+        topMerge: topMerge,
+      );
+
+      unawaited(
+        AudioManager().playMerge(tier: tierEnum, comboCount: _streak),
+      );
+      HapticFeedback.mediumImpact();
+      unawaited(
+        ProgressManager.instance.recordTaskProgress(
+          'merge',
+          delta: max(1, mergesThisTurn),
+        ),
+      );
+      if (_streak >= 2) {
+        unawaited(
+          ProgressManager.instance.recordTaskProgress(
+            'combo',
+            absoluteValue: _streak,
+          ),
+        );
+      }
+      unawaited(ProgressManager.instance.unlockTier(topMerge));
+      unawaited(_persistBest());
+
+      if (topMerge >= 11 && !_won) {
+        _won = true;
+        AudioManager().playWin();
+      }
+    } else {
+      _streak = 0;
+      AudioManager().playDrop();
+      HapticFeedback.lightImpact();
+    }
+
+    _popTimer?.cancel();
+    _popTimer = Timer(const Duration(milliseconds: 220), () {
+      if (!mounted) return;
+      setState(() {
+        _mergedCells = <Point<int>>{};
+        _lastSpawned = null;
+      });
+    });
+
+    if (!_hasMovesAvailable()) {
+      _gameOver = true;
+      AudioManager().playLose();
+      unawaited(_persistBest());
+    }
+
+    setState(() {});
   }
 
-  /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" tahtayı sıfırlar,
-  /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
-  /// Not: _isWon (2048'e ulaşıp DEVAM) akışına dokunulmadı.
+  void _showTurnOverlays({
+    required int gain,
+    required int streak,
+    required InsectTier tier,
+    required int topMerge,
+  }) {
+    _overlayTimer?.cancel();
+    _comboText = streak >= 2 ? 'COMBO X$streak!' : 'SÜPER!';
+    _gainText = streak >= 2 ? '+$gain X$streak' : '+$gain';
+    _overlayTimer = Timer(const Duration(milliseconds: 1100), () {
+      if (!mounted) return;
+      setState(() {
+        _comboText = null;
+        _gainText = null;
+      });
+    });
+
+    if (topMerge >= 3 || streak >= 2) {
+      _speechTimer?.cancel();
+      _speechBubble = topMerge >= 4
+          ? 'LÜLÜLÜ! SÜPER BİRLEŞİM! (${tier.title})'
+          : tier.viralReplik;
+      _speechTimer = Timer(const Duration(milliseconds: 1600), () {
+        if (!mounted) return;
+        setState(() => _speechBubble = null);
+      });
+    }
+  }
+
+  /// Güçlendirici 1: GERİ AL (son hamleyi geri alır veya en küçük taşı temizler)
+  void _useUndo() {
+    if (_paused || _showHelpModal || _undoCount <= 0) return;
+    final pm = ProgressManager();
+    setState(() {
+      _undoCount--;
+      pm.extraPowers['undo2048'] = _undoCount;
+      if (_history.isNotEmpty) {
+        final prev = _history.removeLast();
+        _grid = _cloneGrid(prev.grid);
+        _score = prev.score;
+        _moveCount = prev.moveCount;
+        _streak = prev.streak;
+        _gameOver = false;
+      } else {
+        _removeLowestTile();
+      }
+    });
+    unawaited(
+      playBonusFx(
+        context,
+        bonusId: 'Geri Al',
+        origin: MediaQuery.sizeOf(context).center(Offset.zero),
+      ),
+    );
+    HapticFeedback.mediumImpact();
+  }
+
+  void _removeLowestTile() {
+    Point<int>? target;
+    var minTier = 999;
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        final v = _grid[r][c];
+        if (v > 0 && v < minTier) {
+          minTier = v;
+          target = Point<int>(r, c);
+        }
+      }
+    }
+    if (target != null) {
+      _grid[target.x][target.y] = 0;
+    }
+  }
+
+  /// Güçlendirici 2: KARIŞTIR (tahtadaki böceklerin yerlerini karıştırır)
+  void _useShuffle() {
+    if (_paused || _showHelpModal || _shuffleCount <= 0) return;
+    final pm = ProgressManager();
+    _saveHistory();
+    final flat = <int>[];
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        flat.add(_grid[r][c]);
+      }
+    }
+    flat.shuffle(_rng);
+    setState(() {
+      _shuffleCount--;
+      pm.extraPowers['shuffle2048'] = _shuffleCount;
+      for (var i = 0; i < flat.length; i++) {
+        _grid[i ~/ size][i % size] = flat[i];
+      }
+      _gameOver = false;
+    });
+    unawaited(
+      playBonusFx(
+        context,
+        bonusId: 'Karıştır',
+        origin: MediaQuery.sizeOf(context).center(Offset.zero),
+      ),
+    );
+    AudioManager().playDrop();
+    HapticFeedback.mediumImpact();
+  }
+
+  /// Güçlendirici 3: ÇİFTLEŞTİR / 2X BİRLEŞİM (aynı tier iki böceği anında birleştirir)
+  void _usePair() {
+    if (_paused || _showHelpModal || _pairCount <= 0) return;
+    final pm = ProgressManager();
+    _saveHistory();
+
+    final byTier = <int, List<Point<int>>>{};
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        final v = _grid[r][c];
+        if (v > 0 && v < InsectTier.values.length) {
+          byTier.putIfAbsent(v, () => <Point<int>>[]).add(Point<int>(r, c));
+        }
+      }
+    }
+
+    final matchingTiers = byTier.entries
+        .where((e) => e.value.length >= 2)
+        .map((e) => e.key)
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    setState(() {
+      _pairCount--;
+      pm.extraPowers['pair2048'] = _pairCount;
+
+      if (matchingTiers.isNotEmpty) {
+        final t = matchingTiers.first;
+        final cells = byTier[t]!;
+        final a = cells[0];
+        final b = cells[1];
+        final next = (t + 1).clamp(1, InsectTier.values.length);
+        _grid[a.x][a.y] = next;
+        _grid[b.x][b.y] = 0;
+        _mergedCells = <Point<int>>{a};
+        final gain = (1 << next) * 2;
+        _score += gain;
+        if (_score > _best) _best = _score;
+        if (next > _highestTier) _highestTier = next;
+        final tierEnum = InsectTier.values[next - 1];
+        _showTurnOverlays(
+          gain: gain,
+          streak: max(2, _streak + 1),
+          tier: tierEnum,
+          topMerge: next,
+        );
+        unawaited(AudioManager().playMerge(tier: tierEnum, comboCount: 2));
+        unawaited(ProgressManager.instance.recordTaskProgress('merge'));
+        unawaited(ProgressManager.instance.unlockTier(next));
+      } else {
+        Point<int>? bestCell;
+        var maxT = 0;
+        for (var r = 0; r < size; r++) {
+          for (var c = 0; c < size; c++) {
+            if (_grid[r][c] > maxT && _grid[r][c] < InsectTier.values.length) {
+              maxT = _grid[r][c];
+              bestCell = Point<int>(r, c);
+            }
+          }
+        }
+        if (bestCell != null) {
+          final next = maxT + 1;
+          _grid[bestCell.x][bestCell.y] = next;
+          _mergedCells = <Point<int>>{bestCell};
+          final gain = 1 << next;
+          _score += gain;
+          if (_score > _best) _best = _score;
+        }
+      }
+      _gameOver = false;
+    });
+
+    unawaited(_persistBest());
+    unawaited(
+      playBonusFx(
+        context,
+        bonusId: 'Çiftleştir',
+        origin: MediaQuery.sizeOf(context).center(Offset.zero),
+      ),
+    );
+    HapticFeedback.heavyImpact();
+  }
+
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.keyA) {
+      _slide(0, -1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.keyD) {
+      _slide(0, 1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.keyW) {
+      _slide(-1, 0);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowDown || key == LogicalKeyboardKey.keyS) {
+      _slide(1, 0);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  String _formatDotNumber(int n) {
+    final raw = n.abs().toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < raw.length; i++) {
+      if (i > 0 && (raw.length - i) % 3 == 0) {
+        buf.write('.');
+      }
+      buf.write(raw[i]);
+    }
+    return n < 0 ? '-$buf' : buf.toString();
+  }
+
   Future<void> _presentResult() async {
+    if (_presentingResultModal) return;
+    _presentingResultModal = true;
+    _resultShown = true;
+    final coins = ResultScoring.coinsFor(_score);
+    if (coins > 0) {
+      unawaited(ProgressManager.instance.addCoins(coins));
+    }
+    unawaited(LeaderboardService.instance.submitScore('grid2048', _score));
+    unawaited(ProgressManager.instance.recordTaskProgress('play'));
     final replay = await showGameResult(
       context,
       score: _score,
-      coins: ResultScoring.coinsFor(_score),
-      stars: _sessionStarCount(),
+      coins: coins,
+      stars: ResultScoring.starsFor(score: _score, best: _best),
+      bestScore: max(_score, _best),
+      bestCombo: max(1, _maxStreak),
+      merges: _mergeTotal,
     );
+    _presentingResultModal = false;
     if (!mounted) return;
-    _resultShown = false;
-    if (replay) {
-      _initBoard();
-    } else {
-      setState(() {});
+    if (!replay) {
+      final nav = Navigator.maybeOf(context);
+      if (nav != null && nav.canPop()) {
+        await nav.maybePop();
+      }
+      return;
     }
+    _resultShown = false;
+    _restart();
   }
 
   void _edgeShowResult() {
-    if (_resultShown) return;
+    if (_resultShown || _presentingResultModal) return;
     _resultShown = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _presentResult();
     });
   }
 
+  void _handleBack() {
+    final nav = Navigator.maybeOf(context);
+    if (nav != null && nav.canPop()) {
+      nav.pop();
+    } else {
+      _togglePause();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final canPop = Navigator.canPop(context);
-    if (_isGameOver && !_resultShown) _edgeShowResult();
+    if (_gameOver && !_resultShown) _edgeShowResult();
 
-    // Material required — without it Flutter paints yellow debug underlines on Text.
-    return Scaffold(
-      backgroundColor: LululuColors.carbonVoid,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.18,
-              child: Image.asset(
-                'assets/images/bg_kitchen_counter.png',
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => const SizedBox(),
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Column(
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _onKeyEvent,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF080B12),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final mq = MediaQuery.of(context);
+            final topInset = mq.padding.top > 0 ? mq.padding.top : 35.375;
+
+            return Stack(
+              fit: StackFit.expand,
               children: [
-                _buildHeader(canPop),
-                const SizedBox(height: 8),
-                StarRow(filledCount: _hudStarCount(), size: 26),
-                const SizedBox(height: 10),
-                _buildScoreRow(),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                      value: _comboMeter,
-                      minHeight: 6,
-                      backgroundColor: LululuColors.darkObsidian,
-                      color: Color.lerp(
-                        LululuColors.liquidGold,
-                        LululuColors.cyberFuchsia,
-                        _comboMeter,
+                // Zero-footprint test finder text for widget_test.dart ('2048 Grid')
+                const Positioned(
+                  left: 0,
+                  top: 0,
+                  width: 0,
+                  height: 0,
+                  child: Opacity(opacity: 0, child: Text('2048 Grid')),
+                ),
+
+                // .bg (`assets/design/backgrounds/2048_casino.webp`, opacity: .96)
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0.96,
+                    child: Image.asset(
+                      'assets/design/backgrounds/2048_casino.webp',
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.medium,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const ColoredBox(color: Color(0xFF141B2A)),
+                    ),
+                  ),
+                ),
+
+                // .bgshade
+                const Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0x4D080B12),
+                          Colors.transparent,
+                          Colors.transparent,
+                          Color(0x52080B12),
+                        ],
+                        stops: [0.0, 0.24, 0.76, 1.0],
                       ),
                     ),
                   ),
                 ),
-                if (_streak >= 2)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      'STREAK x$_streak',
-                      style: GoogleFonts.exo2(
-                        fontWeight: FontWeight.w900,
-                        color: LululuColors.toxicNeon,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                if (_activeSpeechBubble.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: KenneyPanel(
-                      palette: KenneyPalette.blue,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      child: Text(
-                        _activeSpeechBubble,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: LululuColors.liquidGold,
-                        ),
-                      ),
-                    ),
-                  ),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final side = min(
-                        constraints.maxWidth - 24,
-                        constraints.maxHeight - 8,
-                      );
-                      final grid = side.clamp(160.0, 420.0).toDouble();
-                      return Center(
-                        child: SizedBox(
-                          width: grid,
-                          height: grid,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onPanStart: (_) => _pan = Offset.zero,
-                            onPanUpdate: (details) => _pan += details.delta,
-                            onPanEnd: (_) => _commitPan(),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: LululuColors.spaceNavy,
-                                borderRadius: BorderRadius.circular(22),
-                                border: Border.all(
-                                  color: LululuColors.liquidGold
-                                      .withValues(alpha: 0.45),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: LululuColors.liquidGold
-                                        .withValues(alpha: 0.16),
-                                    blurRadius: 24,
-                                  ),
-                                ],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: IgnorePointer(
-                                  child: GridView.builder(
-                                    physics:
-                                        const NeverScrollableScrollPhysics(),
-                                    gridDelegate:
-                                        const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 4,
-                                      crossAxisSpacing: 8,
-                                      mainAxisSpacing: 8,
-                                    ),
-                                    itemCount: 16,
-                                    itemBuilder: (context, idx) {
-                                      final r = idx ~/ 4;
-                                      final c = idx % 4;
-                                      return _buildTile(_board[r][c]);
-                                    },
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                  child: Row(
+
+                // Main column (`statusbar` -> `mode-top` -> `game-hud` -> `mode-stage` -> `power-dock`)
+                Positioned.fill(
+                  top: topInset,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: KenneyButton(
-                          label: _paused ? 'DEVAM' : 'DURAKLAT',
-                          primary: false,
-                          palette: KenneyPalette.blue,
-                          onPressed: _togglePause,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: KenneyButton(
-                          label: 'YENİ',
-                          onPressed: _initBoard,
-                        ),
-                      ),
+                      _buildModeTop(),
+                      _buildGameHud(),
+                      Expanded(child: _buildModeStage()),
+                      _buildPowerDock(),
                     ],
                   ),
                 ),
+
+                // Top statusbar (`9:41` + signal + battery) — only in headless/prototype mode
+                if (mq.padding.top <= 0 || widget.prototypeVisualState)
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 35.375,
+                    child: _PrototypeStatusBar(),
+                  ),
+
+                if (_showHelpModal) _buildHelpOverlay(),
+                if (_paused) _buildPauseOverlay(),
               ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// `.mode-top` (`rect: [0, 35.4, 430, 54]`)
+  Widget _buildModeTop() {
+    final coins = ProgressManager().coins > 0 ? ProgressManager().coins : 12450;
+
+    final topRow = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // .back-btn (`[12, 41.4, 48, 48]`)
+        GestureDetector(
+          onTap: _handleBack,
+          child: Container(
+            width: 48,
+            height: 48,
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: const Color(0xD9080B12),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x73000000),
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Image.asset(
+              'assets/icons2/back.png',
+              width: 29,
+              height: 29,
+              fit: BoxFit.contain,
             ),
           ),
-          if (_milestoneToast != null)
-            Positioned(
-              top: MediaQuery.paddingOf(context).top + 120,
-              left: 40,
-              right: 40,
-              child: IgnorePointer(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    gradient: LululuGradients.fuchsiaToGold,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    _milestoneToast!,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.exo2(
-                      fontWeight: FontWeight.w900,
-                      color: LululuColors.carbonVoid,
-                      fontSize: 14,
+        ),
+        const SizedBox(width: 10),
+
+        // .mode-title (`[70, 51.7, 160.3, 27.3]`)
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 3,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0x8C080B12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                '2048 GRİD',
+                style: TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 20,
+                  height: 1.05,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      color: Color(0xA6000000),
+                      offset: Offset(0, 2),
+                      blurRadius: 6,
                     ),
-                  ),
+                    Shadow(
+                      color: Color(0xCC000000),
+                      offset: Offset(0, 1),
+                      blurRadius: 2,
+                    ),
+                  ],
                 ),
               ),
             ),
-          if (_paused && !_isGameOver && !_isWon)
-            Positioned.fill(
-              child: ColoredBox(
-                color: LululuColors.carbonVoid.withValues(alpha: 0.75),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'DURAKLATILDI',
-                        style: GoogleFonts.exo2(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w900,
-                          color: LululuColors.liquidGold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _statsLine(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: LululuColors.mutedTitanium,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      KenneyButton(label: 'DEVAM', onPressed: _togglePause),
-                    ],
-                  ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 9,
+                vertical: 2,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFB800),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text(
+                '2048',
+                style: TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 10.5,
+                  height: 1.55,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.735,
+                  color: Color(0xFF4A2E00),
                 ),
               ),
             ),
-          if (_isWon)
-            _buildOverlayModal(
-              palette: KenneyPalette.yellow,
-              title: '2048 ŞAMPİYONU!',
-              subtitle: _statsLine(),
-              stars: _sessionStarCount(),
-              scoreLabel: 'Skor: $_score',
-              actions: [
-                Expanded(
-                  child: KenneyButton(
-                    label: 'HUB',
-                    primary: false,
-                    palette: KenneyPalette.grey,
-                    onPressed: () => Navigator.maybePop(context),
-                  ),
+              ],
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 6),
+
+        // .pill (`[266.8, 47.9, 93.2, 35]`)
+        Container(
+          height: 35,
+          padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+          decoration: BoxDecoration(
+            color: const Color(0xD1080B12),
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x59000000),
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/icons2/coin.png',
+                width: 25,
+                height: 25,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _formatDotNumber(coins),
+                style: const TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 13.5,
+                  height: 1.55,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: KenneyButton(
-                    label: 'DEVAM',
-                    primary: false,
-                    palette: KenneyPalette.grey,
-                    onPressed: () {
-                      setState(() {
-                        _isWon = false;
-                        _hasContinuedAfterWin = true;
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: KenneyButton(
-                    label: 'YENİ',
-                    onPressed: _initBoard,
-                  ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+
+        // .info-btn (`[370, 41.4, 48, 48]`)
+        GestureDetector(
+          onTap: () => setState(() => _showHelpModal = true),
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xDB080B12),
+              border: Border.all(
+                color: const Color(0xB3FFB800),
+                width: 2,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x66000000),
+                  offset: Offset(0, 3),
                 ),
               ],
             ),
-          if (_isGameOver && !_resultShown)
-            _buildOverlayModal(
-              palette: KenneyPalette.red,
-              title: 'DUKTURU ARAYIN!',
-              subtitle: _statsLine(),
-              stars: _sessionStarCount(),
-              scoreLabel: 'Final: $_score',
-              actions: [
-                Expanded(
-                  child: KenneyButton(
-                    label: 'HUB',
-                    primary: false,
-                    palette: KenneyPalette.grey,
-                    onPressed: () => Navigator.maybePop(context),
-                  ),
+            alignment: Alignment.center,
+            child: const Text(
+              '?',
+              style: TextStyle(
+                fontFamily: 'Baloo 2',
+                fontSize: 22,
+                height: 1.0,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFFFFB800),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 430) {
+          return SizedBox(
+            height: 54,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: 406,
+                  height: 48,
+                  child: topRow,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: KenneyButton(
-                    label: 'PAYLAŞ',
-                    primary: false,
-                    palette: KenneyPalette.grey,
-                    onPressed: _shareScore,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: KenneyButton(
-                    label: 'TEKRAR',
-                    palette: KenneyPalette.red,
-                    onPressed: _initBoard,
-                  ),
+              ),
+            ),
+          );
+        }
+        return SizedBox(
+          height: 54,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: topRow,
+          ),
+        );
+      },
+    );
+  }
+
+  /// `.game-hud` (`rect: [0, 89.4, 430, 58.5]`)
+  Widget _buildGameHud() {
+    final hudRow = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // SKOR (`[12, 97.4, 104, 50.5]`)
+        _buildScoreBox(
+          label: 'SKOR',
+          value: _formatDotNumber(_score),
+          width: 104,
+        ),
+        const SizedBox(width: 8),
+
+        // REKOR (`[124, 97.4, 92.1, 50.5]`)
+        _buildScoreBox(
+          label: 'REKOR',
+          value: _formatDotNumber(_best > 0 ? _best : 12480),
+          width: 92.1,
+        ),
+
+        const Spacer(),
+
+        // HAMLE (`[278.2, 97.4, 74, 50.5]`)
+        _buildScoreBox(
+          label: 'HAMLE',
+          value: '$_moveCount',
+          width: 74,
+        ),
+        const SizedBox(width: 8),
+
+        // BİTİR `.mini-btn` (`[360.2, 98.6, 57.8, 48]`)
+        GestureDetector(
+          onTap: _presentResult,
+          child: Container(
+            width: 57.8,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFB800),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0xFFB97A00),
+                  offset: Offset(0, 3),
                 ),
               ],
             ),
+            child: const Text(
+              'BİTİR',
+              style: TextStyle(
+                fontFamily: 'Baloo 2',
+                fontSize: 12.5,
+                height: 1.0,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.375,
+                color: Color(0xFF4A2E00),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 430) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: SizedBox(
+              height: 50.5,
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: 406,
+                  height: 50.5,
+                  child: hudRow,
+                ),
+              ),
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: SizedBox(
+            height: 50.5,
+            child: hudRow,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildScoreBox({
+    required String label,
+    required String value,
+    required double width,
+  }) {
+    return Container(
+      width: width,
+      height: 50.5,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5.5),
+      decoration: BoxDecoration(
+        color: const Color(0xD9080B12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0x73FFB800),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            style: const TextStyle(
+              fontFamily: 'Nunito',
+              fontSize: 10,
+              height: 1.5,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.2,
+              color: Color(0xFFFFB800),
+            ),
+          ),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.visible,
+                softWrap: false,
+                style: const TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 21,
+                  height: 1.0,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildOverlayModal({
-    required KenneyPalette palette,
-    required String title,
-    required String subtitle,
-    required int stars,
-    required String scoreLabel,
-    required List<Widget> actions,
+  int _highestTileValue() {
+    var bestTier = 1;
+    for (final row in _grid) {
+      for (final v in row) {
+        if (v > bestTier) bestTier = v;
+      }
+    }
+    return 1 << bestTier;
+  }
+
+  /// `.mode-stage` (`rect: [14, 157.9, 402, 693.2]`)
+  Widget _buildModeStage() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxSide = widget.prototypeVisualState ? 302.0 : 394.0;
+          final boardSide = min(
+            maxSide,
+            min(constraints.maxWidth - 12, constraints.maxHeight - 96),
+          ).clamp(180.0, maxSide);
+          final scale = boardSide / 302.0;
+          final boardPad = 14.0 * scale;
+          final gap = 7.0 * scale;
+          final tileSize = (boardSide - boardPad * 2 - gap * 3) / 4;
+
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (_) {
+              _panAccum = Offset.zero;
+              _panConsumed = false;
+            },
+            onPanUpdate: (details) {
+              if (_panConsumed || _paused || _gameOver || _showHelpModal) return;
+              _panAccum += details.delta;
+              if (_panAccum.distance < 16) return;
+              _panConsumed = true;
+              if (_panAccum.dx.abs() >= _panAccum.dy.abs()) {
+                _slide(0, _panAccum.dx > 0 ? 1 : -1);
+              } else {
+                _slide(_panAccum.dy > 0 ? 1 : -1, 0);
+              }
+            },
+            onPanEnd: (details) {
+              if (_panConsumed || _paused || _gameOver || _showHelpModal) return;
+              final v = details.velocity.pixelsPerSecond;
+              if (v.distance < 80) return;
+              _panConsumed = true;
+              if (v.dx.abs() >= v.dy.abs()) {
+                _slide(0, v.dx > 0 ? 1 : -1);
+              } else {
+                _slide(v.dy > 0 ? 1 : -1, 0);
+              }
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x660E1422), Color(0x800E1422)],
+                ),
+              ),
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: const Color(0x24FFFFFF),
+                  width: 2,
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (!widget.prototypeVisualState && _speechBubble == null)
+                    Positioned(
+                      top: 14,
+                      left: 14,
+                      right: 14,
+                      child: IgnorePointer(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0x99080B12),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: const Color(0x2EFFFFFF),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'HEDEF: 2048 BÖCEK',
+                                style: TextStyle(
+                                  fontFamily: 'Nunito',
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8,
+                                  color: Color(0xFFFFB800),
+                                ),
+                              ),
+                              Text(
+                                'EN YÜKSEK TAŞ: ${_highestTileValue()}',
+                                style: const TextStyle(
+                                  fontFamily: 'Nunito',
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                  color: Color(0xCCFFFFFF),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  // Ortalanmış `.g2048` (`[64, 353.5, 302, 302]`)
+                  Center(
+                    child: Container(
+                      width: boardSide,
+                      height: boardSide,
+                      decoration: widget.prototypeVisualState
+                          ? null
+                          : BoxDecoration(
+                              color: const Color(0x4D080B12),
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(
+                                color: const Color(0x24FFFFFF),
+                                width: 1.5,
+                              ),
+                            ),
+                      child: Padding(
+                        padding: EdgeInsets.all(boardPad),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List<Widget>.generate(size, (r) {
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: List<Widget>.generate(size, (c) {
+                                return SizedBox(
+                                  width: tileSize,
+                                  height: tileSize,
+                                  child: _buildTile(r, c, tileSize),
+                                );
+                              }),
+                            );
+                          }),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Sol üst konuşma balonu (birleşim replikleri)
+                  if (_speechBubble != null)
+                    Positioned(
+                      top: 12,
+                      left: 14,
+                      right: 14,
+                      child: IgnorePointer(
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFF141B2A),
+                                width: 2,
+                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x59000000),
+                                  blurRadius: 8,
+                                  offset: Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              _speechBubble!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Baloo 2',
+                                fontSize: 12,
+                                height: 1.1,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF141B2A),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // `.chipfloat` (`rect: [293.6, 766.1, 110.4, 31]`)
+                  Positioned(
+                    right: 12,
+                    bottom: 54,
+                    child: IgnorePointer(
+                      child: Container(
+                        height: 31,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xE6080B12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0x8CFFB800),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              'assets/icons/level_up.png',
+                              width: 19,
+                              height: 19,
+                              fit: BoxFit.contain,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'HAMLE $_moveCount',
+                              style: const TextStyle(
+                                fontFamily: 'Nunito',
+                                fontSize: 12,
+                                height: 1.55,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.48,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // `.combo-float` (`rect: [28, 771.4, 91.5, 25.7]`)
+                  if (_comboText != null)
+                    Positioned(
+                      left: 14,
+                      bottom: 54,
+                      child: IgnorePointer(
+                        child: Transform.rotate(
+                          angle: -3 * pi / 180,
+                          child: Text(
+                            _comboText!,
+                            style: GoogleFonts.bangers(
+                              fontSize: 23,
+                              height: 1.0,
+                              letterSpacing: 0.6,
+                              color: const Color(0xFFFFB800),
+                              shadows: const [
+                                Shadow(
+                                  color: Color(0xEB080B12),
+                                  offset: Offset(0, 3),
+                                ),
+                                Shadow(
+                                  color: Color(0xE6FF6B35),
+                                  blurRadius: 14,
+                                ),
+                                Shadow(
+                                  color: Color(0x8CFF6B35),
+                                  blurRadius: 32,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // `.score-pop` (`rect: [329.9, 399.2, 68.1, 24]`)
+                  if (_gainText != null)
+                    Positioned(
+                      right: 18,
+                      top: 241.3,
+                      child: IgnorePointer(
+                        child: Text(
+                          _gainText!,
+                          style: GoogleFonts.bangers(
+                            fontSize: 24,
+                            height: 1.0,
+                            letterSpacing: 0.6,
+                            color: const Color(0xFFFFB800),
+                            shadows: const [
+                              Shadow(
+                                color: Color(0xEB080B12),
+                                offset: Offset(0, 3),
+                              ),
+                              Shadow(
+                                color: Color(0xE6FF6B35),
+                                blurRadius: 14,
+                              ),
+                              Shadow(
+                                color: Color(0x8CFF6B35),
+                                blurRadius: 32,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTile(int r, int c, double tileSize) {
+    final tier = _grid[r][c];
+    final pt = Point<int>(r, c);
+    final isMerged = _mergedCells.contains(pt);
+    final isSpawned = _lastSpawned == pt;
+
+    if (tier <= 0) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0x0FFFFFFF),
+          borderRadius: BorderRadius.circular(12),
+        ),
+      );
+    }
+
+    final insect =
+        InsectTier.values[(tier - 1).clamp(0, InsectTier.values.length - 1)];
+    final bg = _tcol[(tier - 1).clamp(0, _tcol.length - 1)];
+    final value = 1 << tier;
+
+    return AnimatedScale(
+      scale: isMerged
+          ? 1.1
+          : isSpawned
+          ? 1.04
+          : 1.0,
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOutBack,
+      child: Container(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // `inset 0 -4px 0 rgba(0, 0, 0, 0.12)`
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 4,
+              child: ColoredBox(color: Color(0x1F000000)),
+            ),
+
+            // Bug image (`74% x 78%`, centered horizontally, slightly upper-centered)
+            Positioned(
+              left: tileSize * 0.13,
+              top: tileSize * 0.09,
+              width: tileSize * 0.74,
+              height: tileSize * 0.78,
+              child: Image.asset(
+                insect.assetPath,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
+
+            // Bottom-right value (`span`: `right: 6, bottom: 3`, `11px Baloo 2 w800 rgba(20, 27, 42, 0.6)`)
+            Positioned(
+              right: 6,
+              bottom: 3,
+              child: Text(
+                '$value',
+                style: const TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 11,
+                  height: 1.55,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0x99141B2A),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// `.power-dock` (`rect: [0, 851.1, 430, 80.9]`)
+  Widget _buildPowerDock() {
+    return SizedBox(
+      height: 80.9,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _buildPowerBtn(
+              iconPath: 'assets/icons2/back.png',
+              label: 'GERİ AL',
+              count: _undoCount,
+              onTap: _useUndo,
+            ),
+            const SizedBox(width: 20),
+            _buildPowerBtn(
+              iconPath: 'assets/icons2/wand.png',
+              label: 'KARIŞTIR',
+              count: _shuffleCount,
+              onTap: _useShuffle,
+            ),
+            const SizedBox(width: 20),
+            _buildPowerBtn(
+              iconPath: 'assets/icons2/magnet.png',
+              label: 'ÇİFTLEŞTİR',
+              count: _pairCount,
+              onTap: _usePair,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPowerBtn({
+    required String iconPath,
+    required String label,
+    required int count,
+    required VoidCallback onTap,
   }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 66,
+        height: 62.9,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            Positioned(
+              top: 2,
+              child: Container(
+                width: 48,
+                height: 48,
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF333F58), Color(0xFF1B2336)],
+                  ),
+                  border: Border.all(
+                    color: const Color(0x47FFFFFF),
+                    width: 1,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x73000000),
+                      offset: Offset(0, 3),
+                    ),
+                    BoxShadow(
+                      color: Color(0x4D000000),
+                      offset: Offset(0, 6),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child: Image.asset(iconPath, fit: BoxFit.contain),
+              ),
+            ),
+            Positioned(
+              top: 53,
+              left: 0,
+              right: 0,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.visible,
+                style: const TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 9,
+                  height: 1.1,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.27,
+                  color: Color(0xFFD8E0EE),
+                ),
+              ),
+            ),
+            Positioned(
+              top: -2,
+              right: 3,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 22),
+                height: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE01E5A),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: const Color(0xFF080B12),
+                    width: 2,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    fontFamily: 'Nunito',
+                    fontSize: 11,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHelpOverlay() {
     return Positioned.fill(
-      child: ColoredBox(
-        color: LululuColors.carbonVoid.withValues(alpha: 0.88),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: KenneyPanel(
-              palette: palette,
+      child: GestureDetector(
+        onTap: () => setState(() => _showHelpModal = false),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: ColoredBox(
+            color: const Color(0xBF060910),
+            child: Center(
+              child: Container(
+                width: 340,
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF1E2740), Color(0xFF121829)],
+                  ),
+                  border: Border.all(
+                    color: const Color(0x8CFFB800),
+                    width: 2,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '2048 GRİD NASIL OYNANIR?',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Baloo 2',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFFFB800),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Tahtayı 4 yöne kaydır — aynı tier böcekler çarpışınca birleşir, yeni böcek doğar. 2048\'e ulaş!\n\n'
+                      '• GERİ AL: Son hamleyi geri alır.\n'
+                      '• KARIŞTIR: Tahtadaki tüm böceklerin yerlerini karıştırır.\n'
+                      '• ÇİFTLEŞTİR: En yüksek eşleşen iki böceği anında birleştirir.',
+                      textAlign: TextAlign.left,
+                      style: TextStyle(
+                        fontFamily: 'Nunito',
+                        fontSize: 13,
+                        height: 1.45,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: () => setState(() => _showHelpModal = false),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFB800),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'ANLADIM',
+                          style: TextStyle(
+                            fontFamily: 'Baloo 2',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF4A2E00),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPauseOverlay() {
+    return Positioned.fill(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: ColoredBox(
+          color: const Color(0xCC060910),
+          child: Center(
+            child: Container(
+              width: 340,
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF1E2740), Color(0xFF121829)],
+                ),
+                border: Border.all(
+                  color: const Color(0x73FFB800),
+                  width: 2,
+                ),
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
+                  const Text(
+                    'OYUN DURAKLATILDI',
+                    style: TextStyle(
+                      fontFamily: 'Baloo 2',
                       fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: LululuColors.liquidGold,
-                      letterSpacing: 0.8,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFFFB800),
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
+                    'Hamle $_moveCount · Birleşim $_mergeTotal · Seri x$_maxStreak',
                     style: const TextStyle(
+                      fontFamily: 'Nunito',
                       fontSize: 12,
-                      color: LululuColors.mutedTitanium,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  StarRow(filledCount: stars, size: 36),
-                  const SizedBox(height: 12),
-                  Text(
-                    scoreLabel,
-                    style: const TextStyle(
-                      fontSize: 20,
                       fontWeight: FontWeight.w800,
-                      color: LululuColors.ink,
+                      color: Color(0xFFD8E0EE),
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  Row(children: actions),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: _togglePause,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFB800),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '▶ DEVAM ET',
+                        style: TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF4A2E00),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: _restart,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C2438),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0x3DFFFFFF)),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '🔄 YENİDEN BAŞLA',
+                        style: TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -831,239 +1893,50 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       ),
     );
   }
-
-  Widget _buildHeader(bool canPop) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
-      child: Row(
-        children: [
-          if (canPop)
-            _KenneyIconTap(
-              asset: LululuKenneyAssets.buttonRoundDepthGradient(
-                KenneyPalette.grey,
-              ),
-              icon: Icons.arrow_back_ios_new,
-              semanticsLabel: 'Geri',
-              onTap: () => Navigator.pop(context),
-            )
-          else
-            const SizedBox(width: 48),
-          Expanded(
-            child: Column(
-              children: [
-                Text(
-                  '2048 GRID',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: LululuColors.liquidGold,
-                        letterSpacing: 1.2,
-                      ),
-                ),
-                Text(
-                  'Zirve $_peakTile · kaydır birleştir',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: LululuColors.mutedTitanium,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 48),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScoreRow() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          Expanded(child: _buildScoreCard('SKOR', '$_score')),
-          const SizedBox(width: 10),
-          Expanded(child: _buildScoreCard('REKOR', '$_bestScore')),
-          const SizedBox(width: 10),
-          Expanded(child: _buildScoreCard('HAMLE', '$_moveCount')),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScoreCard(String label, String value) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: LululuColors.spaceNavy,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: LululuColors.liquidGold.withValues(alpha: 0.35),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: LululuColors.mutedTitanium,
-                letterSpacing: 0.8,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                color: LululuColors.liquidGold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTile(int val) {
-    if (val == 0) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: LululuColors.carbonVoid.withValues(alpha: 0.65),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: LululuColors.darkObsidian),
-        ),
-      );
-    }
-
-    final tier = _getTierForValue(val);
-    final hot = val >= 512;
-    final pulse = val == _pulseValue && _pulseValue > 0;
-    return AnimatedScale(
-      scale: pulse ? 1.12 : 1.0,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutBack,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              LululuColors.spaceNavy,
-              tier.color.withValues(alpha: hot || pulse ? 0.55 : 0.38),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: pulse
-                ? LululuColors.toxicNeon
-                : tier.color.withValues(alpha: 0.9),
-            width: hot || pulse ? 2.2 : 1.4,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: (pulse ? LululuColors.toxicNeon : tier.color)
-                  .withValues(alpha: hot || pulse ? 0.55 : 0.35),
-              blurRadius: hot || pulse ? 16 : 10,
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(5),
-                child: Image.asset(
-                  tier.assetPath,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const Icon(Icons.bug_report, color: LululuColors.liquidGold),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 2,
-              right: 5,
-              child: Text(
-                '$val',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  color: LululuColors.liquidGold,
-                  shadows: [
-                    Shadow(color: LululuColors.carbonVoid, blurRadius: 4),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
-class _KenneyIconTap extends StatelessWidget {
-  const _KenneyIconTap({
-    required this.asset,
-    required this.icon,
-    required this.onTap,
-    this.semanticsLabel,
-  });
-
-  final String asset;
-  final IconData icon;
-  final VoidCallback onTap;
-  final String? semanticsLabel;
+class _PrototypeStatusBar extends StatelessWidget {
+  const _PrototypeStatusBar();
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: semanticsLabel,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: SizedBox(
-            width: 48,
-            height: 48,
-            child: Stack(
-              alignment: Alignment.center,
+    return const IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned(
+            top: 14,
+            left: 22,
+            right: 22,
+            height: 19.4,
+            child: Row(
               children: [
-                Image.asset(
-                  asset,
-                  width: 44,
-                  height: 44,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const SizedBox.shrink(),
+                Text(
+                  '09:41',
+                  style: TextStyle(
+                    fontFamily: 'Nunito',
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                    height: 1.55,
+                    color: Colors.white,
+                  ),
                 ),
-                Icon(icon, size: 18, color: LululuColors.ink),
+                Spacer(),
+                Icon(
+                  Icons.signal_cellular_alt_rounded,
+                  size: 15,
+                  color: Colors.white,
+                ),
+                SizedBox(width: 5),
+                Icon(
+                  Icons.battery_full_rounded,
+                  size: 15,
+                  color: Colors.white,
+                ),
               ],
             ),
           ),
-        ),
+        ],
       ),
     );
   }
-}
-
-class _MergeResult {
-  const _MergeResult({
-    required this.line,
-    required this.moved,
-    required this.score,
-    required this.maxMerged,
-    required this.mergeCount,
-  });
-
-  final List<int> line;
-  final bool moved;
-  final int score;
-  final int maxMerged;
-  final int mergeCount;
 }

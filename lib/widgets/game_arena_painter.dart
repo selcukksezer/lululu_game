@@ -8,66 +8,68 @@ import '../theme/lululu_theme.dart';
 
 class GameArenaPainter extends CustomPainter {
   final CircularPhysicsEngine engine;
-  final double dropperX;
-  final InsectTier dropTier;
-  final bool isDropping;
   final Map<String, ImageInfo?> insectImages;
   final double dangerPulse;
   final double dangerProximity;
+  final bool transparentSquareArena;
+  final double coneSpriteScale;
+  final double? dropperX;
+  final InsectTier? currentDropperTier;
+  final bool showDropperPreview;
 
   GameArenaPainter({
     required this.engine,
-    required this.dropperX,
-    required this.dropTier,
-    required this.isDropping,
     required this.insectImages,
     this.dangerPulse = 0,
     this.dangerProximity = 0,
+    this.transparentSquareArena = false,
+    this.coneSpriteScale = 1,
+    this.dropperX,
+    this.currentDropperTier,
+    this.showDropperPreview = false,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = engine.arenaCenter;
     final radius = engine.arenaRadius;
-    final bin = Rect.fromCenter(
-      center: center,
-      width: radius * 2,
-      height: radius * 2,
-    );
+    final bin = engine.arenaBounds;
 
-    final bgPaint = Paint()
-      ..shader = const RadialGradient(
-        colors: [
-          LululuColors.darkObsidian,
-          LululuColors.carbonVoid,
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: radius));
     if (engine.squareArena) {
-      canvas.drawRect(bin, bgPaint);
+      if (!transparentSquareArena) {
+        final bgPaint = Paint()
+          ..shader = const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0x3D111923), Color(0x4D111923), Color(0xB0111923)],
+            stops: [0, 0.52, 1],
+          ).createShader(bin);
+        canvas.drawRect(bin, bgPaint);
+      }
     } else {
+      final bgPaint = Paint()
+        ..shader = const RadialGradient(
+          colors: [LululuColors.darkObsidian, LululuColors.carbonVoid],
+        ).createShader(Rect.fromCircle(center: center, radius: radius));
       canvas.drawCircle(center, radius, bgPaint);
     }
 
-    final borderGlow = Paint()
-      ..color = (engine.squareArena
-              ? LululuColors.cyberFuchsia
-              : LululuColors.coralFlare)
-          .withValues(alpha: 0.3 + dangerProximity * 0.35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 8.0
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-    final borderPaint = Paint()
-      ..color = Color.lerp(
-            LululuColors.liquidGold,
-            LululuColors.mysticRuby,
-            dangerProximity,
-          )!
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5;
-    if (engine.squareArena) {
-      canvas.drawRect(bin, borderGlow);
-      canvas.drawRect(bin, borderPaint);
-    } else {
+    if (!engine.squareArena) {
+      final borderGlow = Paint()
+        ..color = LululuColors.coralFlare.withValues(
+          alpha: 0.3 + dangerProximity * 0.35,
+        )
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      final borderPaint = Paint()
+        ..color = Color.lerp(
+          LululuColors.liquidGold,
+          LululuColors.mysticRuby,
+          dangerProximity,
+        )!
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5;
       canvas.drawCircle(center, radius, borderGlow);
       canvas.drawCircle(center, radius, borderPaint);
     }
@@ -76,14 +78,25 @@ class GameArenaPainter extends CustomPainter {
     final dangerTopY = engine.dangerY;
     final pulse = 0.35 + dangerProximity * 0.45 + math.sin(dangerPulse) * 0.12;
     final dangerPaint = Paint()
-      ..color = LululuColors.mysticRuby.withValues(alpha: pulse.clamp(0.2, 0.95))
+      ..color = LululuColors.mysticRuby.withValues(
+        alpha: pulse.clamp(0.2, 0.95),
+      )
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5 + dangerProximity * 2.5;
-    canvas.drawLine(
-      Offset(center.dx - radius * 0.65, dangerTopY),
-      Offset(center.dx + radius * 0.65, dangerTopY),
-      dangerPaint,
-    );
+    if (engine.squareArena) {
+      _drawDashedLine(
+        canvas,
+        Offset(bin.left + 8, dangerTopY),
+        Offset(bin.right - 8, dangerTopY),
+        dangerPaint,
+      );
+    } else {
+      canvas.drawLine(
+        Offset(center.dx - radius * 0.65, dangerTopY),
+        Offset(center.dx + radius * 0.65, dangerTopY),
+        dangerPaint,
+      );
+    }
 
     final blockPaint = Paint()..color = LululuColors.darkObsidian;
     final blockEdge = Paint()
@@ -104,75 +117,83 @@ class GameArenaPainter extends CustomPainter {
         blockEdge,
       );
     }
-    if (dangerProximity > 0.55) {
+    if (dangerProximity > 0.55 || showDropperPreview) {
       final warn = TextPainter(
         text: TextSpan(
-          text: 'TEHLİKE',
+          text: dangerProximity > 0.55 ? 'TEHLİKE!' : 'TEHLİKE HATTI',
           style: TextStyle(
-            color: LululuColors.mysticRuby.withValues(alpha: 0.9),
-            fontSize: 11,
+            color: LululuColors.mysticRuby.withValues(
+              alpha: dangerProximity > 0.55 ? 0.92 : 0.62,
+            ),
+            fontSize: dangerProximity > 0.55 ? 11 : 9,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
+            letterSpacing: 1.2,
           ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      warn.paint(
-        canvas,
-        Offset(center.dx - warn.width / 2, dangerTopY - 18),
-      );
+      final tx = engine.squareArena
+          ? (bin.right - warn.width - 10)
+          : (center.dx - warn.width / 2);
+      final ty = engine.squareArena
+          ? math.max(2.0, dangerTopY + 4)
+          : (dangerTopY - 18);
+      warn.paint(canvas, Offset(tx, ty));
     }
 
-    final clampedDropperX =
-        dropperX.clamp(center.dx - radius * 0.7, center.dx + radius * 0.7);
+    // Nişan kılavuz çizgisi (dropGuide) + hayalet önizleme + üstteki bırakılacak böcek (dropPreview)
+    if (showDropperPreview &&
+        dropperX != null &&
+        currentDropperTier != null) {
+      final tier = currentDropperTier!;
+      final clampedX = engine.squareArena
+          ? dropperX!.clamp(bin.left + tier.radius, bin.right - tier.radius)
+          : dropperX!.clamp(
+              center.dx - radius + tier.radius,
+              center.dx + radius - tier.radius,
+            );
+      final restY = engine.predictRestY(clampedX, tier.radius);
+      final previewY = math.max(tier.radius + 4, dangerTopY + 14);
 
-    // Dashed aim guide.
-    final guidePaint = Paint()
-      ..color = dropTier.color.withValues(alpha: 0.35)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    _drawDashedLine(
-      canvas,
-      Offset(clampedDropperX, center.dy - radius - 20),
-      Offset(clampedDropperX, center.dy + radius * 0.55),
-      guidePaint,
-    );
+      if (restY > previewY + 8) {
+        final guidePaint = Paint()
+          ..color = Colors.white.withValues(alpha: 0.32)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6;
+        _drawDashedLine(
+          canvas,
+          Offset(clampedX, previewY + tier.radius * 0.65),
+          Offset(clampedX, restY),
+          guidePaint,
+        );
 
-    // Ghost landing silhouette — predicted rest on pile / jar floor.
-    if (!isDropping) {
-      final ghostY = engine.predictRestY(clampedDropperX, dropTier.radius);
-      canvas.saveLayer(
-        null,
-        Paint()..color = const Color(0x55FFFFFF),
-      );
+        // Hedef noktada yarı saydam önizleme (showGhost)
+        final ghostRing = Paint()
+          ..color = tier.color.withValues(alpha: 0.38)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8;
+        canvas.drawCircle(Offset(clampedX, restY), tier.radius * 0.92, ghostRing);
+        _drawInsectSprite(
+          canvas,
+          clampedX,
+          restY,
+          tier,
+          0,
+          0.95,
+          opacity: 0.34,
+        );
+      }
+
+      // Üstte bırakılacak aktif böcek (dropPreview)
       _drawInsectSprite(
         canvas,
-        clampedDropperX,
-        ghostY,
-        dropTier,
+        clampedX,
+        previewY,
+        tier,
         0,
-        0.55,
+        1.0,
+        opacity: 0.96,
       );
-      canvas.restore();
-      // Shorten aim dash to ghost.
-      final tipPaint = Paint()
-        ..color = dropTier.color.withValues(alpha: 0.55)
-        ..strokeWidth = 2.5
-        ..style = PaintingStyle.stroke;
-      canvas.drawCircle(Offset(clampedDropperX, ghostY), 5, tipPaint);
-    }
-
-    final funnelPaint = Paint()..color = LululuColors.warningSolar;
-    final funnelPath = Path()
-      ..moveTo(clampedDropperX - 16, center.dy - radius - 4)
-      ..lineTo(clampedDropperX + 16, center.dy - radius - 4)
-      ..lineTo(clampedDropperX, center.dy - radius + 12)
-      ..close();
-    canvas.drawPath(funnelPath, funnelPaint);
-
-    if (!isDropping) {
-      final dropY = center.dy - radius - 45;
-      _drawInsectSprite(canvas, clampedDropperX, dropY, dropTier, 0.0, 1.0);
     }
 
     for (final body in engine.bodies) {
@@ -183,6 +204,7 @@ class GameArenaPainter extends CustomPainter {
         body.tier,
         body.angle,
         body.spawnScale,
+        squash: body.mergeSquash,
       );
     }
 
@@ -239,20 +261,31 @@ class GameArenaPainter extends CustomPainter {
     double y,
     InsectTier tier,
     double angle,
-    double scale,
-  ) {
+    double scale, {
+    double opacity = 1.0,
+    double squash = 0,
+  }) {
     canvas.save();
     canvas.translate(x, y);
     canvas.rotate(angle);
-    canvas.scale(scale);
+    final impact = squash.clamp(0.0, 1.0);
+    final tierScale = tier == InsectTier.cone ? coneSpriteScale : 1;
+    canvas.scale(
+      scale * tierScale * (1 + impact * 0.16),
+      scale * tierScale * (1 - impact * 0.12),
+    );
 
     final r = tier.radius;
     final imgInfo = insectImages[tier.assetPath];
     if (imgInfo != null) {
       final img = imgInfo.image;
-      final srcRect =
-          Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
-      final maxSide = r * 2.15;
+      final srcRect = Rect.fromLTWH(
+        0,
+        0,
+        img.width.toDouble(),
+        img.height.toDouble(),
+      );
+      final maxSide = r * 2;
       final aspect = img.width / img.height;
       final double dw;
       final double dh;
@@ -263,16 +296,19 @@ class GameArenaPainter extends CustomPainter {
         dh = maxSide;
         dw = maxSide * aspect;
       }
-      final dstRect =
-          Rect.fromCenter(center: Offset.zero, width: dw, height: dh);
-      canvas.drawImageRect(
-        img,
-        srcRect,
-        dstRect,
-        Paint()..filterQuality = FilterQuality.medium,
+      final dstRect = Rect.fromCenter(
+        center: Offset.zero,
+        width: dw,
+        height: dh,
       );
+      final spritePaint = Paint()..filterQuality = FilterQuality.medium;
+      if (opacity < 1.0) {
+        spritePaint.color = Color.fromRGBO(255, 255, 255, opacity);
+      }
+      canvas.drawImageRect(img, srcRect, dstRect, spritePaint);
     } else {
-      final blob = Paint()..color = tier.color.withValues(alpha: 0.85);
+      final blob = Paint()
+        ..color = tier.color.withValues(alpha: 0.85 * opacity);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromCenter(center: Offset.zero, width: r * 1.7, height: r * 2.1),
