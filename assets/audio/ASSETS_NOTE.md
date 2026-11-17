@@ -1,9 +1,29 @@
 # Viral TikTok ses klipleri — kaynak notu
 
-Bu klasördeki `*_siktigim` / `diva_*` / `lululu_nakarat` / `duktur` / `kanka` /
-`husur_aday` klipleri TikTok videolarından kesildi (mp3, 128k). Her klip aynı
-isimle `assets/design/sounds/` altında da bulunur; iki klasör de pubspec'te
-bildirilir, `GameAudio.allAssets` bütünlük testleri iki klasörü de denetler.
+## Kanonik klasör: `assets/audio/` (madde 17)
+
+Bu klasördeki TÜM ses dosyaları kanonik kopyadır. `GameAudio` sabitleri YALIN
+dosya adıdır (tam yol değil — Mac birleştirme kuralı, asla bozulmaz); oynatma
+anında `AudioManager._normalizeAssetPath` yalın adı `assets/audio/` ile
+birleştirir. Eski `assets/design/sounds/` önekiyle gelen tam yollar da aynı
+kanonik klasöre çevrilir, böylece eski yol kullanan çağrılar bile tek
+klasörden çalar.
+
+`assets/design/sounds/` altındaki 50 mp3 hâlâ diskte duruyor; bu klasördeki
+dosyaların bayt birebir kopyasıdır (isim listesi + md5 ile doğrulandı,
+2026-11-18). Ancak pubspec'teki `design/sounds/` girişi KALDIRILDI:
+`InsectTier.soundFile`/`voiceFile` (`lib/models/insect_tier.dart`) yalın
+dosya adıdır ve `AudioManager._normalizeAssetPath` ile `assets/audio/`'ya
+çözülür; `ZeroJankPreloader.criticalSoundAssets`
+(`lib/services/zero_jank_preloader.dart`) artık `assets/audio/`'yu gösterir.
+Kodda `design/sounds/`'a kalan göndermeler yalnızca yorumlar ile
+`AudioManager`'ın eski yolları kanonik klasöre çeviren uyumluluk katmanıdır;
+hiçbir ses o klasörden yüklenmez. Eski klasördeki kopyaların silinmesi,
+testler geçtikten sonraya bırakıldı — silme henüz YAPILMADI. Yeni klip
+ASLA `design/sounds/` altına eklenmez. Bütünlük testleri
+(`test/asset_integrity_test.dart`, grup 2) yalnız kanonik klasörü denetler.
+
+Aşağıdaki 7 klip TikTok videolarından kesildi (mp3, 128k).
 
 Klip → kaynak eşleşmesi (`GameAudio` sabiti parantez içinde):
 
@@ -39,3 +59,7 @@ Oynatma metotları `lib/services/audio_manager.dart` içindedir:
 `playMezarinaSiktigim`, `playDivaSinyal`, `playDivaYasla`,
 `playLululuNakarat`, `playDuktur`, `playKanka`, `playHusurAday`.
 Tümü ses ayarlarına (`voiceEnabled` + `sfxEnabled`) saygı duyar.
+
+Yeni klip eklerken: dosyayı YALNIZ `assets/audio/` altına koy, `GameAudio`'ya
+yalın dosya adıyla sabit ekle, `viralOneShots`/`allAssets` listesine dahil et.
+`assets/design/sounds/` altına kopya ekleme.

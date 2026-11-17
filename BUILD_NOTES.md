@@ -4,7 +4,7 @@ Bu dosya, oyunu kendi bilgisayarında derleyip çalıştıracak kişi (Selçuk) 
 
 ## Gereksinimler
 
-- Flutter SDK 3.11+ (Dart 3.x ile birlikte gelir)
+- Flutter SDK (`pubspec.yaml` içinde `environment.sdk: ^3.11.5` — bu Dart koşulunu sağlayan sürüm)
 - Android Studio / Xcode veya VS Code + Flutter eklentisi
 - Bir cihaz veya emülatör (Android emülatör / iOS simülatör)
 
@@ -27,26 +27,34 @@ ardından ana sayfa (hub) açılır.
 - `lib/screens/splash_screen.dart` — 3 sayfalık animasyonlu açılış + loading bar
 - `lib/services/energy_service.dart` — enerji (5/30, 5 dakikada +1, oyun başında −1)
 - `lib/screens/game_selector_screen.dart` — hub: STÜDYO bloğu + günlük görevler bloğu
-- `lib/modes/`, `lib/screens/game_screen.dart`, `lib/screens/grid_2048_screen.dart` — 10 oyun modu
+- `lib/modes/`, `lib/screens/game_screen.dart`, `lib/screens/grid_2048_screen.dart` — 11 oyun modu
 - `lib/screens/result_screen.dart` — ahşap temalı animasyonlu sonuç ekranı
 - `lib/theme/lululu_theme.dart` — renkler, fontlar (Exo 2 + Bangers), 48dp kuralı
 - `tasarim/lululu_tasarim.html` — interaktif tasarım prototipi (referans)
 
-## Bilinen kısıtlar / mock'lar
+## Bilinen kısıtlar
 
-- Giriş/kayıt (Ayarlar → Hesap) şu an mock'tur; Firebase Auth bağlantısı
-  `lib/services/auth_service.dart` içinde hazır ama prod keyleri girilmeden
-  gerçek giriş yapmaz.
-- Ödüllü reklamlar mock oynatıcıdır (5 sn kilitli sahte reklam).
-- Mağaza satın alımları mock'tur (IAP bağlı değil).
-- Günlük görev ilerlemesi şu an mock state ile dolar; gerçek oyun olayı
-  bağlantısı sonraki fazda yapılacak.
+- Giriş/kayıt cihaz-içi hesap kasasıyla (hash + salt) çalışır; Firebase Auth
+  bağlantısı `lib/services/auth_service.dart` içinde hazır ama
+  `DefaultFirebaseOptions.isConfigured` kapalıyken bulut girişi devre dışı
+  kalır, oyun yerel modda devam eder (`lib/services/firebase_bootstrap.dart`).
+- Ödüllü reklam YOK: reklam SDK'sı kurulu değil
+  (`IapService.rewardedAdsAvailable == false`); mock oynatıcı
+  (`showRewardedAdMock`) silindi — `lib/widgets/ad_mock.dart` yalnızca
+  açıklama bırakan 9 satırlık dosyadır; ödül düğmeleri yalnızca
+  "yakında" bilgisi gösterir.
+- Mağaza satın alımları `in_app_purchase` paketine bağlı gerçek akıştır
+  (`IapService`: ürün sorgusu, satın alma, `restorePurchases`); mağaza
+  ürünlerinin Play Console / App Store Connect'te tanımlı olması gerekir.
+- Günlük görev ilerlemesi gerçek oyun olaylarıyla dolar: 'play' tur
+  bitiminde (`finish_run.dart`), 'merge'/'combo' birleşmede, 'video'
+  Stüdyo ziyaretinde kaydedilir (`ProgressManager.recordTaskProgress`).
 - Tier 9–13 (Millî Formalı, Pembe Ceketli, Beyaz Hayalet, Gri Tişörtlü,
   Pembe Bornozlu) görselleri `assets/design/bugs_new/` altındadır;
-  sesleri henüz yok (sessizler).
-- Bu VM'de Flutter SDK olmadığı için kod derlenerek test edilmedi;
-  tüm `.dart` dosyaları `dart_bracket_check.py` ile sözdizimi yönünden
-  kontrol edildi. İlk `flutter run`'da çıkabilecek uyarılar normaldir.
+  sesleri `assets/audio/` altında mevcuttur (`tier9_ses.mp3`…`tier13_ses.mp3`
+  ve `voice_tier9.mp3`…`voice_tier13.mp3`).
+- Bu dalgada VM'de derleme koşulmadı; doğrulama kod okuma + dosya varlığı
+  ile yapıldı. İlk `flutter run`'da çıkabilecek uyarılar normaldir.
 
 ## Tasarım kararları (kalıcı)
 

@@ -7,6 +7,8 @@ Hazırlanma & Doğrulama: 2026-11-04. Kaynaklar:
 
 ## Tier 1–13 Böcek Sesleri (`tierN_ses.mp3` & `voice_tierN.mp3`)
 
+Replik sütunu 2026-11-18'de `lib/models/insect_tier.dart` içindeki `viralReplik` değerleriyle karşılaştırılıp kodla uyumlu hâle getirildi (kod esastır).
+
 | Dosya (`design/sounds/` & `audio/`) | Böcek | İmza Replik (`viralReplik`) | Süre | Ortalama / Tepe Seviye | Kaynak TikTok Bölümü |
 |---|---|---|---|---|---|
 | `tier1_ses.mp3` / `voice_tier1.mp3` | Bebek Huni | "Lülülü bebek!" | 3.20 sn | -19.6 dB / -5.6 dB | `7701817537155190023` (00:00.2) |
@@ -17,11 +19,11 @@ Hazırlanma & Doğrulama: 2026-11-04. Kaynaklar:
 | `tier6_ses.mp3` / `voice_tier6.mp3` | Hamam Can | "Sayın seyirciler flaş flaş!" | 3.50 sn | -17.8 dB / -4.3 dB | `7700956420036054293` (00:05.0) |
 | `tier7_ses.mp3` / `voice_tier7.mp3` | Kongo Lideri | "Kurban olduğum Kongo istilası!" | 3.80 sn | -19.7 dB / -4.9 dB | `7701289255338921237` (00:08.0) |
 | `tier8_ses.mp3` / `voice_tier8.mp3` | Hasta Bilge | "Dukturu arayın ölüyorum lülülü!" | 4.00 sn | -19.5 dB / -10.2 dB | `7701817537155190023` (01:10.0) |
-| `tier9_ses.mp3` / `voice_tier9.mp3` | Millî Formalı | "GOLLL LÜLÜLÜ!" | 3.20 sn | -16.9 dB / -5.8 dB | `7701289255338921237` (00:18.0) |
-| `tier10_ses.mp3` / `voice_tier10.mp3` | Pembe Ceketli | "Ciddi ol lülülü, toplantıdayım!" | 3.20 sn | -17.7 dB / -6.0 dB | `7700956420036054293` (00:35.0) |
-| `tier11_ses.mp3` / `voice_tier11.mp3` | Beyaz Hayalet | "Buuu! Lülülü korktu!" | 3.20 sn | -17.7 dB / -7.2 dB | `7701016952956849429` (00:25.0) |
-| `tier12_ses.mp3` / `voice_tier12.mp3` | Gri Tişörtlü | "Ben griyim, görünmezim lülülü!" | 3.20 sn | -18.1 dB / -8.5 dB | `7701817537155190023` (00:49.0) |
-| `tier13_ses.mp3` / `voice_tier13.mp3` | Pembe Bornozlu | "Bornozumla geldim lülülü!" | 3.50 sn | -17.7 dB / -7.0 dB | `7701016952956849429` (01:05.0) |
+| `tier9_ses.mp3` / `voice_tier9.mp3` | Millî Formalı | "Sahaya çıktık!" | 3.20 sn | -16.9 dB / -5.8 dB | `7701289255338921237` (00:18.0) |
+| `tier10_ses.mp3` / `voice_tier10.mp3` | Pembe Ceketli | "Tarzımsın!" | 3.20 sn | -17.7 dB / -6.0 dB | `7700956420036054293` (00:35.0) |
+| `tier11_ses.mp3` / `voice_tier11.mp3` | Beyaz Hayalet | "Görünmezim!" | 3.20 sn | -17.7 dB / -7.2 dB | `7701016952956849429` (00:25.0) |
+| `tier12_ses.mp3` / `voice_tier12.mp3` | Gri Tişörtlü | "Rahatına bak!" | 3.20 sn | -18.1 dB / -8.5 dB | `7701817537155190023` (00:49.0) |
+| `tier13_ses.mp3` / `voice_tier13.mp3` | Pembe Bornozlu | "Zirvedeyim!" | 3.50 sn | -17.7 dB / -7.0 dB | `7701016952956849429` (01:05.0) |
 
 ## Özel Karakter Replikleri & Mod Sesleri (`assets/audio/` & `assets/design/sounds/`)
 

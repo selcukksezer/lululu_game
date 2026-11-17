@@ -1,5 +1,5 @@
 name: lululu_game
-description: "A new Flutter project."
+description: "LÜLÜLÜ — viral TikTok sesleriyle böcek birleştirme arcade oyunu. LULULU bug-merge arcade game with viral TikTok sounds."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -29,6 +29,8 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
@@ -78,25 +80,16 @@ flutter:
 
   assets:
     - assets/
-    - assets/appicon/
     - assets/icons/
     - assets/icons2/
     - assets/bugs/
     - assets/obstacles/
     - assets/osman/
-    - assets/sounds/
-    - assets/refs/
     - assets/game/
     - assets/images/
     - assets/images/stickers/
-    - assets/images/bg/
-    - assets/images/scream/
-    - assets/images/source_refs/
-    - assets/ui/kenney/
     - assets/ui/kenney/Blue/Default/
     - assets/ui/kenney/Blue/Double/
-    - assets/ui/kenney/Extra/Default/
-    - assets/ui/kenney/Extra/Double/
     - assets/ui/kenney/Green/Default/
     - assets/ui/kenney/Green/Double/
     - assets/ui/kenney/Grey/Default/
@@ -107,53 +100,21 @@ flutter:
     - assets/ui/kenney/Yellow/Double/
     - assets/audio/
     - assets/models/
-    - assets/design/
-    - assets/design/app_icons/
     - assets/design/backgrounds/
     - assets/design/bugs_hd/
     - assets/design/bugs_new/
     - assets/design/images/
     - assets/design/images/stickers/
-    - assets/design/icons/
-    - assets/design/icons/extra_icons/
     - assets/design/icons/extra_icons/All_Icons/
-    - assets/design/icons/extra_icons/01_Core_Interface/
-    - assets/design/icons/extra_icons/02_Currency_and_Valuables/
-    - assets/design/icons/extra_icons/04_Shop_and_Premium/
-    - assets/design/icons/extra_icons/05_Progression_and_Achievements/
-    - assets/design/icons/extra_icons/06_Quests_and_Daily_Rewards/
-    - assets/design/icons/extra_icons/07_Chests_and_Event_Rewards/
-    - assets/design/icons/extra_icons/08_Boosts_and_Multipliers/
-    - assets/design/icons/extra_icons/09_Potions_and_Consumables/
-    - assets/design/icons/extra_icons/10_Pets_and_Eggs/
-    - assets/design/icons/extra_icons/11_Rarity_and_Inventory/
-    - assets/design/icons/extra_icons/12_Weapons_and_Abilities/
-    - assets/design/icons/extra_icons/13_Equipment_and_Tools/
-    - assets/design/icons/extra_icons/14_Stats_and_Interactions/
-    - assets/design/icons/extra_icons/15_World_and_Travel/
-    - assets/design/icons/extra_icons/16_Time_and_Tycoon_Resources/
-    - assets/design/icons/extra_icons/17_Bonus_Icons/
-    - assets/design/icons/itch_icons/Game_Essentials_Simple_Free_Demo/All_Icons/
-    - assets/design/obstacles/
-    - assets/design/orig/
-    - assets/design/repo_originals/
-    - assets/design/sounds/
+    - assets/design/osman/
     - assets/design/ui/
-    - assets/design/ui/bugs/
     - assets/design/ui/icons/
     - assets/design/ui/icons2/
-    - assets/design/ui/obstacles/
-    - assets/design/ui/osman/
-    - assets/design/ui/refs/
-    - assets/design/ui/sounds/
     - assets/design/ui/studio_watch/
     - assets/design/ui/studio_create/
-    - assets/design/ui/studio_upload/
     - assets/design/ui/studio_gif/
     - assets/design/ui/studio_downloads/
     - assets/design/splash/
-    - tasarim/assets/osman/
-    - tasarim/assets/sounds/
     - assets/fonts/
 
 
