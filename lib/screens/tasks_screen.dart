@@ -133,7 +133,7 @@ class _TasksScreenState extends State<TasksScreen> {
   Widget build(BuildContext context) {
     final mqTop = MediaQuery.of(context).padding.top;
     final screenW = MediaQuery.sizeOf(context).width;
-    final isNarrow = screenW < 400;
+    final shrinkSubtitle = screenW < 500;
 
     return ListenableBuilder(
       listenable: Listenable.merge([
@@ -144,11 +144,7 @@ class _TasksScreenState extends State<TasksScreen> {
         _syncFromProgressManager();
         final l10n = context.l10n;
         final rawCoins = ProgressManager.instance.coins;
-        final coinsText = (rawCoins == ProgressManager.defaultCoins ||
-                rawCoins == 300 ||
-                rawCoins == 12450)
-            ? '12.450'
-            : _formatDots(rawCoins);
+        final coinsText = _formatDots(rawCoins);
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F6FA),
@@ -401,7 +397,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                                   right: 0,
                                                   top: 75.7,
                                                   height: 19.4,
-                                                  child: isNarrow
+                                                  child: shrinkSubtitle
                                                       ? FittedBox(
                                                           fit: BoxFit.scaleDown,
                                                           alignment: Alignment

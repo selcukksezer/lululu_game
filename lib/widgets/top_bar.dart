@@ -49,7 +49,7 @@ class LululuTopBar extends StatelessWidget {
       listenable: ProgressManager(),
       builder: (context, _) {
         final pm = ProgressManager();
-        final displayCoins = pm.coins == 300 ? 12450 : pm.coins;
+        final displayCoins = pm.coins;
         final displayStars = pm.totalStars > 0 ? pm.totalStars : 86;
         final level = pm.unlockedLevel > 1 ? (17 + pm.unlockedLevel) : 18;
         final rawXp = 1240 +

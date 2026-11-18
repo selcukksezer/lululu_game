@@ -80,10 +80,7 @@ class _ModesScreenState extends State<ModesScreen> {
       builder: (context, _) {
         final l10n = context.l10n;
         final rawCoins = pm.coins;
-        final coinsText =
-            (rawCoins == ProgressManager.defaultCoins || rawCoins == 300)
-                ? '12.450'
-                : _formatNumber(rawCoins);
+        final coinsText = _formatNumber(rawCoins);
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F6FA),

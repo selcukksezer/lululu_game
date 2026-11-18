@@ -1516,9 +1516,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                       _fmtInt(
                         widget.prototypeVisualState
                             ? 12450
-                            : (ProgressManager().coins > 0
-                                  ? ProgressManager().coins
-                                  : 12450),
+                            : ProgressManager().coins,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.clip,

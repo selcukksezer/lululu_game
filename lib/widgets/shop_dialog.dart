@@ -501,7 +501,7 @@ class _ShopScreenState extends State<ShopScreen> {
       builder: (context, _) {
         final rawCoins = _pm.coins;
         final l10n = context.l10n;
-        final coinsText = rawCoins == 1240 ? '12.450' : _formatNumber(rawCoins);
+        final coinsText = _formatNumber(rawCoins);
         final mqTop = MediaQuery.of(context).padding.top;
         final topPad = mqTop > 0 ? mqTop : 35.0;
         final parentHasExtendBody =

@@ -437,6 +437,8 @@ abstract class AppLocalizations {
   String get vibrationSubtitle;
   String get languageTitle;
   String get languageSubtitle;
+  String get dangerLineLabel;
+  String get dangerAlertLabel;
   String get privacyTitle;
   String get privacySubtitle;
   String get deletingLabel;

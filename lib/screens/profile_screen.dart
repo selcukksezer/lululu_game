@@ -153,8 +153,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ? l10n.guestSessionHandle
                     : '@${userName.toLowerCase().replaceAll(' ', '')} · ${auth.providerLabel}';
 
-        final displayCoins =
-            pm.coins == ProgressManager.defaultCoins ? 12450 : pm.coins;
+        final displayCoins = pm.coins;
         final totalBest = pm.total11ModesScore;
         final displayTotalScore = 7915 + totalBest;
         final playProgress = pm.dailyTaskProgress['play'] ?? 0;

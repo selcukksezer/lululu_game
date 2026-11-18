@@ -803,6 +803,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get languageSubtitle => 'Game language: Türkçe or English';
 
   @override
+  String get dangerLineLabel => 'DANGER LINE';
+
+  @override
+  String get dangerAlertLabel => 'DANGER!';
+
+  @override
   String get privacyTitle => 'PRIVACY POLICY';
 
   @override

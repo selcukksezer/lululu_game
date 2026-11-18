@@ -19,6 +19,31 @@ String _trUpper(String input, Locale locale) {
       .toUpperCase();
 }
 
+/// Nadirlik etiketlerinin EN karşılıkları (TR metin aynen korunur;
+/// bu ekranın kendi veri listesindeki yazımlarla birebir eşleşir).
+const _kRarityEn = <String, String>{
+  'Sıradan': 'Common',
+  'Seyrek': 'Uncommon',
+  'Nadir': 'Rare',
+  'Destansı': 'Epic',
+  'Efsanevi': 'Legendary',
+  'Mitik': 'Mythic',
+  'Gizli': 'Secret',
+  'Evrim Kristali': 'Evolution Crystal',
+  'EFSANEVİ': 'LEGENDARY',
+  'DESTANSI': 'EPIC',
+  'MİTİK': 'MYTHIC',
+  'KOZMİK': 'COSMIC',
+  'ZİRVE': 'SUMMIT',
+};
+
+String _rarityLabel(BuildContext context, String rarity) {
+  if (Localizations.localeOf(context).languageCode == 'en') {
+    return _kRarityEn[rarity] ?? rarity;
+  }
+  return rarity;
+}
+
 class _BugTierInfo {
   final int tier;
   final String name;
@@ -324,7 +349,7 @@ class _TiersScreenState extends State<TiersScreen> {
   Widget _buildEvoRow(_BugTierInfo t) {
     return Semantics(
       button: true,
-      label: '${context.l10n.tierLabel(t.tier)}, ${_trUpper(t.name, Localizations.localeOf(context))}, ${t.rarity}',
+      label: '${context.l10n.tierLabel(t.tier)}, ${_trUpper(t.name, Localizations.localeOf(context))}, ${_rarityLabel(context, t.rarity)}',
       child: GestureDetector(
         onTap: () => _onTapTier(t),
         child: Container(
@@ -399,7 +424,7 @@ class _TiersScreenState extends State<TiersScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        t.rarity,
+                        _rarityLabel(context, t.rarity),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(

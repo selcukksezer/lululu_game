@@ -23,6 +23,8 @@ class GameArenaPainter extends CustomPainter {
   final double? dropperX;
   final InsectTier? currentDropperTier;
   final bool showDropperPreview;
+  final String dangerLineLabel;
+  final String dangerAlertLabel;
 
   GameArenaPainter({
     required this.engine,
@@ -34,6 +36,8 @@ class GameArenaPainter extends CustomPainter {
     this.dropperX,
     this.currentDropperTier,
     this.showDropperPreview = false,
+    required this.dangerLineLabel,
+    required this.dangerAlertLabel,
   });
 
   @override
@@ -127,7 +131,7 @@ class GameArenaPainter extends CustomPainter {
     if (dangerProximity > 0.55 || showDropperPreview) {
       final warn = TextPainter(
         text: TextSpan(
-          text: dangerProximity > 0.55 ? 'TEHLİKE!' : 'TEHLİKE HATTI',
+          text: dangerProximity > 0.55 ? dangerAlertLabel : dangerLineLabel,
           style: TextStyle(
             color: LululuColors.mysticRuby.withValues(
               alpha: dangerProximity > 0.55 ? 0.92 : 0.62,

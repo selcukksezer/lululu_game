@@ -1325,9 +1325,7 @@ class _MakarayizChrome extends StatelessWidget {
                       _format(
                         prototypeVisualState
                             ? 12450
-                            : (ProgressManager().coins > 0
-                                  ? ProgressManager().coins
-                                  : 12450),
+                            : ProgressManager().coins,
                       ),
                       style: GoogleFonts.nunito(
                         fontSize: 13.5,
@@ -1480,9 +1478,7 @@ class _MakarayizChrome extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     _format(
-                      ProgressManager().coins > 0
-                          ? ProgressManager().coins
-                          : 12450,
+                      ProgressManager().coins,
                     ),
                     style: GoogleFonts.nunito(
                       fontSize: 13.5,

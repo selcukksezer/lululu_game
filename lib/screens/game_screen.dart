@@ -2476,6 +2476,8 @@ class _GameScreenState extends State<GameScreen>
                       currentDropperTier: _currentDropperTier,
                       showDropperPreview:
                           !_isFinished && !_paused && !_isDropping,
+                      dangerLineLabel: context.l10n.dangerLineLabel,
+                      dangerAlertLabel: context.l10n.dangerAlertLabel,
                     ),
                   ),
                 ),

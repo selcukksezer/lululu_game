@@ -403,9 +403,7 @@ class ArcadeScreen extends StatelessWidget {
                                     const SizedBox(width: 6),
                                     Text(
                                       _fmt(
-                                        ProgressManager().coins > 0
-                                            ? ProgressManager().coins
-                                            : 12450,
+                                        ProgressManager().coins,
                                       ),
                                       style: GoogleFonts.nunito(
                                         fontSize: 13.5,

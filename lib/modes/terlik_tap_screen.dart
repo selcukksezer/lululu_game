@@ -1133,7 +1133,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     final hasHostStatusBar = topPad > 0;
     final coins = widget.prototypeVisualState
         ? 12450
-        : (ProgressManager().coins > 0 ? ProgressManager().coins : 12450);
+        : ProgressManager().coins;
     final bonusItems = [
       stockBonusWithResult(
         id: 'dblslip',

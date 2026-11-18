@@ -1073,7 +1073,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
-                                        _formatCoins(coins > 0 ? coins : 12450),
+                                        _formatCoins(coins),
                                         maxLines: 1,
                                         overflow: TextOverflow.clip,
                                         softWrap: false,
@@ -1121,9 +1121,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                             alignment: Alignment.centerLeft,
                                             fit: BoxFit.scaleDown,
                                             child: Text(
-                                              _formatCoins(
-                                                coins > 0 ? coins : 12450,
-                                              ),
+                                              _formatCoins(coins),
                                               style: GoogleFonts.nunito(
                                                 fontSize: 13.5,
                                                 fontWeight: FontWeight.w900,

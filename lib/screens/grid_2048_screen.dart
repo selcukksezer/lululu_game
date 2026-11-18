@@ -869,7 +869,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
   /// `.mode-top` (`rect: [0, 35.4, 430, 54]`)
   Widget _buildModeTop() {
-    final coins = ProgressManager().coins > 0 ? ProgressManager().coins : 12450;
+    final coins = ProgressManager().coins;
 
     final topRow = Row(
       crossAxisAlignment: CrossAxisAlignment.center,

@@ -1019,7 +1019,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              '2X · ${l10n.comingSoon}',
+                              '2X',
                               style: GoogleFonts.baloo2(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,

@@ -118,10 +118,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             LeaderboardService.instance.getOverallTop().isEmpty;
 
         final scoreItems = <_ScoreRowData>[
-          const _ScoreRowData(
+          _ScoreRowData(
             rank: 4,
             name: 'TerlikUstası',
-            level: 'Seviye 24',
+            level: context.l10n.levelWithValue(24),
             score: '8.540',
             avatar: 'assets/design/bugs_hd/tier4_hd.png',
             imgTop: 2.4,
@@ -137,28 +137,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             imgHeight: 62.3,
             isMe: true,
           ),
-          const _ScoreRowData(
+          _ScoreRowData(
             rank: 6,
             name: 'MakaraMehmet',
-            level: 'Seviye 21',
+            level: context.l10n.levelWithValue(21),
             score: '7.402',
             avatar: 'assets/design/bugs_hd/tier3_hd.png',
             imgTop: 2.4,
             imgHeight: 35.2,
           ),
-          const _ScoreRowData(
+          _ScoreRowData(
             rank: 7,
             name: 'HuniKafa',
-            level: 'Seviye 15',
+            level: context.l10n.levelWithValue(15),
             score: '6.988',
             avatar: 'assets/design/bugs_hd/tier1_hd.png',
             imgTop: 5.6,
             imgHeight: 82.6,
           ),
-          const _ScoreRowData(
+          _ScoreRowData(
             rank: 8,
             name: 'BilgeDede',
-            level: 'Seviye 27',
+            level: context.l10n.levelWithValue(27),
             score: '6.511',
             avatar: 'assets/design/bugs_hd/tier8_hd.png',
             imgTop: 3.2,
@@ -878,21 +878,17 @@ class _MeRowOutlinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final innerRRect = RRect.fromRectAndRadius(
+    final rrect = RRect.fromRectAndRadius(
       Offset.zero & size,
       const Radius.circular(16),
     );
-    final outerRRect = innerRRect.inflate(2.0);
-    final ringPath = Path.combine(
-      PathOperation.difference,
-      Path()..addRRect(outerRRect),
-      Path()..addRRect(innerRRect),
-    );
-    canvas.drawPath(
-      ringPath,
+    // Dış hat kontur olarak çizilir (dolgu + yol farkı değil).
+    canvas.drawRRect(
+      rrect,
       Paint()
         ..color = const Color(0xFFE01E5A)
-        ..style = PaintingStyle.fill,
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
     );
   }
 

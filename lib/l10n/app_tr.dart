@@ -807,6 +807,12 @@ class AppLocalizationsTr extends AppLocalizations {
   String get languageSubtitle => 'Oyun dili: Türkçe veya English';
 
   @override
+  String get dangerLineLabel => 'TEHLİKE HATTI';
+
+  @override
+  String get dangerAlertLabel => 'TEHLİKE!';
+
+  @override
   String get privacyTitle => 'GİZLİLİK POLİTİKASI';
 
   @override
