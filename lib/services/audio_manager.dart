@@ -10,11 +10,11 @@ import 'haptic_service.dart';
 import 'progress_manager.dart';
 
 /// Asset filenames under the single canonical folder `assets/audio/`
-/// (madde 17: the byte-identical `assets/design/sounds/` copies are legacy
-/// duplicates, kept on disk only until the remaining migration lands —
-/// see `assets/audio/ASSETS_NOTE.md`). Every constant here is a BARE
-/// filename, never a full path (Mac merge rule); [_normalizeAssetPath]
-/// joins it with `audio/` at playback time.
+/// (madde 17: the byte-identical legacy duplicates were deleted; only
+/// `assets/audio/` remains — see `assets/audio/ASSETS_NOTE.md`).
+/// Every constant here is a BARE filename, never a full path
+/// (Mac merge rule); [_normalizeAssetPath] joins it with `audio/`
+/// at playback time.
 abstract final class GameAudio {
   static const sfxAydinlatBeam = 'sfx_aydinlat_beam.mp3';
   static const sfxButtonTap = 'sfx_button_tap.mp3';
@@ -547,16 +547,9 @@ class AudioManager {
     if (name.startsWith('audio/')) {
       return name;
     }
-    // Canonical folder is `assets/audio/` (madde 17): every clip that used
-    // to live under `assets/design/sounds/` (or a bare `sounds/` prefix) is
-    // byte-identical in `assets/audio/`, so legacy full paths are rewritten
-    // here and keep playing from the single canonical folder. Bare
-    // filenames (every `GameAudio` constant) never reach this branch.
-    for (final legacy in ['design/sounds/', 'sounds/']) {
-      if (name.startsWith(legacy)) {
-        return 'audio/${name.substring(legacy.length)}';
-      }
-    }
+    // Canonical folder is `assets/audio/` (madde 17): the legacy duplicate
+    // folders were deleted, so every name resolves here. Bare filenames
+    // (every `GameAudio` constant) take the `audio/` prefix below.
     return 'audio/$name';
   }
 
