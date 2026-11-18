@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/lululu_game_mode.dart';
 import '../../services/progress_manager.dart';
 import '../../theme/lululu_theme.dart';
@@ -148,7 +149,7 @@ class _FeaturedModeBannerState extends State<FeaturedModeBanner> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Text(
-                            'HEMEN OYNA',
+                            context.l10n.playNow,
                             style: GoogleFonts.exo2(
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -165,7 +166,7 @@ class _FeaturedModeBannerState extends State<FeaturedModeBanner> {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 }

@@ -382,7 +382,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                   ],
                 ),
               ),
-            );
+            ),
           );
         },
       ),
@@ -985,7 +985,7 @@ class _LevelMapTileState extends State<_LevelMapTile> {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 }

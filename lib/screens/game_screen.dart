@@ -2029,13 +2029,15 @@ class _GameScreenState extends State<GameScreen>
           children: [
             for (var i = 0; i < tiers.length; i++) ...[
               if (i > 0)
-                const Text(
-                  '›',
-                  style: TextStyle(
-                    fontFamily: 'Nunito',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0x73FFFFFF),
+                const ExcludeSemantics(
+                  child: Text(
+                    '›',
+                    style: TextStyle(
+                      fontFamily: 'Nunito',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0x73FFFFFF),
+                    ),
                   ),
                 ),
               Opacity(

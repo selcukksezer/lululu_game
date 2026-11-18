@@ -1852,7 +1852,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
             ],
           ),
         ),
-      );
+      ),
     );
   }
 

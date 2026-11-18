@@ -1670,7 +1670,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
             const SizedBox(width: 20),
             _buildPowerBtn(
               iconPath: 'assets/icons2/wand.png',
-              label: context.l10n.shopPowerShuffleName.toUpperCase(),
+              label: context.l10n.shopPowerShuffleNameCaps,
               count: _shuffleCount,
               onTap: _useShuffle,
             ),
@@ -1788,7 +1788,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 
@@ -1845,7 +1845,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    child: Semantics(
+                    Semantics(
                       button: true,
                       label: context.l10n.understoodButton,
                       child: GestureDetector(
@@ -1925,7 +1925,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  child: Semantics(
+                  Semantics(
                     button: true,
                     label: context.l10n.resume,
                     child: GestureDetector(
@@ -1951,7 +1951,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  child: Semantics(
+                  Semantics(
                     button: true,
                     label: context.l10n.restart,
                     child: GestureDetector(

@@ -697,7 +697,7 @@ class _AuthPanelState extends State<AuthPanel> {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 
@@ -809,7 +809,7 @@ class _AuthPanelState extends State<AuthPanel> {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 
@@ -893,7 +893,7 @@ class _AuthPanelState extends State<AuthPanel> {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 }

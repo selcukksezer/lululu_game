@@ -284,7 +284,7 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 

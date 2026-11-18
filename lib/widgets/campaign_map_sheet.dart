@@ -61,6 +61,16 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
     LululuColors.warningSolar,
   ];
 
+  /// Sandık ödülü güçlendirici anahtarlarının büyük harfli görünen adları.
+  /// Dart'ın toUpperCase() 'terlik' → 'TERLIK' üretir (doğrusu 'TERLİK');
+  /// bilinen anahtarlar bu eşlemeden alınır, bilinmeyen değerde
+  /// toUpperCase() yedeğine düşülür.
+  static const Map<String, String> _boosterDisplayNames = {
+    'terlik': 'TERLİK',
+    'raid': 'RAID',
+    'f16': 'F16',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -102,7 +112,8 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
           milestoneStars,
           reward.coinsGranted,
           reward.boosterCount,
-          reward.boosterKey.toUpperCase(),
+          _boosterDisplayNames[reward.boosterKey] ??
+              reward.boosterKey.toUpperCase(),
         );
       });
     }
@@ -403,7 +414,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                       ],
                     ),
                   ),
-                );
+                ),
               );
             },
           ),
@@ -625,7 +636,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 
@@ -796,7 +807,7 @@ class _CampaignLevelNodeCard extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 }

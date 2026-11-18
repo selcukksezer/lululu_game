@@ -859,7 +859,7 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 
@@ -988,7 +988,7 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 
@@ -1079,7 +1079,7 @@ class _AuthScreenState extends State<AuthScreen> {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 }

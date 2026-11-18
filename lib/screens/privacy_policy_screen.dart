@@ -346,7 +346,7 @@ class _DeleteAccountButtonState extends State<_DeleteAccountButton> {
                 ),
               ),
             ),
-          );
+          ),
         );
       },
     );

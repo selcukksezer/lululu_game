@@ -62,7 +62,7 @@ class HbOverlay extends StatelessWidget {
                       child: ClipRect(
                         clipper: const _HalfRectClipper(leftHalf: true),
                         child: Image.asset(
-                          'assets/design/ui/icon_heart_exact.webp',
+                          'assets/design/ui/icon_heart_exact.png',
                           width: 132,
                           height: 132,
                           fit: BoxFit.contain,
@@ -82,7 +82,7 @@ class HbOverlay extends StatelessWidget {
                       child: ClipRect(
                         clipper: const _HalfRectClipper(leftHalf: false),
                         child: Image.asset(
-                          'assets/design/ui/icon_heart_exact.webp',
+                          'assets/design/ui/icon_heart_exact.png',
                           width: 132,
                           height: 132,
                           fit: BoxFit.contain,
@@ -99,25 +99,27 @@ class HbOverlay extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Text(
-              tagText,
-              style: GoogleFonts.baloo2(
-                fontSize: 32,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: 1.2,
-                shadows: const [
-                  Shadow(
-                    color: Color(0xFF7A082E),
-                    offset: Offset(0, 4),
-                    blurRadius: 0,
-                  ),
-                  Shadow(
-                    color: Color(0x8C000000),
-                    offset: Offset(0, 8),
-                    blurRadius: 18,
-                  ),
-                ],
+            ExcludeSemantics(
+              child: Text(
+                tagText,
+                style: GoogleFonts.baloo2(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: 1.2,
+                  shadows: const [
+                    Shadow(
+                      color: Color(0xFF7A082E),
+                      offset: Offset(0, 4),
+                      blurRadius: 0,
+                    ),
+                    Shadow(
+                      color: Color(0x8C000000),
+                      offset: Offset(0, 8),
+                      blurRadius: 18,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

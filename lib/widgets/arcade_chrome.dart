@@ -1159,6 +1159,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
     setState(() => _shared = true);
     unawaited(
       ScoreShareCard.instance.share(
+        l10n: context.l10n,
         modeTitle: widget.modeTitle ?? widget.title,
         score: widget.score,
         best: widget.best,
@@ -1838,6 +1839,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
     return Opacity(
       opacity: disabled ? 0.55 : 1.0,
       child: LululuPress(
+        enabled: !disabled,
         onTap: disabled ? () {} : onTap,
         child: Container(
           width: double.infinity,

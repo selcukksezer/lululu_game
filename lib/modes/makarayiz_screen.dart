@@ -937,7 +937,12 @@ class MakarayizScreenState extends State<MakarayizScreen>
           child: Text(
             widget.prototypeVisualState
                 ? 'MAKARAYIZ ABİ!'
-                : bug.viralReplik.toUpperCase(),
+                // TR büyük harf: Dart'ın toUpperCase() 'ı'→'I',
+                // 'ş'→'Ş' vb.'yi doğru yapar ama 'i'→'I' üretir
+                // (doğrusu 'İ'). viralReplik her dilde Türkçedir
+                // (bkz. insect_tier.dart), o yüzden 'i' önce 'İ'ye
+                // çevrilir, sonra toUpperCase() uygulanır.
+                : bug.viralReplik.replaceAll('i', 'İ').toUpperCase(),
             textAlign: TextAlign.center,
             maxLines: 2,
             style: GoogleFonts.bangers(
@@ -1163,7 +1168,7 @@ class _MakarayizChrome extends StatelessWidget {
                     ),
                   ),
                 ),
-                _dock(wideScreen: wideScreen),
+                _dock(context, wideScreen: wideScreen),
               ],
             ),
             ?overlay,
@@ -1645,7 +1650,7 @@ class _MakarayizChrome extends StatelessWidget {
     );
   }
 
-  Widget _dock({required bool wideScreen}) {
+  Widget _dock(BuildContext context, {required bool wideScreen}) {
     return SizedBox(
       height: wideScreen ? 90.8 : 92,
       child: Padding(
@@ -1656,6 +1661,7 @@ class _MakarayizChrome extends StatelessWidget {
             for (var i = 0; i < bonuses.length; i++) ...[
               if (i > 0) const SizedBox(width: 20),
               _bonusButton(
+                context,
                 bonuses[i],
                 prototypeVisualState ? const [2, 2, 1][i] : bonuses[i].count,
                 wideScreen: wideScreen,
@@ -1668,6 +1674,7 @@ class _MakarayizChrome extends StatelessWidget {
   }
 
   Widget _bonusButton(
+    BuildContext context,
     ModeBonus bonus,
     int count, {
     required bool wideScreen,

@@ -449,7 +449,7 @@ class _TiersScreenState extends State<TiersScreen> {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 

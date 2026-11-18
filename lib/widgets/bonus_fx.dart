@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/lululu_theme.dart';
 
 /// Her bonusa özel tek seferlik kullanım efekti.
@@ -138,7 +139,9 @@ class _TerlikFx extends StatelessWidget {
                   .fadeOut(delay: (420 + i * 40).ms, duration: 200.ms),
             ),
           // Fırlayan terlik.
-          const Text('🩴', style: TextStyle(fontSize: 76))
+          const ExcludeSemantics(
+            child: Text('🩴', style: TextStyle(fontSize: 76)),
+          )
               .animate()
               .scaleXY(begin: 0.4, end: 1.15, duration: 160.ms)
               .moveY(
@@ -153,18 +156,20 @@ class _TerlikFx extends StatelessWidget {
           // "ŞAK!" yazısı.
           Positioned(
             top: 26,
-            child: Text(
-              'ŞAK!',
-              style: GoogleFonts.bangers(
-                fontSize: 52,
-                color: LululuColors.warningSolar,
-                shadows: const [
-                  Shadow(
-                    color: LululuColors.carbonVoid,
-                    blurRadius: 0,
-                    offset: Offset(3, 3),
-                  ),
-                ],
+            child: ExcludeSemantics(
+              child: Text(
+                context.l10n.effectSlap,
+                style: GoogleFonts.bangers(
+                  fontSize: 52,
+                  color: LululuColors.warningSolar,
+                  shadows: const [
+                    Shadow(
+                      color: LululuColors.carbonVoid,
+                      blurRadius: 0,
+                      offset: Offset(3, 3),
+                    ),
+                  ],
+                ),
               ),
             )
                 .animate()
@@ -234,7 +239,9 @@ class _SpreyFx extends StatelessWidget {
                   .fadeOut(delay: (i * 45 + 240).ms, duration: 240.ms),
             ),
           // Merkezde sprey kutusu parlaması.
-          const Text('🧴', style: TextStyle(fontSize: 54))
+          const ExcludeSemantics(
+            child: Text('🧴', style: TextStyle(fontSize: 54)),
+          )
               .animate()
               .scaleXY(begin: 0.5, end: 1.2, duration: 180.ms)
               .fadeOut(delay: 420.ms, duration: 200.ms),
@@ -360,7 +367,9 @@ class _BombaFx extends StatelessWidget {
               .fadeIn(duration: 60.ms)
               .scaleXY(begin: 0.4, end: 1.1, duration: 120.ms)
               .fadeOut(delay: 120.ms, duration: 320.ms),
-          const Text('💥', style: TextStyle(fontSize: 84))
+          const ExcludeSemantics(
+            child: Text('💥', style: TextStyle(fontSize: 84)),
+          )
               .animate()
               .fadeIn(duration: 1.ms, delay: 60.ms)
               .scaleXY(
@@ -604,7 +613,9 @@ class _BuzFx extends StatelessWidget {
             Positioned(
               left: 60 + rng.nextDouble() * 120,
               top: 40 + rng.nextDouble() * 60,
-              child: const Text('❄', style: TextStyle(fontSize: 26, color: _ice))
+              child: const ExcludeSemantics(
+                child: Text('❄', style: TextStyle(fontSize: 26, color: _ice)),
+              )
                   .animate()
                   .fadeIn(duration: 1.ms, delay: (i * 45).ms)
                   .moveY(
@@ -622,7 +633,9 @@ class _BuzFx extends StatelessWidget {
                   )
                   .fadeOut(delay: (i * 45 + 380).ms, duration: 180.ms),
             ),
-          const Text('🧊', style: TextStyle(fontSize: 64))
+          const ExcludeSemantics(
+            child: Text('🧊', style: TextStyle(fontSize: 64)),
+          )
               .animate()
               .scaleXY(
                 begin: 0.4,
@@ -669,7 +682,9 @@ class _MiknatisFx extends StatelessWidget {
                 .animate()
                 .scaleXY(begin: 1.25, end: 0.35, duration: 560.ms, curve: Curves.easeIn)
                 .fadeOut(delay: 400.ms, duration: 200.ms),
-          const Text('🧲', style: TextStyle(fontSize: 58))
+          const ExcludeSemantics(
+            child: Text('🧲', style: TextStyle(fontSize: 58)),
+          )
               .animate()
               .scaleXY(begin: 0.4, end: 1.15, duration: 220.ms, curve: Curves.elasticOut)
               .fadeOut(delay: 430.ms, duration: 200.ms),
@@ -697,11 +712,13 @@ class _YildizFx extends StatelessWidget {
             Positioned(
               left: 30 + rng.nextDouble() * 180,
               top: 0,
-              child: Text(
-                i.isEven ? '⭐' : '✦',
-                style: const TextStyle(
-                  fontSize: 26,
-                  color: LululuColors.warningSolar,
+              child: ExcludeSemantics(
+                child: Text(
+                  i.isEven ? '⭐' : '✦',
+                  style: const TextStyle(
+                    fontSize: 26,
+                    color: LululuColors.warningSolar,
+                  ),
                 ),
               )
                   .animate()
@@ -724,18 +741,20 @@ class _YildizFx extends StatelessWidget {
           // "KOMBO!" yazısı.
           Positioned(
             bottom: 30,
-            child: Text(
-              'KOMBO!',
-              style: GoogleFonts.bangers(
-                fontSize: 48,
-                color: LululuColors.warningSolar,
-                shadows: const [
-                  Shadow(
-                    color: LululuColors.carbonVoid,
-                    blurRadius: 0,
-                    offset: Offset(3, 3),
-                  ),
-                ],
+            child: ExcludeSemantics(
+              child: Text(
+                context.l10n.effectCombo,
+                style: GoogleFonts.bangers(
+                  fontSize: 48,
+                  color: LululuColors.warningSolar,
+                  shadows: const [
+                    Shadow(
+                      color: LululuColors.carbonVoid,
+                      blurRadius: 0,
+                      offset: Offset(3, 3),
+                    ),
+                  ],
+                ),
               ),
             )
                 .animate()
@@ -791,11 +810,13 @@ class _GoldBurstFx extends StatelessWidget {
                 final a = i * 2 * pi / 10 + rng.nextDouble() * 0.4;
                 final dx = cos(a) * 95;
                 final dy = sin(a) * 95;
-                return const Text(
-                  '✦',
-                  style: TextStyle(
-                    fontSize: 24,
-                    color: LululuColors.warningSolar,
+                return const ExcludeSemantics(
+                  child: Text(
+                    '✦',
+                    style: TextStyle(
+                      fontSize: 24,
+                      color: LululuColors.warningSolar,
+                    ),
                   ),
                 )
                     .animate()

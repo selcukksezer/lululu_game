@@ -46,29 +46,7 @@ Future<void> showHowToPlayOverlay(
   final effectiveTitle = (modeTitle != null && modeTitle.trim().isNotEmpty)
       ? '${modeTitle.trim()} — Nasıl Oynanır?'
       : 'SUİKA ARENA — NASIL OYNANIR?';
-  final effectiveBody = body ??
-      '<b>Suika Arena:</b> Alana dokun — sıradaki böcek tam oraya düşer. Aynı tier iki böcek çarpışınca bir üst tier doğar, skor katlanır. Yığın kırmızı tehlike çizgisini aşarsa oyun biter. Güçlendiriciler: Raid Spreyi küçük böcekleri temizler, Sarsıntı yığını yeniden yerleştirir, Aydınlat Hele! ise F16 ile gelip alanı bombalar.';
-  return showItemDetailPopup(
-    context,
-    title: effectiveTitle,
-    description: effectiveBody,
-  );
-}
-
-/// Compatibility helper for `showLululuHowToPlayModal` calls across the app.
-Future<void> showLululuHowToPlayModal(
-  BuildContext context, {
-  String title = 'SUİKA ARENA — NASIL OYNANIR?',
-  String? modeTitle,
-  String? body,
-  String? description,
-}) {
-  final effectiveTitle = (modeTitle != null && modeTitle.trim().isNotEmpty)
-      ? '${modeTitle.trim()} — Nasıl Oynanır?'
-      : title;
-  final effectiveBody = body ??
-      description ??
-      '<b>Suika Arena:</b> Alana dokun — sıradaki böcek tam oraya düşer. Aynı tier iki böcek çarpışınca bir üst tier doğar, skor katlanır. Yığın kırmızı tehlike çizgisini aşarsa oyun biter. Güçlendiriciler: Raid Spreyi küçük böcekleri temizler, Sarsıntı yığını yeniden yerleştirir, Aydınlat Hele! ise F16 ile gelip alanı bombalar.';
+  final effectiveBody = body ?? context.l10n.howToBody;
   return showItemDetailPopup(
     context,
     title: effectiveTitle,
@@ -169,7 +147,10 @@ class ItemDetailPopup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: context.l10n.closeLabel,
+      child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
         AudioManager().playPop();
@@ -184,7 +165,8 @@ class ItemDetailPopup extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(26),
           child: Center(
-            child: GestureDetector(
+            child: ExcludeSemantics(
+              child: GestureDetector(
               onTap: () {},
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 378),
@@ -312,8 +294,10 @@ class ItemDetailPopup extends StatelessWidget {
                 ),
               ),
             ),
+            ),
           ),
         ),
+      ),
       ),
     );
   }

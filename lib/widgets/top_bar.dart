@@ -198,7 +198,7 @@ class LululuTopBar extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Image.asset(
-                            'assets/design/ui/icon_coin_exact.webp',
+                            'assets/design/ui/icon_coin_exact.png',
                             width: 18,
                             height: 18,
                             errorBuilder: (_, _, _) => Image.asset(
@@ -283,7 +283,7 @@ class LululuTopBar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Image.asset(
-                        'assets/design/ui/icon_star_exact.webp',
+                        'assets/design/ui/icon_star_exact.png',
                         width: 18,
                         height: 18,
                         errorBuilder: (_, _, _) => Image.asset(
@@ -353,7 +353,7 @@ class LululuTopBar extends StatelessWidget {
                   ),
                   alignment: Alignment.center,
                   child: Image.asset(
-                    'assets/design/ui/icon_gear_exact.webp',
+                    'assets/design/ui/icon_gear_exact.png',
                     width: 26,
                     height: 26,
                     errorBuilder: (_, _, _) => const Icon(
@@ -533,7 +533,7 @@ class _EnergyPillState extends State<_EnergyPill>
                     ScaleTransition(
                       scale: _scale,
                       child: Image.asset(
-                        'assets/design/ui/icon_heart_exact.webp',
+                        'assets/design/ui/icon_heart_exact.png',
                         width: 16,
                         height: 16,
                         errorBuilder: (_, _, _) =>

@@ -725,11 +725,11 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Image.asset(
-                              'assets/design/ui/hub_hero_play_exact.webp',
+                              'assets/design/ui/hub_hero_play_exact.png',
                               width: 23,
                               height: 23,
                               errorBuilder: (_, _, _) => Image.asset(
-                                'assets/design/ui/hub_hero_play_ic.webp',
+                                'assets/design/ui/hub_hero_play_ic.png',
                                 width: 23,
                                 height: 23,
                               ),
@@ -806,7 +806,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Image.asset(
-                    'assets/design/ui/icon_calendar_exact.webp',
+                    'assets/design/ui/icon_calendar_exact.png',
                     width: 76,
                     height: 76,
                     fit: BoxFit.contain,
@@ -1085,11 +1085,11 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Image.asset(
-                          'assets/design/ui/icon_energy_bolt_exact.webp',
+                          'assets/design/ui/icon_energy_bolt_exact.png',
                           width: 23,
                           height: 23,
                           errorBuilder: (_, _, _) => Image.asset(
-                            'assets/design/ui/icon_heart_exact.webp',
+                            'assets/design/ui/icon_heart_exact.png',
                             width: 23,
                             height: 23,
                           ),
@@ -1376,7 +1376,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Image.asset(
-                            'assets/design/ui/icon_bell_exact.webp',
+                            'assets/design/ui/icon_bell_exact.png',
                             width: 21,
                             height: 21,
                             errorBuilder: (_, _, _) => const Icon(
@@ -1639,7 +1639,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Image.asset(
-                  'assets/design/ui/hub_12_img.webp',
+                  'assets/design/ui/hub_12_img.png',
                   width: 40,
                   height: 40,
                   fit: BoxFit.contain,
@@ -1730,25 +1730,25 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     title: l10n.taskPlay3Games,
                     current: pm.getTaskProgress('play').clamp(0, 3),
                     target: 3,
-                    iconAsset: 'assets/design/ui/hub_13_img.webp',
+                    iconAsset: 'assets/design/ui/hub_13_img.png',
                   ),
                   _buildTaskItem(
                     title: l10n.taskMerge5,
                     current: pm.getTaskProgress('merge').clamp(0, 5),
                     target: 5,
-                    iconAsset: 'assets/design/ui/hub_14_img.webp',
+                    iconAsset: 'assets/design/ui/hub_14_img.png',
                   ),
                   _buildTaskItem(
                     title: l10n.taskWatch1Video,
                     current: pm.getTaskProgress('video').clamp(0, 1),
                     target: 1,
-                    iconAsset: 'assets/design/ui/hub_15_img.webp',
+                    iconAsset: 'assets/design/ui/hub_15_img.png',
                   ),
                   _buildTaskItem(
                     title: l10n.taskCombo4,
                     current: pm.getTaskProgress('combo').clamp(0, 4),
                     target: 4,
-                    iconAsset: 'assets/design/ui/hub_16_img.webp',
+                    iconAsset: 'assets/design/ui/hub_16_img.png',
                   ),
                 ],
               );
@@ -2007,7 +2007,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                           right: 6,
                           bottom: 5,
                           child: Image.asset(
-                            'assets/design/ui/hub_15_img.webp',
+                            'assets/design/ui/hub_15_img.png',
                             width: 33,
                             height: 33,
                             errorBuilder: (_, _, _) => const Icon(
@@ -2047,7 +2047,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   Row(
                     children: [
                       Image.asset(
-                        'assets/design/ui/hub_19_img.webp',
+                        'assets/design/ui/hub_19_img.png',
                         width: 18,
                         height: 18,
                         errorBuilder: (_, _, _) => const Icon(

@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
+import '../services/auth_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
@@ -91,12 +92,25 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([
+        AuthService.instance,
         ProgressManager.instance,
         LeaderboardService.instance,
       ]),
       builder: (context, _) {
         final int myScoreVal = 7915 + ProgressManager.instance.total11ModesScore;
         final myScoreText = _formatScore(myScoreVal);
+
+        // SEN satırı (W101-2): seviye top_bar.dart:54 +
+        // profile_screen.dart:165'teki formülle aynı
+        // (unlockedLevel > 1 ? 17 + unlockedLevel : 18); ad
+        // AuthService.displayName, giriş yoksa 'LülüSever' yedeği
+        // (leaderboard_service.dart:577-578 ile aynı).
+        final int myLevel = ProgressManager.instance.unlockedLevel > 1
+            ? (17 + ProgressManager.instance.unlockedLevel)
+            : 18;
+        final String myDisplayName = AuthService.instance.isSignedIn
+            ? AuthService.instance.displayName
+            : 'LülüSever';
 
         // Gerçek kayıtlar (yalnızca gerçek oyuncular): boşsa boş durum bandı
         // gösterilir. Yükleme bitmeden bu dala düşülmez — _loading iskelet çizer.
@@ -115,8 +129,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           ),
           _ScoreRowData(
             rank: 5,
-            name: 'SEN · LülüSever',
-            level: 'Seviye 18',
+            name: context.l10n.youAsName(myDisplayName),
+            level: context.l10n.levelWithValue(myLevel),
             score: myScoreText,
             avatar: 'assets/design/bugs_hd/tier5_hd.png',
             imgTop: 4.3,

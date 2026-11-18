@@ -985,7 +985,7 @@ class _ShopScreenState extends State<ShopScreen> {
                           _ShopItemData(
                             badge: l10n.shopEnergyTitle,
                             badgeGold: false,
-                            iconAsset: 'assets/design/ui/icon_heart_exact.webp',
+                            iconAsset: 'assets/design/ui/icon_heart_exact.png',
                             title: l10n.shopItemEnergyPackTitle,
                             desc: l10n.shopItemEnergyPackDesc,
                             priceText: '₺29,99',

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
@@ -175,7 +176,7 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'ENERJİN BİTTİ!',
+                  context.l10n.energyEmptyTitle,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.baloo2(
                     fontSize: 26,
@@ -195,17 +196,17 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                       height: 1.5,
                     ),
                     children: [
-                      const TextSpan(text: 'Kalbin '),
+                      TextSpan(text: context.l10n.energyEmptyBodyStart),
                       TextSpan(
-                        text: '0/30',
+                        text: '${_energy.current}/${EnergyService.maxEnergy}',
                         style: GoogleFonts.baloo2(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
                           color: const Color(0xFF141B2A),
                         ),
                       ),
-                      const TextSpan(
-                        text: ' — oynamak için 1 enerji gerekir.\nSonraki enerji: ',
+                      TextSpan(
+                        text: context.l10n.energyEmptyBodyMiddle,
                       ),
                       TextSpan(
                         text: waitLabel,
@@ -215,8 +216,8 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                           color: const Color(0xFF141B2A),
                         ),
                       ),
-                      const TextSpan(
-                        text: ' · her 5 dakikada +1 dolar.',
+                      TextSpan(
+                        text: context.l10n.energyEmptyBodyEnd,
                       ),
                     ],
                   ),
@@ -226,7 +227,7 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                 // düğmesi devre dışıdır, ödül vermez. Gerçek SDK
                 // eklendiğinde bu düğme gerçek reklam akışına bağlanmalıdır.
                 _buildActionBtn(
-                  label: 'ÖDÜLLÜ REKLAMLAR YAKINDA',
+                  label: context.l10n.rewardedAdsSoonCaps,
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
@@ -246,7 +247,7 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                 const SizedBox(height: 10),
                 // `#energyShopBtn` (.btn gold)
                 _buildActionBtn(
-                  label: 'MAĞAZA · ENERJİ PAKETİ',
+                  label: context.l10n.shopEnergyPackButton,
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
@@ -266,7 +267,7 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                 const SizedBox(height: 10),
                 // `#energyWaitBtn` (.btn.soft)
                 _buildActionBtn(
-                  label: 'SAYACI BEKLE',
+                  label: context.l10n.waitForTimerCaps,
                   solidColor: const Color(0xFFEEF1F7),
                   shadowColor: const Color(0x29141B2A),
                   shadowOffsetY: 4,
@@ -359,7 +360,7 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 }

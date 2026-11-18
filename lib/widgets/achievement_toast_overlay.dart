@@ -815,7 +815,7 @@ class _TabButton extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 }
@@ -860,7 +860,7 @@ class _CategoryChip extends StatelessWidget {
             ),
           ),
         ),
-      );
+      ),
     );
   }
 }
@@ -968,7 +968,7 @@ class _PassRewardTrackTile extends StatelessWidget {
             ],
           ),
         ),
-      );
+      ),
     );
   }
 }

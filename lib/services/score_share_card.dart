@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/lululu_theme.dart';
 
 /// Bitiş skoru → PNG kart → sistem paylaşım (Stories / WhatsApp / …).
@@ -16,6 +17,7 @@ class ScoreShareCard {
   /// Web'de dosya API'si yoktur: [StateError] fırlatır, çağıran hata mesajını
   /// kullanıcıya gösterir.
   Future<void> share({
+    required AppLocalizations l10n,
     required String modeTitle,
     required int score,
     int? best,
@@ -25,6 +27,7 @@ class ScoreShareCard {
       throw StateError('Skor kartı paylaşımı web sürümünde desteklenmiyor');
     }
     final bytes = await _renderPng(
+      l10n: l10n,
       modeTitle: modeTitle,
       score: score,
       best: best,
@@ -46,6 +49,7 @@ class ScoreShareCard {
   }
 
   Future<List<int>> _renderPng({
+    required AppLocalizations l10n,
     required String modeTitle,
     required int score,
     int? best,
@@ -120,7 +124,9 @@ class ScoreShareCard {
 
     final sub = TextPainter(
       text: TextSpan(
-        text: best != null && best > 0 ? 'REKOR $best' : 'SKOR',
+        text: best != null && best > 0
+            ? '${l10n.gameBestLabel} $best'
+            : l10n.gameScoreLabel,
         style: TextStyle(
           color: LululuColors.mutedTitanium,
           fontSize: 36,

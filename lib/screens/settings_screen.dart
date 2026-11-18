@@ -655,13 +655,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              '›',
-              style: GoogleFonts.baloo2(
-                fontSize: 27,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFFFFB800),
-                height: 1.0,
+            ExcludeSemantics(
+              child: Text(
+                '›',
+                style: GoogleFonts.baloo2(
+                  fontSize: 27,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFFFFB800),
+                  height: 1.0,
+                ),
               ),
             ),
           ],

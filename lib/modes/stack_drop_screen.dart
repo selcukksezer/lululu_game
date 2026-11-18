@@ -780,7 +780,7 @@ class _StackDropScreenState extends State<StackDropScreen>
                 items: [
                   stockBonusWithResult(
                     id: 'freeze',
-                    label: context.l10n.shopPowerFreezeName.toUpperCase(),
+                    label: context.l10n.shopPowerFreezeNameCaps,
                     asset: 'assets/icons2/crystal.png',
                     effect: () {
                       final applied = _useFreeze();
@@ -800,7 +800,7 @@ class _StackDropScreenState extends State<StackDropScreen>
                   ),
                   stockBonusWithResult(
                     id: 'slows',
-                    label: context.l10n.shopPowerSlowName.toUpperCase(),
+                    label: context.l10n.shopPowerSlowNameCaps,
                     asset: 'assets/icons2/clock.png',
                     effect: () {
                       final applied = _useSlowDrop();

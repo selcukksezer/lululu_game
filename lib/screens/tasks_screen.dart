@@ -648,7 +648,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                 children: [
                                   Image.asset(
                                     isEnergy
-                                        ? 'assets/design/ui/icon_heart_exact.webp'
+                                        ? 'assets/design/ui/icon_heart_exact.png'
                                         : 'assets/icons2/coin.png',
                                     width: 18,
                                     height: 18,
