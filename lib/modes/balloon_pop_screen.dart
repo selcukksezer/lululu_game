@@ -1501,7 +1501,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                                       child: Text(
                                         coinsText,
                                         maxLines: 1,
-                                        overflow: TextOverflow.visible,
+                                        overflow: TextOverflow.ellipsis,
                                         style: GoogleFonts.nunito(
                                           fontSize: 13.5,
                                           height: 1.2,
@@ -1710,7 +1710,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                 label,
                 maxLines: 1,
                 softWrap: false,
-                overflow: TextOverflow.visible,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.nunito(
                   fontSize: 9,
                   height: 1.55,
@@ -1730,7 +1730,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                     value,
                     maxLines: 1,
                     softWrap: false,
-                    overflow: TextOverflow.visible,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.baloo2(
                       fontSize: 17,
                       height: 1.0,

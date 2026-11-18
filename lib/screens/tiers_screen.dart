@@ -1034,7 +1034,7 @@ class _TiersFloatingDock extends StatelessWidget {
                                     child: Text(
                                       labels[i],
                                       maxLines: 1,
-                                      overflow: TextOverflow.visible,
+                                      overflow: TextOverflow.ellipsis,
                                       textHeightBehavior:
                                           const TextHeightBehavior(
                                         applyHeightToFirstAscent: false,

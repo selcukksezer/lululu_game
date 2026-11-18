@@ -1285,7 +1285,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         child: Text(
           _bandText.isEmpty ? ' ' : _bandText,
           maxLines: 1,
-          overflow: TextOverflow.visible,
+          overflow: TextOverflow.ellipsis,
           style: GoogleFonts.bangers(
             fontSize: _bandBad
                 ? 18

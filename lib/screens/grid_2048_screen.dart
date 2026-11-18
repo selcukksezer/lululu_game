@@ -1228,7 +1228,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               child: Text(
                 value,
                 maxLines: 1,
-                overflow: TextOverflow.visible,
+                overflow: TextOverflow.ellipsis,
                 softWrap: false,
                 style: const TextStyle(
                   fontFamily: 'Baloo 2',
@@ -1746,7 +1746,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                   label,
                   textAlign: TextAlign.center,
                   maxLines: 1,
-                  overflow: TextOverflow.visible,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: 'Nunito',
                     fontSize: 11,

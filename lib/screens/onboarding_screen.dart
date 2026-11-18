@@ -71,8 +71,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Image.asset(
             'assets/design/splash/bg_splash.webp',
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) =>
-                const ColoredBox(color: LululuColors.carbonVoid),
+            errorBuilder: (_, error, _) {
+              // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+              if (kDebugMode) {
+                debugPrint(
+                  '[OnboardingScreen] Arka plan görseli yüklenemedi: assets/design/splash/bg_splash.webp ($error)',
+                );
+              }
+              return const ColoredBox(color: LululuColors.carbonVoid);
+            },
           ),
           const DecoratedBox(
             decoration: BoxDecoration(
@@ -567,11 +574,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             width: 48,
             height: 48,
             fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => const Icon(
-              Icons.bug_report_rounded,
-              color: Colors.white,
-              size: 40,
-            ),
+            errorBuilder: (_, error, _) {
+              // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+              if (kDebugMode) {
+                debugPrint(
+                  '[OnboardingScreen] Kademe görseli yüklenemedi: $asset ($error)',
+                );
+              }
+              return const Icon(
+                Icons.bug_report_rounded,
+                color: Colors.white,
+                size: 40,
+              );
+            },
           ),
           const SizedBox(height: 4),
           Text(

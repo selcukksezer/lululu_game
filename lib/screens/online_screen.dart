@@ -203,7 +203,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
               child: Text(
                 context.l10n.onlineModeTitle,
                 maxLines: 1,
-                overflow: TextOverflow.visible,
+                overflow: TextOverflow.ellipsis,
                 style: _baloo2(
                   fontSize: 23,
                   fontWeight: FontWeight.w800,
@@ -505,7 +505,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                     child: Text(
                       title,
                       maxLines: 1,
-                      overflow: TextOverflow.visible,
+                      overflow: TextOverflow.ellipsis,
                       style: _baloo2(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,

@@ -2750,7 +2750,7 @@ class _GameScreenState extends State<GameScreen>
                       Text(
                         label,
                         maxLines: 1,
-                        overflow: TextOverflow.visible,
+                        overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontFamily: 'Nunito',

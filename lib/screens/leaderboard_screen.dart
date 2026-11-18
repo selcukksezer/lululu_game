@@ -1243,7 +1243,7 @@ class _ScoresFloatingDock extends StatelessWidget {
                                         _label(context.l10n, tab),
                                         maxLines: 1,
                                         softWrap: false,
-                                        overflow: TextOverflow.visible,
+                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontFamily: 'Baloo 2',
                                           fontSize: 10,

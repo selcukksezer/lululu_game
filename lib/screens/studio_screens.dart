@@ -214,9 +214,17 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                     width: studioWidth,
                                     height: studioWidth * 226.125 / _kStudioMaxWidth,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (c, e, s) => const ColoredBox(
-                                      color: Color(0xFF1B2336),
-                                    ),
+                                    errorBuilder: (c, e, s) {
+                                      // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+                                      if (kDebugMode) {
+                                        debugPrint(
+                                          '[Studio] Video küçük resmi yüklenemedi: assets/design/ui/studio_watch/video_thumb_0.png ($e)',
+                                        );
+                                      }
+                                      return const ColoredBox(
+                                        color: Color(0xFF1B2336),
+                                      );
+                                    },
                                   ),
                                 ),
                               ),
@@ -623,14 +631,21 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                               width: _studioScaled(104, studioWidth),
                                               height: _studioScaled(60, studioWidth),
                                               fit: BoxFit.cover,
-                                              errorBuilder: (c, e, s) =>
-                                                  ColoredBox(
-                                                color: Color(0xFF1B2336),
-                                                child: SizedBox(
-                                                  width: _studioScaled(104, studioWidth),
-                                                  height: _studioScaled(60, studioWidth),
-                                                ),
-                                              ),
+                                              errorBuilder: (c, e, s) {
+                                                // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+                                                if (kDebugMode) {
+                                                  debugPrint(
+                                                    '[Studio] Video küçük resmi yüklenemedi: ${_videos[i]['thumb']} ($e)',
+                                                  );
+                                                }
+                                                return ColoredBox(
+                                                  color: Color(0xFF1B2336),
+                                                  child: SizedBox(
+                                                    width: _studioScaled(104, studioWidth),
+                                                    height: _studioScaled(60, studioWidth),
+                                                  ),
+                                                );
+                                              },
                                             ),
                                             Positioned(
                                               right: 5,
@@ -850,9 +865,17 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                 width: studioWidth,
                                 height: studioWidth * 301.5 / _kStudioMaxWidth,
                                 fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => const ColoredBox(
-                                  color: Color(0xFF1B2336),
-                                ),
+                                errorBuilder: (c, e, s) {
+                                  // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+                                  if (kDebugMode) {
+                                    debugPrint(
+                                      '[Studio] Arka plan görseli yüklenemedi: assets/design/ui/studio_create/ebg.png ($e)',
+                                    );
+                                  }
+                                  return const ColoredBox(
+                                    color: Color(0xFF1B2336),
+                                  );
+                                },
                               ),
                             ),
                             // Sticker: sağ kenara 10px, dikeyde tasarım oranıyla
@@ -1204,6 +1227,18 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                         child: Image.asset(
                                           _stickers[i],
                                           fit: BoxFit.contain,
+                                          errorBuilder: (c, e, s) {
+                                            // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+                                            if (kDebugMode) {
+                                              debugPrint(
+                                                '[Studio] Çıkartma görseli yüklenemedi: ${_stickers[i]} ($e)',
+                                              );
+                                            }
+                                            return const Icon(
+                                              Icons.image_not_supported_outlined,
+                                              color: Color(0xFF66738A),
+                                            );
+                                          },
                                         ),
                                       ),
                                     )),
@@ -2137,6 +2172,19 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                 width: 44,
                 height: 44,
                 fit: BoxFit.contain,
+                errorBuilder: (c, e, s) {
+                  // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+                  if (kDebugMode) {
+                    debugPrint(
+                      '[Studio] Seçenek görseli yüklenemedi: $imagePath ($e)',
+                    );
+                  }
+                  return const Icon(
+                    Icons.image_not_supported_outlined,
+                    size: 32,
+                    color: Color(0xFF66738A),
+                  );
+                },
               ),
               const SizedBox(height: 2),
               Text(
@@ -2427,8 +2475,15 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                     alignment: (_downloads[i]['isBug'] as bool)
                                         ? Alignment.center
                                         : Alignment.topCenter,
-                                    errorBuilder: (c, e, s) =>
-                                        const Icon(Icons.movie_rounded),
+                                    errorBuilder: (c, e, s) {
+                                      // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+                                      if (kDebugMode) {
+                                        debugPrint(
+                                          '[Studio] İndirilen görsel yüklenemedi: ${_downloads[i]['thumb']} ($e)',
+                                        );
+                                      }
+                                      return const Icon(Icons.movie_rounded);
+                                    },
                                   ),
                                 ),
                                 const SizedBox(width: 11),
@@ -2595,11 +2650,19 @@ Widget _buildAppBar(BuildContext context, String title) {
               width: 29,
               height: 29,
               fit: BoxFit.contain,
-              errorBuilder: (c, e, s) => const Icon(
-                Icons.arrow_back_ios_new_rounded,
-                size: 20,
-                color: Color(0xFF141B2A),
-              ),
+              errorBuilder: (c, e, s) {
+                // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+                if (kDebugMode) {
+                  debugPrint(
+                    '[Studio] Geri düğmesi görseli yüklenemedi: assets/design/ui/back_btn.png ($e)',
+                  );
+                }
+                return const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  size: 20,
+                  color: Color(0xFF141B2A),
+                );
+              },
             ),
           ),
         )),
@@ -2663,6 +2726,16 @@ class _DropShadowImage extends StatelessWidget {
                 width: width,
                 height: height,
                 fit: BoxFit.contain,
+                errorBuilder: (c, e, s) {
+                  // Gölge kopya: görünür yer tutucu ana görselde;
+                  // burada yalnızca hata kaydı + boyut koruyan saydam kutu.
+                  if (kDebugMode) {
+                    debugPrint(
+                      '[_DropShadowImage] Gölge görseli yüklenemedi: $assetPath ($e)',
+                    );
+                  }
+                  return Container(width: width, height: height);
+                },
               ),
             ),
           ),

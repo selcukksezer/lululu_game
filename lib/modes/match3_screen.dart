@@ -1591,7 +1591,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                                       child: Text(
                                         coinsText,
                                         maxLines: 1,
-                                        overflow: TextOverflow.visible,
+                                        overflow: TextOverflow.ellipsis,
                                         style: GoogleFonts.nunito(
                                           fontSize: 13.5,
                                           height: 1.2,
@@ -1801,7 +1801,7 @@ class _Match3ScreenState extends State<Match3Screen> {
               label,
               maxLines: 1,
               softWrap: false,
-              overflow: TextOverflow.visible,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.nunito(
                 fontSize: 10,
                 height: 1.55,
@@ -1821,7 +1821,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                   value,
                   maxLines: 1,
                   softWrap: false,
-                  overflow: TextOverflow.visible,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.baloo2(
                     fontSize: 21,
                     height: 1.0,
