@@ -11,6 +11,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/bonus_fx.dart';
@@ -55,7 +56,8 @@ class Grid2048Screen extends StatefulWidget {
   State<Grid2048Screen> createState() => _Grid2048ScreenState();
 }
 
-class _Grid2048ScreenState extends State<Grid2048Screen> {
+class _Grid2048ScreenState extends State<Grid2048Screen>
+    with WidgetsBindingObserver {
   static const int size = 4;
 
   /// Üst satır ve HUD içerik genişliğinin tavanı: 430 referans genişlikten
@@ -105,6 +107,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   bool _gameOver = false;
   bool _won = false;
   bool _paused = false;
+
+  /// Yaşam döngüsü duraklatması ayrımı (Osmantus deseni): arka plana
+  /// geçiş kaplamayı açtıysa `true` olur; elle duraklatma bu bayrağı
+  /// koymaz. Dönüşte (`resumed`) yalnız bu bayrak konmuşsa devam
+  /// edilir — elle duraklatma yapışkan kalır.
+  bool _pausedByLifecycle = false;
   bool _showHelpModal = false;
   bool _resultShown = false;
   bool _presentingResultModal = false;
@@ -138,35 +146,37 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _syncPowerCounts();
     _initBoard(initialPrototypeState: widget.prototypeVisualState);
     _loadBest();
   }
 
+  /// Güçlendirici stoklarını kasadan okur; eksik anahtar 0 sayılır.
+  /// Giriş-başı dolum YOKTUR (B3): tohum bir kez `ProgressManager.load`
+  /// tarafından verilir, bu ekran kasaya yazmaz.
   void _syncPowerCounts() {
     final pm = ProgressManager();
-    if ((pm.extraPowers['undo2048'] ?? 0) <= 0) {
-      pm.extraPowers['undo2048'] = 3;
-    }
-    if ((pm.extraPowers['shuffle2048'] ?? 0) <= 0) {
-      pm.extraPowers['shuffle2048'] = 2;
-    }
-    if ((pm.extraPowers['pair2048'] ?? 0) <= 0) {
-      pm.extraPowers['pair2048'] = 1;
-    }
-    _undoCount = pm.extraPowers['undo2048'] ?? 3;
-    _shuffleCount = pm.extraPowers['shuffle2048'] ?? 2;
-    _pairCount = pm.extraPowers['pair2048'] ?? 1;
+    _undoCount = pm.powerCount('undo2048');
+    _shuffleCount = pm.powerCount('shuffle2048');
+    _pairCount = pm.powerCount('pair2048');
   }
 
   void _initBoard({bool initialPrototypeState = false}) {
+    // B17: kozmetik timer'lar iptal edilmeden tahta sıfırlanırsa eski
+    // zamanlayıcılar yeni turun kaplama/patlama durumunu temizler.
+    // (`_restart` bu yöntemden geçtiği için tek nokta yeterlidir.)
+    _overlayTimer?.cancel();
+    _speechTimer?.cancel();
+    _popTimer?.cancel();
     _history.clear();
     _mergedCells = <Point<int>>{};
     _lastSpawned = null;
     _gameOver = false;
     _won = false;
     _paused = false;
+    _pausedByLifecycle = false;
     _showHelpModal = false;
     _resultShown = false;
     _presentingResultModal = false;
@@ -209,12 +219,54 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _overlayTimer?.cancel();
     _speechTimer?.cancel();
     _popTimer?.cancel();
     _focusNode.dispose();
     AudioManager().stopAll();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState || !mounted) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        // Sıra tabanlı oyun: işleyen saat ve ötelenmesi gereken
+        // duvar-saati son tarihi yok; arka plana/kısmi örtünmeye
+        // geçişte mevcut duraklatma kaplaması gösterilir (`inactive`
+        // dahil: kaplama uygulama değiştiricide ve bildirim gölgesi
+        // arkasında da görünür). Oyun bitmiş, yardım/sonuç açık veya
+        // elle zaten duraklatılmışsa sahiplenilmez (Osmantus
+        // `_pausedByLifecycle` ayrımı).
+        if (_gameOver ||
+            _showHelpModal ||
+            _resultShown ||
+            _presentingResultModal ||
+            _paused) {
+          return;
+        }
+        _pausedByLifecycle = true;
+        setState(() => _paused = true);
+      case AppLifecycleState.detached:
+        // Ayrılma sonrası dönüş beklenmez; kaplama açılmaz.
+        break;
+      case AppLifecycleState.resumed:
+        // Yalnız yaşam döngüsü duraklatmasıysa devam edilir; elle
+        // duraklatma yapışkan kalır (DEVAM düğmesiyle açılır).
+        // 2048 sıra tabanlı olduğu için kendiliğinden devamın oyun
+        // cezası yoktur.
+        if (_pausedByLifecycle) {
+          _pausedByLifecycle = false;
+          if (_paused) {
+            setState(() => _paused = false);
+          }
+        }
+        break;
+    }
   }
 
   Future<void> _loadBest() async {
@@ -249,7 +301,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
   void _togglePause() {
     if (_gameOver) return;
-    setState(() => _paused = !_paused);
+    setState(() {
+      _paused = !_paused;
+      if (!_paused) _pausedByLifecycle = false;
+    });
   }
 
   List<List<int>> _cloneGrid(List<List<int>> src) =>
@@ -385,7 +440,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
 
     if (!moved) {
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
       return;
     }
 
@@ -430,7 +485,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       unawaited(
         AudioManager().playMerge(tier: tierEnum, comboCount: _streak),
       );
-      HapticFeedback.mediumImpact();
+      // H1: HapticService'te mediumImpact karşılığı yok; kapılı
+      // `triggerMediumHaptic` kullanılır (titreşim ayarı + test
+      // ortamı korumalı).
+      AudioManager().triggerMediumHaptic();
       unawaited(
         ProgressManager.instance.recordTaskProgress(
           'merge',
@@ -455,7 +513,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     } else {
       _streak = 0;
       AudioManager().playDrop();
-      HapticFeedback.lightImpact();
+      unawaited(HapticService.instance.lightImpact());
     }
 
     _popTimer?.cancel();
@@ -506,13 +564,109 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
   }
 
+  /// Etkisiz güçlendirici denemesinde oyuncuya nedeni mevcut konuşma
+  /// balonu mekanizmasıyla gösterir (B12). 2048'e özel "etki yok"
+  /// anahtarı bulunmadığı için en yakın mevcut anahtar
+  /// (`match3NoMatchCancel`) yeniden kullanılır; stok tüketilmez.
+  void _showNoEffectHint() {
+    _speechTimer?.cancel();
+    setState(() {
+      _speechBubble = context.l10n.match3NoMatchCancel;
+    });
+    _speechTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (!mounted) return;
+      setState(() => _speechBubble = null);
+    });
+  }
+
+  /// Geri alma yedeğinin (`_removeLowestTile`) silebileceği taş var mı?
+  bool _hasRemovableTile() {
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        if (_grid[r][c] > 0) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Karıştırma anlamlı mı? Tek taşlı/boş tahtada karıştırma görünür
+  /// bir etki üretmez.
+  bool _hasShufflableBoard() {
+    var filled = 0;
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        if (_grid[r][c] > 0 && ++filled >= 2) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Çiftleştirme planı (B12 önkoşul denetimi): tüketimden ÖNCE,
+  /// tahtayı değiştirmeden hesaplanır. `null` dönerse etki yoktur.
+  ///
+  /// Eşleşen çift varsa en yüksek kademedeki çift birleştirilir
+  /// (`matched`); yoksa yükseltilebilir en yüksek taş bir kademe
+  /// yükseltilir (mevcut yedek davranış korunur).
+  ({Point<int> target, Point<int>? source, int next, bool matched})?
+  _planPairEffect() {
+    final byTier = <int, List<Point<int>>>{};
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        final v = _grid[r][c];
+        if (v > 0 && v < InsectTier.values.length) {
+          byTier.putIfAbsent(v, () => <Point<int>>[]).add(Point<int>(r, c));
+        }
+      }
+    }
+    final matchingTiers = byTier.entries
+        .where((e) => e.value.length >= 2)
+        .map((e) => e.key)
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (matchingTiers.isNotEmpty) {
+      final t = matchingTiers.first;
+      final cells = byTier[t]!;
+      return (
+        target: cells[0],
+        source: cells[1],
+        next: (t + 1).clamp(1, InsectTier.values.length),
+        matched: true,
+      );
+    }
+    Point<int>? bestCell;
+    var maxT = 0;
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        if (_grid[r][c] > maxT && _grid[r][c] < InsectTier.values.length) {
+          maxT = _grid[r][c];
+          bestCell = Point<int>(r, c);
+        }
+      }
+    }
+    if (bestCell == null) return null;
+    return (target: bestCell, source: null, next: maxT + 1, matched: false);
+  }
+
   /// Güçlendirici 1: GERİ AL (son hamleyi geri alır veya en küçük taşı temizler)
   void _useUndo() {
     if (_paused || _showHelpModal || _undoCount <= 0) return;
+    // B12: etki uygulanabilirliğini tüketimden önce denetle — geri
+    // alınacak hamle ve silinecek taş yoksa stok yakma.
+    if (_history.isEmpty && !_hasRemovableTile()) {
+      _showNoEffectHint();
+      return;
+    }
+    // B3: tüketim kasadan (`takePower` + kalıcı kayıt); yerel sayaç
+    // yalnız kasadan okunur. `takePower` başarısızsa sayaç bayattır,
+    // kasadan tazele ve çık.
     final pm = ProgressManager();
+    if (!pm.takePower('undo2048')) {
+      setState(_syncPowerCounts);
+      return;
+    }
+    var applied = false;
     setState(() {
-      _undoCount--;
-      pm.extraPowers['undo2048'] = _undoCount;
+      _syncPowerCounts();
       if (_history.isNotEmpty) {
         final prev = _history.removeLast();
         _grid = _cloneGrid(prev.grid);
@@ -520,10 +674,17 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         _moveCount = prev.moveCount;
         _streak = prev.streak;
         _gameOver = false;
+        applied = true;
       } else {
-        _removeLowestTile();
+        applied = _removeLowestTile();
       }
     });
+    // stockBonusWithResult deseni: etki uygulanamadıysa stoğu iade et.
+    if (!applied) {
+      pm.refundPower('undo2048');
+      setState(_syncPowerCounts);
+      return;
+    }
     unawaited(
       playBonusFx(
         context,
@@ -531,10 +692,11 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         origin: MediaQuery.sizeOf(context).center(Offset.zero),
       ),
     );
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
   }
 
-  void _removeLowestTile() {
+  /// En küçük taşı temizler; silinen taş yoksa `false` döner.
+  bool _removeLowestTile() {
     Point<int>? target;
     var minTier = 999;
     for (var r = 0; r < size; r++) {
@@ -548,13 +710,25 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
     if (target != null) {
       _grid[target.x][target.y] = 0;
+      return true;
     }
+    return false;
   }
 
   /// Güçlendirici 2: KARIŞTIR (tahtadaki böceklerin yerlerini karıştırır)
   void _useShuffle() {
     if (_paused || _showHelpModal || _shuffleCount <= 0) return;
+    // B12 deseni: tek taşlı/boş tahtada karıştırmanın etkisi yoktur.
+    if (!_hasShufflableBoard()) {
+      _showNoEffectHint();
+      return;
+    }
+    // B3: tüketim kasadan (`takePower` + kalıcı kayıt).
     final pm = ProgressManager();
+    if (!pm.takePower('shuffle2048')) {
+      setState(_syncPowerCounts);
+      return;
+    }
     _saveHistory();
     final flat = <int>[];
     for (var r = 0; r < size; r++) {
@@ -564,8 +738,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
     flat.shuffle(_rng);
     setState(() {
-      _shuffleCount--;
-      pm.extraPowers['shuffle2048'] = _shuffleCount;
+      _syncPowerCounts();
       for (var i = 0; i < flat.length; i++) {
         _grid[i ~/ size][i % size] = flat[i];
       }
@@ -579,44 +752,38 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       ),
     );
     AudioManager().playDrop();
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
   }
 
   /// Güçlendirici 3: ÇİFTLEŞTİR / 2X BİRLEŞİM (aynı tier iki böceği anında birleştirir)
   void _usePair() {
     if (_paused || _showHelpModal || _pairCount <= 0) return;
+    // B12: etki uygulanabilirliğini tüketimden ÖNCE denetle — eşleşen
+    // çift ve yükseltilebilir taş yoksa stok yakma, nedenini göster.
+    final plan = _planPairEffect();
+    if (plan == null) {
+      _showNoEffectHint();
+      return;
+    }
+    // B3: tüketim kasadan (`takePower` + kalıcı kayıt).
     final pm = ProgressManager();
+    if (!pm.takePower('pair2048')) {
+      setState(_syncPowerCounts);
+      return;
+    }
     _saveHistory();
 
-    final byTier = <int, List<Point<int>>>{};
-    for (var r = 0; r < size; r++) {
-      for (var c = 0; c < size; c++) {
-        final v = _grid[r][c];
-        if (v > 0 && v < InsectTier.values.length) {
-          byTier.putIfAbsent(v, () => <Point<int>>[]).add(Point<int>(r, c));
-        }
-      }
-    }
-
-    final matchingTiers = byTier.entries
-        .where((e) => e.value.length >= 2)
-        .map((e) => e.key)
-        .toList()
-      ..sort((a, b) => b.compareTo(a));
-
+    final target = plan.target;
+    final source = plan.source;
+    final next = plan.next;
+    var reachedWin = false;
     setState(() {
-      _pairCount--;
-      pm.extraPowers['pair2048'] = _pairCount;
+      _syncPowerCounts();
 
-      if (matchingTiers.isNotEmpty) {
-        final t = matchingTiers.first;
-        final cells = byTier[t]!;
-        final a = cells[0];
-        final b = cells[1];
-        final next = (t + 1).clamp(1, InsectTier.values.length);
-        _grid[a.x][a.y] = next;
-        _grid[b.x][b.y] = 0;
-        _mergedCells = <Point<int>>{a};
+      if (plan.matched) {
+        _grid[target.x][target.y] = next;
+        _grid[source!.x][source.y] = 0;
+        _mergedCells = <Point<int>>{target};
         final gain = (1 << next) * 2;
         _score += gain;
         if (_score > _best) _best = _score;
@@ -632,28 +799,23 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         unawaited(ProgressManager.instance.recordTaskProgress('merge'));
         unawaited(ProgressManager.instance.unlockTier(next));
       } else {
-        Point<int>? bestCell;
-        var maxT = 0;
-        for (var r = 0; r < size; r++) {
-          for (var c = 0; c < size; c++) {
-            if (_grid[r][c] > maxT && _grid[r][c] < InsectTier.values.length) {
-              maxT = _grid[r][c];
-              bestCell = Point<int>(r, c);
-            }
-          }
-        }
-        if (bestCell != null) {
-          final next = maxT + 1;
-          _grid[bestCell.x][bestCell.y] = next;
-          _mergedCells = <Point<int>>{bestCell};
-          final gain = 1 << next;
-          _score += gain;
-          if (_score > _best) _best = _score;
-        }
+        _grid[target.x][target.y] = next;
+        _mergedCells = <Point<int>>{target};
+        final gain = 1 << next;
+        _score += gain;
+        if (_score > _best) _best = _score;
+      }
+      // B15: 2048'e güçlendiriciyle ulaşmak da zaferdir.
+      if (next >= 11 && !_won) {
+        _won = true;
+        reachedWin = true;
       }
       _gameOver = false;
     });
 
+    if (reachedWin) {
+      AudioManager().playWin();
+    }
     unawaited(_persistBest());
     unawaited(
       playBonusFx(
@@ -662,7 +824,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         origin: MediaQuery.sizeOf(context).center(Offset.zero),
       ),
     );
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
@@ -714,6 +876,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       bestScore: max(_score, _best),
       bestCombo: max(1, _maxStreak),
       merges: _mergeTotal,
+      // B15: kademe-11 zaferi sonuç ekranına taşınır. `_score > 0`
+      // yedeği `finishRun` varsayılanını korur: 2048'e ulaşmadan
+      // skorla bitirmek eskisi gibi zafer başlığı gösterir.
+      won: _won || _score > 0,
       leaderboardMode: 'grid2048',
       awaitSettle: false,
     );
@@ -1450,6 +1616,48 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                                 height: 1.1,
                                 fontWeight: FontWeight.w800,
                                 color: Color(0xFF141B2A),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // B15: kademe-11 (2048) zafer rozeti — hedefe
+                  // ulaşıldığında sahnenin üstünde görünür. Dile bağlı
+                  // metin içermez; prototip durumunda `_won` hep
+                  // `false` olduğu için referans kareler etkilenmez.
+                  if (_won)
+                    Positioned(
+                      top: 58,
+                      left: 0,
+                      right: 0,
+                      child: IgnorePointer(
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFB800),
+                              borderRadius: BorderRadius.circular(999),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x59000000),
+                                  offset: Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: const Text(
+                              '★ 2048',
+                              style: TextStyle(
+                                fontFamily: 'Baloo 2',
+                                fontSize: 13,
+                                height: 1.2,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                                color: Color(0xFF4A2E00),
                               ),
                             ),
                           ),
