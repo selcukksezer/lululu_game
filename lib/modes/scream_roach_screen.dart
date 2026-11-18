@@ -84,6 +84,16 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// bekleyen `_presentResult` çağrısı kimlik tutmazsa sonuç göstermez.
   int _runId = 0;
 
+  // Y3: tur başlangıç damgası — tur başına tek `finishRun` anahtarı
+  // ('<mod>:<damga>') bu damgadan üretilir. İlk turda State
+  // kuruluşunda, sonraki turlarda `_restart`'ta yakalanır; BİTİR +
+  // can-bitiş yolları aynı anahtarı paylaşır, bitiş-anı
+  // `DateTime.now()` kullanılmaz.
+  int _runStartStamp = DateTime.now().microsecondsSinceEpoch;
+
+  String get _runIdempotencyKey =>
+      '${LeaderboardService.modeScream}:$_runStartStamp';
+
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk zıplama
   /// (`_scream`, dokunuş veya ses) veya tur tamamlanması (`_die`)
   /// ile `true` olur; TEKRAR/yeniden başlatmada SIFIRLANMAZ (Suika
@@ -628,6 +638,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     unawaited(AudioManager().stopAll());
     // Yeni tur kimliği: eski turun bekleyen sonuç çağrısı gösterilmez.
     _runId++;
+    // Y3: yeni tur, yeni idempotency anahtarı — damga tur
+    // başlangıcında bir kez yakalanır.
+    _runStartStamp = DateTime.now().microsecondsSinceEpoch;
     setState(() {
       _alive = true;
       _diedAt = null;
@@ -724,6 +737,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         best: _best,
         won: won ?? false,
         leaderboardMode: LeaderboardService.modeScream,
+        // K16: mod skoru kimliği `bestScoreKey` ile aynıdır
+        // ('scream_roach'); Y3: anahtar tur başlangıç damgalıdır.
+        modeScoreId: LeaderboardService.modeScream,
+        idempotencyKey: _runIdempotencyKey,
         stillValid: () => mounted && runId == _runId,
       );
       if (runId != _runId) return;
@@ -748,6 +765,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
   /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
   /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  ///
+  /// S6: iade bildirimi YOK — tek çağrı noktası pop-sonrası
+  /// `PopScope` olduğu için görünür bağlam yoktur; iki geri düğmesi
+  /// de yalnızca pop yapar, iade çağrısı taşımaz.
   void _maybeRefundEnergy() {
     if (_energyRefunded) return;
     if (!widget.energyConsumed || _moveMade || !_alive || _resultShown) {
@@ -1256,6 +1277,11 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       ),
     );
 
+    // Canlı _hint'in erişilebilirlik etiketi (Terlik deseni): F4'ten
+    // beri yardım sayfası kural metnini gösteriyor; _hint artık
+    // burada okunur, oyun-içi atamalar aynen durur.
+    final labeledStageChild = Semantics(label: _hint, child: stageChild);
+
     if (!wideScreen) {
       return PopScope(
         canPop: true,
@@ -1267,7 +1293,11 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           title: context.l10n.screamBugTitle,
           score: _score,
           best: _best,
-          hint: context.l10n.screamArcadeHint(_hint),
+          // F4: dar düzende '?' sayfası bu `hint` metnini gösterir
+          // (ArcadeScreen'in ayrı kural-gövdesi parametresi yok;
+          // `hintLabel` verilmediği için şerit çizilmez, oyun-içi
+          // canlı _hint gösterimi etkilenmez). Kural metni verilir.
+          hint: context.l10n.screamHowToBody,
           statLabel: context.l10n.screamGateStat,
           statValue: '$_gatesPassed',
           tag: context.l10n.viralBadge,
@@ -1285,7 +1315,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           footer: Center(
             child: SizedBox(width: 285, child: ModeBonusBar(items: bonuses)),
           ),
-          child: stageChild,
+          child: labeledStageChild,
         ),
       );
     }
@@ -1360,7 +1390,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                       ),
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                        child: stageChild,
+                        child: labeledStageChild,
                       ),
                     ),
                   ),
@@ -1470,11 +1500,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         context: context,
         builder: (context) => AlertDialog(
           title: Text(context.l10n.screamBugTitle),
-          // Statik yönerge: canlı _hint (spam/kombo mesajları)
-          // yardım diyaloğuna sızmaz (bulgu #9).
-          content: Text(
-            context.l10n.screamArcadeHint(context.l10n.screamHintIdle),
-          ),
+          // Kural metni (F4): yardım diyaloğu canlı _hint'i
+          // (spam/kombo mesajları) değil oyun kurallarını gösterir;
+          // oyun-içi _hint atamaları aynen durur (bulgu #9).
+          content: Text(context.l10n.screamHowToBody),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),

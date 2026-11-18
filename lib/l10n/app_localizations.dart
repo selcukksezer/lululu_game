@@ -1020,6 +1020,8 @@ abstract class AppLocalizations {
   String osmantusStatsLine(int maxCombo, int streak);
   // --- W60-2: G6 terlik_tap (i18n göç planı) ---
   String get terlikHintIdle;
+  String get terlikHowToBody;
+  String get terlikEnergyRefundNotice;
   String get terlikBonusComboSlipper;
   String get terlikTrapPassed;
   String get terlikEscaped;
@@ -1059,6 +1061,7 @@ abstract class AppLocalizations {
   String chatBadgeUnreadLabel(String badge);
   // --- W65-1: G7 scream_roach (i18n göç planı) ---
   String get screamHintIdle;
+  String get screamHowToBody;
   String get screamGatePrototype;
   String get screamIdleGround;
   String get screamShieldSaved;

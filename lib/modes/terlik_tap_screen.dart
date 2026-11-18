@@ -151,6 +151,15 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   // Çift-iade koruması: iade oturum başına en fazla bir kez yapılır.
   bool _energyRefunded = false;
   int _runId = 0;
+  // Y3: tur başlangıç damgası — tur başına tek `finishRun` anahtarı
+  // ('<mod>:<damga>') bu damgadan üretilir. İlk turda State
+  // kuruluşunda, sonraki turlarda `_restart`'ta yakalanır; BİTİR +
+  // can-bitiş yolları aynı anahtarı paylaşır, bitiş-anı
+  // `DateTime.now()` kullanılmaz.
+  int _runStartStamp = DateTime.now().microsecondsSinceEpoch;
+
+  String get _runIdempotencyKey =>
+      '${LeaderboardService.modeTerlik}:$_runStartStamp';
   String? _missMessage;
   String _hint = '';
   bool _hintSeeded = false;
@@ -358,9 +367,11 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text(ctx.l10n.slipperTapTitle),
-          // Statik yönerge: canlı _hint (ıskalama/
-          // kombo mesajları) yardım diyaloğuna sızmaz (bulgu #9).
-          content: Text(ctx.l10n.terlikHintIdle),
+          // Kural metni (F4): yardım diyaloğu canlı _hint'i
+          // (ıskalama/kombo mesajları) değil oyun kurallarını
+          // gösterir; oyun-içi _hint gösterimi aynen durur
+          // (bulgu #9).
+          content: Text(ctx.l10n.terlikHowToBody),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -677,19 +688,23 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   /// false). Tur bittikten / sonuç gösterildikten sonra çağrılsa bile
   /// ödemez: _die _runEnded'i, finishRun içindeki ödeme de
   /// _economySettled'i çoktan true yapmıştır.
-  void _refundEnergyIfNoHit() {
+  ///
+  /// Dönüş değeri iadenin gerçekten yapılıp yapılmadığını bildir
+  /// (S6: Geri düğmesi yalnız iade verildiyse bildirim gösterir).
+  bool _refundEnergyIfNoHit() {
     if (!widget.energyConsumed ||
         _energyRefunded ||
         _hasHit ||
         _runEnded ||
         _economySettled ||
         !_alive) {
-      return;
+      return false;
     }
     // Çift-iade koruması: bayrak eklemeden ÖNCE konur; Geri düğmesi +
     // PopScope aynı çıkışta iki kez çağırsa bile ikinci çağrı döner.
     _energyRefunded = true;
     EnergyService.instance.addEnergy(1);
+    return true;
   }
 
   Offset _holeCenter(int index) {
@@ -932,6 +947,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     _runEnded = true;
     unawaited(_settleRunEconomy());
     _runId++;
+    // Y3: yeni tur, yeni idempotency anahtarı — damga tur
+    // başlangıcında bir kez yakalanır.
+    _runStartStamp = DateTime.now().microsecondsSinceEpoch;
     setState(() {
       _economySettled = false;
       _paused = false;
@@ -1077,6 +1095,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       bestCombo: _maxCombo,
       won: won ?? false,
       leaderboardMode: LeaderboardService.modeTerlik,
+      // K16: mod skoru kimliği `bestScoreKey` ile aynıdır
+      // ('terlik_tap'); Y3: anahtar tur başlangıç damgalıdır.
+      modeScoreId: LeaderboardService.modeTerlik,
+      idempotencyKey: _runIdempotencyKey,
       settle: _settleRunEconomy,
       stillValid: () => mounted && runId == _runId,
     );
@@ -1336,7 +1358,22 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                           label: context.l10n.goBackLabel,
                           child: GestureDetector(
                             onTap: () {
-                              _refundEnergyIfNoHit();
+                              // S6: iade verildiyse kapanma ÖNCESİ
+                              // bildir (ScaffoldMessenger rota üstünde
+                              // yaşar; bildirim dönen ekranda görünür
+                              // — auth S5 deseni). Sistem-geri
+                              // yolunda (PopScope) görünür bağlam
+                              // yoktur: iade sessiz yapılır.
+                              final refunded = _refundEnergyIfNoHit();
+                              if (refunded && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      context.l10n.terlikEnergyRefundNotice,
+                                    ),
+                                  ),
+                                );
+                              }
                               Navigator.maybePop(context);
                             },
                             child: Container(

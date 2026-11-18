@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 835 getter + 179 metot = 1014 anahtar,
+// açıkça sayılır (soyut sınıftaki 838 getter + 179 metot = 1017 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -633,6 +633,8 @@ void main() {
         'osmantusDuoButton': l10n.osmantusDuoButton,
         // W60-2: G6 terlik_tap (i18n göç planı)
         'terlikHintIdle': l10n.terlikHintIdle,
+        'terlikHowToBody': l10n.terlikHowToBody,
+        'terlikEnergyRefundNotice': l10n.terlikEnergyRefundNotice,
         'terlikBonusComboSlipper': l10n.terlikBonusComboSlipper,
         'terlikTrapPassed': l10n.terlikTrapPassed,
         'terlikEscaped': l10n.terlikEscaped,
@@ -656,6 +658,7 @@ void main() {
         'terlikTrapTag': l10n.terlikTrapTag,
         // W65-1: G7 scream_roach (i18n göç planı)
         'screamHintIdle': l10n.screamHintIdle,
+        'screamHowToBody': l10n.screamHowToBody,
         'screamGatePrototype': l10n.screamGatePrototype,
         'screamIdleGround': l10n.screamIdleGround,
         'screamShieldSaved': l10n.screamShieldSaved,
@@ -1487,6 +1490,8 @@ void main() {
         'osmantusDuoButton': l10n.osmantusDuoButton,
         // W60-2: G6 terlik_tap (i18n göç planı)
         'terlikHintIdle': l10n.terlikHintIdle,
+        'terlikHowToBody': l10n.terlikHowToBody,
+        'terlikEnergyRefundNotice': l10n.terlikEnergyRefundNotice,
         'terlikBonusComboSlipper': l10n.terlikBonusComboSlipper,
         'terlikTrapPassed': l10n.terlikTrapPassed,
         'terlikEscaped': l10n.terlikEscaped,
@@ -1510,6 +1515,7 @@ void main() {
         'terlikTrapTag': l10n.terlikTrapTag,
         // W65-1: G7 scream_roach (i18n göç planı)
         'screamHintIdle': l10n.screamHintIdle,
+        'screamHowToBody': l10n.screamHowToBody,
         'screamGatePrototype': l10n.screamGatePrototype,
         'screamIdleGround': l10n.screamIdleGround,
         'screamShieldSaved': l10n.screamShieldSaved,
@@ -2188,21 +2194,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 1014 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1017 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 835);
-    expect(tr.length, 835);
+    expect(en.length, 838);
+    expect(tr.length, 838);
     expect(enMethods.length, 179);
     expect(trMethods.length, 179);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1014);
+    expect(en.length + enMethods.length, 1017);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

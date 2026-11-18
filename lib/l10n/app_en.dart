@@ -2247,6 +2247,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get terlikHintIdle => 'Smash the flying bug with the slipper!';
 
   @override
+  String get terlikHowToBody =>
+      'Tap the bugs popping out of the holes to smash them. Every hit scores; the bigger your combo, the more each hit is worth. An escaped bug breaks your combo, every 3rd miss costs a life, and the run ends when all 3 lives are gone. Tapping an empty hole only breaks the combo and costs no life. Traps appear once your score passes 220: touching a trap counts as a miss, but letting it expire has no penalty. Powers: Double Slipper smashes one extra bug on your next hit, Golden Slipper doubles all points for 20 seconds, and Medicine clears every target on screen. You can end the run early with the FINISH button.';
+
+  @override
+  String get terlikEnergyRefundNotice =>
+      'You left without a single hit, so 1 energy was refunded.';
+
+  @override
   String get terlikBonusComboSlipper => 'COMBO x8 SLIPPER +1';
 
   @override
@@ -2356,6 +2364,10 @@ class AppLocalizationsEn extends AppLocalizations {
   // --- W65-1: G7 scream_roach (i18n göç planı) ---
   @override
   String get screamHintIdle => 'Spam-tap = jump. Get through slipper · spray · pan!';
+
+  @override
+  String get screamHowToBody =>
+      'Tap to make the bug jump; when you stop tapping, gravity pulls it down. You score only by passing through gates — the more you jump, the more each gate is worth. The first 15 seconds are slower, with wider gate gaps. Hitting a gate or resting on the ground too long ends the run. The microphone is optional: turn it on with the mic button to jump by shouting; if permission is denied, you can keep playing by tapping. Powers: Jump launches a mighty leap and forgives one gate hit, Shield saves you from death once, and Nitro speeds you up for 8 seconds and adds +25 points per gate. You can end the run early with the FINISH button.';
 
   @override
   String get screamGatePrototype => 'GATE X7!';

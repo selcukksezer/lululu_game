@@ -2245,6 +2245,14 @@ class AppLocalizationsTr extends AppLocalizations {
   String get terlikHintIdle => 'Uçan böceği terlikle ez!';
 
   @override
+  String get terlikHowToBody =>
+      'Deliklerden çıkan böceklere dokunarak ez. Her vuruş puan verir; kombo büyüdükçe her vuruş daha çok puan getirir. Kaçan böcek komboyu kırar, her 3 ıskada 1 can gider; 3 can bitince tur biter. Boş deliğe dokunmak yalnız komboyu kırar, can almaz. Skor 220’yi geçince tuzaklar belirir: tuzağa dokunmak ıska sayılır, süresinin dolmasını beklersen ceza yoktur. Güçler: Çift Terlik bir sonraki vuruşta fazladan bir böcek daha ezer, Altın Terlik 20 saniye boyunca puanları ikiye katlar, İlaç ekrandaki tüm hedefleri temizler. BİTİR düğmesiyle turu erken bitirebilirsin.';
+
+  @override
+  String get terlikEnergyRefundNotice =>
+      'Hiç vuruş yapmadan çıktığın için 1 enerjin iade edildi.';
+
+  @override
   String get terlikBonusComboSlipper => 'COMBO x8 TERLİK +1';
 
   @override
@@ -2354,6 +2362,10 @@ class AppLocalizationsTr extends AppLocalizations {
   // --- W65-1: G7 scream_roach (i18n göç planı) ---
   @override
   String get screamHintIdle => 'Spam dokun = zıpla. Terlik · sprey · tava arasından geç!';
+
+  @override
+  String get screamHowToBody =>
+      'Dokunarak böceği zıplat; dokunmadığın sürece yer çekimiyle düşer. Puan yalnız kapıların arasından geçerek kazanılır; ne kadar çok zıplarsan kapı başına o kadar çok puan alırsın. İlk 15 saniye oyun daha yavaş ve kapı aralıkları daha geniştir. Kapıya çarparsan veya yerde çok beklersen tur biter. Mikrofon isteğe bağlıdır: mikrofon düğmesiyle açarsan bağırarak da zıplatabilirsin; izin verilmezse dokunarak oynamaya devam edersin. Güçler: Zıplama güçlü bir sıçrama yapar ve bir kapı çarpmasını affeder, Kalkan bir ölümü affeder, Nitro 8 saniye boyunca hızlandırır ve kapı başına +25 puan verir. BİTİR düğmesiyle turu erken bitirebilirsin.';
 
   @override
   String get screamGatePrototype => 'KAPI X7!';
