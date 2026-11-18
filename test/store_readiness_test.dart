@@ -257,12 +257,17 @@ void main() {
         expect(board.getGlobalTop(limit: 20), isNotEmpty);
         expect(board.get11ModeTotalTop(limit: 20), isNotEmpty);
 
-        // CloudSync queue & flush in offline/test environment
+        // CloudSync queue & flush in offline/test environment.
+        // Offline flush yazamaz: sözleşme gereği kuyruk korunur
+        // (CloudSyncFlushResult dokümanı: "Kuyruk, reddedilişte korunur").
+        // Kayıt sırasındaki göç + skor gönderimleri de kuyruğa paket
+        // eklediğinden, beklenen: 0 yazım + kuyruk boş değil.
+        final pendingBefore = sync.pending.length;
         await sync.enqueueProgressPush();
         await sync.enqueueLeaderboardPush();
         final flushed = await sync.flushPending();
-        expect(flushed, greaterThanOrEqualTo(0));
-        expect(sync.pending, isEmpty);
+        expect(flushed, 0);
+        expect(sync.pending.length, greaterThanOrEqualTo(pendingBefore + 2));
 
         // Reload & verify persistence
         await board.load();
@@ -283,6 +288,8 @@ void main() {
       () async {
         final chat = ChatService.instance;
         await chat.load();
+        // Gönderim önkoşulu: sohbet şart onayı.
+        await chat.acceptChatTerms();
 
         // Default feed available when channel has no user messages yet
         expect(chat.messagesForChannel(ChatChannel.lobby), isNotEmpty);
@@ -650,19 +657,31 @@ void main() {
       expect(content, contains('<activity'));
       expect(content, contains('</activity>'));
 
-      // Required Play Store permissions
+      // Required Play Store permissions. READ_MEDIA_VIDEO ve
+      // READ_EXTERNAL_STORAGE bilinçli olarak YOK: kullanılmayan izinler
+      // Play Store uyum düzeltmesinde (f761283) kaldırıldı.
       const requiredPermissions = <String>[
         'android.permission.INTERNET',
         'android.permission.ACCESS_NETWORK_STATE',
         'android.permission.RECORD_AUDIO',
         'android.permission.VIBRATE',
-        'android.permission.READ_MEDIA_VIDEO',
       ];
       for (final perm in requiredPermissions) {
         expect(
           content,
           contains(perm),
           reason: 'AndroidManifest.xml missing permission: $perm',
+        );
+      }
+      const removedPermissions = <String>[
+        'android.permission.READ_MEDIA_VIDEO',
+        'android.permission.READ_EXTERNAL_STORAGE',
+      ];
+      for (final perm in removedPermissions) {
+        expect(
+          content,
+          isNot(contains(perm)),
+          reason: 'AndroidManifest.xml must not re-add unused permission: $perm',
         );
       }
 
@@ -746,7 +765,10 @@ void main() {
       expect(privacyFile.existsSync(), isTrue);
       final privacyContent = privacyFile.readAsStringSync();
       expect(privacyContent, contains('class PrivacyPolicyScreen'));
-      expect(privacyContent, contains('GİZLİLİK POLİTİKASI'));
+      // Başlık + giriş metni l10n anahtarıyla çizilir (8f9e5ed gizlilik
+      // metni hizalaması); sabit 'GİZLİLİK POLİTİKASI' yazımı yok.
+      expect(privacyContent, contains('privacyTitle'));
+      expect(privacyContent, contains('privacyIntro'));
 
       final settingsFile = File(
         '${projectRoot.path}/lib/screens/settings_screen.dart',

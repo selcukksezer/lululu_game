@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 748 getter + 170 metot = 918 anahtar,
+// açıkça sayılır (soyut sınıftaki 777 getter + 170 metot = 947 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -790,6 +790,35 @@ void main() {
         'makaraOverTitle': l10n.makaraOverTitle,
         'bonusLifePlus': l10n.bonusLifePlus,
         'gotItPlay': l10n.gotItPlay,
+        'chatReportAction': l10n.chatReportAction,
+        'chatBlockAction': l10n.chatBlockAction,
+        'chatUnblockAction': l10n.chatUnblockAction,
+        'chatReportTitle': l10n.chatReportTitle,
+        'chatReportReasonSpam': l10n.chatReportReasonSpam,
+        'chatReportReasonInappropriate': l10n.chatReportReasonInappropriate,
+        'chatReportReasonHarassment': l10n.chatReportReasonHarassment,
+        'chatReportReasonOther': l10n.chatReportReasonOther,
+        'chatReportSent': l10n.chatReportSent,
+        'chatReportQueued': l10n.chatReportQueued,
+        'chatReportAlreadySent': l10n.chatReportAlreadySent,
+        'chatUserBlocked': l10n.chatUserBlocked,
+        'chatUserUnblocked': l10n.chatUserUnblocked,
+        'chatBlockedTitle': l10n.chatBlockedTitle,
+        'chatBlockedEmpty': l10n.chatBlockedEmpty,
+        'chatTermsTitle': l10n.chatTermsTitle,
+        'chatTermsBody': l10n.chatTermsBody,
+        'chatTermsAccept': l10n.chatTermsAccept,
+        'chatTermsDecline': l10n.chatTermsDecline,
+        'chatTermsRequired': l10n.chatTermsRequired,
+        'chatGuestBadge': l10n.chatGuestBadge,
+        'chatGuestNameTitle': l10n.chatGuestNameTitle,
+        'chatGuestNameHint': l10n.chatGuestNameHint,
+        'chatGuestNameEmpty': l10n.chatGuestNameEmpty,
+        'chatGuestNameSaved': l10n.chatGuestNameSaved,
+        'chatEmptyChannel': l10n.chatEmptyChannel,
+        'chatOptionsLabel': l10n.chatOptionsLabel,
+        'chatChangeNameAction': l10n.chatChangeNameAction,
+        'chatBlockedListAction': l10n.chatBlockedListAction,
       };
 
   Map<String, String> trStrings(AppLocalizationsTr l10n) => {
@@ -1556,6 +1585,35 @@ void main() {
         'makaraOverTitle': l10n.makaraOverTitle,
         'bonusLifePlus': l10n.bonusLifePlus,
         'gotItPlay': l10n.gotItPlay,
+        'chatReportAction': l10n.chatReportAction,
+        'chatBlockAction': l10n.chatBlockAction,
+        'chatUnblockAction': l10n.chatUnblockAction,
+        'chatReportTitle': l10n.chatReportTitle,
+        'chatReportReasonSpam': l10n.chatReportReasonSpam,
+        'chatReportReasonInappropriate': l10n.chatReportReasonInappropriate,
+        'chatReportReasonHarassment': l10n.chatReportReasonHarassment,
+        'chatReportReasonOther': l10n.chatReportReasonOther,
+        'chatReportSent': l10n.chatReportSent,
+        'chatReportQueued': l10n.chatReportQueued,
+        'chatReportAlreadySent': l10n.chatReportAlreadySent,
+        'chatUserBlocked': l10n.chatUserBlocked,
+        'chatUserUnblocked': l10n.chatUserUnblocked,
+        'chatBlockedTitle': l10n.chatBlockedTitle,
+        'chatBlockedEmpty': l10n.chatBlockedEmpty,
+        'chatTermsTitle': l10n.chatTermsTitle,
+        'chatTermsBody': l10n.chatTermsBody,
+        'chatTermsAccept': l10n.chatTermsAccept,
+        'chatTermsDecline': l10n.chatTermsDecline,
+        'chatTermsRequired': l10n.chatTermsRequired,
+        'chatGuestBadge': l10n.chatGuestBadge,
+        'chatGuestNameTitle': l10n.chatGuestNameTitle,
+        'chatGuestNameHint': l10n.chatGuestNameHint,
+        'chatGuestNameEmpty': l10n.chatGuestNameEmpty,
+        'chatGuestNameSaved': l10n.chatGuestNameSaved,
+        'chatEmptyChannel': l10n.chatEmptyChannel,
+        'chatOptionsLabel': l10n.chatOptionsLabel,
+        'chatChangeNameAction': l10n.chatChangeNameAction,
+        'chatBlockedListAction': l10n.chatBlockedListAction,
       };
 
   // Metot anahtarları: her metot, soyut sınıftaki imzasına uygun
@@ -1979,6 +2037,7 @@ void main() {
     'shopPowerGroupBonusCount', // şablon '$count bonus': sayı + ortak kelime
     'downloadedDayMonth', // şablon '$day $month': sayı + argüman, çevrilecek metin yok
     'monthShortName', // örnek argüman (3) iki dilde de 'Mar'
+    'chatReportReasonSpam', // ortak kelime, iki dilde de 'Spam'
   };
 
   // Koşullu metotlar: dönüş değeri dala/argümana bağlıdır
@@ -1993,21 +2052,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 918 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 947 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 748);
-    expect(tr.length, 748);
+    expect(en.length, 777);
+    expect(tr.length, 777);
     expect(enMethods.length, 170);
     expect(trMethods.length, 170);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 918);
+    expect(en.length + enMethods.length, 947);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

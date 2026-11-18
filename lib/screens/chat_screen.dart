@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
+import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
@@ -17,6 +18,9 @@ class _ChatItem {
     required this.isMe,
     this.stickerAsset,
     this.messageId,
+    this.authorId,
+    this.isGuestAuthor = false,
+    this.source,
   });
 
   final String sender;
@@ -28,6 +32,15 @@ class _ChatItem {
 
   /// ChatService mesaj kimliği; bulut gönderim durumu bununla sorgulanır.
   final String? messageId;
+
+  /// Yazar kimliği (canlı mesajlarda; tohum mesajlarda null).
+  final String? authorId;
+
+  /// Misafir yazar rozeti canlı mesajlarda gösterilir.
+  final bool isGuestAuthor;
+
+  /// Kaynak servis mesajı (raporla/engelle menüsü buradan okur).
+  final ChatMessage? source;
 }
 
 /// 1:1 Pixel-Perfect ChatScreen matching HTML prototype `#scr-chat`
@@ -150,11 +163,32 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    ChatService.instance.addListener(_onChatChanged);
     // Kanal görünümü açılırken okundu işaretle (S2#19): yükleme bitince
     // çağrılır; aktif kanalın yoklama sayacı sıfırlanır. Odak dönüşünde
     // tekrar gerekmez — aktif kanalın bulut akışı yeni mesajları
     // geldiğinde okundu sayar (ChatService._bindCloudStreamIfReady).
     unawaited(_markCurrentChannelRead());
+    unawaited(_ensureGuestIdentityForChat());
+  }
+
+  void _onChatChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Misafir kimliği ilk sohbet kullanımında oluşur (kalıcı UUID + ad);
+  /// kayıtlı kullanıcıda çağrı kimlik oluşturmaz.
+  Future<void> _ensureGuestIdentityForChat() async {
+    try {
+      await ChatService.instance.ensureLoaded();
+      await AuthService.instance.ensureLoaded();
+      final auth = AuthService.instance;
+      if (!auth.isSignedIn || (auth.user?.isGuest ?? false)) {
+        await ChatService.instance.ensureGuestIdentity();
+      }
+    } catch (e) {
+      debugPrint('[lululu] Misafir kimliği oluşturulamadı: $e');
+    }
   }
 
   Future<void> _markCurrentChannelRead() async {
@@ -172,6 +206,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    ChatService.instance.removeListener(_onChatChanged);
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -194,9 +229,33 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     // Bağlantı denetimi için yeni bağımlılık yok: gönderim hatası görünür
     // duruma bağlanır, metin alanda kalır, tekrar dene düğmesi sunulur.
-    late final ChatMessage sent;
+    // Gönderilen mesaj servisten okunur (dinleyici yeniden çizer); yerel
+    // listeye ekleme yapılmaz.
     try {
-      sent = await ChatService.instance.sendText(text);
+      await ChatService.instance.sendText(text);
+    } on ChatTermsRequiredException {
+      // Şart onayı yok: diyaloğu göster, kabulde bir kez tekrar dene.
+      final accepted = await _showTermsDialog();
+      if (!mounted) return;
+      if (!accepted) {
+        setState(() {
+          _isSending = false;
+          _sendError = context.l10n.chatTermsRequired;
+        });
+        return;
+      }
+      try {
+        await ChatService.instance.sendText(text);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _isSending = false;
+          _sendError = e is StateError
+              ? e.message.toString()
+              : context.l10n.messageSendFailed;
+        });
+        return;
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -208,24 +267,91 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     if (!mounted) return;
-    final now = DateTime.now();
-    final timeStr =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     setState(() {
       _isSending = false;
-      _messages.add(
-        _ChatItem(
-          sender: 'Sen · LülüSever',
-          text: sent.body,
-          time: timeStr,
-          avatarAsset: 'assets/design/bugs_hd/tier5_hd.png',
-          isMe: true,
-          messageId: sent.id,
-        ),
-      );
       _controller.clear();
     });
     _scrollToBottom();
+  }
+
+  /// Sohbet şart diyaloğu: kabulde onay kalıcı kaydedilir, true döner.
+  Future<bool> _showTermsDialog() async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(ctx.l10n.chatTermsTitle),
+          content: Text(ctx.l10n.chatTermsBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(ctx.l10n.chatTermsDecline),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(ctx.l10n.chatTermsAccept),
+            ),
+          ],
+        );
+      },
+    );
+    if (accepted == true) {
+      await ChatService.instance.acceptChatTerms();
+      return true;
+    }
+    return false;
+  }
+
+  /// Görüntülenecek mesajlar: kanalda kullanıcı/bulut mesajı varsa
+  /// canlı liste (engellenenler çıkarılmış), yoksa prototip tohum
+  /// mesajları. Canlı liste boşsa (hepsi engelli) boş durum gösterilir.
+  List<_ChatItem> _displayItems() {
+    final chat = ChatService.instance;
+    final channel = chat.currentChannel;
+    if (!chat.hasUserMessages(channel)) return _messages;
+    return chat
+        .messagesForChannel(channel, includeDefaultFeed: false)
+        .map(_itemFromService)
+        .toList();
+  }
+
+  bool get _showingLive => ChatService.instance.hasUserMessages(
+        ChatService.instance.currentChannel,
+      );
+
+  _ChatItem _itemFromService(ChatMessage msg) {
+    final time =
+        DateTime.fromMillisecondsSinceEpoch(msg.utcTicks, isUtc: true)
+            .toLocal();
+    final timeStr =
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    return _ChatItem(
+      sender: msg.authorName,
+      text: msg.body,
+      time: timeStr,
+      avatarAsset: _avatarFor(msg),
+      isMe: ChatService.instance.isOwnMessage(msg),
+      stickerAsset: msg.stickerAsset,
+      messageId: msg.id,
+      authorId: msg.authorId,
+      isGuestAuthor: msg.isGuestAuthor,
+      source: msg,
+    );
+  }
+
+  /// Yazar avatarı: çıkartmalı mesajda çıkartma görseli, misafirde
+  /// varsayılan simge, diğerlerinde yazar kimliğine kararlı bir tier
+  /// görseli (aynı yazar hep aynı simgeyle görünür).
+  static String _avatarFor(ChatMessage msg) {
+    if (msg.stickerAsset != null) return msg.stickerAsset!;
+    if (msg.isGuestAuthor) return 'assets/design/bugs_hd/tier1_hd.png';
+    var hash = 0;
+    for (final unit in msg.authorId.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    final tier = (hash % 13) + 1;
+    return 'assets/design/bugs_hd/tier${tier}_hd.png';
   }
 
   /// Buluta gönderilemeyen mesajların bulut yazımını yeniden dener.
@@ -240,9 +366,28 @@ class _ChatScreenState extends State<ChatScreen> {
     ({String name, String line, String asset}) sticker,
   ) async {
     AudioManager().playPop();
-    late final ChatMessage sent;
     try {
-      sent = await ChatService.instance.sendBugSticker(tier);
+      await ChatService.instance.sendBugSticker(tier);
+    } on ChatTermsRequiredException {
+      final accepted = await _showTermsDialog();
+      if (!mounted) return;
+      if (!accepted) {
+        setState(() {
+          _sendError = context.l10n.chatTermsRequired;
+        });
+        return;
+      }
+      try {
+        await ChatService.instance.sendBugSticker(tier);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _sendError = e is StateError
+              ? e.message.toString()
+              : context.l10n.stickerSendFailed;
+        });
+        return;
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -253,22 +398,8 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     if (!mounted) return;
-    final now = DateTime.now();
-    final timeStr =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     setState(() {
       _sendError = null;
-      _messages.add(
-        _ChatItem(
-          sender: 'Sen · LülüSever',
-          text: sticker.line,
-          time: timeStr,
-          avatarAsset: 'assets/design/bugs_hd/tier5_hd.png',
-          isMe: true,
-          stickerAsset: sticker.asset,
-          messageId: sent.id,
-        ),
-      );
     });
     _scrollToBottom();
   }
@@ -360,6 +491,425 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Başkasının canlı mesajına uzun basma menüsü: raporla / engelle.
+  /// Tohum mesajlarda ve kendi mesajlarında menü açılmaz.
+  void _openMessageMenu(_ChatItem item) {
+    final source = item.source;
+    if (source == null || source.isSystem) return;
+    AudioManager().playPop();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.flag_outlined,
+                  color: Color(0xFF141B2A),
+                ),
+                title: Text(
+                  ctx.l10n.chatReportAction,
+                  style: _nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF141B2A),
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _openReportDialog(source);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.block_outlined,
+                  color: Color(0xFF141B2A),
+                ),
+                title: Text(
+                  ctx.l10n.chatBlockAction,
+                  style: _nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF141B2A),
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _blockAuthor(source);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Rapor sebebi seçimi + gönderim; sonuç SnackBar ile bildirilir.
+  Future<void> _openReportDialog(ChatMessage message) async {
+    var selected = ChatReportReason.spam;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        String label(ChatReportReason reason) {
+          switch (reason) {
+            case ChatReportReason.spam:
+              return ctx.l10n.chatReportReasonSpam;
+            case ChatReportReason.inappropriate:
+              return ctx.l10n.chatReportReasonInappropriate;
+            case ChatReportReason.harassment:
+              return ctx.l10n.chatReportReasonHarassment;
+            case ChatReportReason.other:
+              return ctx.l10n.chatReportReasonOther;
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: Text(ctx.l10n.chatReportTitle),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final reason in ChatReportReason.values)
+                    RadioListTile<ChatReportReason>(
+                      value: reason,
+                      groupValue: selected,
+                      title: Text(label(reason)),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setDialogState(() => selected = value);
+                        }
+                      },
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(ctx.l10n.cancel),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: Text(ctx.l10n.chatReportAction),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    final outcome =
+        await ChatService.instance.reportMessage(message, selected);
+    if (!mounted) return;
+    final text = switch (outcome) {
+      ChatReportOutcome.sent => context.l10n.chatReportSent,
+      ChatReportOutcome.queued => context.l10n.chatReportQueued,
+      ChatReportOutcome.alreadyReported =>
+        context.l10n.chatReportAlreadySent,
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
+    );
+  }
+
+  Future<void> _blockAuthor(ChatMessage message) async {
+    await ChatService.instance.blockAuthor(
+      message.authorId,
+      authorName: message.authorName,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.chatUserBlocked)),
+    );
+  }
+
+  /// Başlık seçenekleri: misafirde ad değiştirme + engellenenler listesi.
+  void _openChatOptions() {
+    AudioManager().playPop();
+    final auth = AuthService.instance;
+    final isGuest = !auth.isSignedIn || (auth.user?.isGuest ?? false);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isGuest)
+                ListTile(
+                  leading: const Icon(
+                    Icons.edit_outlined,
+                    color: Color(0xFF141B2A),
+                  ),
+                  title: Text(
+                    ctx.l10n.chatChangeNameAction,
+                    style: _nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF141B2A),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _openRenameDialog();
+                  },
+                ),
+              ListTile(
+                leading: const Icon(
+                  Icons.block_outlined,
+                  color: Color(0xFF141B2A),
+                ),
+                title: Text(
+                  ctx.l10n.chatBlockedListAction,
+                  style: _nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF141B2A),
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _openBlockedList();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Misafir görünen adı değiştirme: boş kabul edilmez, uzunluk sınırlı.
+  Future<void> _openRenameDialog() async {
+    final controller = TextEditingController(
+      text: ChatService.instance.guestIdentity?.displayName ?? '',
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(ctx.l10n.chatGuestNameTitle),
+          content: TextField(
+            controller: controller,
+            maxLength: ChatService.maxGuestDisplayNameLength,
+            decoration: InputDecoration(
+              hintText: ctx.l10n.chatGuestNameHint,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(ctx.l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(ctx.l10n.save),
+            ),
+          ],
+        );
+      },
+    );
+    final name = controller.text;
+    controller.dispose();
+    if (saved != true || !mounted) return;
+    final ok = await ChatService.instance.setGuestDisplayName(name);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? context.l10n.chatGuestNameSaved : context.l10n.chatGuestNameEmpty,
+        ),
+      ),
+    );
+  }
+
+  /// Engellenen yazarlar listesi + engel kaldırma.
+  void _openBlockedList() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final blocked = ChatService.instance.blockedAuthors;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ctx.l10n.chatBlockedTitle,
+                  style: _baloo2(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF141B2A),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (blocked.isEmpty)
+                  Text(
+                    ctx.l10n.chatBlockedEmpty,
+                    style: _nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF757575),
+                    ),
+                  )
+                else
+                  for (final entry in blocked.entries)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            entry.value,
+                            style: _nunito(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF141B2A),
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            await ChatService.instance
+                                .unblockAuthor(entry.key);
+                            if (!ctx.mounted) return;
+                            Navigator.of(ctx).pop();
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  context.l10n.chatUserUnblocked,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Text(ctx.l10n.chatUnblockAction),
+                        ),
+                      ],
+                    ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Kanal satırı: 3 kanal çipi + okunmamış rozeti. Seçim
+  /// [ChatService.switchChannel] üzerinden gider; geçiş hem ayrılınan
+  /// hem girilen kanalı okundu sayar.
+  Widget _buildChannelRow() {
+    final chat = ChatService.instance;
+    final current = chat.currentChannel;
+    final locale = Localizations.localeOf(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 2),
+      child: Row(
+        children: [
+          for (var i = 0; i < ChatChannel.values.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Expanded(
+              child: _buildChannelChip(
+                channel: ChatChannel.values[i],
+                selected: ChatChannel.values[i] == current,
+                unreadCount: chat.unreadCountFor(ChatChannel.values[i]),
+                locale: locale,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChannelChip({
+    required ChatChannel channel,
+    required bool selected,
+    required int unreadCount,
+    required Locale locale,
+  }) {
+    return Semantics(
+      button: true,
+      label: channel.displayNameFor(locale),
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => ChatService.instance.switchChannel(channel),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF141B2A) : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF141B2A)
+                  : const Color(0xFFE6EAF2),
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  channel.displayNameFor(locale),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: selected
+                        ? Colors.white
+                        : const Color(0xFF141B2A),
+                  ),
+                ),
+              ),
+              if (unreadCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  height: 18,
+                  constraints: const BoxConstraints(minWidth: 18),
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFB80F42),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    ChatService.unreadLabel(unreadCount),
+                    style: _nunito(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.0,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -375,6 +925,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final mqTop = MediaQuery.of(context).padding.top;
+    final items = _displayItems();
+    final showEmptyState = _showingLive && items.isEmpty;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
@@ -388,20 +940,39 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   if (mqTop == 0) const _ChatPrototypeStatusBar(),
                   _buildPageTitle(),
+                  _buildChannelRow(),
                   Expanded(
-                    child: ListView.separated(
-                      controller: _scrollController,
-                      padding: EdgeInsets.fromLTRB(
-                        14,
-                        11.8,
-                        14,
-                        widget.embedded ? 90 : 178,
-                      ),
-                      itemCount: _messages.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12.2),
-                      itemBuilder: (context, index) =>
-                          _buildMessageRow(_messages[index]),
-                    ),
+                    child: showEmptyState
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+                              child: Text(
+                                context.l10n.chatEmptyChannel,
+                                textAlign: TextAlign.center,
+                                style: _nunito(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF757575),
+                                ),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            controller: _scrollController,
+                            padding: EdgeInsets.fromLTRB(
+                              14,
+                              11.8,
+                              14,
+                              widget.embedded ? 90 : 178,
+                            ),
+                            itemCount: items.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 12.2),
+                            itemBuilder: (context, index) =>
+                                _buildMessageRow(items[index]),
+                          ),
                   ),
                 ],
               ),
@@ -537,6 +1108,36 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
+          const SizedBox(width: 10),
+          Semantics(
+            button: true,
+            label: context.l10n.chatOptionsLabel,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _openChatOptions,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x1A141B2A),
+                      offset: Offset(0, 4),
+                      blurRadius: 0,
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.more_horiz_rounded,
+                  size: 24,
+                  color: Color(0xFF141B2A),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -616,21 +1217,54 @@ class _ChatScreenState extends State<ChatScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  item.isMe
-                      ? context.l10n.youAsName(
-                          _toTurkishUpper(_ownDisplayName(item.sender)),
-                        )
-                      : _toTurkishUpper(item.sender),
-                  style: _baloo2(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: item.isMe
-                        ? const Color(0xFFFFD34D)
-                        : const Color(0xFFB80F42),
-                    letterSpacing: 0.24,
-                    height: 18.6 / 12.0,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        item.isMe
+                            ? context.l10n.youAsName(
+                                _toTurkishUpper(_ownDisplayName(item.sender)),
+                              )
+                            : _toTurkishUpper(item.sender),
+                        style: _baloo2(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: item.isMe
+                              ? const Color(0xFFFFD34D)
+                              : const Color(0xFFB80F42),
+                          letterSpacing: 0.24,
+                          height: 18.6 / 12.0,
+                        ),
+                      ),
+                    ),
+                    if (item.isGuestAuthor && !item.isMe) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF4F6FA),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0xFFE6EAF2),
+                          ),
+                        ),
+                        child: Text(
+                          context.l10n.chatGuestBadge,
+                          style: _nunito(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF93A0B5),
+                            letterSpacing: 0.3,
+                            height: 1.2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 0.8),
                 if (item.stickerAsset != null)
@@ -712,13 +1346,23 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
 
-    return Row(
+    final row = Row(
       mainAxisAlignment:
           item.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: item.isMe
           ? [bubble, const SizedBox(width: 9), avatar]
           : [avatar, const SizedBox(width: 9), bubble],
+    );
+
+    // Uzun basma menüsü (raporla/engelle): yalnız başkasının canlı
+    // mesajlarında; tohum mesajlar ve sistem mesajları menüsüz.
+    final canModerate =
+        item.source != null && !item.isMe && !item.source!.isSystem;
+    if (!canModerate) return row;
+    return GestureDetector(
+      onLongPress: () => _openMessageMenu(item),
+      child: row,
     );
   }
 

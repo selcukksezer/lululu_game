@@ -190,6 +190,12 @@ class AuthService extends ChangeNotifier {
   // bu değişikliğin kapsamı dışındadır; bağımlılık eklenmedi.
   static const _localAccountsKey = 'LululuAccountsV1';
   static const _guestIdKey = 'LululuGuestIdV1';
+
+  /// Misafir kimliği -> hesap UID eşlemesi (JSON harita): misafir
+  /// giriş yaptığında göç kaydı buraya yazılır. Göçün tek seferlik
+  /// olduğunun kanıtı (idempotency işareti) ve sohbet engel/rapor
+  /// çözümlemesinin kaynağıdır. [ChatService] buradan okur.
+  static const guestIdentityLinksKey = 'LululuGuestIdentityLinksV1';
   // Yeni kayıtlar için asgari şifre uzunluğu. Girişte (login) asgari uzunluk
   // dayatılmaz: eski kısa şifreli hesaplar giriş yapabilmeli ve hash'leri
   // başarılı girişte yeni biçime yükseltilmelidir.
@@ -610,6 +616,53 @@ class AuthService extends ChangeNotifier {
     _loginLockoutUntilMs.remove(userKey);
   }
 
+  /// Misafir kimliği -> hesap UID eşlemesini okur (göç kayıtları).
+  Future<Map<String, String>> guestIdentityLinks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(guestIdentityLinksKey);
+    if (raw == null || raw.isEmpty) return <String, String>{};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final out = <String, String>{};
+      decoded.forEach((key, value) {
+        if (value is String && value.isNotEmpty) out[key] = value;
+      });
+      return out;
+    } catch (_) {
+      return <String, String>{};
+    }
+  }
+
+  /// Misafir kimliğini hesaba bağlar (kalıcı eşleme). Göç kaydıdır:
+  /// aynı misafir kimliği daha önce başka bir hesaba bağlanmışsa ilk
+  /// kayıt korunur (üzerine yazılmaz); aynı eşlemenin tekrarı
+  /// değişim yapmaz (idempotent).
+  Future<void> recordGuestIdentityLink(String guestId, String uid) async {
+    if (guestId.isEmpty || uid.isEmpty) return;
+    final links = await guestIdentityLinks();
+    if (links.containsKey(guestId)) return;
+    links[guestId] = uid;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(guestIdentityLinksKey, jsonEncode(links));
+  }
+
+  /// Hesaba bağlı misafir kimliklerinin eşlemelerini siler (hesap
+  /// silmede kullanılır; göç kaydı silinen hesapla birlikte gider).
+  Future<void> _removeGuestIdentityLinksForUid(String uid) async {
+    if (uid.isEmpty) return;
+    final links = await guestIdentityLinks();
+    final removed = links.entries
+        .where((entry) => entry.value == uid)
+        .map((entry) => entry.key)
+        .toList();
+    if (removed.isEmpty) return;
+    for (final key in removed) {
+      links.remove(key);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(guestIdentityLinksKey, jsonEncode(links));
+  }
+
   Future<_GuestProgressSnapshot?> _captureGuestProgressBeforeLink() async {
     // Link guest progress when upgrading from an active guest session,
     // or when registering the very first account on this device,
@@ -693,6 +746,17 @@ class AuthService extends ChangeNotifier {
     final targetName = _user!.displayName;
     final pm = ProgressManager();
     final prefs = await SharedPreferences.getInstance();
+
+    // Göç kaydı (idempotency): bu misafir kimlikleri bu hesaba daha
+    // önce göçmüşse tekrar birleştirme yapılmaz — çift sayma yok.
+    // Kayıt yoksa göç çalışır; max()/birleşim anlamları sayesinde
+    // yarım kalmış bir göçün tekrarı da güvenlidir (üzerine yazma
+    // yok, yerel veri asla silinmez; bulut yazımı kuyruktadır).
+    final migratingGuestIds = await _migratingGuestIds(snapshot, prefs);
+    final existingLinks = await guestIdentityLinks();
+    final alreadyMigrated = migratingGuestIds.isNotEmpty &&
+        migratingGuestIds.every((id) => existingLinks[id] == targetUid);
+    if (alreadyMigrated) return;
 
     if (snapshot.includeInMemoryScores) {
       pm.coins = max(pm.coins, snapshot.coins);
@@ -840,6 +904,35 @@ class AuthService extends ChangeNotifier {
     if (boardUpdated || snapshot.modeHighScores.isNotEmpty) {
       await CloudSyncService.instance.enqueueLeaderboardPush();
     }
+
+    // Göç kaydı: kimlik eşlemeleri kalıcı yazılır (tek seferlik
+    // göçün kanıtı + sohbet engel/rapor çözümlemesi). Eski sohbet
+    // mesajları misafir UUID'siyle kalır; yeni mesajlar hesap
+    // kimliğiyle gider; eşleme engel/rapor kayıtlarını çözer.
+    for (final guestId in migratingGuestIds) {
+      await recordGuestIdentityLink(guestId, targetUid);
+    }
+    await ChatService.instance.refreshIdentityLinks();
+  }
+
+  /// Göçen misafir kimlikleri: aktif misafir oturumu id'si, saklı
+  /// misafir id'si ve sohbet misafir kimliği (varsa). Paylaşılan
+  /// 'guest_local' yer tutucusu kimlik değildir, eşlemeye girmez.
+  Future<List<String>> _migratingGuestIds(
+    _GuestProgressSnapshot snapshot,
+    SharedPreferences prefs,
+  ) async {
+    final ids = <String>{};
+    void addId(String value) {
+      if (value.isNotEmpty && value != 'guest_local') ids.add(value);
+    }
+
+    addId(snapshot.previousGuestId);
+    addId(prefs.getString(_guestIdKey) ?? '');
+    await ChatService.instance.ensureLoaded();
+    final chatGuestId = ChatService.instance.guestIdentity?.id;
+    if (chatGuestId != null) addId(chatGuestId);
+    return ids.toList();
   }
 
   String _stableLocalId(String username) {
@@ -859,6 +952,7 @@ class AuthService extends ChangeNotifier {
     // K1 (W60-6): girişle kimlik kapısı açılmış olabilir; sohbet bulut
     // dinlemesini yeniden kur (kanal değişimi beklenmez).
     ChatService.instance.refreshCloudBinding();
+    await ChatService.instance.refreshIdentityLinks();
     notifyListeners();
   }
 
@@ -1000,6 +1094,10 @@ class AuthService extends ChangeNotifier {
     String? emailOverride,
   }) async {
     await ensureLoaded();
+    // Misafir göçü: girişten ÖNCE misafir ilerlemesi yakalanır
+    // (kayıt/Google/Apple akışlarıyla aynı desen); her iki başarı
+    // yolunda da hesaba birleştirilir.
+    final guestSnapshot = await _captureGuestProgressBeforeLink();
     final rawTrimmed = _sanitizeInput(username, fieldLabel: 'Kullanıcı adı');
     final isEmailInput = rawTrimmed.contains('@');
     final userKey = _normalizeUsername(rawTrimmed);
@@ -1108,6 +1206,7 @@ class AuthService extends ChangeNotifier {
           username: resolvedAccount.username,
         ),
       );
+      await _mergeGuestProgressIntoAccount(guestSnapshot);
       await _afterSignIn();
       return _user!;
     }
@@ -1148,6 +1247,7 @@ class AuthService extends ChangeNotifier {
             username: userKey,
           ),
         );
+        await _mergeGuestProgressIntoAccount(guestSnapshot);
         await _afterSignIn();
         return _user!;
       } on fb.FirebaseAuthException catch (e) {
@@ -1489,6 +1589,10 @@ class AuthService extends ChangeNotifier {
       await _persistAccounts();
     }
     await signOut();
+    // Göç kayıtları: silinen hesaba bağlı misafir eşlemeleri gider
+    // (misafir kimliğinin kendisi ChatService.clearLocalData ile
+    // aşağıda temizlenir).
+    await _removeGuestIdentityLinksForUid(accountId);
     // Yerel temizlik: silinen hesabın cihazdaki ilerleme / liderlik /
     // sohbet / senkron kuyruğu kayıtları temizlenir.
     final failedCleanups = <String>[];

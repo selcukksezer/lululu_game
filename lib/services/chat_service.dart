@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' show Locale;
+import 'dart:math';
+import 'dart:ui' show Locale, PlatformDispatcher;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
@@ -47,6 +48,82 @@ enum ChatChannel {
       locale.languageCode == 'en' ? displayNameEn : displayName;
 }
 
+/// Mesaj yazarının türü: kayıtlı kullanıcı veya misafir. Bulut
+/// kuralları (`firestore.rules`) bu alana göre yazar doğrulaması yapar:
+/// kullanıcıda `authorId == request.auth.uid`, misafirde yapısal
+/// doğrulama (kalıcı misafir UUID'si + uzunluk sınırları).
+enum ChatAuthorKind {
+  user('user'),
+  guest('guest');
+
+  const ChatAuthorKind(this.id);
+  final String id;
+
+  static ChatAuthorKind fromId(String? id) =>
+      id == 'guest' ? ChatAuthorKind.guest : ChatAuthorKind.user;
+}
+
+/// Rapor sebepleri (Play UGC politikası: bildirim akışı sebep seçimiyle).
+enum ChatReportReason {
+  spam('spam'),
+  inappropriate('inappropriate'),
+  harassment('harassment'),
+  other('other');
+
+  const ChatReportReason(this.id);
+  final String id;
+}
+
+/// Rapor gönderiminin sonucu: buluta yazıldı, çevrimdışı kuyruğa alındı
+/// veya bu mesaj daha önce raporlanmış.
+enum ChatReportOutcome { sent, queued, alreadyReported }
+
+/// Sohbet şart onayı verilmeden gönderim denendiğinde fırlatılır.
+/// Arayüz bu hatayı yakalayıp şart diyaloğunu gösterir; kabul sonrası
+/// gönderim tekrar denenir.
+class ChatTermsRequiredException implements Exception {
+  const ChatTermsRequiredException();
+
+  @override
+  String toString() => 'ChatTermsRequiredException';
+}
+
+/// Kalıcı misafir kimliği: cihazda saklanan sabit UUID + görünen ad.
+/// Aynı misafir her oturumda aynı kimlikle görünür; mesajlar
+/// karışmaz, raporlama/engelleme bu kimlik üzerinden çalışır.
+/// Görünen ad değiştirilebilir, UUID değişmez.
+class GuestChatIdentity {
+  const GuestChatIdentity({
+    required this.id,
+    required this.displayName,
+    required this.createdAtMs,
+  });
+
+  final String id;
+  final String displayName;
+  final int createdAtMs;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'displayName': displayName,
+        'createdAtMs': createdAtMs,
+      };
+
+  factory GuestChatIdentity.fromJson(Map<String, dynamic> json) {
+    return GuestChatIdentity(
+      id: json['id'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+      createdAtMs: (json['createdAtMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  GuestChatIdentity copyWith({String? displayName}) => GuestChatIdentity(
+        id: id,
+        displayName: displayName ?? this.displayName,
+        createdAtMs: createdAtMs,
+      );
+}
+
 class ChatMessage {
   ChatMessage({
     required this.id,
@@ -56,6 +133,7 @@ class ChatMessage {
     required this.utcTicks,
     this.isSystem = false,
     this.channel = ChatChannel.lobby,
+    this.authorKind = ChatAuthorKind.user,
     this.stickerTier,
     this.stickerAsset,
     this.voiceLine,
@@ -70,6 +148,7 @@ class ChatMessage {
   final int utcTicks;
   final bool isSystem;
   final ChatChannel channel;
+  final ChatAuthorKind authorKind;
   final int? stickerTier;
   final String? stickerAsset;
   final String? voiceLine;
@@ -78,6 +157,7 @@ class ChatMessage {
 
   bool get isSticker => stickerTier != null || stickerAsset != null;
   bool get isChallenge => challengeModeId != null;
+  bool get isGuestAuthor => authorKind == ChatAuthorKind.guest;
 
   Map<String, dynamic> toJson() {
     // voiceLine kural sınırı (1..120): yazılan değer her zaman kırpılır.
@@ -90,6 +170,7 @@ class ChatMessage {
     return {
       'id': id,
       'authorId': authorId,
+      'authorKind': authorKind.id,
       'authorName': safeAuthorName,
       'body': body,
       'utcTicks': utcTicks,
@@ -114,9 +195,19 @@ class ChatMessage {
     final safeVoiceLine = rawVoiceLine == null
         ? null
         : ChatService.sanitizeVoiceLine(rawVoiceLine);
+    // Eski kayıtlarda `authorKind` yok: yazar kimliğinden türetilir
+    // (paylaşılan 'guest_local' ve 'guest_*' kimlikler misafirdir).
+    final rawAuthorId = json['authorId'] as String? ?? '';
+    final rawKind = json['authorKind'] as String?;
+    final authorKind = rawKind != null
+        ? ChatAuthorKind.fromId(rawKind)
+        : (rawAuthorId == 'guest_local' || rawAuthorId.startsWith('guest_')
+            ? ChatAuthorKind.guest
+            : ChatAuthorKind.user);
     return ChatMessage(
       id: json['id'] as String? ?? '',
-      authorId: json['authorId'] as String? ?? '',
+      authorId: rawAuthorId,
+      authorKind: authorKind,
       authorName: safeAuthorName.isEmpty ? '?' : safeAuthorName,
       body: ChatService.sanitizeText(json['body'] as String? ?? ''),
       utcTicks: (json['utcTicks'] as num?)?.toInt() ?? 0,
@@ -151,6 +242,25 @@ class ChatService extends ChangeNotifier {
   /// [load] başlangıçta önbellekten türetilen değerle birleştirilir
   /// (büyük olan kazanır).
   static const _lastSeenPrefsKey = 'LululuChatLastSeenV1';
+
+  /// Kalıcı misafir kimliği (UUID + görünen ad) — tek JSON belge.
+  static const _guestIdentityPrefsKey = 'LululuChatGuestIdentityV1';
+
+  /// Sohbet şart onayı (tek seferlik, kalıcı).
+  static const _termsPrefsKey = 'LululuChatTermsAcceptedV1';
+
+  /// Engellenen yazarlar: yazar kimliği -> görünen ad (JSON harita).
+  static const _blockedPrefsKey = 'LululuChatBlockedV1';
+
+  /// Raporlanmış mesaj kimlikleri (tekrar raporu önler).
+  static const _reportedPrefsKey = 'LululuChatReportedV1';
+
+  /// Buluta yazılamayıp kuyrukta bekleyen raporlar (JSON liste).
+  static const _pendingReportsPrefsKey = 'LululuChatPendingReportsV1';
+
+  /// Misafir görünen adı üst sınırı (kural sınırı 32; ekranda 20 yeterli).
+  static const int maxGuestDisplayNameLength = 20;
+
   static const maxMessages = 200;
 
   /// Okunmamış yoklamasının pencere boyutu (S2#19): aktif olmayan her
@@ -313,6 +423,25 @@ class ChatService extends ChangeNotifier {
   /// Buluta yazımı başarısız olup yalnız yerelde kalan mesaj kimlikleri.
   final Set<String> _cloudFailedIds = <String>{};
 
+  /// Kalıcı misafir kimliği (yüklemede okunur, ilk kullanımda oluşur).
+  GuestChatIdentity? _guestIdentity;
+
+  /// Sohbet şart onayı verilmiş mi.
+  bool _termsAccepted = false;
+
+  /// Engellenen yazarlar: kimlik -> görünen ad.
+  final Map<String, String> _blockedAuthors = {};
+
+  /// Raporlanmış mesaj kimlikleri.
+  final Set<String> _reportedIds = <String>{};
+
+  /// Buluta yazılamayıp kuyrukta bekleyen rapor belgeleri.
+  final List<Map<String, dynamic>> _pendingReports = [];
+
+  /// Misafir UUID'si -> hesap UID eşlemesi (göçte yazılır,
+  /// [AuthService.guestIdentityLinksKey] altında saklanır).
+  Map<String, String> _identityLinks = {};
+
   ChatChannel get currentChannel => _currentChannel;
 
   /// Kanal başına okunmamış mesaj sayısı (yalnız bulut dinlenirken
@@ -369,16 +498,40 @@ class ChatService extends ChangeNotifier {
   /// Geriye dönük uyumlu mesaj listesi (`ChatScreen` tarafından okunur).
   List<ChatMessage> get messages => List.unmodifiable(_messages);
 
-  /// Aktif veya belirtilen kanaldaki mesajlar.
+  /// Aktif veya belirtilen kanaldaki mesajlar (engellenen yazarlar
+  /// çıkarılmış hâliyle — depolanan liste değişmez, yalnız görünüm
+  /// filtrelenir).
   List<ChatMessage> messagesForChannel(
     ChatChannel channel, {
     bool includeDefaultFeed = true,
   }) {
     final userList = _byChannel[channel] ?? const <ChatMessage>[];
     if (!includeDefaultFeed || userList.isNotEmpty) {
-      return List.unmodifiable(userList);
+      return List.unmodifiable(_visibleMessages(userList));
     }
-    return List.unmodifiable(_defaultFeedFor(channel));
+    return List.unmodifiable(_visibleMessages(_defaultFeedFor(channel)));
+  }
+
+  /// Kanalda kullanıcı/bulut mesajı var mı (engelleme filtresinden
+  /// ÖNCE bakılır): arayüz, boş kanal ile "hepsi engelli" kanalı
+  /// ayırır — ilkinde tohum içerik, ikincisinde boş durum gösterilir.
+  bool hasUserMessages(ChatChannel channel) =>
+      (_byChannel[channel] ?? const <ChatMessage>[]).isNotEmpty;
+
+  /// Okunmamış rozet etiketi: yoklama penceresiyle sınırlı olduğundan
+  /// sınırda "10+" gösterilir; kesin sayı iddia edilmez.
+  static String unreadLabel(int count) {
+    if (count >= unreadProbeLimit) {
+      return '$unreadProbeLimit+';
+    }
+    return '$count';
+  }
+
+  /// Engellenen yazarların mesajlarını çıkarır (bağlı kimlikler dahil:
+  /// engellenen misafir UUID'sinin hesaba bağlı UID'si de gizlenir).
+  List<ChatMessage> _visibleMessages(List<ChatMessage> source) {
+    if (_blockedAuthors.isEmpty) return source;
+    return source.where((m) => !isBlocked(m.authorId)).toList();
   }
 
   /// Gerçek zamanlı mesaj akışı.
@@ -526,6 +679,12 @@ class ChatService extends ChangeNotifier {
     for (final c in ChatChannel.values) {
       _byChannel[c] = <ChatMessage>[];
     }
+    _guestIdentity = null;
+    _termsAccepted = false;
+    _blockedAuthors.clear();
+    _reportedIds.clear();
+    _pendingReports.clear();
+    _identityLinks = {};
 
     if (raw != null && raw.isNotEmpty) {
       try {
@@ -583,6 +742,43 @@ class ChatService extends ChangeNotifier {
       } catch (_) {}
     }
 
+    // Moderasyon durumu: misafir kimliği, şart onayı, engel/rapor
+    // kayıtları ve kimlik eşlemesi her yüklemede prefs'ten okunur
+    // (bellek durumu prefs'i yansıtır; test izolasyonu da korunur).
+    _termsAccepted = prefs.getBool(_termsPrefsKey) ?? false;
+    final rawIdentity = prefs.getString(_guestIdentityPrefsKey);
+    if (rawIdentity != null && rawIdentity.isNotEmpty) {
+      try {
+        final identity = GuestChatIdentity.fromJson(
+          jsonDecode(rawIdentity) as Map<String, dynamic>,
+        );
+        if (identity.id.isNotEmpty && identity.displayName.isNotEmpty) {
+          _guestIdentity = identity;
+        }
+      } catch (_) {}
+    }
+    final rawBlocked = prefs.getString(_blockedPrefsKey);
+    if (rawBlocked != null && rawBlocked.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawBlocked) as Map<String, dynamic>;
+        decoded.forEach((key, value) {
+          if (value is String) _blockedAuthors[key] = value;
+        });
+      } catch (_) {}
+    }
+    final rawReported = prefs.getStringList(_reportedPrefsKey);
+    if (rawReported != null) _reportedIds.addAll(rawReported);
+    final rawPending = prefs.getString(_pendingReportsPrefsKey);
+    if (rawPending != null && rawPending.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawPending) as List<dynamic>;
+        for (final e in decoded) {
+          if (e is Map<String, dynamic>) _pendingReports.add(e);
+        }
+      } catch (_) {}
+    }
+    await _loadIdentityLinks(prefs);
+
     _loaded = true;
     _bindCloudStreamIfReady();
     _streamController.add(messages);
@@ -612,10 +808,21 @@ class ChatService extends ChangeNotifier {
     _lastSentText = '';
     _lastSentAtMs = 0;
     _recentSendTimestampsMs.clear();
+    _guestIdentity = null;
+    _termsAccepted = false;
+    _blockedAuthors.clear();
+    _reportedIds.clear();
+    _pendingReports.clear();
+    _identityLinks = {};
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsKey);
     await prefs.remove(_channelsPrefsKey);
     await prefs.remove(_lastSeenPrefsKey);
+    await prefs.remove(_guestIdentityPrefsKey);
+    await prefs.remove(_termsPrefsKey);
+    await prefs.remove(_blockedPrefsKey);
+    await prefs.remove(_reportedPrefsKey);
+    await prefs.remove(_pendingReportsPrefsKey);
     _loaded = false;
     _streamController.add(messages);
     notifyListeners();
@@ -717,33 +924,361 @@ class ChatService extends ChangeNotifier {
     }
   }
 
-  /// K1/K4 (W60-6): sohbet bulut kapısı — Firebase UID ile yazılacak
-  /// `authorId` aynı olmalı. Kural `authorId == request.auth.uid` ister;
-  /// uyumsuzlukta (sentetik `playerId`, oturumsuz misafir, başarısız
-  /// anonim giriş) bulut denemesi hiç yapılmaz, mesaj yerelde kalır ve
-  /// [retryFailedCloudPushes] için başarısız işaretli kalır (çevrimdışı
-  /// kuyruk). Firebase hazır değilse `false` döner — o durumda zaten
-  /// hiçbir bulut yolu çalışmaz. Anonim girişi başarmış misafirde
-  /// `playerId` Firebase UID'si olduğundan kapı açıktır.
+  /// Bulut okuma kapısı: Firebase hazır + Firebase oturumu var.
+  /// Kayıtlı kullanıcıda UID uyumu da şart (K1/K4); misafirde anonim
+  /// oturum yeterlidir — misafir yazıları kuralca yapısal doğrulanır
+  /// (`authorKind == 'guest'` + kalıcı misafir UUID'si).
   bool get _cloudIdentityAligned {
-    if (!FirebaseBootstrap.isAvailable) return false;
+    if (!_cloudAuthReady) return false;
     try {
-      final fbUid = fb.FirebaseAuth.instance.currentUser?.uid;
-      if (fbUid == null) return false;
-      final authorId = AuthService.instance.isSignedIn
-          ? AuthService.instance.playerId
-          : 'guest_local';
-      return fbUid == authorId;
+      final auth = AuthService.instance;
+      if (auth.isSignedIn && !(auth.user?.isGuest ?? true)) {
+        return fb.FirebaseAuth.instance.currentUser?.uid == auth.playerId;
+      }
+      return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Firebase oturumu var mı (anonim dahil).
+  bool get _cloudAuthReady {
+    if (!FirebaseBootstrap.isAvailable) return false;
+    try {
+      return fb.FirebaseAuth.instance.currentUser != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Mesaj bazında bulut yazım kapısı: kullanıcı mesajında UID uyumu,
+  /// misafir mesajında oturum varlığı yeterlidir.
+  bool _canPushMessage(ChatMessage msg) {
+    if (!_cloudAuthReady) return false;
+    if (msg.authorKind == ChatAuthorKind.user) {
+      try {
+        return fb.FirebaseAuth.instance.currentUser?.uid == msg.authorId;
+      } catch (_) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Misafir bulut yazımı için anonim Firebase oturumunu sağlar
+  /// (en iyi çaba; başarısızlık sessizce yerel-only durumuna düşer).
+  /// Anonim oturum yalnız taşıma kimliğidir, yazar kimliğini
+  /// değiştirmez — atıf her zaman kalıcı misafir UUID'sine yapılır.
+  Future<void> _ensureGuestCloudCredential() async {
+    if (!FirebaseBootstrap.isAvailable || _cloudAuthReady) return;
+    try {
+      await AuthService.instance.signInAsGuest();
+    } catch (e) {
+      debugPrint('[lululu] Chat guest cloud credential fallback: $e');
     }
   }
 
   /// Oturum değişiminden sonra bulut dinlemesini kapıya göre yeniden
   /// kurar (girişte bağlan, çıkışta/uyumsuzlukta kapat). Giriş anında
   /// kapı açılır ama kanal değiştirilmezse akışın kendiliğinden
-  /// bağlanması için [AuthService] burayı çağırır.
-  void refreshCloudBinding() => _bindCloudStreamIfReady();
+  /// bağlanması için [AuthService] burayı çağırır. Kuyruktaki
+  /// raporlar da bu noktada tekrar denenir.
+  void refreshCloudBinding() {
+    _bindCloudStreamIfReady();
+    unawaited(retryPendingReports());
+  }
+
+  /// Misafir->hesap eşlemesini prefs'ten tazeler (giriş sonrası
+  /// [AuthService] çağırır; engel çözümlemesi güncel kalır).
+  Future<void> refreshIdentityLinks() async {
+    final prefs = await SharedPreferences.getInstance();
+    await _loadIdentityLinks(prefs);
+    notifyListeners();
+  }
+
+  Future<void> _loadIdentityLinks(SharedPreferences prefs) async {
+    _identityLinks = {};
+    final raw = prefs.getString(AuthService.guestIdentityLinksKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      decoded.forEach((key, value) {
+        if (value is String && value.isNotEmpty) {
+          _identityLinks[key] = value;
+        }
+      });
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------
+  // Misafir kimliği, şart onayı, engelleme, raporlama (UGC moderasyonu)
+  // ---------------------------------------------------------------
+
+  /// Yüklü misafir kimliği (yoksa null; [ensureGuestIdentity] oluşturur).
+  GuestChatIdentity? get guestIdentity => _guestIdentity;
+
+  /// Şart onayı verilmiş mi.
+  bool get hasAcceptedChatTerms => _termsAccepted;
+
+  /// Şart onayını kalıcı kaydeder.
+  Future<void> acceptChatTerms() async {
+    _termsAccepted = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_termsPrefsKey, true);
+    notifyListeners();
+  }
+
+  /// Gönderim için şart kapısı: onaysız gönderim denemesi
+  /// [ChatTermsRequiredException] fırlatır.
+  void _requireTermsAccepted() {
+    if (!_termsAccepted) {
+      throw const ChatTermsRequiredException();
+    }
+  }
+
+  /// Kalıcı misafir kimliğini döndürür; yoksa oluşturup saklar.
+  /// Kimlik oturumlar arasında aynı kalır (UUID değişmez).
+  Future<GuestChatIdentity> ensureGuestIdentity() async {
+    final existing = _guestIdentity;
+    if (existing != null) return existing;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_guestIdentityPrefsKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final identity = GuestChatIdentity.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
+        if (identity.id.isNotEmpty && identity.displayName.isNotEmpty) {
+          _guestIdentity = identity;
+          return identity;
+        }
+      } catch (_) {}
+    }
+    final id = _newGuestId();
+    final created = GuestChatIdentity(
+      id: id,
+      displayName: _defaultGuestDisplayName(id),
+      createdAtMs: DateTime.now().toUtc().millisecondsSinceEpoch,
+    );
+    _guestIdentity = created;
+    await prefs.setString(
+      _guestIdentityPrefsKey,
+      jsonEncode(created.toJson()),
+    );
+    notifyListeners();
+    return created;
+  }
+
+  /// Yeni misafir UUID'si: `guest_` + 20 güvenli rastgele hex karakter.
+  /// Kural deseniyle (`^guest_[0-9a-f]{8,64}$`) uyumludur.
+  static String _newGuestId() {
+    final random = Random.secure();
+    const hex = '0123456789abcdef';
+    final suffix =
+        List.generate(20, (_) => hex[random.nextInt(hex.length)]).join();
+    return 'guest_$suffix';
+  }
+
+  /// Varsayılan görünen ad: dile göre `Misafir-4821` / `Guest-4821`.
+  /// Sonek kimlikten türetilir (kararlı, çakışması düşük); ad sonradan
+  /// değiştirilebilir.
+  static String _defaultGuestDisplayName(String guestId) {
+    var hash = 0;
+    for (final unit in guestId.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    final suffix = 1000 + (hash % 9000);
+    final locale = PlatformDispatcher.instance.locale;
+    return locale.languageCode == 'en'
+        ? 'Guest-$suffix'
+        : 'Misafir-$suffix';
+  }
+
+  /// Misafir görünen adını değiştirir: boş olamaz, kırpılır,
+  /// [maxGuestDisplayNameLength] ile sınırlanır. UUID değişmez.
+  /// Geçersiz adlarda false döner, kayıt değişmez.
+  Future<bool> setGuestDisplayName(String raw) async {
+    final identity = await ensureGuestIdentity();
+    final cleaned =
+        raw.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
+    if (cleaned.isEmpty) return false;
+    final clamped = cleaned.length > maxGuestDisplayNameLength
+        ? cleaned.substring(0, maxGuestDisplayNameLength).trimRight()
+        : cleaned;
+    if (clamped.isEmpty) return false;
+    if (clamped == identity.displayName) return true;
+    final updated = identity.copyWith(displayName: clamped);
+    _guestIdentity = updated;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _guestIdentityPrefsKey,
+      jsonEncode(updated.toJson()),
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// Gönderimde kullanılacak yazar kimliği: kayıtlı kullanıcıda hesap
+  /// kimliği, misafirde (oturumsuz veya anonim misafir oturumu) kalıcı
+  /// misafir kimliği. Anonim Firebase oturumu yalnız taşıma kimliğidir,
+  /// yazar kimliği değildir — atıf her zaman kararlı misafir UUID'sine
+  /// yapılır.
+  Future<({String authorId, String authorName, ChatAuthorKind kind})>
+      _resolveSender() async {
+    await AuthService.instance.ensureLoaded();
+    final auth = AuthService.instance;
+    if (auth.isSignedIn && !(auth.user?.isGuest ?? true)) {
+      return (
+        authorId: auth.playerId,
+        authorName: auth.displayName,
+        kind: ChatAuthorKind.user,
+      );
+    }
+    final identity = await ensureGuestIdentity();
+    return (
+      authorId: identity.id,
+      authorName: identity.displayName,
+      kind: ChatAuthorKind.guest,
+    );
+  }
+
+  /// Bu cihazın güncel yazar kimliği (eşzamanlı): kayıtlı kullanıcıda
+  /// hesap id'si, misafirde yüklü kimlik id'si, yüklenmemişse null.
+  /// [isOwnMessage] ve okunmamış sayımı buradan okur.
+  String? get currentAuthorId {
+    final auth = AuthService.instance;
+    if (auth.isSignedIn && !(auth.user?.isGuest ?? true)) {
+      return auth.playerId;
+    }
+    return _guestIdentity?.id;
+  }
+
+  /// Mesaj bu cihazın yazarına mı ait.
+  bool isOwnMessage(ChatMessage message) {
+    final own = currentAuthorId;
+    return own != null && own.isNotEmpty && message.authorId == own;
+  }
+
+  /// Engellenen yazarlar: kimlik -> görünen ad (salt okunur görünüm).
+  Map<String, String> get blockedAuthors => Map.unmodifiable(_blockedAuthors);
+
+  /// Engellenen yazar kimlikleri.
+  Set<String> get blockedAuthorIds => Set.unmodifiable(_blockedAuthors.keys);
+
+  /// Yazar engelli mi (bağlı kimlikler dahil: engellenen misafir
+  /// UUID'sinin hesaba bağlı UID'si de engelli sayılır ve tersi).
+  bool isBlocked(String authorId) {
+    if (_blockedAuthors.containsKey(authorId)) return true;
+    for (final linked in _linkedCounterparts(authorId)) {
+      if (_blockedAuthors.containsKey(linked)) return true;
+    }
+    return false;
+  }
+
+  /// Kimliğin göçle bağlı karşılıkları (misafir UUID <-> hesap UID).
+  Set<String> _linkedCounterparts(String authorId) {
+    final out = <String>{};
+    final linked = _identityLinks[authorId];
+    if (linked != null) out.add(linked);
+    _identityLinks.forEach((guestId, uid) {
+      if (uid == authorId) out.add(guestId);
+    });
+    return out;
+  }
+
+  /// Yazarı engeller: mesajları sohbette gizlenir. Engel cihazda
+  /// kalıcıdır; kendi kimliği engellenemez.
+  Future<void> blockAuthor(String authorId, {String? authorName}) async {
+    if (authorId.isEmpty || authorId == currentAuthorId) return;
+    _blockedAuthors[authorId] = authorName ?? authorId;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_blockedPrefsKey, jsonEncode(_blockedAuthors));
+    notifyListeners();
+  }
+
+  /// Yazarın engelini kaldırır. Engel kaydı kimlik bazlıdır; bağlı
+  /// kimliğin engeli ayrıca kaldırılır.
+  Future<void> unblockAuthor(String authorId) async {
+    if (_blockedAuthors.remove(authorId) == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_blockedPrefsKey, jsonEncode(_blockedAuthors));
+    notifyListeners();
+  }
+
+  /// Mesajı raporlar: `chat_reports` koleksiyonuna yazılır (bulut
+  /// hazırsa hemen, değilse kuyruğa alınıp bağlantı gelince
+  /// gönderilir). Aynı mesaj iki kez raporlanmaz; sonuç
+  /// [ChatReportOutcome] ile bildirilir. Raporlama şart onayı istemez.
+  Future<ChatReportOutcome> reportMessage(
+    ChatMessage message,
+    ChatReportReason reason,
+  ) async {
+    await ensureLoaded();
+    if (_reportedIds.contains(message.id)) {
+      return ChatReportOutcome.alreadyReported;
+    }
+    final sender = await _resolveSender();
+    var body = sanitizeText(message.body);
+    if (body.isEmpty) body = '-';
+    final report = <String, dynamic>{
+      'messageId': message.id,
+      'channelId': message.channel.id,
+      'reportedAuthorId': message.authorId,
+      'reportedAuthorKind': message.authorKind.id,
+      'reportedAuthorName': sanitizeAuthorName(message.authorName),
+      'messageBody': body,
+      'reason': reason.id,
+      'reporterId': sender.authorId,
+      'reporterKind': sender.kind.id,
+      'createdAtMs': DateTime.now().toUtc().millisecondsSinceEpoch,
+    };
+    _reportedIds.add(message.id);
+    _pendingReports.add(report);
+    await _persistReportState();
+    if (_cloudAuthReady) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('chat_reports')
+            .add(report);
+        _pendingReports.remove(report);
+        await _persistReportState();
+        return ChatReportOutcome.sent;
+      } catch (e) {
+        debugPrint('[lululu] Chat report queued: $e');
+      }
+    }
+    return ChatReportOutcome.queued;
+  }
+
+  /// Kuyruktaki raporları buluta göndermeyi dener.
+  Future<void> retryPendingReports() async {
+    if (_pendingReports.isEmpty || !_cloudAuthReady) return;
+    final remaining = <Map<String, dynamic>>[];
+    for (final report in _pendingReports) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('chat_reports')
+            .add(report);
+      } catch (_) {
+        remaining.add(report);
+      }
+    }
+    if (remaining.length != _pendingReports.length) {
+      _pendingReports
+        ..clear()
+        ..addAll(remaining);
+      await _persistReportState();
+    }
+  }
+
+  Future<void> _persistReportState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_reportedPrefsKey, _reportedIds.toList());
+    await prefs.setString(
+      _pendingReportsPrefsKey,
+      jsonEncode(_pendingReports),
+    );
+  }
 
   void _bindCloudStreamIfReady() {
     _cloudSub?.cancel();
@@ -838,9 +1373,7 @@ class ChatService extends ChangeNotifier {
   ) {
     if (channel == _currentChannel) return;
     final seen = _lastSeenTicks[channel] ?? 0;
-    final ownId = AuthService.instance.isSignedIn
-        ? AuthService.instance.playerId
-        : 'guest_local';
+    final ownId = currentAuthorId ?? '';
     final knownIds = <String>{
       for (final m in _byChannel[channel] ?? const <ChatMessage>[]) m.id,
     };
@@ -872,6 +1405,7 @@ class ChatService extends ChangeNotifier {
     ChatChannel? channel,
   }) async {
     await ensureLoaded();
+    _requireTermsAccepted();
     final cleanBody = sanitizeText(text);
     if (cleanBody.isEmpty) {
       throw ArgumentError('Boş mesaj gönderilemez');
@@ -880,16 +1414,14 @@ class ChatService extends ChangeNotifier {
       throw StateError('Çok hızlı mesaj gönderiyorsun — biraz bekle');
     }
 
-    await AuthService.instance.ensureLoaded();
-    final auth = AuthService.instance;
-    final authorId = auth.isSignedIn ? auth.playerId : 'guest_local';
-    final authorName = auth.isSignedIn ? auth.displayName : 'Sen · LülüSever';
+    final sender = await _resolveSender();
     final targetChannel = channel ?? _currentChannel;
 
     final msg = ChatMessage(
       id: 'm_${DateTime.now().microsecondsSinceEpoch}',
-      authorId: authorId,
-      authorName: authorName,
+      authorId: sender.authorId,
+      authorName: sender.authorName,
+      authorKind: sender.kind,
       body: cleanBody,
       utcTicks: DateTime.now().toUtc().millisecondsSinceEpoch,
       channel: targetChannel,
@@ -906,8 +1438,7 @@ class ChatService extends ChangeNotifier {
     String? customLine,
   }) async {
     await ensureLoaded();
-    await AuthService.instance.ensureLoaded();
-    final auth = AuthService.instance;
+    _requireTermsAccepted();
     final clampedTier = tier.clamp(1, 13);
     final info = bugStickerCatalog[clampedTier] ??
         (
@@ -927,10 +1458,12 @@ class ChatService extends ChangeNotifier {
       throw StateError('Çok hızlı mesaj gönderiyorsun — biraz bekle');
     }
 
+    final sender = await _resolveSender();
     final msg = ChatMessage(
       id: 'stk_${DateTime.now().microsecondsSinceEpoch}',
-      authorId: auth.isSignedIn ? auth.playerId : 'guest_local',
-      authorName: auth.isSignedIn ? auth.displayName : 'Sen · LülüSever',
+      authorId: sender.authorId,
+      authorName: sender.authorName,
+      authorKind: sender.kind,
       body: bodyText,
       utcTicks: DateTime.now().toUtc().millisecondsSinceEpoch,
       channel: targetChannel,
@@ -950,8 +1483,7 @@ class ChatService extends ChangeNotifier {
     String? modeTitle,
   }) async {
     await ensureLoaded();
-    await AuthService.instance.ensureLoaded();
-    final auth = AuthService.instance;
+    _requireTermsAccepted();
     final safeScore = targetScore.clamp(1, 500000);
     final rawLabel = modeTitle ?? modeId.toUpperCase();
     final label = sanitizeText(rawLabel);
@@ -962,10 +1494,12 @@ class ChatService extends ChangeNotifier {
       throw StateError('Çok hızlı mesaj gönderiyorsun — biraz bekle');
     }
 
+    final sender = await _resolveSender();
     final msg = ChatMessage(
       id: 'vs_${DateTime.now().microsecondsSinceEpoch}',
-      authorId: auth.isSignedIn ? auth.playerId : 'guest_local',
-      authorName: auth.isSignedIn ? auth.displayName : 'Sen · LülüSever',
+      authorId: sender.authorId,
+      authorName: sender.authorName,
+      authorKind: sender.kind,
       body: bodyText,
       utcTicks: DateTime.now().toUtc().millisecondsSinceEpoch,
       channel: ChatChannel.vsChallenge,
@@ -994,9 +1528,15 @@ class ChatService extends ChangeNotifier {
     _streamController.add(messages);
     notifyListeners();
 
-    // K1/K4 (W60-6): kimlik kapısı kapalıyken bulut yazımı denenmez;
-    // mesaj yerelde kalır ve başarısız işaretli kalır (çevrimdışı kuyruk).
-    if (_cloudIdentityAligned) {
+    // Misafir bulut yazımı anonim oturum ister: yoksa en iyi çabayla
+    // sağlanır (başarısızlık yerel-only durumuna düşer).
+    if (msg.authorKind == ChatAuthorKind.guest) {
+      await _ensureGuestCloudCredential();
+    }
+    // Mesaj bazında kapı: kullanıcıda UID uyumu, misafirde oturum
+    // varlığı. Kapalıysa mesaj yerelde kalır ve başarısız işaretli
+    // kalır (çevrimdışı kuyruk, [retryFailedCloudPushes]).
+    if (_canPushMessage(msg)) {
       try {
         await FirebaseFirestore.instance
             .collection('chat_channels')
@@ -1020,11 +1560,9 @@ class ChatService extends ChangeNotifier {
 
   /// Buluta gönderilemeyen mesajları yeniden göndermeyi dener.
   /// Tümü yazılırsa true döner; başarısız kalanlar işaretli kalır.
+  /// Kapı mesaj bazındadır: kapalı kimlikteki mesajlar kuyrukta kalır.
   Future<bool> retryFailedCloudPushes() async {
     if (_cloudFailedIds.isEmpty) return true;
-    // K1 (W60-6): kimlik uyumsuzken bulut denemesi yapma; işaretler
-    // kuyrukta kalır, kimlik düzelince tekrar denenir.
-    if (!_cloudIdentityAligned) return false;
     final byId = <String, ChatMessage>{};
     for (final m in _messages) {
       byId[m.id] = m;
@@ -1038,9 +1576,17 @@ class ChatService extends ChangeNotifier {
     for (final id in _cloudFailedIds.toList()) {
       if (!byId.containsKey(id)) _cloudFailedIds.remove(id);
     }
+    if (byId.values
+        .any((m) => m.authorKind == ChatAuthorKind.guest)) {
+      await _ensureGuestCloudCredential();
+    }
     var allOk = true;
     for (final id in _cloudFailedIds.toList()) {
       final msg = byId[id]!;
+      if (!_canPushMessage(msg)) {
+        allOk = false;
+        continue;
+      }
       try {
         final ref = FirebaseFirestore.instance
             .collection('chat_channels')

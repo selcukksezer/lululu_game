@@ -262,6 +262,7 @@ service cloud.firestore {
         'id',
         'senderId',
         'authorId',
+        'authorKind',
         'senderName',
         'authorName',
         'text',
@@ -276,12 +277,33 @@ service cloud.firestore {
         'challengeTargetScore',
         'createdAt'
       ];
+      // authorKind zorunlu: 'user' veya 'guest'. Kullanıcıda yazar
+      // kimliği Firebase UID'si ile eşleşmeli; misafirde kalıcı
+      // misafir UUID deseni + yapısal sınırlar aranır. ARTIK RİSK:
+      // kural, misafir UUID'sinin sahipliğini doğrulayamaz — anonim
+      // oturumlu herhangi bir istemci başkasının misafir UUID'siyle
+      // yazabilir. Hafifletme: anonim oturum şartı + istemcide
+      // hız/küfür filtresi + raporlama/engelleme akışı.
+      let isUserKind = ('authorKind' in data) && data.authorKind == 'user';
+      let isGuestKind =
+          ('authorKind' in data) && data.authorKind == 'guest';
+      let hasValidKind = isUserKind || isGuestKind;
       let hasValidSender =
-        (('senderId' in data) && data.senderId == request.auth.uid) ||
-        (('authorId' in data) && data.authorId == request.auth.uid);
+        (isUserKind &&
+          ((('senderId' in data) && data.senderId == request.auth.uid) ||
+           (('authorId' in data) && data.authorId == request.auth.uid))) ||
+        (isGuestKind &&
+          ('authorId' in data) &&
+          data.authorId.matches('^guest_[0-9a-f]{8,64}$'));
       let senderConsistent =
-        (!('senderId' in data) || data.senderId == request.auth.uid) &&
-        (!('authorId' in data) || data.authorId == request.auth.uid);
+        (isUserKind &&
+          (!('senderId' in data) || data.senderId == request.auth.uid) &&
+          (!('authorId' in data) || data.authorId == request.auth.uid)) ||
+        (isGuestKind &&
+          (!('senderId' in data) ||
+            data.senderId.matches('^guest_[0-9a-f]{8,64}$')) &&
+          (!('authorId' in data) ||
+            data.authorId.matches('^guest_[0-9a-f]{8,64}$')));
       let hasValidText =
         (('text' in data) && isValidString(data.text, 1, 240)) ||
         (('body' in data) && isValidString(data.body, 1, 240));
@@ -290,6 +312,7 @@ service cloud.firestore {
         isValidOptionalString('body', 1, 240);
 
       return hasOnlyAllowedFields(allowedKeys) &&
+             hasValidKind &&
              hasValidSender &&
              senderConsistent &&
              hasValidText &&
@@ -314,6 +337,51 @@ service cloud.firestore {
         (('senderId' in resData) && resData.senderId == request.auth.uid) ||
         (('authorId' in resData) && resData.authorId == request.auth.uid)
       );
+    }
+
+    // UGC raporları (chat_reports): istemci yalnız oluşturabilir;
+    // okuma/güncelleme/silme kapalıdır (moderasyon admin tarafında).
+    // Raporlayan: kullanıcıda reporterId == uid, misafirde kalıcı
+    // misafir UUID deseni (sahiplik doğrulanamaz — artık risk, bkz.
+    // isValidChatMessage notu).
+    function isValidChatReport() {
+      let data = request.resource.data;
+      let allowedKeys = [
+        'messageId',
+        'channelId',
+        'reportedAuthorId',
+        'reportedAuthorKind',
+        'reportedAuthorName',
+        'messageBody',
+        'reason',
+        'reporterId',
+        'reporterKind',
+        'createdAtMs'
+      ];
+      let hasValidReporter =
+        (('reporterKind' in data) && data.reporterKind == 'user' &&
+         ('reporterId' in data) && data.reporterId == request.auth.uid) ||
+        (('reporterKind' in data) && data.reporterKind == 'guest' &&
+         ('reporterId' in data) &&
+         data.reporterId.matches('^guest_[0-9a-f]{8,64}$'));
+      return hasOnlyAllowedFields(allowedKeys) &&
+             hasRequiredFields(allowedKeys) &&
+             hasValidReporter &&
+             ('messageId' in data) &&
+             isValidString(data.messageId, 1, 64) &&
+             ('channelId' in data) &&
+             (data.channelId in ['lobby', 'clan', 'vsChallenge', 'vs']) &&
+             ('reportedAuthorId' in data) &&
+             isValidString(data.reportedAuthorId, 1, 64) &&
+             ('reportedAuthorKind' in data) &&
+             (data.reportedAuthorKind in ['user', 'guest']) &&
+             ('reportedAuthorName' in data) &&
+             isValidString(data.reportedAuthorName, 1, 32) &&
+             ('messageBody' in data) &&
+             isValidString(data.messageBody, 1, 240) &&
+             ('reason' in data) &&
+             (data.reason in ['spam', 'inappropriate', 'harassment', 'other']) &&
+             isValidOptionalInt('createdAtMs', 0, 9999999999999);
     }
 
     // 4. Bug Studio Video & GIF Post Validator
@@ -467,6 +535,14 @@ service cloud.firestore {
                     isValidChatMessage();
       allow update: if false;
       allow delete: if isMessageSender(resource.data);
+    }
+
+    // 3b. UGC Raporları (chat_reports): yalnız oluşturma; okuma/
+    // güncelleme/silme istemciye kapalı (moderasyon admin tarafında).
+    match /chat_reports/{reportId} {
+      allow read: if false;
+      allow create: if isAuthenticated() && isValidChatReport();
+      allow update, delete: if false;
     }
 
     // 4. Bug Studio Videos & GIFs

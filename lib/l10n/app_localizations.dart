@@ -1313,6 +1313,37 @@ abstract class AppLocalizations {
   String get makaraOverTitle;
   String get bonusLifePlus;
   String get gotItPlay;
+
+  /// Sohbet moderasyonu: raporla/engelle + misafir kimliği + şart onayı.
+  String get chatReportAction;
+  String get chatBlockAction;
+  String get chatUnblockAction;
+  String get chatReportTitle;
+  String get chatReportReasonSpam;
+  String get chatReportReasonInappropriate;
+  String get chatReportReasonHarassment;
+  String get chatReportReasonOther;
+  String get chatReportSent;
+  String get chatReportQueued;
+  String get chatReportAlreadySent;
+  String get chatUserBlocked;
+  String get chatUserUnblocked;
+  String get chatBlockedTitle;
+  String get chatBlockedEmpty;
+  String get chatTermsTitle;
+  String get chatTermsBody;
+  String get chatTermsAccept;
+  String get chatTermsDecline;
+  String get chatTermsRequired;
+  String get chatGuestBadge;
+  String get chatGuestNameTitle;
+  String get chatGuestNameHint;
+  String get chatGuestNameEmpty;
+  String get chatGuestNameSaved;
+  String get chatEmptyChannel;
+  String get chatOptionsLabel;
+  String get chatChangeNameAction;
+  String get chatBlockedListAction;
   String match3StatsLine(int merge, int chain, int made, int fired);
   String match3RocketBombGain(int gained);
   String match3RocketHint(int n);
