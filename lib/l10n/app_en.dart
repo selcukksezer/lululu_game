@@ -2613,6 +2613,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get gridHowToBody4 => '• PAIR UP: Instantly merges the two highest matching bugs.';
 
   @override
+  String get gridBoosterNoEffect => 'This booster has no effect on this board.';
+
+  @override
   String gridSuperMergeSpeech(String title) => 'LULULU! SUPER MERGE! ($title)';
 
   @override

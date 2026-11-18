@@ -127,6 +127,14 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
 
+  /// Y3 tur başlangıç damgası: `_initBoard` her turda bir kez yazar
+  /// (milisaniye). `_presentResult` bu damgadan
+  /// `'grid2048:<damga>'` idempotency anahtarını üretir; aynı turun
+  /// BİTİR + hamle-bitiş yolları aynı anahtarı paylaşır, yeni oyun
+  /// (`_restart` → `_initBoard`) yeni anahtar alır. Bitiş anında
+  /// `DateTime.now()` kullanılmaz.
+  int _runStartedAt = 0;
+
   bool _panConsumed = false;
   Offset _panAccum = Offset.zero;
 
@@ -164,6 +172,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   }
 
   void _initBoard({bool initialPrototypeState = false}) {
+    // Y3: tur başlangıç damgası — prototip dalı dahil her turda bir
+    // kez, tahta kurulmadan önce yazılır.
+    _runStartedAt = DateTime.now().millisecondsSinceEpoch;
     // B17: kozmetik timer'lar iptal edilmeden tahta sıfırlanırsa eski
     // zamanlayıcılar yeni turun kaplama/patlama durumunu temizler.
     // (`_restart` bu yöntemden geçtiği için tek nokta yeterlidir.)
@@ -565,13 +576,14 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   }
 
   /// Etkisiz güçlendirici denemesinde oyuncuya nedeni mevcut konuşma
-  /// balonu mekanizmasıyla gösterir (B12). 2048'e özel "etki yok"
-  /// anahtarı bulunmadığı için en yakın mevcut anahtar
-  /// (`match3NoMatchCancel`) yeniden kullanılır; stok tüketilmez.
+  /// balonu mekanizmasıyla gösterir (B12). 2048 güçlendirici
+  /// bağlamına özel `gridBoosterNoEffect` anahtarı kullanılır
+  /// (Match3'ün `match3NoMatchCancel` anahtarı yeniden kullanılmaz);
+  /// stok tüketilmez.
   void _showNoEffectHint() {
     _speechTimer?.cancel();
     setState(() {
-      _speechBubble = context.l10n.match3NoMatchCancel;
+      _speechBubble = context.l10n.gridBoosterNoEffect;
     });
     _speechTimer = Timer(const Duration(milliseconds: 1600), () {
       if (!mounted) return;
@@ -881,6 +893,13 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       // skorla bitirmek eskisi gibi zafer başlığı gösterir.
       won: _won || _score > 0,
       leaderboardMode: 'grid2048',
+      // K16: mod skoru kimliği — `LululuGameMode` kataloğundaki
+      // `bestScoreKey` ('grid_2048') ile aynı; `normalizeModeId`
+      // 'grid2048' takma adını da bu kimliğe çevirir.
+      modeScoreId: 'grid_2048',
+      // Y3: tur-başı damgadan üretilen tek anahtar; çift çağrı
+      // (BİTİR + bitiş kenarı) ikinci kez ödeme yapamaz.
+      idempotencyKey: 'grid2048:$_runStartedAt',
       awaitSettle: false,
     );
     _presentingResultModal = false;

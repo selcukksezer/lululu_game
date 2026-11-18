@@ -2611,6 +2611,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get gridHowToBody4 => '• ÇİFTLEŞTİR: En yüksek eşleşen iki böceği anında birleştirir.';
 
   @override
+  String get gridBoosterNoEffect => 'Bu tahtada güçlendiricinin etkisi yok.';
+
+  @override
   String gridSuperMergeSpeech(String title) => 'LÜLÜLÜ! SÜPER BİRLEŞİM! ($title)';
 
   @override

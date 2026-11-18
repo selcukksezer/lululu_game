@@ -1147,6 +1147,7 @@ abstract class AppLocalizations {
   String get gridHowToBody2;
   String get gridHowToBody3;
   String get gridHowToBody4;
+  String get gridBoosterNoEffect;
   String gridSuperMergeSpeech(String title);
   String gridHighestTile(int value);
   String gridMovesCount(int count);
