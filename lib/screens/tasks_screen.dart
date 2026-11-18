@@ -288,16 +288,24 @@ class _TasksScreenState extends State<TasksScreen> {
                                 alignment: Alignment.centerLeft,
                                 scaleX: 0.98,
                                 scaleY: 1.0,
-                                child: Text(
-                                  l10n.dailyTasksTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: 'Baloo 2',
-                                    fontSize: 23,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF141B2A),
-                                    height: 1.12,
+                                // F-02 (6C): 360px'te başlık "GÜNLÜK
+                                // GÖREV..." diye kesiliyordu; scaleDown
+                                // sığmayan başlığı küçülterek tam gösterir,
+                                // sığdığında (390/430) ölçek 1.0'dır.
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    l10n.dailyTasksTitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily: 'Baloo 2',
+                                      fontSize: 23,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF141B2A),
+                                      height: 1.12,
+                                    ),
                                   ),
                                 ),
                               ),

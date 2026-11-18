@@ -931,8 +931,13 @@ class _ShopScreenState extends State<ShopScreen> {
                         ),
 
                         // .free-ad-card (rect: x=12, y=221, w=406, h=185)
+                        // F-01 (6C): sabit yükseklik 360px'te açıklama
+                        // metnini kartın altından taşırıp ENERJİ başlığıyla
+                        // çakıştırıyordu. minHeight, 430 tasarım
+                        // yüksekliğini korurken dar ekranda kartın içeriğe
+                        // göre büyümesine izin verir.
                         Container(
-                          height: 185.0,
+                          constraints: const BoxConstraints(minHeight: 185.0),
                           margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(

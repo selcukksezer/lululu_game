@@ -1059,16 +1059,23 @@ class _ChatScreenState extends State<ChatScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Flexible(
-                child: Text(
-                  channel.displayNameFor(locale),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _nunito(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: selected
-                        ? Colors.white
-                        : const Color(0xFF141B2A),
+                // F-03/F-09 (6C): "VS Meydan Okuma" üç viewport'ta da
+                // kesiliyordu (eşit genişlikli çipler); scaleDown
+                // sığmayan etiketi küçülterek tam gösterir, sığan
+                // etiketlerde ölçek 1.0'dır.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    channel.displayNameFor(locale),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: selected
+                          ? Colors.white
+                          : const Color(0xFF141B2A),
+                    ),
                   ),
                 ),
               ),

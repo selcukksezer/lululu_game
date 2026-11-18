@@ -236,6 +236,15 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   }
 
   Widget _buildTopBar() {
+    // F-04(a) (6C): 360/390'da başlık sütununa ~28/58px kalıyor, "LÜLÜLÜ"
+    // ve "Bölüm Haritası" kesiliyordu. 430 tasarım genişliğinde her şey
+    // sığdığı için sıkıştırma yalnız <430'da uygulanır; 430 düzeni
+    // birebir korunur. Dar ekranda: süs böcek görseli gizlenir, çip
+    // iç boşlukları ve aralıklar daraltılır, mağaza düğmesi 48'den
+    // 40px'e iner — başlığa ~90px açılır.
+    final narrow = MediaQuery.sizeOf(context).width < 430;
+    final pillHPad = narrow ? 8.0 : 10.0;
+    final gap = narrow ? 6.0 : 8.0;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -267,8 +276,10 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Image.asset('assets/design/bugs_hd/tier1_hd.png', width: 34, height: 34),
-                const SizedBox(width: 8),
+                if (!narrow) ...[
+                  Image.asset('assets/design/bugs_hd/tier1_hd.png', width: 34, height: 34),
+                  const SizedBox(width: 8),
+                ],
                 Flexible(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -302,7 +313,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: EdgeInsets.symmetric(horizontal: pillHPad, vertical: 6),
                 decoration: BoxDecoration(
                   color: LululuColors.carbonVoid.withValues(alpha: 0.72),
                   borderRadius: BorderRadius.circular(16),
@@ -325,9 +336,9 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: gap),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: EdgeInsets.symmetric(horizontal: pillHPad, vertical: 6),
                 decoration: BoxDecoration(
                   color: LululuColors.carbonVoid.withValues(alpha: 0.72),
                   borderRadius: BorderRadius.circular(16),
@@ -350,12 +361,18 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: gap),
               Semantics(
                 button: true,
                 label: context.l10n.navShop,
                 child: IconButton(
                   tooltip: context.l10n.navShop,
+                  padding: narrow
+                      ? EdgeInsets.zero
+                      : const EdgeInsets.all(8),
+                  constraints: narrow
+                      ? const BoxConstraints(minWidth: 40, minHeight: 40)
+                      : null,
                   icon: const Icon(
                     Icons.storefront,
                     color: LululuColors.liquidGold,
@@ -442,6 +459,9 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
 
   Widget _buildThemedChestRow(int chapterIndex) {
     final chapterStars = _progression.getChapterStars(chapterIndex);
+    // F-04(b) (6C): dar ekranda çip aralıkları 6'dan 4'e iner (430 aynı).
+    final narrow = MediaQuery.sizeOf(context).width < 430;
+    final gap = narrow ? 4.0 : 6.0;
     return Row(
       children: [
         SizedBox(
@@ -457,11 +477,11 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        SizedBox(width: gap),
         for (var i = 0;
             i < CampaignProgressionService.validChestMilestones.length;
             i++) ...[
-          if (i > 0) const SizedBox(width: 6),
+          if (i > 0) SizedBox(width: gap),
           Expanded(
             child: _buildChestTile(
               chapterIndex: chapterIndex,
@@ -495,6 +515,8 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
         : claimable
             ? LululuColors.liquidGold
             : LululuColors.mutedTitanium.withValues(alpha: 0.35);
+    // F-04(b) (6C): dar ekranda çip iç boşluğu 6'dan 4'e iner (430 aynı).
+    final narrow = MediaQuery.sizeOf(context).width < 430;
 
     return Semantics(
       button: true,
@@ -514,7 +536,10 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
             : null,
         child: Container(
           constraints: const BoxConstraints(minHeight: 44),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          padding: EdgeInsets.symmetric(
+            horizontal: narrow ? 4 : 6,
+            vertical: 4,
+          ),
           decoration: BoxDecoration(
             color: claimable
                 ? LululuColors.liquidGold.withValues(alpha: 0.18)
@@ -538,39 +563,50 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                         : '🔒',
                 style: const TextStyle(fontSize: 13),
               ),
-              const SizedBox(width: 4),
+              SizedBox(width: narrow ? 3 : 4),
               Flexible(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      context.l10n.chestStarsLabel(milestoneStars),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        color: claimable
-                            ? LululuColors.warningSolar
-                            : claimed
-                                ? LululuColors.toxicNeon
-                                : LululuColors.cream,
+                    // F-04(b) (6C): "10⭐ Sandık" ve ödül satırı 360/390'da
+                    // "..." ile kesiliyordu; scaleDown tam gösterir,
+                    // sığdığında (430) ölçek 1.0'dır.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        context.l10n.chestStarsLabel(milestoneStars),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: claimable
+                              ? LululuColors.warningSolar
+                              : claimed
+                                  ? LululuColors.toxicNeon
+                                  : LululuColors.cream,
+                        ),
                       ),
                     ),
-                    Text(
-                      claimed
-                          ? context.l10n.claimedPlain
-                          : context.l10n.chestRewardLine(
-                              reward.coinsGranted,
-                              reward.boosterCount,
-                            ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w700,
-                        color: LululuColors.mutedTitanium,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        claimed
+                            ? context.l10n.claimedPlain
+                            : context.l10n.chestRewardLine(
+                                reward.coinsGranted,
+                                reward.boosterCount,
+                              ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w700,
+                          color: LululuColors.mutedTitanium,
+                        ),
                       ),
                     ),
                   ],
@@ -613,6 +649,10 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   }
 
   Widget _buildChapterSelector() {
+    // F-04(c) (6C): 360'ta ikinci çip ("Diva Malikanesi 0/60") sağ kenarda
+    // 8px kesiliyordu; dar ekranda çip iç boşluğu 14'ten 10'a iner, ilk
+    // iki çip 360'a sığar (430 aynı).
+    final narrow = MediaQuery.sizeOf(context).width < 430;
     return SizedBox(
       height: 44,
       child: ListView.separated(
@@ -638,7 +678,10 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding: EdgeInsets.symmetric(
+                  horizontal: narrow ? 10 : 14,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? ch.$4
