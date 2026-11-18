@@ -88,6 +88,13 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
   int _best = 0;
   int _lines = startLines;
   int _epoch = 0;
+
+  /// Y3 tur kimliği: turun BAŞLANGIÇ damgası (ms cinsinden epoch).
+  /// `initState` ve her `_newGame`'de bir kez yakalanır; aynı turun
+  /// BİTİR + otomatik-bitiş yolları aynı `idempotencyKey`'i paylaşır,
+  /// yeni tur yeni damga alır. Bitiş anında üretilmez (çift-sunumu
+  /// engellemezdi).
+  int _runStartStamp = 0;
   bool _busy = false;
   bool _won = false;
   bool _lost = false;
@@ -188,6 +195,8 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _fill();
+    // Y3: ilk turun başlangıç damgası (tek yakalama).
+    _runStartStamp = DateTime.now().millisecondsSinceEpoch;
     if (widget.prototypeVisualState) {
       _applyPrototypeState();
     } else if (widget.gameplayTestState) {
@@ -346,6 +355,8 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
 
   void _newGame() {
     _epoch++;
+    // Y3: yeni tur, yeni başlangıç damgası.
+    _runStartStamp = DateTime.now().millisecondsSinceEpoch;
     _milestoneTimer?.cancel();
     _milestoneTimer = null;
     _hintTimer?.cancel();
@@ -949,6 +960,11 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
         won: won ?? _won,
         leaderboardMode: LeaderboardService.modeConnect,
         leaderboardOnlyIfPositiveScore: true,
+        // K16: ModesScreen `getModeBestScore('connect_pop')` ile okuyor;
+        // `recordModeScore` yazılmazsa mod rekoru hiç güncellenmiyordu.
+        modeScoreId: 'connect_pop',
+        // Y3: tur-başlangıç damgası — aynı turun çift sunumu engellenir.
+        idempotencyKey: 'connect:$_runStartStamp',
       );
     } catch (error) {
       // finishRun fırlatırsa sonuçsuz takılma: bayrağı düşür ki BİTİR

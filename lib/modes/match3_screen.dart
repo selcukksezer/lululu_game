@@ -66,6 +66,13 @@ class _Match3ScreenState extends State<Match3Screen>
   int _best = 0;
   int _moves = startMoves;
   int _epoch = 0;
+
+  /// Y3 tur kimliği: turun BAŞLANGIÇ damgası (ms cinsinden epoch).
+  /// `initState` ve her `_newGame`'de bir kez yakalanır; aynı turun
+  /// BİTİR + otomatik-bitiş yolları aynı `idempotencyKey`'i paylaşır,
+  /// yeni tur yeni damga alır. Bitiş anında üretilmez (çift-sunumu
+  /// engellemezdi).
+  int _runStartStamp = 0;
   bool _busy = false;
   bool _won = false;
   bool _lost = false;
@@ -136,6 +143,8 @@ class _Match3ScreenState extends State<Match3Screen>
     WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _deal();
+    // Y3: ilk turun başlangıç damgası (tek yakalama).
+    _runStartStamp = DateTime.now().millisecondsSinceEpoch;
     if (widget.prototypeVisualState) {
       _score = 3420;
       _best = 5940;
@@ -272,6 +281,8 @@ class _Match3ScreenState extends State<Match3Screen>
 
   void _newGame() {
     _epoch++;
+    // Y3: yeni tur, yeni başlangıç damgası.
+    _runStartStamp = DateTime.now().millisecondsSinceEpoch;
     _comboTimer?.cancel();
     _milestoneTimer?.cancel();
     _hintTimer?.cancel();
@@ -989,6 +1000,8 @@ class _Match3ScreenState extends State<Match3Screen>
         won: won ?? _won,
         leaderboardMode: LeaderboardService.modeMatch3,
         modeScoreId: 'match3',
+        // Y3: tur-başlangıç damgası — aynı turun çift sunumu engellenir.
+        idempotencyKey: 'match3:$_runStartStamp',
       );
     } catch (_) {
       // `finishRun` fırlatırsa sonuçsuz takılma: bayrağı düşür ki
