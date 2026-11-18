@@ -4,7 +4,6 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
@@ -12,6 +11,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
@@ -57,7 +57,7 @@ enum _BalloonHint {
 }
 
 class _BalloonPopScreenState extends State<BalloonPopScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const int cols = 7;
   static const int rows = 9;
   static const int kinds = 4;
@@ -76,6 +76,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   bool _over = false;
   bool _resultShown = false;
   bool _paused = false;
+
+  /// Yaşam döngüsü duraklatması (L1, Osmantuş deseni): arka plana
+  /// alınca konur, dönüşte yalnız bu bayrak varsa devam edilir.
+  bool _pausedByLifecycle = false;
+
+  /// Yardım diyaloğu duraklatması (F9): diyalog için duraklatıldıysa
+  /// kapanınca devam edilir; önceden duraklatılmış oyun sürdürülmez.
+  bool _pausedForHelp = false;
 
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk atış (`_fire`)
   /// veya tur tamamlanması (`_lose`) ile `true` olur; TEKRAR/yeniden
@@ -146,7 +154,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   _Hex? _hex;
 
   bool _pierce = false;
-  DateTime? _slowUntil;
+
+  /// Yavaşlatma bitişi, OYUN saatinde (`_elapsed` saniyesi; makara
+  /// `_now` deseni). Duvar saati değil: duraklatmada `_elapsed`
+  /// ilerlemediği için etki duraklatmada erimez, kaydırma gerekmez.
+  double _slowUntilElapsed = 0;
 
   static const List<Color> _pastelColors = [
     Color(0xFFFFE9C9),
@@ -162,6 +174,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _boot();
     if (widget.prototypeVisualState) {
@@ -197,6 +210,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _ticker?.dispose();
     _milestoneTimer?.cancel();
@@ -206,14 +220,51 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Arka planda oyun saati donar: `_tick` `_paused`
+        // korumasına sahiptir, dt kelepçesi dönüş sıçramasını
+        // ayrıca yutar (bulgu #14). Yalnız canlı oyun lifecycle
+        // ile duraklatılır; kullanıcı zaten duraklatmışsa bayrak
+        // konmaz, devam kararı kullanıcıda kalır.
+        if (!_over && !_paused) {
+          _pausedByLifecycle = true;
+          setState(() => _paused = true);
+        }
+        break;
+      case AppLifecycleState.resumed:
+        // Yalnız lifecycle duraklatmasıysa devam et; elle
+        // duraklatma veya yardım diyaloğu duraklatması kullanıcıda
+        // kalır (yardım için `_pausedByLifecycle` zaten konmaz,
+        // çünkü diyalog açılırken oyun duraklatılmış olur).
+        if (_pausedByLifecycle && _paused) {
+          _pausedByLifecycle = false;
+          setState(() => _paused = false);
+        } else {
+          _pausedByLifecycle = false;
+        }
+        break;
+    }
+  }
+
   Future<void> _loadBest() async {
-    await LeaderboardService.instance.ensureLoaded();
-    if (!mounted) return;
-    setState(() {
-      _best = LeaderboardService.instance.getBest(
-        LeaderboardService.modeBalloon,
-      );
-    });
+    // Ateşle-unut yükleme: liderlik deposu fırlatırsa oyun
+    // açılışta takılmasın, rekor 0 kalsın (F4).
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+      if (!mounted) return;
+      setState(() {
+        _best = LeaderboardService.instance.getBest(
+          LeaderboardService.modeBalloon,
+        );
+      });
+    } catch (_) {}
   }
 
   Future<void> _persist() async {
@@ -226,12 +277,23 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   void _boot() {
+    // Yeniden başlatma bekleyen geçici UI zamanlayıcılarını iptal
+    // eder (F11): yoksa önceki turun zamanlayıcısı yeni turun
+    // kombo/milestone/ıska yazısını erken siler.
+    _comboTimer?.cancel();
+    _comboTimer = null;
+    _milestoneTimer?.cancel();
+    _milestoneTimer = null;
+    _missTimer?.cancel();
+    _missTimer = null;
     _grid = List.generate(rows, (_) => List.filled(cols, 0));
     _score = 0;
     _shots = 0;
     _flying = false;
     _over = false;
     _paused = false;
+    _pausedByLifecycle = false;
+    _pausedForHelp = false;
     _shotArmed = false;
     _setHint(_BalloonHint.drift);
     _fly = null;
@@ -255,7 +317,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     // Güçlendirme etkileri yeni tura sızmaz: delici atış ve
     // yavaşlatma BİTİR/yeniden başlatmada sıfırlanır (bulgu #12).
     _pierce = false;
-    _slowUntil = null;
+    _slowUntilElapsed = 0;
     for (var attempt = 0; attempt < 16; attempt++) {
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < cols; c++) {
@@ -369,7 +431,44 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   void _togglePause() {
     if (_over) return;
-    setState(() => _paused = !_paused);
+    setState(() {
+      _paused = !_paused;
+      if (!_paused) {
+        // Kullanıcı devam etti: lifecycle/yardım ayrımı sıfırlanır,
+        // dönüşte oyun kendiliğinden başlatılmaz.
+        _pausedByLifecycle = false;
+        _pausedForHelp = false;
+      }
+    });
+  }
+
+  /// Yardım diyaloğu (F9): içerik aynen korunur, diyalog açıkken
+  /// oyun durur. Önceden duraklatılmamış canlı oyun duraklatılır,
+  /// diyalog kapanınca yalnız o durumda devam ettirilir.
+  Future<void> _showHelp() async {
+    final shouldPause = !_over && !_paused;
+    if (shouldPause) {
+      _pausedForHelp = true;
+      setState(() => _paused = true);
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.balloonPopTitle),
+        content: Text(ctx.l10n.balloonHelpBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(ctx.l10n.understoodButton),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (_pausedForHelp && _paused) {
+      _pausedForHelp = false;
+      setState(() => _paused = false);
+    }
   }
 
   void _showMilestone(String text) {
@@ -391,7 +490,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   void _step(double dt) {
-    final slowed = _slowUntil != null && DateTime.now().isBefore(_slowUntil!);
+    final slowed = _elapsed < _slowUntilElapsed;
     if (slowed) dt *= 0.45;
     final hex = _hex!;
     var pos = _fly!;
@@ -450,6 +549,13 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _comboMeter = max(0, _comboMeter - 0.3);
       _setHint(_BalloonHint.noStick);
       _flashMiss();
+      // Yapışmayan atış da atış sayılır (F12): aynı renkle
+      // cezasız sonsuz tekrar yok; renk ilerler, sıra sayacı
+      // artar ve 8 atışta bir inme aynen işler.
+      _current = _next;
+      _next = _rollColor();
+      _shots++;
+      if (_shots % descendEvery == 0) _descend();
       setState(() {});
       return;
     }
@@ -502,9 +608,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       if (_score > _best) _best = _score;
       _checkScoreMilestones();
       if (popped >= 6) {
-        HapticFeedback.heavyImpact();
+        unawaited(HapticService.instance.heavyImpact());
       } else {
-        HapticFeedback.mediumImpact();
+        AudioManager().triggerMediumHaptic();
       }
       AudioManager().playMerge(tierNumber: shotTier);
       final insect = InsectTier.values[(shotTier - 1).clamp(0, 7)];
@@ -525,10 +631,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         _setHint(_BalloonHint.poppedPlain, _streak, gained);
       }
     } else if (pierced > 0) {
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
       _setHint(_BalloonHint.piercing, pierced, _streak);
     } else {
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
       _setHint(_BalloonHint.stuck);
     }
     _current = _next;
@@ -571,7 +677,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   void _flashMiss() {
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     _missTimer?.cancel();
     _missFlash = true;
     _missTimer = Timer(const Duration(milliseconds: 220), () {
@@ -736,7 +842,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _fly = null;
     _paused = false;
     _setHint(why);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playLose();
     unawaited(_persist());
     setState(() {});
@@ -777,8 +883,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" aynı turu başlatır,
   /// "ANA SAYFA"da eski TAŞTI akışı devam eder (bozulmadı).
   bool _useTriple() {
-    if (_over) return false;
-    HapticFeedback.mediumImpact();
+    // Duraklatmada veya atış uçuşurken güç reddedilir (F7):
+    // `false` stoğu iade eder, güç harcanmaz.
+    if (_over || _paused || _flying) return false;
+    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _current);
     setState(() {
       _pierce = true;
@@ -791,7 +899,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   bool _useBomb() {
-    if (_over) return false;
+    // Duraklatmada veya atış uçuşurken güç reddedilir (F7):
+    // `false` stoğu iade eder, güç harcanmaz.
+    if (_over || _paused || _flying) return false;
     final spots = <(int, int)>[];
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
@@ -801,7 +911,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     if (spots.isEmpty) return false;
     spots.shuffle(_rng);
     final hex = _hex;
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: min(8, _current + 1));
     setState(() {
       final take = min(8, spots.length);
@@ -830,12 +940,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   bool _useSlow() {
-    if (_over) return false;
+    // Duraklatmada veya atış uçuşurken güç reddedilir (F7):
+    // `false` stoğu iade eder, güç harcanmaz.
+    if (_over || _paused || _flying) return false;
     final hex = _hex;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _current);
     setState(() {
-      _slowUntil = DateTime.now().add(const Duration(seconds: 10));
+      _slowUntilElapsed = _elapsed + 10;
       var cleared = 0;
       for (var r = rows - 1; r >= 0 && cleared < 4; r--) {
         for (var c = 0; c < cols && cleared < 4; c++) {
@@ -872,15 +984,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     // finishRun() üzerinden (tek-ödeme korunur). Doğal bitiş
     // balonların atıcıya ulaşmasıdır (kayıp); `won` verilmezse kayıp
     // başlığı gösterilir.
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      bestCombo: _maxStreak,
-      won: won ?? false,
-      leaderboardMode: LeaderboardService.modeBalloon,
-      modeScoreId: 'balloon_pop',
-    );
+    final replay = await _presentResultGuarded(won);
+    if (replay == null) return;
     if (!mounted) return;
     if (!replay) {
       Navigator.of(context).maybePop();
@@ -888,6 +993,26 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     }
     _resultShown = false;
     setState(_boot);
+  }
+
+  /// `finishRun` korumalı çağrı (F4): sonuç ekranı fırlatırsa tur
+  /// sonuçsuz takılmaz — `_resultShown` düşer, BİTİR ile yeniden
+  /// denenebilir. Başarısızlıkta `null` döner.
+  Future<bool?> _presentResultGuarded(bool? won) async {
+    try {
+      return await finishRun(
+        context,
+        score: _score,
+        best: _best,
+        bestCombo: _maxStreak,
+        won: won ?? false,
+        leaderboardMode: LeaderboardService.modeBalloon,
+        modeScoreId: 'balloon_pop',
+      );
+    } catch (_) {
+      _resultShown = false;
+      return null;
+    }
   }
 
   /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
@@ -1260,19 +1385,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
             },
           );
 
-    final overlayWidget = (_over && !_resultShown)
-        ? ArcadeResultOverlay(
-            title: context.l10n.balloonOverflowTitle,
-            message: _statsLine(),
-            score: _score,
-            best: _best,
-            won: false,
-            modeTitle: context.l10n.shopModeBalloonPop,
-            shareLine: _statsLine(),
-            retryLabel: context.l10n.retryShort,
-            onRetry: () => setState(_boot),
-          )
-        : _paused
+    // Ölü sonuç overlay'i kaldırıldı (F6): `_edgeShowResult`
+    // `_resultShown`'u senkron set ettiği için bu dal hiç
+    // çizilmiyordu; tek sonuç yolu `finishRun` diyaloğudur.
+    final overlayWidget = _paused
         ? Positioned.fill(
             child: ColoredBox(
               color: LululuColors.carbonVoid.withValues(alpha: 0.7),
@@ -1593,6 +1709,42 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                           ),
                         ),
                       ),
+                      // Başlık duraklatma düğmesi (F3): başlık ile coin
+                      // rozeti arasındaki boşlukta, düzeni kaydırmadan
+                      // durur; prototip vitrininde gizlidir (makara
+                      // deseni: `l10n.pause` etiketi, `_togglePause`).
+                      if (!widget.prototypeVisualState)
+                        Positioned(
+                          left: 224,
+                          top: 7.1,
+                          width: 44,
+                          height: 48,
+                          child: Semantics(
+                            button: true,
+                            label: context.l10n.pause,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _togglePause,
+                              child: CustomPaint(
+                                painter: const _CssBoxPainter(
+                                  fillColor: Color(0xDB080B12),
+                                  radius: 22,
+                                  borderColor: Color(0xB3FFB800),
+                                  borderWidth: 2,
+                                  shadowColor: Color(0x66000000),
+                                  shadowOffset: Offset(0, 3),
+                                ),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.pause_rounded,
+                                    size: 22,
+                                    color: Color(0xFFFFB800),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       Positioned(
                         left: 370,
                         top: 7.1,
@@ -1602,19 +1754,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                           button: true,
                           label: context.l10n.helpButtonLabel,
                           child: GestureDetector(
-                            onTap: () => showDialog<void>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Text(ctx.l10n.balloonPopTitle),
-                                content: Text(ctx.l10n.balloonHelpBody),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: Text(ctx.l10n.understoodButton),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            onTap: _showHelp,
                             child: CustomPaint(
                               painter: const _CssBoxPainter(
                                 fillColor: Color(0xDB080B12),
