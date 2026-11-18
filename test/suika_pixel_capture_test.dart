@@ -15,6 +15,8 @@ import 'package:lululu_game/screens/game_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
@@ -38,10 +40,8 @@ void main() {
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: buildLululuTheme(),
-          home: TickerMode(
+        child: wrapWithL10n(
+          TickerMode(
             enabled: false,
             child: GameScreen(
               level: CampaignDatabase.kitchenLevel1,
@@ -49,6 +49,8 @@ void main() {
               prototypeVisualState: true,
             ),
           ),
+          debugShowCheckedModeBanner: false,
+          theme: buildLululuTheme(),
         ),
       ),
     );

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:lululu_game/l10n/app_localizations.dart';
 import 'package:lululu_game/modes/balloon_pop_screen.dart';
 import 'package:lululu_game/modes/connect_pop_screen.dart';
 import 'package:lululu_game/modes/makarayiz_screen.dart';
@@ -423,6 +425,21 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildLululuTheme(),
+          // W125-4: l10n delegate'leri yerinde eklendi. wrapWithL10n
+          // kullanılmadı çünkü W124-3 tasarımı onGenerateRoute /
+          // initialRoute / onUnknownRoute parametresi taşımıyor; rota
+          // parametrelerini düşürmek testin konusunu bozardı. Blok
+          // lib/main.dart:331-336 ile birebir aynıdır.
+          locale: const Locale('tr'),
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          localeResolutionCallback:
+              AppLocalizations.localeResolutionCallback,
           onGenerateRoute: onGenerateRoute ?? LululuRoutes.onGenerateRoute,
           onUnknownRoute: onUnknownRoute,
           initialRoute: initialRoute,
@@ -477,6 +494,18 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildLululuTheme(),
+          // W125-4: l10n delegate'leri yerinde eklendi (helper rota
+          // parametresi taşımıyor — bkz. pumpInitialRoute üstündeki not).
+          locale: const Locale('tr'),
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          localeResolutionCallback:
+              AppLocalizations.localeResolutionCallback,
           onGenerateRoute: LululuRoutes.onGenerateRoute,
           home: Builder(
             builder: (context) => Scaffold(

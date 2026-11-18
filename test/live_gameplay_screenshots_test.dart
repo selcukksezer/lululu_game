@@ -30,6 +30,7 @@ import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
 import 'pixel_perfect_test.dart' show loadCustomFonts, safePrimeAssets;
+import 'test_helpers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -83,10 +84,8 @@ void main() {
         child: SizedBox(
           width: 430,
           height: 932,
-          child: MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: buildLululuTheme(),
-            home: MediaQuery(
+          child: wrapWithL10n(
+            MediaQuery(
               data: const MediaQueryData(
                 size: Size(430, 932),
                 devicePixelRatio: 1.0,
@@ -95,6 +94,8 @@ void main() {
               ),
               child: widget,
             ),
+            debugShowCheckedModeBanner: false,
+            theme: buildLululuTheme(),
           ),
         ),
       ),

@@ -12,6 +12,7 @@ import 'package:lululu_game/theme/lululu_theme.dart';
 import 'package:lululu_game/widgets/mode_bonus_bar.dart';
 
 import 'font_loader_helper.dart';
+import 'test_helpers.dart';
 
 // Osmantuş mikrofon iadesi: `_useMic` kalkan aktifken `false` döner
 // (lib/modes/osmantus_screen.dart:419-430) ve MİKROFON düğmesi
@@ -62,9 +63,9 @@ void main() {
     expect(pm.powerCount('mic'), 3);
 
     await tester.pumpWidget(
-      MaterialApp(
+      wrapWithL10n(
+        OsmantusScreen(clockForTesting: () => 0),
         theme: buildLululuTheme(),
-        home: OsmantusScreen(clockForTesting: () => 0),
       ),
     );
     await tester.pump();

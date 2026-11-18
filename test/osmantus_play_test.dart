@@ -8,6 +8,7 @@ import 'package:lululu_game/theme/lululu_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'font_loader_helper.dart';
+import 'test_helpers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -50,11 +51,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     var nowMs = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: buildLululuTheme(),
-        home: OsmantusScreen(clockForTesting: () => nowMs),
-      ),
+    await pumpWithL10n(
+      tester,
+      OsmantusScreen(clockForTesting: () => nowMs),
+      theme: buildLululuTheme(),
     );
     await tester.pump();
 

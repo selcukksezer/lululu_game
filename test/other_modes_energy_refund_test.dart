@@ -9,6 +9,8 @@ import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/services/energy_service.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 // Diğer modlarda hamlesiz-çıkış enerji iadesi — Stack Drop örneği:
 // `StackDropScreen(energyConsumed: true)` ile açılan oturumda hiç hamle
 // yapılmadan gerçek rota çıkışı (pop) yapılırsa 1 enerji iade edilir
@@ -62,26 +64,25 @@ void main() {
     required bool energyConsumed,
   }) async {
     setViewport(tester);
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: buildLululuTheme(),
-        home: Builder(
-          builder: (ctx) => Scaffold(
-            body: Center(
-              child: ElevatedButton(
-                onPressed: () => Navigator.of(ctx).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => StackDropScreen(
-                      energyConsumed: energyConsumed,
-                    ),
+    await pumpWithL10n(
+      tester,
+      Builder(
+        builder: (ctx) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(ctx).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => StackDropScreen(
+                    energyConsumed: energyConsumed,
                   ),
                 ),
-                child: const Text('OPEN_STACK'),
               ),
+              child: const Text('OPEN_STACK'),
             ),
           ),
         ),
       ),
+      theme: buildLululuTheme(),
     );
     await tester.tap(find.text('OPEN_STACK'));
     await tester.pump();
@@ -131,11 +132,10 @@ void main() {
 
   testWidgets('pop olmadan kaldırma (dispose) iade yapmaz', (tester) async {
     setViewport(tester);
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: buildLululuTheme(),
-        home: const StackDropScreen(energyConsumed: true),
-      ),
+    await pumpWithL10n(
+      tester,
+      const StackDropScreen(energyConsumed: true),
+      theme: buildLululuTheme(),
     );
     await pumpFrames(tester, 100);
     expect(EnergyService.instance.energy, 3);

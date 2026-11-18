@@ -14,6 +14,8 @@ import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 Future<void> _loadCaptureFonts() async {
   const fontFiles = <String, List<String>>{
     'Bangers': ['assets/fonts/Bangers-Regular.ttf'],
@@ -81,13 +83,13 @@ void main() {
     await tester.pumpWidget(
       RepaintBoundary(
         key: boundaryKey,
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: buildLululuTheme(),
-          home: const TickerMode(
+        child: wrapWithL10n(
+          const TickerMode(
             enabled: false,
             child: TerlikTapScreen(prototypeVisualState: true),
           ),
+          debugShowCheckedModeBanner: false,
+          theme: buildLululuTheme(),
         ),
       ),
     );

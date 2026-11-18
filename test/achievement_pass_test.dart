@@ -7,6 +7,8 @@ import 'package:lululu_game/services/energy_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/widgets/achievement_toast_overlay.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -185,8 +187,8 @@ void main() {
         await service.unlockAchievement('merge_tier_13');
 
         await tester.pumpWidget(
-          const MaterialApp(
-            home: Scaffold(
+          wrapWithL10n(
+            const Scaffold(
               body: Stack(
                 children: [
                   AchievementToastBanner(),
@@ -216,8 +218,8 @@ void main() {
         for (final size in const [Size(360, 640), Size(430, 932)]) {
           await tester.binding.setSurfaceSize(size);
           await tester.pumpWidget(
-            const MaterialApp(
-              home: Scaffold(
+            wrapWithL10n(
+              const Scaffold(
                 body: AchievementPassSheet(),
               ),
             ),

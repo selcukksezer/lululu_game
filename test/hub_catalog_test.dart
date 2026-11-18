@@ -7,6 +7,8 @@ import 'package:lululu_game/models/lululu_game_mode.dart';
 import 'package:lululu_game/screens/game_selector_screen.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -17,9 +19,9 @@ void main() {
 
   testWidgets('hub lists every catalog mode title', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      wrapWithL10n(
+        const Scaffold(body: GameSelectorScreen()),
         theme: buildLululuTheme(),
-        home: const Scaffold(body: GameSelectorScreen()),
       ),
     );
     await tester.pump();

@@ -17,6 +17,8 @@ import 'package:lululu_game/screens/game_screen.dart';
 import 'package:lululu_game/screens/grid_2048_screen.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 /// Sequential mount smoke for every arcade + viral mini.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +33,7 @@ void main() {
     Widget home,
     String? title,
   ) async {
-    await tester.pumpWidget(MaterialApp(theme: buildLululuTheme(), home: home));
+    await tester.pumpWidget(wrapWithL10n(home, theme: buildLululuTheme()));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
     expect(tester.takeException(), isNull, reason: '$title threw');

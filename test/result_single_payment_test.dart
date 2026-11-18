@@ -7,6 +7,8 @@ import 'package:lululu_game/screens/result_screen.dart';
 import 'package:lululu_game/services/finish_run.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 
+import 'test_helpers.dart';
+
 // ÖDEME SÖZLEŞMESİ (S1#49, lib/services/finish_run.dart + sonuç ekranı):
 // tur ödülünü TEK noktadan `finishRun` öder; sonuç ekranı
 // `coinsAwardedByCaller` varsayılanı (`true`) ile tekrar ödemez.
@@ -28,14 +30,13 @@ void main() {
     required int coins,
     required bool coinsAwardedByCaller,
   }) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: GameResultScreen(
-          score: 500,
-          coins: coins,
-          stars: 2,
-          coinsAwardedByCaller: coinsAwardedByCaller,
-        ),
+    await pumpWithL10n(
+      tester,
+      GameResultScreen(
+        score: 500,
+        coins: coins,
+        stars: 2,
+        coinsAwardedByCaller: coinsAwardedByCaller,
       ),
     );
     await tester.pump();
@@ -100,16 +101,15 @@ void main() {
       Future<bool> Function(BuildContext context) run,
     ) async {
       Future<bool>? pending;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Builder(
-              builder: (context) => ElevatedButton(
-                onPressed: () {
-                  pending = run(context);
-                },
-                child: const Text('TURU BITIR'),
-              ),
+      await pumpWithL10n(
+        tester,
+        Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                pending = run(context);
+              },
+              child: const Text('TURU BITIR'),
             ),
           ),
         ),

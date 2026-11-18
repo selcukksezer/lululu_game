@@ -7,6 +7,8 @@ import 'package:lululu_game/screens/game_selector_screen.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 import 'package:lululu_game/widgets/hb_overlay.dart';
 
+import 'test_helpers.dart';
+
 // W57-1: `HbOverlay` çıkarma kilidi (W55-2).
 //
 // `HbOverlay` (`#hbOverlay`, kalp kırılma animasyonu + `-1 ENERJİ` etiketi)
@@ -54,8 +56,8 @@ void main() {
     String tagText = '-1 ENERJİ',
   }) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: HbOverlay(visible: visible, tagText: tagText),
+      wrapWithL10n(
+        HbOverlay(visible: visible, tagText: tagText),
       ),
     );
     await tester.pump();
@@ -132,7 +134,9 @@ void main() {
     testWidgets('visible=false (varsayılan): hiçbir şey çizmez',
         (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(home: HbOverlay()),
+        wrapWithL10n(
+          const HbOverlay(),
+        ),
       );
       await tester.pump();
 
@@ -174,8 +178,8 @@ void main() {
         (tester) async {
       late BuildContext captured;
       await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
+        wrapWithL10n(
+          Builder(
             builder: (context) {
               captured = context;
               return const SizedBox.shrink();
@@ -218,9 +222,9 @@ void main() {
         (tester) async {
       // Kurulum: test/hub_catalog_test.dart deseninin aynısı.
       await tester.pumpWidget(
-        MaterialApp(
+        wrapWithL10n(
+          const Scaffold(body: GameSelectorScreen()),
           theme: buildLululuTheme(),
-          home: const Scaffold(body: GameSelectorScreen()),
         ),
       );
       await tester.pump();

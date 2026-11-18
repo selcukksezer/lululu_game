@@ -15,6 +15,8 @@ import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 Future<void> _loadCaptureFonts() async {
   const fontFiles = <String, List<String>>{
     'Baloo 2': [
@@ -82,13 +84,13 @@ void main() {
     await tester.pumpWidget(
       RepaintBoundary(
         key: boundaryKey,
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: buildLululuTheme(),
-          home: const TickerMode(
+        child: wrapWithL10n(
+          const TickerMode(
             enabled: false,
             child: ScreamRoachScreen(prototypeVisualState: true),
           ),
+          theme: buildLululuTheme(),
+          debugShowCheckedModeBanner: false,
         ),
       ),
     );

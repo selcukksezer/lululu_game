@@ -29,6 +29,8 @@ import 'package:lululu_game/theme/lululu_theme.dart';
 import 'package:lululu_game/widgets/arcade_chrome.dart';
 import 'package:lululu_game/widgets/sticker_image.dart';
 
+import 'test_helpers.dart';
+
 Future<void> _loadCustomFonts() async {
   final fontMap = <String, List<String>>{
     'Baloo 2': [
@@ -119,7 +121,8 @@ void main() {
   });
 
   Widget wrapPlayable(Widget home) {
-    return MaterialApp(
+    return wrapWithL10n(
+      home,
       debugShowCheckedModeBanner: false,
       theme: buildLululuTheme(),
       builder: (context, child) => MediaQuery(
@@ -130,7 +133,6 @@ void main() {
         ),
         child: child ?? const SizedBox.shrink(),
       ),
-      home: home,
     );
   }
 

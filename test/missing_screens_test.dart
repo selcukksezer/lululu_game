@@ -14,6 +14,8 @@ import 'package:lululu_game/services/energy_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 // Madde 99 [P1]: widget testi olmayan 4 ekranın kurulum + temel
 // etkileşim testleri. SAVUNMACI yazıldı: ekranlar başka ajanlarca da
 // düzenleniyor; çekirdek öğelerin varlığı ve temel etkileşim denetlenir,
@@ -25,7 +27,7 @@ Future<void> _pumpScreen(WidgetTester tester, Widget screen) async {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
-    MaterialApp(theme: buildLululuTheme(), home: screen),
+    wrapWithL10n(screen, theme: buildLululuTheme()),
   );
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 200));

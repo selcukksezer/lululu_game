@@ -8,6 +8,8 @@ import 'package:lululu_game/modes/terlik_tap_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/widgets/sticker_image.dart';
 
+import 'test_helpers.dart';
+
 // Madde 37 (Terlik Tap, gerçek zamanlı mod): `_togglePause` duraklatmada
 // 16 ms'lik oyun zamanlayıcısını durdurur (`_stopLoop`), devamda yeniden
 // kurar (`_startLoop`); `_tick` ayrıca `_paused` korumasına sahiptir
@@ -42,8 +44,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      const MaterialApp(home: TerlikTapScreen(initialTargetForTesting: true)),
+    await pumpWithL10n(
+      tester,
+      const TerlikTapScreen(initialTargetForTesting: true),
     );
     await tester.pump();
   }

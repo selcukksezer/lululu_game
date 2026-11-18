@@ -9,6 +9,8 @@ import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/services/energy_service.dart';
 import 'package:lululu_game/widgets/sticker_image.dart';
 
+import 'test_helpers.dart';
+
 // Terlik Tap hamlesiz-çıkış enerji iadesi — Stack Drop deseninin aynısı
 // (`test/other_modes_energy_refund_test.dart`): rotayı it, `pageBack`
 // ile çık, enerji sayımını doğrula. İade `dispose` içinde DEĞİLDİR
@@ -72,8 +74,8 @@ void main() {
   }) async {
     setViewport(tester);
     await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
+      wrapWithL10n(
+        Builder(
           builder: (ctx) => Scaffold(
             body: Center(
               child: ElevatedButton(
@@ -152,10 +154,9 @@ void main() {
 
   testWidgets('pop olmadan kaldırma (dispose) iade yapmaz', (tester) async {
     setViewport(tester);
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: TerlikTapScreen(energyConsumed: true),
-      ),
+    await pumpWithL10n(
+      tester,
+      const TerlikTapScreen(energyConsumed: true),
     );
     await pumpFrames(tester, 100);
     expect(EnergyService.instance.energy, 3);

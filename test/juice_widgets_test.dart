@@ -8,6 +8,8 @@ import 'package:lululu_game/services/adaptive_quality_scaler.dart';
 import 'package:lululu_game/widgets/floating_score_text.dart';
 import 'package:lululu_game/widgets/particle_overlay.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
@@ -41,8 +43,8 @@ void main() {
     testWidgets('ParticleOverlay RepaintBoundary ile zero-jank çizilir', (tester) async {
       final controller = ParticleOverlayController();
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
+        wrapWithL10n(
+          Scaffold(
             body: ParticleOverlay(
               controller: controller,
               child: const SizedBox(width: 300, height: 500),
@@ -66,8 +68,8 @@ void main() {
   group('FloatingScoreText Widget Testleri', () {
     testWidgets('FloatingScoreText kritik vuruş ve kombo rozetini gösterir', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
+        wrapWithL10n(
+          Scaffold(
             body: Center(
               child: FloatingScoreText.fromScore(
                 points: 450,
@@ -94,8 +96,8 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: GameScreen(
+        wrapWithL10n(
+          GameScreen(
             level: CampaignDatabase.kitchenLevel1,
             arcade: true,
             prototypeVisualState: true,
@@ -113,8 +115,8 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Grid2048Screen(prototypeVisualState: true),
+        wrapWithL10n(
+          const Grid2048Screen(prototypeVisualState: true),
         ),
       );
       await tester.pump(const Duration(milliseconds: 50));

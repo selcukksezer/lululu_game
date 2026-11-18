@@ -39,6 +39,8 @@ import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 import 'package:lululu_game/widgets/shop_dialog.dart';
 
+import 'test_helpers.dart';
+
 Future<void> _loadCustomFonts() async {
   final fontMap = <String, List<String>>{
     'Baloo 2': [
@@ -216,10 +218,8 @@ void main() {
           // bu test kırmızıya döner — düzeltme lib tarafında yapılır.
           try {
             await tester.pumpWidget(
-              MaterialApp(
-                debugShowCheckedModeBanner: false,
-                theme: buildLululuTheme(),
-                home: MediaQuery(
+              wrapWithL10n(
+                MediaQuery(
                   data: MediaQueryData(
                     size: size,
                     devicePixelRatio: 1.0,
@@ -232,6 +232,8 @@ void main() {
                     child: builder(),
                   ),
                 ),
+                debugShowCheckedModeBanner: false,
+                theme: buildLululuTheme(),
               ),
             );
             await tester.pump();

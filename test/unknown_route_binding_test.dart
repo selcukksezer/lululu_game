@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:lululu_game/l10n/app_localizations.dart';
 import 'package:lululu_game/navigation/game_routes.dart';
 import 'package:lululu_game/screens/home_shell.dart';
 import 'package:lululu_game/screens/modes_screen.dart';
@@ -91,6 +93,20 @@ void main() {
           navigatorKey: navigatorKey,
           navigatorObservers: observer == null ? const [] : [observer],
           theme: buildLululuTheme(),
+          // wrapWithL10n kullanılamaz: helper route kancalarını
+          // (onGenerateRoute/onUnknownRoute/initialRoute/navigatorKey)
+          // taşımaz; delegate dörtlüsü aynen buraya eklendi
+          // (daily_reward_exploit_test.dart pumpHub deseni).
+          locale: const Locale('tr'),
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          localeResolutionCallback:
+              AppLocalizations.localeResolutionCallback,
           onGenerateRoute: LululuRoutes.onGenerateRoute,
           onUnknownRoute: LululuRoutes.onUnknownRoute,
           initialRoute: initialRoute,

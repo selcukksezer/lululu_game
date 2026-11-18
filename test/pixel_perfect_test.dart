@@ -42,6 +42,8 @@ import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 class SignalIconPainter extends CustomPainter {
   const SignalIconPainter();
   @override
@@ -576,10 +578,8 @@ void main() {
           width: 430,
           height: 932,
           color: const Color(0xFFF4F6FA),
-          child: MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: buildLululuTheme(),
-            home: Container(
+          child: wrapWithL10n(
+            Container(
               color: const Color(0xFFF4F6FA),
               child: Stack(
                 children: [
@@ -611,6 +611,8 @@ void main() {
                 ],
               ),
             ),
+            debugShowCheckedModeBanner: false,
+            theme: buildLululuTheme(),
           ),
         ),
       ),

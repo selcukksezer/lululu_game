@@ -10,6 +10,8 @@ import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/services/energy_service.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 // Madde 35: `energyConsumed` ile girilen Suika oturumunda, oyun bitmeden
 // ve hiç hamle yapılmadan çıkılırsa 1 enerji iade edilir
 // (lib/screens/game_screen.dart dispose: `addEnergy(1)`).
@@ -45,16 +47,15 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: buildLululuTheme(),
-        home: GameScreen(
-          level: CampaignDatabase.kitchenLevel1,
-          arcade: true,
-          energyConsumed: energyConsumed,
-        ),
+    await pumpWithL10n(
+      tester,
+      GameScreen(
+        level: CampaignDatabase.kitchenLevel1,
+        arcade: true,
+        energyConsumed: energyConsumed,
       ),
+      theme: buildLululuTheme(),
+      debugShowCheckedModeBanner: false,
     );
     await tester.pump(const Duration(milliseconds: 80));
   }

@@ -147,10 +147,10 @@ void main() {
 
     test('GameAudio entries stay bare filenames and the 7 viral one-shots live in canonical assets/audio/ (madde 17)', () {
       // Mac merge rule: constants are BARE filenames, never full paths.
-      // AudioManager._normalizeAssetPath joins them with `audio/`; the
-      // legacy `assets/design/sounds/` duplicates are NOT asserted here —
-      // they still exist on disk until the remaining migration deletes
-      // them (see assets/audio/ASSETS_NOTE.md).
+      // AudioManager._normalizeAssetPath joins them with `audio/`; only
+      // the canonical `assets/audio/` folder is asserted here — the
+      // legacy duplicates were deleted in the madde 17 cleanup
+      // (see assets/audio/ASSETS_NOTE.md).
       for (final fileName in GameAudio.allAssets) {
         expect(
           fileName.contains('/'),
@@ -267,9 +267,8 @@ void main() {
         expectValidAsset(p, context: 'ZeroJankPreloader.criticalFontAssets');
       }
       // NOTE: this audits the preloader manifest verbatim; the manifest
-      // lists canonical `assets/audio/` paths (zero_jank_preloader.dart).
-      // The legacy `assets/design/sounds/` duplicates on disk are not
-      // listed in the manifest and are not asserted here.
+      // lists canonical `assets/audio/` paths (zero_jank_preloader.dart)
+      // and nothing else is asserted here.
       for (final p in ZeroJankPreloader.criticalSoundAssets) {
         expectValidAsset(p, context: 'ZeroJankPreloader.criticalSoundAssets');
       }

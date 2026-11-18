@@ -29,6 +29,8 @@ import 'package:lululu_game/services/iap_service.dart';
 import 'package:lululu_game/services/zero_jank_preloader.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 String _trUpper(String input) {
   return input
       .replaceAll('i', 'İ')
@@ -121,7 +123,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     SharedPreferences.setMockInitialValues({'LululuOnboardingDoneV1': true});
     await tester.pumpWidget(
-      MaterialApp(
+      wrapWithL10n(
+        const HomeShell(),
         theme: buildLululuTheme(),
         builder: (context, child) => MediaQuery(
           data: const MediaQueryData(
@@ -131,7 +134,6 @@ void main() {
           ),
           child: child ?? const SizedBox.shrink(),
         ),
-        home: const HomeShell(),
       ),
     );
     await tester.pump();
@@ -273,7 +275,8 @@ void main() {
 
     Future<void> mount(Widget home, String title) async {
       await tester.pumpWidget(
-        MaterialApp(
+        wrapWithL10n(
+          home,
           theme: buildLululuTheme(),
           builder: (context, child) => MediaQuery(
             data: const MediaQueryData(
@@ -283,7 +286,6 @@ void main() {
             ),
             child: child ?? const SizedBox.shrink(),
           ),
-          home: home,
         ),
       );
       await tester.pump();
@@ -299,7 +301,8 @@ void main() {
     await mount(const StackDropScreen(), 'Stack Drop');
     await mount(const Grid2048Screen(), '2048 Grid');
     await tester.pumpWidget(
-      MaterialApp(
+      wrapWithL10n(
+        GameScreen(level: CampaignDatabase.kitchenLevel1, arcade: true),
         theme: buildLululuTheme(),
         builder: (context, child) => MediaQuery(
           data: const MediaQueryData(
@@ -309,7 +312,6 @@ void main() {
           ),
           child: child ?? const SizedBox.shrink(),
         ),
-        home: GameScreen(level: CampaignDatabase.kitchenLevel1, arcade: true),
       ),
     );
     await tester.pump();
@@ -336,7 +338,8 @@ void main() {
 
     Future<void> mount(Widget home, String title) async {
       await tester.pumpWidget(
-        MaterialApp(
+        wrapWithL10n(
+          home,
           theme: buildLululuTheme(),
           builder: (context, child) => MediaQuery(
             data: const MediaQueryData(
@@ -346,7 +349,6 @@ void main() {
             ),
             child: child ?? const SizedBox.shrink(),
           ),
-          home: home,
         ),
       );
       await tester.pump();

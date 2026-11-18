@@ -11,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lululu_game/screens/grid_2048_screen.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -24,9 +26,9 @@ void main() {
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,
-        child: MaterialApp(
+        child: wrapWithL10n(
+          const Grid2048Screen(prototypeVisualState: true),
           theme: buildLululuTheme(),
-          home: const Grid2048Screen(prototypeVisualState: true),
         ),
       ),
     );

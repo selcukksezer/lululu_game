@@ -28,6 +28,8 @@ import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 // Madde 74 [P1]: 1.3x sistem yazı boyutu (erişilebilirlik) taşma denetimi.
 // Kritik ekranlar gerçek boyut + TextScaler 1.3 ile kurulur; FittedBox /
 // küçültme maskesi YOKTUR. Taşma bulan test kırmızıya döner — düzeltme
@@ -177,10 +179,8 @@ void main() {
 
           try {
             await tester.pumpWidget(
-              MaterialApp(
-                debugShowCheckedModeBanner: false,
-                theme: buildLululuTheme(),
-                home: MediaQuery(
+              wrapWithL10n(
+                MediaQuery(
                   data: MediaQueryData(
                     size: size,
                     devicePixelRatio: 1.0,
@@ -193,6 +193,8 @@ void main() {
                     child: builder(),
                   ),
                 ),
+                debugShowCheckedModeBanner: false,
+                theme: buildLululuTheme(),
               ),
             );
             await tester.pump();

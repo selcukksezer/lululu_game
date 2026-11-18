@@ -1,19 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lululu_game/modes/balloon_pop_screen.dart';
-import 'package:lululu_game/widgets/arcade_chrome.dart';
 
-/// ArcadeStat etiketine göre görüntülenen sayısal değeri okur
+import 'test_helpers.dart';
+
+/// HUD istatistik kutusundaki sayısal değeri etiketine göre okur
 /// (binlik ayracı '.' kaldırılır).
+/// NOT: BalloonPopScreen ArcadeStat kullanmaz; kendi _buildHudStatBox
+/// Column'u içinde Text(etiket) + Text(değer) basar — değer, etiketin
+/// en yakın Column atasındaki ikinci Text'tir.
 int _statValue(WidgetTester tester, String label) {
-  final stats = find
-      .byType(ArcadeStat)
+  final labelFinder = find.text(label);
+  expect(labelFinder, findsOneWidget, reason: 'Etiket "$label" bulunamadı');
+  final columnFinder = find.ancestor(
+    of: labelFinder,
+    matching: find.byType(Column),
+  );
+  final texts = find
+      .descendant(of: columnFinder.first, matching: find.byType(Text))
       .evaluate()
-      .map((e) => e.widget as ArcadeStat)
-      .where((s) => s.label == label)
+      .map((e) => (e.widget as Text).data ?? '')
       .toList();
-  expect(stats, isNotEmpty, reason: 'ArcadeStat "$label" bulunamadı');
-  return int.parse(stats.first.value.replaceAll('.', ''));
+  expect(texts, hasLength(2), reason: 'HUD kutusu "$label" + değer olmalı');
+  return int.parse(texts.last.replaceAll('.', ''));
 }
 
 void main() {
@@ -26,7 +35,7 @@ void main() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
-    await tester.pumpWidget(const MaterialApp(home: BalloonPopScreen()));
+    await pumpWithL10n(tester, const BalloonPopScreen());
     await tester.pump(const Duration(milliseconds: 100));
 
     // Madde 100: başlangıç durumu — skor 0.
