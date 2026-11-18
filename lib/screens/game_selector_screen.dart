@@ -11,7 +11,9 @@ import '../services/chat_service.dart';
 import '../services/energy_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../services/zero_jank_preloader.dart';
 import '../theme/lululu_theme.dart';
+import '../widgets/energy_empty_popup.dart';
 import '../widgets/hb_overlay.dart';
 import '../widgets/top_bar.dart';
 import 'chat_screen.dart';
@@ -98,11 +100,32 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
 
   Future<void> _launchMode(GameModeKind kind) async {
     AudioManager().playPop();
-    if (EnergyService.instance.energy > 0) {
-      await HbOverlay.play(context);
+    ZeroJankPreloader.instance.notePointerDown();
+    // B31 — sıralama: enerji ÖNCE tüketilir, kalp kırılma overlay'i
+    // YALNIZ başarılı tüketimden sonra oynatılır. Tüketim burada
+    // yapıldığı için gezinme openGameMode'un tüketimsiz eşdeğeridir
+    // (aynı widget + aynı zero-jank rota + GameAudioGate); enerji
+    // yoksa aynı boş-enerji popup'ı gösterilir, overlay oynatılmaz.
+    final consumed = await EnergyService.instance.tryConsume();
+    if (!consumed) {
+      if (mounted) {
+        await showEnergyEmptyPopup(context);
+      }
+      return;
     }
     if (!mounted) return;
-    await openGameMode(context, kind);
+    await HbOverlay.play(context);
+    if (!mounted) return;
+    final child = LululuRoutes.buildGameModeWidget(kind, energyConsumed: true);
+    await Navigator.of(context).push(
+      LululuRoutes.buildZeroJankRoute<void>(
+        child: GameAudioGate(child: child),
+        routeName: kind.name,
+        duration: const Duration(milliseconds: 340),
+        reverseDuration: const Duration(milliseconds: 220),
+        scaleTransition: true,
+      ),
+    );
   }
 
   void _playSuika() {
@@ -149,7 +172,19 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       setState(() => _dailyEnergyClaimed = true);
       final granted = await pm.claimDailyFreeEnergy(amount: 5);
       if (!granted) {
-        EnergyService.instance.addEnergy(5);
+        // K13 — fallback KALDIRILDI: claim reddedildiyse (yarışta
+        // başka talep önce davrandıysa) enerji EKLENMEZ; kullanıcıya
+        // görünür "bugün alındı" bildirimi gösterilir, oturum bayrağı
+        // geri alınır ki kalıcı durum tek doğruluk kaynağı kalsın.
+        if (mounted) {
+          setState(() => _dailyEnergyClaimed = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(context.l10n.dailyEnergyAlreadyClaimedSnack),
+            ),
+          );
+        }
+        return;
       }
       AudioManager().playWin();
       if (mounted) {

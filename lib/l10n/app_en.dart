@@ -189,6 +189,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Daily energy claimed: +5 energy added!';
 
   @override
+  String get dailyEnergyAlreadyClaimedSnack =>
+      'Daily energy was already claimed today.';
+
+  @override
   String get onlineNotifySignupSnack =>
       "You're signed up! We'll let you know as soon as Online mode opens.";
 

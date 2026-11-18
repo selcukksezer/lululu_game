@@ -172,6 +172,7 @@ abstract class AppLocalizations {
   String get dailyRewardClaimedSnack;
   String get rewardedAdsComingSoon;
   String get dailyEnergyClaimedSnack;
+  String get dailyEnergyAlreadyClaimedSnack;
   String get onlineNotifySignupSnack;
   String get seeAllArrow;
   String get studioTitle;

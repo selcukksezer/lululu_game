@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
@@ -77,7 +78,27 @@ class _OnlineScreenState extends State<OnlineScreen> {
     AudioManager().playPop();
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
+      return;
     }
+    // B16-online — yığında ekran yoksa (bağımsız/ilk açılış) hub
+    // yedeğine git; gömülü kullanımda kabuk gezinmeyi yönetir.
+    if (!widget.embedded) {
+      goTo(context, LululuRoutes.hub, replace: true);
+    }
+  }
+
+  /// B16-online — dock sekmeleri gerçek gezinme yapar: her sekme kendi
+  /// rotasına gider (önceden her sekme yalnızca geri/pop yapıyordu).
+  void _handleDockSelect(LululuDockTab tab) {
+    AudioManager().playPop();
+    final route = switch (tab) {
+      LululuDockTab.home => LululuRoutes.hub,
+      LululuDockTab.modes => LululuRoutes.modes,
+      LululuDockTab.family => LululuRoutes.tiers,
+      LululuDockTab.shop => LululuRoutes.shop,
+      LululuDockTab.scores => LululuRoutes.scores,
+    };
+    goTo(context, route, replace: true);
   }
 
   void _toggleNotify() {
@@ -146,7 +167,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
               height: 84,
               child: _OnlineFloatingDock(
                 activeTab: LululuDockTab.home,
-                onSelectTab: (_) => _closeOrPop(),
+                onSelectTab: _handleDockSelect,
               ),
             ),
         ],

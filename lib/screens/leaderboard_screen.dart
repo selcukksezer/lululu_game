@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/auth_service.dart';
 import '../services/leaderboard_service.dart';
@@ -112,59 +113,58 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             ? AuthService.instance.displayName
             : 'LülüSever';
 
-        // Gerçek kayıtlar (yalnızca gerçek oyuncular): boşsa boş durum bandı
-        // gösterilir. Yükleme bitmeden bu dala düşülmez — _loading iskelet çizer.
-        final isBoardEmpty =
-            LeaderboardService.instance.getOverallTop().isEmpty;
-
-        final scoreItems = <_ScoreRowData>[
-          _ScoreRowData(
-            rank: 4,
-            name: 'TerlikUstası',
-            level: context.l10n.levelWithValue(24),
-            score: '8.540',
-            avatar: 'assets/design/bugs_hd/tier4_hd.png',
-            imgTop: 2.4,
-            imgHeight: 35.2,
-          ),
-          _ScoreRowData(
-            rank: 5,
-            name: context.l10n.youAsName(myDisplayName),
-            level: context.l10n.levelWithValue(myLevel),
-            score: myScoreText,
-            avatar: 'assets/design/bugs_hd/tier5_hd.png',
-            imgTop: 4.3,
-            imgHeight: 62.3,
-            isMe: true,
-          ),
-          _ScoreRowData(
-            rank: 6,
-            name: 'MakaraMehmet',
-            level: context.l10n.levelWithValue(21),
-            score: '7.402',
-            avatar: 'assets/design/bugs_hd/tier3_hd.png',
-            imgTop: 2.4,
-            imgHeight: 35.2,
-          ),
-          _ScoreRowData(
-            rank: 7,
-            name: 'HuniKafa',
-            level: context.l10n.levelWithValue(15),
-            score: '6.988',
-            avatar: 'assets/design/bugs_hd/tier1_hd.png',
-            imgTop: 5.6,
-            imgHeight: 82.6,
-          ),
-          _ScoreRowData(
-            rank: 8,
-            name: 'BilgeDede',
-            level: context.l10n.levelWithValue(27),
-            score: '6.511',
-            avatar: 'assets/design/bugs_hd/tier8_hd.png',
-            imgTop: 3.2,
-            imgHeight: 46.0,
-          ),
+        // B11/K4 — gerçek kayıtlar: tek veri yolu getOverallTop()
+        // (ham tahtalardaki gerçek/lokal satırlar; sabit podyum ve
+        // sabit satırlar kaldırıldı). Yükleme bitmeden bu dala
+        // düşülmez — _loading iskelet çizer.
+        final entries = LeaderboardService.instance.getOverallTop();
+        final isBoardEmpty = entries.isEmpty;
+        final uid = AuthService.instance.playerId;
+        final others = entries
+            .where((e) => !e.isLocalPlayer && e.playerId != uid)
+            .toList();
+        // SEN satırı: formül (7915 + toplam) AYNEN korunur — yalnız
+        // sıralamadaki yeri gerçek rakip skorlarına göre hesaplanır.
+        // Tahta boşken SEN satırı da gösterilmez, yalnız boş bant görünür.
+        final combined = <({int score, bool isMe, LeaderboardEntry? entry})>[
+          for (final e in others) (score: e.score, isMe: false, entry: e),
+          if (!isBoardEmpty) (score: myScoreVal, isMe: true, entry: null),
+        ]..sort((a, b) {
+            final byScore = b.score.compareTo(a.score);
+            if (byScore != 0) return byScore;
+            if (a.isMe != b.isMe) return a.isMe ? 1 : -1;
+            return 0;
+          });
+        final boardItems = <_ScoreRowData>[
+          for (var i = 0; i < combined.length; i++)
+            if (combined[i].isMe)
+              _ScoreRowData(
+                rank: i + 1,
+                name: context.l10n.youAsName(myDisplayName),
+                level: context.l10n.levelWithValue(myLevel),
+                score: myScoreText,
+                avatar: 'assets/design/bugs_hd/tier5_hd.png',
+                imgTop: 4.3,
+                imgHeight: 62.3,
+                isMe: true,
+              )
+            else
+              _ScoreRowData(
+                rank: i + 1,
+                name: combined[i].entry!.playerName,
+                level: _modeSubtitle(context, combined[i].entry!.modeId),
+                score: _formatScore(combined[i].entry!.score),
+                avatar: _avatarFor(combined[i].entry!.playerName),
+                imgTop: 2.4,
+                imgHeight: 35.2,
+              ),
         ];
+        final podiumItems = boardItems.length > 3
+            ? boardItems.sublist(0, 3)
+            : boardItems;
+        final scoreItems = boardItems.length > 3
+            ? boardItems.sublist(3)
+            : const <_ScoreRowData>[];
 
         final mqTop = MediaQuery.of(context).padding.top;
 
@@ -301,92 +301,26 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         padding: const EdgeInsets.only(bottom: 120),
                         children: [
                           if (isBoardEmpty) _buildEmptyStateBanner(),
-                          // .podium (y=82, h=190, padding: 14px 16px 4px 16px)
-                          Container(
-                            height: 190,
-                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                _buildPodiumCol(
-                                  rank: 2,
-                                  name: 'HamamCan_34',
-                                  score: '9.310',
-                                  avatar: 'assets/design/bugs_hd/tier6_hd.png',
-                                  faceSize: 64,
-                                  imgLeft: 3.5,
-                                  imgTop: 6.3,
-                                  imgWidth: 51.0,
-                                  imgHeight: 93.2,
-                                  borderColor: const Color(0xFF8E9CAE),
-                                  baseHeight: 32,
-                                  baseFontSize: 17,
-                                  baseDecoration: const BoxDecoration(
-                                    color: Color(0xFFA9B6C8),
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(10),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                _buildPodiumCol(
-                                  rank: 1,
-                                  name: 'KongoKralı',
-                                  score: '11.204',
-                                  avatar: 'assets/design/bugs_hd/tier7_hd.png',
-                                  faceSize: 78,
-                                  imgLeft: 4.3,
-                                  imgTop: 7.1,
-                                  imgWidth: 63.4,
-                                  imgHeight: 90.4,
-                                  borderColor: const Color(0xFFFFB800),
-                                  baseHeight: 44,
-                                  baseFontSize: 20,
-                                  baseDecoration: const BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Color(0xFFFFB800),
-                                        Color(0xFFE09E00),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(10),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                _buildPodiumCol(
-                                  rank: 3,
-                                  name: 'DivaNur',
-                                  score: '8.977',
-                                  avatar: 'assets/design/bugs_hd/tier5_hd.png',
-                                  faceSize: 64,
-                                  imgLeft: 3.5,
-                                  imgTop: 7.1,
-                                  imgWidth: 51.0,
-                                  imgHeight: 90.3,
-                                  borderColor: const Color(0xFF8E9CAE),
-                                  baseHeight: 26,
-                                  baseFontSize: 15,
-                                  baseDecoration: const BoxDecoration(
-                                    color: Color(0xFFD08A4E),
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(10),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                          if (!isBoardEmpty) ...[
+                            // .podium (y=82, h=190, padding: 14px 16px 4px 16px)
+                            Container(
+                              height: 190,
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: _buildPodiumCols(podiumItems),
+                              ),
                             ),
-                          ),
 
-                          const SizedBox(height: 12),
+                            const SizedBox(height: 12),
 
-                          for (final item in scoreItems) _buildScoreRow(item),
+                            for (final item in scoreItems)
+                              _buildScoreRow(item),
 
-                          const SizedBox(height: 8),
+                            const SizedBox(height: 8),
+                          ],
                         ],
                       ),
                     ),
@@ -682,6 +616,134 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         ],
       ),
     );
+  }
+
+  /// Podyum sütunları: gösterim sırası 2-1-3 (ortada lider); 3'ten az
+  /// kayıt varsa yalnız var olan sütunlar ortalanarak çizilir.
+  List<Widget> _buildPodiumCols(List<_ScoreRowData> podiumItems) {
+    final byRank = <int, _ScoreRowData>{
+      for (final item in podiumItems) item.rank: item,
+    };
+    final cols = <Widget>[];
+    for (final rank in const [2, 1, 3]) {
+      final item = byRank[rank];
+      if (item == null) continue;
+      if (cols.isNotEmpty) cols.add(const SizedBox(width: 10));
+      cols.add(_buildPodiumColForRank(rank, item));
+    }
+    return cols;
+  }
+
+  /// Sıra konumunun (1/2/3) sabit geometrisi + gerçek satır verisi.
+  Widget _buildPodiumColForRank(int rank, _ScoreRowData item) {
+    switch (rank) {
+      case 1:
+        return _buildPodiumCol(
+          rank: 1,
+          name: item.name,
+          score: item.score,
+          avatar: item.avatar,
+          faceSize: 78,
+          imgLeft: 4.3,
+          imgTop: 7.1,
+          imgWidth: 63.4,
+          imgHeight: 90.4,
+          borderColor: const Color(0xFFFFB800),
+          baseHeight: 44,
+          baseFontSize: 20,
+          baseDecoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFFFFB800),
+                Color(0xFFE09E00),
+              ],
+            ),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(10),
+            ),
+          ),
+        );
+      case 2:
+        return _buildPodiumCol(
+          rank: 2,
+          name: item.name,
+          score: item.score,
+          avatar: item.avatar,
+          faceSize: 64,
+          imgLeft: 3.5,
+          imgTop: 6.3,
+          imgWidth: 51.0,
+          imgHeight: 93.2,
+          borderColor: const Color(0xFF8E9CAE),
+          baseHeight: 32,
+          baseFontSize: 17,
+          baseDecoration: const BoxDecoration(
+            color: Color(0xFFA9B6C8),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(10),
+            ),
+          ),
+        );
+      default:
+        return _buildPodiumCol(
+          rank: 3,
+          name: item.name,
+          score: item.score,
+          avatar: item.avatar,
+          faceSize: 64,
+          imgLeft: 3.5,
+          imgTop: 7.1,
+          imgWidth: 51.0,
+          imgHeight: 90.3,
+          borderColor: const Color(0xFF8E9CAE),
+          baseHeight: 26,
+          baseFontSize: 15,
+          baseDecoration: const BoxDecoration(
+            color: Color(0xFFD08A4E),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(10),
+            ),
+          ),
+        );
+    }
+  }
+
+  /// Rakip satırının alt başlığı: en iyi skorun alındığı modun
+  /// yerelleşmiş adı (kayıtlarda seviye alanı yok; seviye uydurulmaz).
+  static String _modeSubtitle(BuildContext context, String modeId) {
+    final id = switch (LeaderboardService.normalizeModeId(modeId)) {
+      LeaderboardService.modeSuika => LululuGameModeId.suikaArena,
+      LeaderboardService.mode2048 => LululuGameModeId.grid2048,
+      LeaderboardService.modeBalloon => LululuGameModeId.bubblePop,
+      LeaderboardService.modeMatch3 => LululuGameModeId.match3,
+      LeaderboardService.modeConnect => LululuGameModeId.connectBlast,
+      LeaderboardService.modeStack => LululuGameModeId.stackDrop,
+      LeaderboardService.modeTerlik => LululuGameModeId.terlikTap,
+      LeaderboardService.modeYuva => LululuGameModeId.yuvaDefense,
+      LeaderboardService.modeOsmantus => LululuGameModeId.osmantus,
+      LeaderboardService.modeScream => LululuGameModeId.screamBug,
+      LeaderboardService.modeMakarayiz => LululuGameModeId.makarayiz,
+      _ => null,
+    };
+    if (id == null) return '';
+    final locale = Localizations.localeOf(context);
+    for (final mode in LululuGameMode.catalog) {
+      if (mode.id == id) return mode.titleFor(locale);
+    }
+    return '';
+  }
+
+  /// Rakip avatarı: oyuncu adına göre deterministik kademe görseli
+  /// (yalnız sunum eşlemesi; kayıt verisini değiştirmez, her açılışta
+  /// aynı oyuncu aynı görseli alır).
+  static String _avatarFor(String playerName) {
+    var hash = 0;
+    for (final unit in playerName.codeUnits) {
+      hash = (hash * 31 + unit) % 997;
+    }
+    return 'assets/design/bugs_hd/tier${(hash % 10) + 1}_hd.png';
   }
 
   Widget _buildScoreRow(_ScoreRowData item) {

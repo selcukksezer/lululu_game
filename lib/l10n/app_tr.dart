@@ -195,6 +195,10 @@ class AppLocalizationsTr extends AppLocalizations {
       'Günlük enerji alındı: +5 enerji eklendi!';
 
   @override
+  String get dailyEnergyAlreadyClaimedSnack =>
+      'Günlük enerji bugün zaten alındı.';
+
+  @override
   String get onlineNotifySignupSnack =>
       'Kaydın alındı! Online mod açılır açılmaz sana haber vereceğiz.';
 
