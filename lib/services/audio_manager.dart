@@ -586,6 +586,10 @@ class AudioManager {
   ///
   /// [onComplete] runs only on natural end — not after [stopAll] / route pop.
   /// Mute or test mode: no audio; [onComplete] still runs so callers can unlock UI.
+  ///
+  /// D12 (F7): internal-only — no external callers besides [playScreamRoach]
+  /// in this file; not part of the public playback API.
+  @visibleForTesting
   Future<bool> playExclusiveSfx(
     String assetName, {
     double volume = 1.0,
@@ -703,6 +707,9 @@ class AudioManager {
   }
 
   /// Prototype alias for merge sound effects (`playMergeSfx`).
+  @Deprecated(
+    'D12 (F7): dead alias with no external callers; use playMerge instead.',
+  )
   Future<void> playMergeSfx({
     int? tier,
     InsectTier? insectTier,
@@ -753,6 +760,9 @@ class AudioManager {
   }
 
   /// Prototype alias for drop sound effect (`playDropSfx`).
+  @Deprecated(
+    'D12 (F7): dead alias with no external callers; use playDrop instead.',
+  )
   Future<void> playDropSfx() => playDrop();
 
   Future<void> playWin() => playVictorySfx();
@@ -794,6 +804,11 @@ class AudioManager {
     return playSfx(GameAudio.sfxButtonTap, isVoice: false);
   }
 
+  /// D12 (F7): dead method with no external callers. `voice_aydinlat.mp3`
+  /// still plays through `playF16Sfx(includeVoice: true)`.
+  @Deprecated(
+    'D12 (F7): dead method with no external callers; voice_aydinlat plays via playF16Sfx.',
+  )
   Future<void> playAydinlatVoice() =>
       playSfx(GameAudio.voiceAydinlat, isVoice: true);
 
@@ -864,6 +879,9 @@ class AudioManager {
   }
 
   /// Prototype alias for slipper slap (`playSlapSfx`).
+  @Deprecated(
+    'D12 (F7): dead alias with no external callers; use playSlipperSmash or playSlipper instead.',
+  )
   Future<void> playSlapSfx({
     String? characterId,
     InsectTier? tier,
@@ -935,6 +953,9 @@ class AudioManager {
   }
 
   /// Prototype alias for Raid spray (`playSpraySfx`).
+  @Deprecated(
+    'D12 (F7): dead alias with no external callers; use playSpray instead.',
+  )
   Future<void> playSpraySfx() => playSpray();
 
   /// Çığlık Böcek mode scream audio (`playScreamRoach`).
@@ -1037,6 +1058,9 @@ class AudioManager {
   }
 
   /// Light impact — drop / soft feedback.
+  @Deprecated(
+    'D12 (F7): no external callers; use triggerHaptic instead.',
+  )
   void triggerLightHaptic() {
     if (!vibrationEnabled ||
         !ProgressManager.instance.vibrationEnabled ||

@@ -280,7 +280,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       voice = prefs.getBool('LululuSetVoice') ??
           prefs.getBool('lululu_voice_enabled') ??
           true;
-      vib = prefs.getBool('LululuSetVib') ?? false;
+      // D3 (F4): `lululu_vibration_enabled` yedek anahtarı da okunur ve
+      // varsayılan `true`'dur (ProgressManager/AudioManager varsayılanıyla
+      // tutarlı). Eski `?? false`, Ayarlar her açılışında titreşimi
+      // kalıcı olarak kapatıyordu.
+      vib = prefs.getBool('LululuSetVib') ??
+          prefs.getBool('lululu_vibration_enabled') ??
+          true;
     } catch (_) {
       // Tercihler okunamazsa initState varsayılanlarıyla devam et.
       return;
@@ -290,8 +296,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Ses ve sesli anahtarları bağımsızdır: her bayrak yalnız kendi
     // saklanan değerinden beslenir (SFX kapalıyken voice ezilmez).
     _audio.setVoiceEnabled(voice);
-    _audio.setVibrationEnabled(vib);
-    unawaited(HapticService.instance.setEnabled(vib));
+    // D3 (F4): titreşim yalnız DEĞİŞİMDE yazılır. Setter'lar
+    // `SharedPreferences`'a kalıcı yazdığı için, okunan değeri koşulsuz
+    // geri yazmak Ayarlar ekranını açmayı titreşim ayarını ezecek bir
+    // yan etkiye dönüştürüyordu; değişim yoksa hiç çağrılmaz.
+    if (_audio.vibrationEnabled != vib || _pm.vibrationEnabled != vib) {
+      _audio.setVibrationEnabled(vib);
+      unawaited(HapticService.instance.setEnabled(vib));
+    }
 
     if (!mounted) return;
     setState(() {
@@ -313,9 +325,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _onSfxChanged(bool v) {
+    // D2 (F3): SFX anahtarı yalnız SFX kanalını yazar. Eski
+    // `_audio.isMuted = !v` yazımı master mute'u çevirdiği için SFX'i
+    // kapatmak voice'u da susturuyordu (`_voiceAudible =
+    // !_isMuted && _voiceEnabled`); `isMuted` yalnız yaşam-döngüsü
+    // koruması (AppLifecycleGuard) tarafından yazılır.
     setState(() {
       _sfxOn = v;
-      _audio.isMuted = !v;
     });
     AudioManager().setSfxEnabled(v);
     // SFX anahtarı voice bayrağına dokunmaz: voice yalnız kendi

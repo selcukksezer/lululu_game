@@ -27,6 +27,11 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
   late final AnimationController _controller;
   late final Animation<Offset> _slideAnimation;
 
+  // D7 (F9): toast gösterim sesi için son seslendirilen başarım kimliği.
+  // Aynı toast tekrar çizilirken ses tekrarlanmaz; toast kalktığında
+  // sıfırlanır, böylece aynı başarım yeniden gösterilirse yine çalar.
+  String? _lastSoundedToastId;
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +46,9 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
       CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
     _syncVisibility();
+    AchievementPassService.instance.activeToastNotifier
+        .addListener(_onToastChanged);
+    _onToastChanged();
   }
 
   @override
@@ -48,7 +56,26 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.achievement?.id != widget.achievement?.id) {
       _syncVisibility();
+      _onToastChanged();
     }
+  }
+
+  /// D7 (F9): yeni bir başarım toast'ı gösterildiğinde claim sesiyle
+  /// aynı zafer sesi ([AudioManager.playWin]) çalar. Bildirimci
+  /// (`activeToastNotifier`) değişiklikleri `didUpdateWidget`'a
+  /// uğramadığı için ses bu dinleyicide çalınır; `build` içinde
+  /// yan etki yapılmaz.
+  void _onToastChanged() {
+    final active = widget.achievement ??
+        AchievementPassService.instance.activeToastNotifier.value;
+    final id = active?.id;
+    if (id == null) {
+      _lastSoundedToastId = null;
+      return;
+    }
+    if (id == _lastSoundedToastId) return;
+    _lastSoundedToastId = id;
+    AudioManager().playWin();
   }
 
   void _syncVisibility() {
@@ -71,6 +98,8 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
 
   @override
   void dispose() {
+    AchievementPassService.instance.activeToastNotifier
+        .removeListener(_onToastChanged);
     _controller.dispose();
     super.dispose();
   }

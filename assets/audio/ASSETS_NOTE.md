@@ -9,17 +9,20 @@ birleştirir. Eski `assets/design/sounds/` önekiyle gelen tam yollar da aynı
 kanonik klasöre çevrilir, böylece eski yol kullanan çağrılar bile tek
 klasörden çalar.
 
-`assets/design/sounds/` altındaki 50 mp3 hâlâ diskte duruyor; bu klasördeki
-dosyaların bayt birebir kopyasıdır (isim listesi + md5 ile doğrulandı,
-2026-11-18). Ancak pubspec'teki `design/sounds/` girişi KALDIRILDI:
+DÜZELTME (2026-11-19, D13-doc/F21): `assets/design/sounds/` klasörü bu
+kopyada BULUNMUYOR (`ls assets/design/` ile doğrulandı — `sounds/` dizini
+yok). Buradaki eski "50 mp3 hâlâ diskte duruyor" cümlesi bayattı ve bu
+düzeltmeyle geçersizdir; kanonik klasör yalnız `assets/audio/`'dur.
+Pubspec'teki `design/sounds/` girişi KALDIRILDI:
 `InsectTier.soundFile`/`voiceFile` (`lib/models/insect_tier.dart`) yalın
 dosya adıdır ve `AudioManager._normalizeAssetPath` ile `assets/audio/`'ya
 çözülür; `ZeroJankPreloader.criticalSoundAssets`
 (`lib/services/zero_jank_preloader.dart`) artık `assets/audio/`'yu gösterir.
 Kodda `design/sounds/`'a kalan göndermeler yalnızca yorumlar ile
 `AudioManager`'ın eski yolları kanonik klasöre çeviren uyumluluk katmanıdır;
-hiçbir ses o klasörden yüklenmez. Eski klasördeki kopyaların silinmesi,
-testler geçtikten sonraya bırakıldı — silme henüz YAPILMADI. Yeni klip
+hiçbir ses o klasörden yüklenmez. Eski klasör bu kopyada bulunmadığı için
+"silme sonraya bırakıldı" ifadesi de geçersizdir — bu not silme yapmaz,
+yalnız mevcut durumu belgeler. Yeni klip
 ASLA `design/sounds/` altına eklenmez. Bütünlük testleri
 (`test/asset_integrity_test.dart`, grup 2) yalnız kanonik klasörü denetler.
 

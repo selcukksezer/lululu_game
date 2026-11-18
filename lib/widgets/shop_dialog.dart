@@ -493,6 +493,12 @@ class _ShopScreenState extends State<ShopScreen> {
     if (!mounted) return;
     setState(() {});
     widget.onStateChanged?.call();
+    // D6 (F8): yalnız BAŞARIDA zafer sesi; başarısızlıkta `_showToast`
+    // pop'u aynen korunur (playLose yok). `ok` yalnız başlatmanın
+    // kabul edildiğini söyler; teslimat satın alma akışından gelir.
+    if (ok) {
+      AudioManager().playWin();
+    }
     _showToast(
       ok ? successToast : context.l10n.shopStoreUnavailableToast,
     );
@@ -549,6 +555,10 @@ class _ShopScreenState extends State<ShopScreen> {
     if (!mounted) return;
     setState(() {});
     widget.onStateChanged?.call();
+    // D6 (F8): bu noktaya yalnız başarı ulaşır (yetersiz bakiye ve
+    // hata dalları yukarıda erken döner); zafer sesi eklenir.
+    // Yetersiz-bakiye/başarısızlık toast'ları sessiz pop ile kalır.
+    AudioManager().playWin();
     _showToast(toastMsg);
   }
 
