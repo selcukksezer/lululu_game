@@ -84,7 +84,7 @@ void main() {
         expect(image.image, isA<AssetImage>());
         expect(
           (image.image as AssetImage).assetName,
-          'assets/design/ui/icon_heart_exact.webp',
+          'assets/design/ui/icon_heart_exact.png',
         );
         expect(image.width, 132);
         expect(image.height, 132);
