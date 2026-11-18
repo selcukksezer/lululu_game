@@ -2,12 +2,12 @@
 //
 // Kilitlenen davranış — `ProgressManager.claimDailyGiftBox`
 // (lib/services/progress_manager.dart:1020-1045):
-//  * `lastStreakClaimDay` bugünse ve `doubled` false ise null döner
-//    (ödeme yok); aksi hâlde `(500 + (streak-1)*25)` coin + 5 enerji
-//    öder ve günü `lululu_last_streak_claim_day` anahtarına kalıcı yazar.
-//  * `doubled: true` aynı gün bile öder; coin tabanı 1000'dir
-//    (`1000 + (streak-1)*25`). Bu, mevcut davranışın gözlem kilididir,
-//    bir karar değildir.
+//  * `lastStreakClaimDay` bugünse null döner (ödeme yok); aksi
+//    hâlde `(500 + (streak-1)*25)` coin + 5 enerji öder ve günü
+//    `lululu_last_streak_claim_day` anahtarına kalıcı yazar.
+//  * `doubled: true` YOKSAYILIR (2B/O22 tek talep kuralı): aynı gün
+//    ikinci çağrı her zaman null döner; doğrulanmamış iki katı ödül
+//    yolu kaldırıldı (reklam SDK'sı kurulu değil, doğrulama yok).
 //  * Son talep dünse seri +1 artar; daha eskiyse seri 1'e sıfırlanır;
 //    hiç talep yoksa tohumlanan seri korunur (en az 1).
 //
@@ -140,41 +140,37 @@ void main() {
       expect(pm.lastStreakClaimDay, _todayKey());
     });
 
-    test('doubled: true aynı gün bile öder ve coin 1000 bazlıdır', () async {
-      // Gözlem kilidi, karar değil: mevcut kodda `doubled` aynı-gün
-      // korumasını atlar (satır 1024) ve seri bloğu atlandığı için
-      // seri değişmeden kalır (satır 1025-1034).
+    test('doubled: true aynı gün ödemez (tek talep kuralı, 2B/O22)',
+        () async {
+      // 2B/O22: `doubled` yoksayılır — aynı gün ikinci çağrı her
+      // zaman null döner; doğrulanmamış iki katı ödül yolu kaldırıldı
+      // (reklam SDK'sı kurulu değil, doğrulama yapılamaz).
       await loadSeeded(streak: 1, lastClaimDay: _todayKey());
       final pm = ProgressManager.instance;
 
-      // Normal yol aynı gün kapalıdır; yalnız doubled öder.
+      // Normal yol aynı gün kapalıdır; doubled da ödemez.
       expect(await pm.claimDailyGiftBox(), isNull);
       expect(pm.coins, 1000);
 
       final gift = await pm.claimDailyGiftBox(doubled: true);
 
-      expect(gift, isNotNull);
-      expect(gift!.coins, 1000);
-      expect(gift.energy, 5);
-      expect(gift.streak, 1);
-      expect(pm.coins, 2000);
-      expect(EnergyService.instance.energy, 15);
+      expect(gift, isNull);
+      expect(pm.coins, 1000);
+      expect(EnergyService.instance.energy, 10);
       expect(pm.streak, 1);
       expect(pm.lastStreakClaimDay, _todayKey());
     });
 
-    test('doubled seri 3 iken 1000 bazlı formülü korur (1050)', () async {
+    test('doubled seri 3 iken aynı gün ödemez (tek talep kuralı)',
+        () async {
       await loadSeeded(streak: 3, lastClaimDay: _todayKey());
       final pm = ProgressManager.instance;
 
       final gift = await pm.claimDailyGiftBox(doubled: true);
 
-      // 1000 + (3-1)*25 = 1050; aynı gün olduğu için seri artmaz.
-      expect(gift, isNotNull);
-      expect(gift!.coins, 1050);
-      expect(gift.energy, 5);
-      expect(gift.streak, 3);
-      expect(pm.coins, 2050);
+      // Aynı gün: null, ödeme yok; seri ve coin değişmez.
+      expect(gift, isNull);
+      expect(pm.coins, 1000);
       expect(pm.streak, 3);
     });
 

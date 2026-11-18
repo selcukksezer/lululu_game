@@ -23,6 +23,10 @@ class ProgressManager extends ChangeNotifier {
   static const int maxCampaignLevels = 80;
   static const int maxSingleCoinGrant = 100000;
   static const int maxTotalCoins = 99999999;
+
+  /// Tek güçlendirici stok üst sınırı (tüketim/iade çekirdeği [O1] ile
+  /// kayıt yükleme kelepçesi aynı sınırı kullanır).
+  static const int _maxPowerStock = 99999;
   /// Tüm modlar için mutlak skor üst sınırı (rules `score 0..500000` ile
   /// uyumlu). Mod bazlı tavanlar [modeScoreCeilings]'tedir; bilinmeyen
   /// modda bu değer varsayılan tavan olarak kullanılır.
@@ -435,6 +439,68 @@ class ProgressManager extends ChangeNotifier {
     return midnight.difference(now).inSeconds.clamp(0, 86400);
   }
 
+  /// Bozuk JSON kaydını kayıt bazında ayıklar (O2): üst düzey çözümleme
+  /// başarısız olursa boş harita döner; tekil bozuk girdiler atlanır,
+  /// sağlam girdiler yüklenir. Atılan her kayıt `debugPrint` ile
+  /// bildirilir; sessizce yutulmaz.
+  static Map<String, dynamic>? _decodeJsonMap(String raw, String prefKey) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v));
+      }
+      debugPrint(
+        'ProgressManager: $prefKey beklenen harita biciminde degil; bos yuklendi.',
+      );
+      return null;
+    } catch (e) {
+      debugPrint(
+        'ProgressManager: $prefKey JSON cozumu basarisiz ($e); bos yuklendi.',
+      );
+      return null;
+    }
+  }
+
+  static Map<String, int> _decodeIntMap(String raw, String prefKey) {
+    final decoded = _decodeJsonMap(raw, prefKey);
+    if (decoded == null) return <String, int>{};
+    final result = <String, int>{};
+    decoded.forEach((key, value) {
+      if (value is! num) {
+        debugPrint(
+          'ProgressManager: $prefKey girdisi atlandi ($key: sayi degil).',
+        );
+        return;
+      }
+      result[key] = value.toInt();
+    });
+    return result;
+  }
+
+  static Map<int, int> _decodeLevelMap(String raw, String prefKey) {
+    final decoded = _decodeJsonMap(raw, prefKey);
+    if (decoded == null) return <int, int>{};
+    final result = <int, int>{};
+    decoded.forEach((key, value) {
+      final levelId = int.tryParse(key);
+      if (levelId == null) {
+        debugPrint(
+          'ProgressManager: $prefKey girdisi atlandi (seviye anahtari sayi degil: $key).',
+        );
+        return;
+      }
+      if (value is! num) {
+        debugPrint(
+          'ProgressManager: $prefKey girdisi atlandi ($key: sayi degil).',
+        );
+        return;
+      }
+      result[levelId] = value.toInt();
+    });
+    return result;
+  }
+
   /// Yükleme tamamlanmışsa hemen döner; yoksa [load] ile aynı
   /// paylaşımlı yüklemeyi bekler.
   Future<void> ensureLoaded() async {
@@ -461,6 +527,8 @@ class ProgressManager extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     unlockedLevel =
         (prefs.getInt('lululu_unlocked_level') ?? 1).clamp(1, maxCampaignLevels);
+    // Kanonik okuma önceliği (O1): kanonik anahtar önce, alias anahtar
+    // yalnızca geriye dönük uyumluluk için yedek okunur.
     coins = prefs.getInt('lululu_coins') ??
         prefs.getInt('LululuCoinBalance') ??
         defaultCoins;
@@ -510,16 +578,17 @@ class ProgressManager extends ChangeNotifier {
       unlockedTiers.add(1);
     }
 
-    // 11 oyun modu en yüksek skorları
+    // 11 oyun modu en yüksek skorları (O2: kayıt bazlı ayrıştırma —
+    // bozuk girdi atlanır, sağlam skorlar yüklenir).
     modeHighScores.clear();
     final modeScoresRaw = prefs.getString('lululu_mode_high_scores');
     if (modeScoresRaw != null && modeScoresRaw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(modeScoresRaw) as Map<String, dynamic>;
-        decoded.forEach((k, v) {
-          modeHighScores[normalizeModeId(k)] = (v as num).toInt();
-        });
-      } catch (_) {}
+      for (final entry in _decodeIntMap(
+        modeScoresRaw,
+        'lululu_mode_high_scores',
+      ).entries) {
+        modeHighScores[normalizeModeId(entry.key)] = entry.value;
+      }
     }
 
     // Günlük görev ilerlemeleri
@@ -535,12 +604,14 @@ class ProgressManager extends ChangeNotifier {
     } else {
       final taskProgRaw = prefs.getString('lululu_daily_tasks_progress');
       if (taskProgRaw != null && taskProgRaw.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(taskProgRaw) as Map<String, dynamic>;
-          decoded.forEach((k, v) {
-            dailyTaskProgress[k] = (v as num).toInt();
-          });
-        } catch (_) {}
+        // O2: kayıt bazlı ayrıştırma — bozuk girdi atlanır, sağlam
+        // ilerlemeler yüklenir.
+        for (final entry in _decodeIntMap(
+          taskProgRaw,
+          'lululu_daily_tasks_progress',
+        ).entries) {
+          dailyTaskProgress[entry.key] = entry.value;
+        }
       }
       final claimedRaw = prefs.getStringList('lululu_daily_tasks_claimed');
       claimedDailyTasks
@@ -561,34 +632,45 @@ class ProgressManager extends ChangeNotifier {
     extraPowers.clear();
     final extraRaw = prefs.getString('lululu_extra_powers');
     if (extraRaw != null && extraRaw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(extraRaw) as Map<String, dynamic>;
-        decoded.forEach((k, v) {
-          extraPowers[k] = (v as num).toInt();
-        });
-      } catch (_) {}
+      // O1 kanonik göç + O2 kayıt bazlı ayrıştırma: eski kayıtlardaki
+      // alias anahtarlar (`spray`, `Geri Al` vb.) kanonik anahtara
+      // çevrilir. Tam kanonik girdiler önceliklidir (eski okuma
+      // davranışı aynen korunur); yalnızca alias girdisi varsa en
+      // yüksek stok korunur (kayıpsız). Değerler yazıcı sınırlarına
+      // (0..99999) kelepçelenir.
+      final decoded = _decodeIntMap(extraRaw, 'lululu_extra_powers');
+      final pendingAliases = <String, int>{};
+      for (final entry in decoded.entries) {
+        final canonical = normalizePowerKey(entry.key);
+        final value = entry.value.clamp(0, _maxPowerStock);
+        if (entry.key == canonical) {
+          extraPowers[canonical] = value;
+        } else {
+          final prev = pendingAliases[canonical];
+          pendingAliases[canonical] = prev == null || value > prev
+              ? value
+              : prev;
+        }
+      }
+      for (final entry in pendingAliases.entries) {
+        extraPowers.putIfAbsent(entry.key, () => entry.value);
+      }
     }
 
     _levelStars.clear();
     final starsJson = prefs.getString('lululu_level_stars');
     if (starsJson != null) {
-      try {
-        final Map<String, dynamic> decoded = jsonDecode(starsJson);
-        decoded.forEach((k, v) {
-          _levelStars[int.parse(k)] = (v as num).toInt();
-        });
-      } catch (_) {}
+      // O2: kayıt bazlı ayrıştırma — bozuk anahtar/değer atlanır.
+      _levelStars.addAll(_decodeLevelMap(starsJson, 'lululu_level_stars'));
     }
 
     _levelHighScores.clear();
     final scoresJson = prefs.getString('lululu_level_scores');
     if (scoresJson != null) {
-      try {
-        final Map<String, dynamic> decoded = jsonDecode(scoresJson);
-        decoded.forEach((k, v) {
-          _levelHighScores[int.parse(k)] = (v as num).toInt();
-        });
-      } catch (_) {}
+      // O2: kayıt bazlı ayrıştırma — bozuk anahtar/değer atlanır.
+      _levelHighScores.addAll(
+        _decodeLevelMap(scoresJson, 'lululu_level_scores'),
+      );
     }
 
     if (!(prefs.getBool('lululu_power_seed_v1') ?? false)) {
@@ -599,6 +681,11 @@ class ProgressManager extends ChangeNotifier {
         'undo': 3,
         'shuffle': 2,
         'pair': 1,
+        // B3: 2048 ekranı `*2048` anahtarlarını okur; tohumlar
+        // `putIfAbsent` ile verilir, mevcut stoklar ezilmez.
+        'undo2048': 3,
+        'shuffle2048': 2,
+        'pair2048': 1,
         'triple': 3,
         'bombb': 2,
         'slowb': 1,
@@ -662,6 +749,14 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// 33 oyun modu güçlendiricisinin anahtarlarını ve Türkçe mağaza adlarını kanonikleştirir.
+  ///
+  /// Kanonik anahtar seti (O1): [all33PowerKeys] + 2048 ekranının ayrı
+  /// stokları (`undo2048`/`shuffle2048`/`pair2048`). Alias'lar
+  /// (`spray`, `slipper`, `aydinlat`, Türkçe adlar) YALNIZCA okuma
+  /// uyumluluğu için çözülür; yazım yolları kanonik anahtar kullanır.
+  /// `*2048` anahtarları `undo`/`shuffle`/`pair` ile BİRLEŞTİRİLMEZ:
+  /// 2048 ekranı ayrı stok okur, mağaza iki stoku ayrı artırır;
+  /// birleştirmek çift dağıtıma yol açar.
   static String normalizePowerKey(String rawKey) {
     final trimmed = rawKey
         .trim()
@@ -694,12 +789,21 @@ class ProgressManager extends ChangeNotifier {
       case 'geri al':
       case 'geri_al':
         return 'undo';
+      case 'undo2048':
+      case 'undo_2048':
+        return 'undo2048';
       case 'shuffle':
       case 'karistir':
         return 'shuffle';
+      case 'shuffle2048':
+      case 'shuffle_2048':
+        return 'shuffle2048';
       case 'pair':
       case 'ciftlestir':
         return 'pair';
+      case 'pair2048':
+      case 'pair_2048':
+        return 'pair2048';
       case 'triple':
       case 'uclu ok':
       case 'uclu_ok':
@@ -757,14 +861,22 @@ class ProgressManager extends ChangeNotifier {
         return 'spraybug';
       case 'yuva_dblslip':
       case 'yuva cift terlik':
+      case 'yuva_cift_terlik':
+      case 'yuva dblslip':
         return 'yuva_dblslip';
       case 'yuva_goldslip':
       case 'yuva altin terlik':
+      case 'yuva_altin_terlik':
+      case 'yuva goldslip':
         return 'yuva_goldslip';
       case 'nest_shield':
       case 'yuva kalkani':
       case 'yuva_kalkani':
+      case 'yuva kalkan':
+      case 'yuva_kalkan':
       case 'yuvakalkan':
+      case 'nest shield':
+      case 'nestshield':
         return 'nest_shield';
       case 'dik':
       case 'dikkis boost':
@@ -804,12 +916,16 @@ class ProgressManager extends ChangeNotifier {
   }
 
   void _syncPrimaryPowersToExtra() {
+    // Kanonik göç (O1): haritaya YALNIZCA kanonik anahtarlar yazılır.
+    // Eski kayıtlardan gelen alias girdileri (`spray`/`slipper`/
+    // `aydinlat`) kaldırılır — okuma her zaman [normalizePowerKey]
+    // üzerinden kanonik anahtara çözüldüğü için stok kaybı olmaz.
     extraPowers['raid'] = sprayCount;
-    extraPowers['spray'] = sprayCount;
     extraPowers['terlik'] = slipperCount;
-    extraPowers['slipper'] = slipperCount;
     extraPowers['f16'] = aydinlatCount;
-    extraPowers['aydinlat'] = aydinlatCount;
+    extraPowers.remove('spray');
+    extraPowers.remove('slipper');
+    extraPowers.remove('aydinlat');
     extraPowers.putIfAbsent('yuva_dblslip', () => extraPowers['dblslip'] ?? 3);
     extraPowers.putIfAbsent(
       'yuva_goldslip',
@@ -818,8 +934,13 @@ class ProgressManager extends ChangeNotifier {
     extraPowers.putIfAbsent('nest_shield', () => extraPowers['shield'] ?? 1);
   }
 
-  int powerCount(String id) {
-    final canonical = normalizePowerKey(id);
+  /// Güç stokları için TEK çekirdek (O1): üç tüketim yolu
+  /// ([consumePower]/[takePower]/[refundPower]) ile [setPowerCount] /
+  /// [incrementPowerCount] aynı stok aritmetiğini paylaşır. Bu
+  /// yardımcılar YALNIZCA bellek içi stoku değiştirir; kalıcı kayıt ve
+  /// bildirim her metodun kendi sözleşmesine aittir (senkron yollar
+  /// ateşle-unut yazar, async yollar beklenen kayıt yazar).
+  int _stockOf(String canonical, String rawId) {
     switch (canonical) {
       case 'raid':
         return sprayCount;
@@ -828,29 +949,60 @@ class ProgressManager extends ChangeNotifier {
       case 'f16':
         return aydinlatCount;
       default:
-        return extraPowers[canonical] ?? extraPowers[id] ?? 0;
+        return extraPowers[canonical] ?? extraPowers[rawId] ?? 0;
     }
+  }
+
+  /// Stoku doğrudan yazar (kanonik anahtar; negatif sıfıra çekilir).
+  /// Üst kelepçe uygulanmaz — eski [setPowerCount] davranışı aynen
+  /// korunur; üst sınır yalnız [incrementPowerCount]/[refundPower]
+  /// yolundaki [_adjustStock] tarafından uygulanır.
+  void _setStock(String canonical, int value) {
+    final safe = value < 0 ? 0 : value;
+    switch (canonical) {
+      case 'raid':
+        sprayCount = safe;
+        break;
+      case 'terlik':
+        slipperCount = safe;
+        break;
+      case 'f16':
+        aydinlatCount = safe;
+        break;
+      default:
+        extraPowers[canonical] = safe;
+        break;
+    }
+  }
+
+  /// Stoku `delta` kadar değiştirir, 0..[_maxPowerStock] aralığına
+  /// kelepçeler ve yeni değeri döner. Ham alias girdisi kalmışsa
+  /// budanır (kanonik girdi tek kaynaktır).
+  int _adjustStock(String canonical, String rawId, int delta) {
+    final next = (_stockOf(canonical, rawId) + delta).clamp(0, _maxPowerStock);
+    _setStock(canonical, next);
+    if (rawId != canonical) extraPowers.remove(rawId);
+    return next;
+  }
+
+  /// Stok > 0 ise 1 düşürür ve true döner; stok yoksa değiştirmeden
+  /// false döner.
+  bool _takeOneStock(String canonical, String rawId) {
+    if (_stockOf(canonical, rawId) <= 0) return false;
+    _adjustStock(canonical, rawId, -1);
+    return true;
+  }
+
+  int powerCount(String id) {
+    final canonical = normalizePowerKey(id);
+    return _stockOf(canonical, id);
   }
 
   /// Moda özel güçlendirici stoğunu doğrudan ayarlar ve kaydeder.
   Future<void> setPowerCount(String id, int count) async {
-    final safeCount = count < 0 ? 0 : count;
     final canonical = normalizePowerKey(id);
-    switch (canonical) {
-      case 'raid':
-        sprayCount = safeCount;
-        break;
-      case 'terlik':
-        slipperCount = safeCount;
-        break;
-      case 'f16':
-        aydinlatCount = safeCount;
-        break;
-      default:
-        extraPowers[canonical] = safeCount;
-        extraPowers[id] = safeCount;
-        break;
-    }
+    _setStock(canonical, count);
+    if (id != canonical) extraPowers.remove(id);
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
@@ -861,29 +1013,7 @@ class ProgressManager extends ChangeNotifier {
   Future<int> incrementPowerCount(String key, [int delta = 1]) async {
     if (delta == 0) return powerCount(key);
     final canonical = normalizePowerKey(key);
-    int nextValue;
-    switch (canonical) {
-      case 'raid':
-        sprayCount = (sprayCount + delta).clamp(0, 99999);
-        nextValue = sprayCount;
-        break;
-      case 'terlik':
-        slipperCount = (slipperCount + delta).clamp(0, 99999);
-        nextValue = slipperCount;
-        break;
-      case 'f16':
-        aydinlatCount = (aydinlatCount + delta).clamp(0, 99999);
-        nextValue = aydinlatCount;
-        break;
-      default:
-        final current = extraPowers[canonical] ?? extraPowers[key] ?? 0;
-        nextValue = (current + delta).clamp(0, 99999);
-        extraPowers[canonical] = nextValue;
-        if (key != canonical) {
-          extraPowers[key] = nextValue;
-        }
-        break;
-    }
+    final nextValue = _adjustStock(canonical, key, delta);
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
@@ -891,62 +1021,23 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// Oyun içinden veya mağazadan 1 adet güçlendirici harcar (`extraPowers` + `f16Count`/`raidCount`/`terlikCount`).
+  /// Kalıcı kayıt beklenir ([takePower] senkron karşılığıdır, kaydı
+  /// ateşle-unut yazar; stok aritmetiği aynı çekirdektedir).
   Future<bool> consumePower(String key) async {
     final canonical = normalizePowerKey(key);
-    switch (canonical) {
-      case 'raid':
-        if (sprayCount <= 0) return false;
-        sprayCount--;
-        break;
-      case 'terlik':
-        if (slipperCount <= 0) return false;
-        slipperCount--;
-        break;
-      case 'f16':
-        if (aydinlatCount <= 0) return false;
-        aydinlatCount--;
-        break;
-      default:
-        final have = extraPowers[canonical] ?? extraPowers[key] ?? 0;
-        if (have <= 0) return false;
-        final next = have - 1;
-        extraPowers[canonical] = next;
-        if (key != canonical) {
-          extraPowers[key] = next;
-        }
-        break;
-    }
+    if (!_takeOneStock(canonical, key)) return false;
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
     return true;
   }
 
-  /// Kasadan 1 yük harcar. Stok yoksa false.
+  /// Kasadan 1 yük harcar. Stok yoksa false. Kalıcı kayıt ateşle-unut
+  /// yazılır (senkron sözleşme); stok aritmetiği [consumePower] ile
+  /// aynı çekirdektedir.
   bool takePower(String id) {
     final canonical = normalizePowerKey(id);
-    switch (canonical) {
-      case 'raid':
-        if (sprayCount <= 0) return false;
-        sprayCount--;
-        break;
-      case 'terlik':
-        if (slipperCount <= 0) return false;
-        slipperCount--;
-        break;
-      case 'f16':
-        if (aydinlatCount <= 0) return false;
-        aydinlatCount--;
-        break;
-      default:
-        final have = extraPowers[canonical] ?? extraPowers[id] ?? 0;
-        if (have <= 0) return false;
-        extraPowers[canonical] = have - 1;
-        if (id != canonical) {
-          extraPowers[id] = have - 1;
-        }
-        break;
-    }
+    if (!_takeOneStock(canonical, id)) return false;
     _syncPrimaryPowersToExtra();
     notifyListeners();
     unawaited(_persistEconomy());
@@ -959,25 +1050,7 @@ class ProgressManager extends ChangeNotifier {
   /// [incrementPowerCount] ile aynıdır (99999).
   void refundPower(String id) {
     final canonical = normalizePowerKey(id);
-    switch (canonical) {
-      case 'raid':
-        sprayCount = (sprayCount + 1).clamp(0, 99999);
-        break;
-      case 'terlik':
-        slipperCount = (slipperCount + 1).clamp(0, 99999);
-        break;
-      case 'f16':
-        aydinlatCount = (aydinlatCount + 1).clamp(0, 99999);
-        break;
-      default:
-        final have = extraPowers[canonical] ?? extraPowers[id] ?? 0;
-        final next = (have + 1).clamp(0, 99999);
-        extraPowers[canonical] = next;
-        if (id != canonical) {
-          extraPowers[id] = next;
-        }
-        break;
-    }
+    _adjustStock(canonical, id, 1);
     _syncPrimaryPowersToExtra();
     notifyListeners();
     unawaited(_persistEconomy());
@@ -1091,22 +1164,29 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// Günlük hediye kutusu ve seri (`streak`) ödülünü toplar.
+  ///
+  /// TEK TALEP KURALI (O22): günde en fazla bir kez ödenir; aynı gün
+  /// ikinci çağrı her zaman null döner. `doubled` parametresi
+  /// YOKSAYILIR ve yalnızca API uyumluluğu için korunur: ödüllü
+  /// reklam SDK'sı kurulu değildir (reklam doğrulaması yapılamaz),
+  /// bu yüzden doğrulanmamış iki katı ödül yolu kaldırılmıştır.
+  /// Reklam SDK'sı eklendiğinde bu parametre yerine servis içinde
+  /// doğrulanan bir talep akışı getirilmelidir.
   Future<({int coins, int energy, int streak})?> claimDailyGiftBox({
     bool doubled = false,
   }) async {
+    // `doubled` bilinçli olarak okunmaz (bkz. yukarıdaki not).
     final today = _todayKey();
-    if (lastStreakClaimDay == today && !doubled) return null;
-    if (lastStreakClaimDay != today) {
-      if (lastStreakClaimDay == _yesterdayKey()) {
-        streak += 1;
-      } else if (lastStreakClaimDay.isNotEmpty) {
-        streak = 1;
-      } else {
-        streak = streak < 1 ? 1 : streak;
-      }
-      lastStreakClaimDay = today;
+    if (lastStreakClaimDay == today) return null;
+    if (lastStreakClaimDay == _yesterdayKey()) {
+      streak += 1;
+    } else if (lastStreakClaimDay.isNotEmpty) {
+      streak = 1;
+    } else {
+      streak = streak < 1 ? 1 : streak;
     }
-    final rewardCoins = (doubled ? 1000 : 500) + (streak - 1) * 25;
+    lastStreakClaimDay = today;
+    final rewardCoins = 500 + (streak - 1) * 25;
     const rewardEnergy = 5;
     coins += rewardCoins;
     EnergyService.instance.addEnergy(rewardEnergy);
@@ -1225,11 +1305,8 @@ class ProgressManager extends ChangeNotifier {
         break;
       default:
         final canonical = normalizePowerKey(type);
-        final next = (extraPowers[canonical] ?? extraPowers[type] ?? 0) + 1;
-        extraPowers[canonical] = next;
-        if (type != canonical) {
-          extraPowers[type] = next;
-        }
+        _setStock(canonical, _stockOf(canonical, type) + 1);
+        if (type != canonical) extraPowers.remove(type);
         break;
     }
 
@@ -1245,8 +1322,15 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// Coin-shop bundles. Returns false if broke or unknown id.
+  ///
+  /// Ödüller `IapService.storeCatalog` ile aynıdır (K6: katalog
+  /// kanonik). Katalogda karşılığı olmayan id'ler (`makara`,
+  /// `kongo`, `limited`) katalog dışı eski paketlerdir; ödülleri
+  /// değiştirilmeden korunur.
   Future<bool> buyBundle(String id, int cost) async {
-    if (coins < cost) return false;
+    // O3: negatif maliyet [buyBooster] ile aynı kuralda reddedilir
+    // (negatif maliyet coin eklerdi).
+    if (cost < 0 || coins < cost) return false;
     switch (id) {
       case 'makara':
         coins -= cost;
@@ -1287,7 +1371,7 @@ class ProgressManager extends ChangeNotifier {
         break;
       case 'gold_chest':
         coins -= cost;
-        coins += 1000;
+        coins += 1200;
         slipperCount += 2;
         sprayCount += 2;
         aydinlatCount += 1;
@@ -1299,7 +1383,7 @@ class ProgressManager extends ChangeNotifier {
         break;
       case 'mega_starter_pack':
         coins -= cost;
-        coins += 2500;
+        coins += 3000;
         aydinlatCount += 3;
         sprayCount += 3;
         slipperCount += 5;
@@ -1454,6 +1538,10 @@ class ProgressManager extends ChangeNotifier {
   Future<void> _persistEconomy() async {
     _syncPrimaryPowersToExtra();
     final prefs = await SharedPreferences.getInstance();
+    // O1 NOTU: alias pref anahtarlarına yazım BİLİNÇLİ korunur —
+    // `auth_service.dart` ve `cloud_sync_service.dart` aynı çift
+    // anahtarları okuyup yazar; tek-dosya kapsamında göç
+    // tamamlanamaz. Okuma önceliği kanonik anahtardadır (bkz. [load]).
     await prefs.setInt('lululu_coins', coins);
     await prefs.setInt('LululuCoinBalance', coins);
     await prefs.setInt('lululu_spray', sprayCount);
