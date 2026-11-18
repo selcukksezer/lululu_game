@@ -1495,15 +1495,19 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                                 Expanded(
                                   child: Transform.translate(
                                     offset: const Offset(0, -1.5),
-                                    child: Text(
-                                      coinsText,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.visible,
-                                      style: GoogleFonts.nunito(
-                                        fontSize: 13.5,
-                                        height: 1.2,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        coinsText,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.visible,
+                                        style: GoogleFonts.nunito(
+                                          fontSize: 13.5,
+                                          height: 1.2,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1585,7 +1589,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         top: 5.9,
                         width: 57.8,
                         height: 48,
-                        child: GestureDetector(
+                        child: Semantics(
+                          button: true,
+                          label: context.l10n.finishRoundLabel,
+                          child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () => setState(_boot),
                           child: DecoratedBox(
@@ -1612,6 +1619,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                               ),
                             ),
                           ),
+                        ),
                         ),
                       ),
                     ],
@@ -1712,18 +1720,24 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                 ),
               ),
             ),
-            Transform.translate(
-              offset: Offset(valueDx, -0.3),
-              child: Text(
-                value,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.visible,
-                style: GoogleFonts.baloo2(
-                  fontSize: 17,
-                  height: 1.0,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Transform.translate(
+                  offset: Offset(valueDx, -0.3),
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.visible,
+                    style: GoogleFonts.baloo2(
+                      fontSize: 17,
+                      height: 1.0,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1738,103 +1752,107 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     required int prototypeCount,
   }) {
     final count = widget.prototypeVisualState ? prototypeCount : item.count;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: item.onTap,
-      child: SizedBox(
-        width: 66,
-        height: 62.9,
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.topCenter,
-          children: [
-            Positioned(
-              left: 9,
-              top: 2,
-              width: 48,
-              height: 48,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF333F58), Color(0xFF1B2336)],
-                  ),
-                  border: Border.all(
-                    color: const Color(0x47FFFFFF),
-                    width: 1,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x73000000),
-                      offset: Offset(0, 3),
+    return Semantics(
+      button: true,
+      label: context.l10n.boosterCountLabel(item.label, count),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: item.onTap,
+        child: SizedBox(
+          width: 66,
+          height: 62.9,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
+            children: [
+              Positioned(
+                left: 9,
+                top: 2,
+                width: 48,
+                height: 48,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFF333F58), Color(0xFF1B2336)],
                     ),
-                    BoxShadow(
-                      color: Color(0x4D000000),
-                      offset: Offset(0, 6),
-                      blurRadius: 12,
+                    border: Border.all(
+                      color: const Color(0x47FFFFFF),
+                      width: 1,
                     ),
-                  ],
-                ),
-                child: Image.asset(
-                  item.asset,
-                  width: 36,
-                  height: 36,
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.medium,
-                ),
-              ),
-            ),
-            Positioned(
-              left: 41,
-              top: -2,
-              width: 22,
-              height: 22,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFE01E5A),
-                  border: Border.all(
-                    color: const Color(0xFF080B12),
-                    width: 2,
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x73000000),
+                        offset: Offset(0, 3),
+                      ),
+                      BoxShadow(
+                        color: Color(0x4D000000),
+                        offset: Offset(0, 6),
+                        blurRadius: 12,
+                      ),
+                    ],
                   ),
-                ),
-                child: Center(
-                  child: Text(
-                    '$count',
-                    style: GoogleFonts.nunito(
-                      fontSize: 11,
-                      height: 1.1,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                    ),
+                  child: Image.asset(
+                    item.asset,
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 52,
-              child: Text(
-                item.label,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                style: GoogleFonts.nunito(
-                  fontSize: 9,
-                  height: 1.1,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.18,
-                  color: const Color(0xFFD8E0EE),
+              Positioned(
+                left: 41,
+                top: -2,
+                width: 22,
+                height: 22,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFE01E5A),
+                    border: Border.all(
+                      color: const Color(0xFF080B12),
+                      width: 2,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$count',
+                      style: GoogleFonts.nunito(
+                        fontSize: 11,
+                        height: 1.1,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 52,
+                child: Text(
+                  item.label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  style: GoogleFonts.nunito(
+                    fontSize: 9,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.18,
+                    color: const Color(0xFFD8E0EE),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      );
     );
   }
 
@@ -1903,7 +1921,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
             width: 0.72 * w,
             height: 0.72 * rowH,
             child: Image.asset(
-              'assets/bugs/tier${idx + 1}_hd.webp',
+              'assets/bugs/tier${idx + 1}_hd${(idx + 1) == 5 ? '.webp' : '.png'}',
               fit: BoxFit.contain,
               filterQuality: FilterQuality.medium,
             ),
@@ -2119,7 +2137,7 @@ class _PrototypeBalloonField extends StatelessWidget {
               child: Transform.rotate(
                 angle: _specs[i].$10 * pi / 180,
                 child: Image.asset(
-                  'assets/bugs/tier${_specs[i].$9}_hd.webp',
+                  'assets/bugs/tier${_specs[i].$9}_hd${_specs[i].$9 == 5 ? '.webp' : '.png'}',
                   fit: BoxFit.contain,
                   filterQuality: FilterQuality.medium,
                 ),
@@ -2182,7 +2200,7 @@ class _PrototypeBalloonField extends StatelessWidget {
           width: 33.1,
           height: 63.6,
           child: Image.asset(
-            'assets/bugs/tier1_hd.webp',
+            'assets/bugs/tier1_hd.png',
             fit: BoxFit.contain,
             filterQuality: FilterQuality.medium,
           ),

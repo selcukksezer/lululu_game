@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
 
@@ -91,7 +92,7 @@ class _BonusButtonState extends State<_BonusButton> {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '${item.label}. ${item.count} adet',
+      label: context.l10n.boosterCountLabel(item.label, item.count),
       child: GestureDetector(
         onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
         onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
@@ -215,10 +216,6 @@ class _BonusButtonState extends State<_BonusButton> {
     );
   }
 }
-
-/// `assets/design/icons/extra_icons/All_Icons/` kısayolu.
-String bonusIcon(String fileName) =>
-    'assets/design/icons/extra_icons/All_Icons/$fileName';
 
 /// Kasadan 1 yük harcar, sonra [effect] çalıştırır; stok 0 ise dokunulmaz.
 ///

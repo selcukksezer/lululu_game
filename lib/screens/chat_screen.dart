@@ -298,48 +298,52 @@ class _ChatScreenState extends State<ChatScreen> {
                   runSpacing: 10,
                   children: ChatService.bugStickerCatalog.entries.map((entry) {
                     final sticker = entry.value;
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        _sendSticker(entry.key, sticker);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF4F6FA),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: const Color(0xFFE6EAF2),
-                            width: 1.5,
+                    return Semantics(
+                      button: true,
+                      label: ctx.l10n.sendStickerLabel(ChatService.bugStickerNameFor(entry.key, Localizations.localeOf(ctx))),
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _sendSticker(entry.key, sticker);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF4F6FA),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: const Color(0xFFE6EAF2),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Image.asset(
+                                sticker.asset,
+                                width: 28,
+                                height: 28,
+                                fit: BoxFit.contain,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                ChatService.bugStickerNameFor(
+                                  entry.key,
+                                  Localizations.localeOf(ctx),
+                                ),
+                                style: _nunito(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF141B2A),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Image.asset(
-                              sticker.asset,
-                              width: 28,
-                              height: 28,
-                              fit: BoxFit.contain,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              ChatService.bugStickerNameFor(
-                                entry.key,
-                                Localizations.localeOf(ctx),
-                              ),
-                              style: _nunito(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF141B2A),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      );
                     );
                   }).toList(),
                 ),
@@ -739,22 +743,26 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            GestureDetector(
-              onTap: isError ? _sendMessage : _retryCloudPushes,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF141B2A),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  context.l10n.retryCaps,
-                  style: _baloo2(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: 0.3,
+            Semantics(
+              button: true,
+              label: context.l10n.retryCaps,
+              child: GestureDetector(
+                onTap: isError ? _sendMessage : _retryCloudPushes,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF141B2A),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    context.l10n.retryCaps,
+                    style: _baloo2(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 0.3,
+                    ),
                   ),
                 ),
               ),

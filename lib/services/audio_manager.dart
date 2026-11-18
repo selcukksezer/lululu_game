@@ -247,7 +247,6 @@ class AudioManager {
 
   bool _isMuted = false;
   bool _sfxEnabled = true;
-  bool _musicEnabled = true;
   bool _voiceEnabled = true;
   bool _vibrationEnabled = true;
   bool _initialized = false;
@@ -267,15 +266,13 @@ class AudioManager {
     _listenersBound = true;
     final pm = ProgressManager.instance;
     _sfxEnabled = pm.sfxEnabled;
-    _musicEnabled = pm.musicEnabled;
     _vibrationEnabled = pm.vibrationEnabled;
 
     pm.sfxNotifier.addListener(_onProgressSfxChanged);
-    pm.musicNotifier.addListener(_onProgressMusicChanged);
     pm.vibrationNotifier.addListener(_onProgressVibrationChanged);
   }
 
-  /// Mirror of [_bindProgressManagerListeners]: removes exactly the three
+  /// Mirror of [_bindProgressManagerListeners]: removes exactly the two
   /// listeners registered there and clears [_listenersBound] so a later
   /// [initialize] can bind again. Called from [dispose] (S2#8). The flag is
   /// cleared first so a re-entrant bind cannot double-register.
@@ -285,7 +282,6 @@ class AudioManager {
     try {
       final pm = ProgressManager.instance;
       pm.sfxNotifier.removeListener(_onProgressSfxChanged);
-      pm.musicNotifier.removeListener(_onProgressMusicChanged);
       pm.vibrationNotifier.removeListener(_onProgressVibrationChanged);
     } catch (_) {}
   }
@@ -295,18 +291,9 @@ class AudioManager {
     final next = ProgressManager.instance.sfxEnabled;
     if (_sfxEnabled != next) {
       _sfxEnabled = next;
-      if (!next && !_musicEnabled && !_voiceEnabled) {
+      if (!next && !_voiceEnabled) {
         unawaited(stopAll());
       }
-    }
-  }
-
-  void _onProgressMusicChanged() {
-    if (_syncingWithProgress) return;
-    final next = ProgressManager.instance.musicEnabled;
-    if (_musicEnabled != next) {
-      _musicEnabled = next;
-      // No music player to stop yet (TODO on `musicEnabled`).
     }
   }
 
@@ -337,9 +324,6 @@ class AudioManager {
       final prefs = await SharedPreferences.getInstance();
       final pm = ProgressManager.instance;
 
-      final resolvedMusic = prefs.getBool('lululu_music_enabled') ??
-          prefs.getBool('LululuSetMusic') ??
-          pm.musicEnabled;
       final resolvedSfx = prefs.getBool('lululu_sfx_enabled') ??
           prefs.getBool('LululuSetSfx') ??
           pm.sfxEnabled;
@@ -351,14 +335,10 @@ class AudioManager {
           pm.vibrationEnabled;
 
       _syncingWithProgress = true;
-      _musicEnabled = resolvedMusic;
       _sfxEnabled = resolvedSfx;
       _voiceEnabled = resolvedVoice;
       _vibrationEnabled = resolvedVib;
 
-      if (pm.musicEnabled != resolvedMusic) {
-        await pm.setMusicEnabled(resolvedMusic);
-      }
       if (pm.sfxEnabled != resolvedSfx) {
         await pm.setSfxEnabled(resolvedSfx);
       }
@@ -374,7 +354,7 @@ class AudioManager {
   /// Master mute flag (kept in sync with settings toggles and test overrides).
   ///
   /// The single mute switch (S2#7): setting it never rewrites
-  /// [sfxEnabled]/[musicEnabled]/[voiceEnabled] — those stay as user
+  /// [sfxEnabled]/[voiceEnabled] — those stay as user
   /// preferences and take effect again on unmute via the derived
   /// [_sfxAudible]/[_voiceAudible] gates. Callers that snapshot/restore
   /// around lifecycle pauses (AppLifecycleGuard) rely on this.
@@ -390,7 +370,7 @@ class AudioManager {
   bool get sfxEnabled => _sfxEnabled;
   set sfxEnabled(bool value) {
     _sfxEnabled = value;
-    if (!value && !_musicEnabled && !_voiceEnabled) {
+    if (!value && !_voiceEnabled) {
       unawaited(stopAll());
     }
     final pm = ProgressManager.instance;
@@ -402,29 +382,6 @@ class AudioManager {
       unawaited(pm.setSfxEnabled(value).catchError((_) {}));
     }
     unawaited(_persistDualBool('lululu_sfx_enabled', 'LululuSetSfx', value));
-  }
-
-  /// Settings screen toggle: Background Music (`musicEnabled`).
-  ///
-  /// TODO(music): flag + persistence/sync only — no music file exists yet
-  /// (no music/bgm/loop asset under `assets/`), so there is no player and no
-  /// `playMusic`. When a real music asset lands, add a dedicated looping
-  /// player here (do not reuse the SFX pool) and start/stop it from this
-  /// setter, [_onProgressMusicChanged], [stopAll] and [dispose].
-  bool get musicEnabled => _musicEnabled;
-  set musicEnabled(bool value) {
-    _musicEnabled = value;
-    final pm = ProgressManager.instance;
-    if (pm.musicEnabled != value) {
-      _syncingWithProgress = true;
-      pm.musicEnabled = value;
-      pm.musicNotifier.value = value;
-      _syncingWithProgress = false;
-      unawaited(pm.setMusicEnabled(value).catchError((_) {}));
-    }
-    unawaited(
-      _persistDualBool('lululu_music_enabled', 'LululuSetMusic', value),
-    );
   }
 
   /// Settings screen toggle: Viral Bug Voices (`voiceEnabled`).
@@ -457,7 +414,6 @@ class AudioManager {
   }
 
   void setSfxEnabled(bool enabled) => sfxEnabled = enabled;
-  void setMusicEnabled(bool enabled) => musicEnabled = enabled;
   void setVoiceEnabled(bool enabled) => voiceEnabled = enabled;
   void setVibrationEnabled(bool enabled) => vibrationEnabled = enabled;
 
@@ -550,7 +506,6 @@ class AudioManager {
     _playGeneration++;
     final gen = _playGeneration;
     await _stopExclusivePlayer();
-    // No music player yet (TODO on `musicEnabled`).
     if (_playersPool.isEmpty) return;
     for (final p in _playersPool) {
       if (gen != _playGeneration) return;
@@ -563,10 +518,8 @@ class AudioManager {
   }
 
   /// Flips only the master mute flag (S2#7). Channel preferences
-  /// ([sfxEnabled], [musicEnabled], [voiceEnabled]) are left untouched, so
-  /// unmuting restores the exact pre-mute mix; previously this also rewrote
-  /// [_musicEnabled] (muting forced it off, unmuting forced it on even if
-  /// the user had disabled music) while leaving SFX/voice stale. Delegates
+  /// ([sfxEnabled], [voiceEnabled]) are left untouched, so
+  /// unmuting restores the exact pre-mute mix. Delegates
   /// to the [isMuted] setter so mute/unmute has a single mutation path.
   void toggleMute() {
     isMuted = !_isMuted;
@@ -1136,7 +1089,7 @@ class AudioManager {
   ///
   /// Idempotent and re-initializable: calling [initialize] afterwards
   /// rebinds the listeners and rebuilds the pool. Safe to call when never
-  /// initialized. Channel preferences ([sfxEnabled], [musicEnabled],
+  /// initialized. Channel preferences ([sfxEnabled],
   /// [voiceEnabled], [vibrationEnabled]) and [isMuted] are intentionally
   /// left untouched so a later [initialize] resumes the same mix.
   ///
@@ -1160,7 +1113,6 @@ class AudioManager {
     try {
       exclusive?.dispose();
     } catch (_) {}
-    // No music player to dispose yet (TODO on `musicEnabled`).
     for (final p in _playersPool) {
       try {
         p.dispose();

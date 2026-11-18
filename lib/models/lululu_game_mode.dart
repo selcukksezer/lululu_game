@@ -198,7 +198,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFE9C9),
       accentColor: Color(0xFFFFB800),
       cardDarkColor: Color(0xFF2B1B0E),
-      stickerAsset: 'assets/bugs/tier1_hd.webp',
+      stickerAsset: 'assets/bugs/tier1_hd.png',
       badgeIconAsset: 'assets/icons2/target.png',
       mechanicSummary:
           'Böcekleri kavanoza bırak, aynı seviyeleri çarpıştırarak Kral Böceğe ulaş!',
@@ -217,7 +217,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFF0D6),
       accentColor: Color(0xFF00E5FF),
       cardDarkColor: Color(0xFF102536),
-      stickerAsset: 'assets/bugs/tier2_hd.webp',
+      stickerAsset: 'assets/bugs/tier2_hd.png',
       badgeIconAsset: 'assets/icons/level_up.png',
       mechanicSummary:
           '4x4 tahtayı 4 yöne kaydır! Eşleşen böcekler bir üst seviyeye evrimleşir.',
@@ -235,7 +235,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFE3D6),
       accentColor: Color(0xFFFF4081),
       cardDarkColor: Color(0xFF2D122B),
-      stickerAsset: 'assets/bugs/tier1_hd.webp',
+      stickerAsset: 'assets/bugs/tier1_hd.png',
       badgeIconAsset: 'assets/icons2/boom.png',
       mechanicSummary:
           'Aşağıdan nişan al, aynı böcek balonundan en az 3 tanesini vur ve düşür!',
@@ -271,7 +271,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFF6D8),
       accentColor: Color(0xFFCE93D8),
       cardDarkColor: Color(0xFF211332),
-      stickerAsset: 'assets/bugs/tier3_hd.webp',
+      stickerAsset: 'assets/bugs/tier3_hd.png',
       badgeIconAsset: 'assets/icons2/magnet.png',
       mechanicSummary:
           'Parmağını kaldırmadan komşu aynı böcekler arasında uzun zincirler çiz!',
@@ -289,7 +289,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFE0E0),
       accentColor: Color(0xFFFFAB40),
       cardDarkColor: Color(0xFF2B1911),
-      stickerAsset: 'assets/bugs/tier6_hd.webp',
+      stickerAsset: 'assets/bugs/tier6_hd.png',
       badgeIconAsset: 'assets/icons2/block.png',
       mechanicSummary:
           'Sallanan böcek bloklarını tam üst üste bırak, gökdeleni devirmeden yüksel!',
@@ -307,7 +307,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFE3D6),
       accentColor: Color(0xFFFF5252),
       cardDarkColor: Color(0xFF331114),
-      stickerAsset: 'assets/powerup_terlik.webp',
+      stickerAsset: 'assets/powerup_terlik.png',
       badgeIconAsset: 'assets/icons2/boot.png',
       mechanicSummary:
           'Deliklerden fırlayan böceklere anne terliğiyle şaplak indir, bombalara dokunma!',
@@ -326,7 +326,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFE3D6),
       accentColor: Color(0xFFFF9100),
       cardDarkColor: Color(0xFF2A180D),
-      stickerAsset: 'assets/bugs/tier2_hd.webp',
+      stickerAsset: 'assets/bugs/tier2_hd.png',
       badgeIconAsset: 'assets/icons2/target.png',
       mechanicSummary:
           '4 koridordan mutfak tezgahına koşan böcekleri terlikle durdur, pastayı koru!',
@@ -344,7 +344,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFF6D8),
       accentColor: Color(0xFFFFD740),
       cardDarkColor: Color(0xFF281F0C),
-      stickerAsset: 'assets/osman/osmantus_kisi_a.webp',
+      stickerAsset: 'assets/osman/osmantus_kisi_a.png',
       badgeIconAsset: 'assets/icons2/crown.png',
       mechanicSummary:
           'Daralan zamanlama halkasını tam yeşil çizgide yakala, Osman Tuşu indir!',
@@ -363,7 +363,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFE4F0FF),
       accentColor: Color(0xFF40C4FF),
       cardDarkColor: Color(0xFF0D2233),
-      stickerAsset: 'assets/bugs/tier7_hd.webp',
+      stickerAsset: 'assets/bugs/tier7_hd.png',
       badgeIconAsset: 'assets/icons2/bolt.png',
       mechanicSummary:
           'Mikrofona bağırarak veya basılı tutarak böceği uçur, borulara çarpma!',
@@ -382,7 +382,7 @@ class LululuGameMode {
       thumbBgColor: Color(0xFFFFE0EC),
       accentColor: Color(0xFFE040FB),
       cardDarkColor: Color(0xFF290F30),
-      stickerAsset: 'assets/bugs/tier3_hd.webp',
+      stickerAsset: 'assets/bugs/tier3_hd.png',
       badgeIconAsset: 'assets/icons2/wheel.png',
       mechanicSummary:
           'Ritim notalarını çizgide yakala, makarayı döndürerek kombo çarpanını katla!',

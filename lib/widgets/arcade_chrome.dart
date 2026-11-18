@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/progress_manager.dart';
 import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
@@ -107,7 +108,7 @@ class ArcadeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '${title.toUpperCase()} — NASIL OYNANIR?',
+                '${title.toUpperCase()} ${dialogContext.l10n.howToPlaySuffix}',
                 style: GoogleFonts.baloo2(
                   fontSize: 20,
                   height: 1.12,
@@ -132,7 +133,7 @@ class ArcadeScreen extends StatelessWidget {
               const SizedBox(height: 16),
               Semantics(
                 button: true,
-                label: 'Anladım',
+                label: dialogContext.l10n.understoodLabel,
                 excludeSemantics: true,
                 child: GestureDetector(
                   onTap: () => Navigator.pop(dialogContext),
@@ -163,7 +164,7 @@ class ArcadeScreen extends StatelessWidget {
                     ],
                   ),
                   child: Text(
-                    'ANLADIM',
+                    dialogContext.l10n.understoodButton,
                     style: GoogleFonts.baloo2(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -286,7 +287,7 @@ class ArcadeScreen extends StatelessWidget {
                             // Dokunma yüksekliği her zaman 48; dar ekranda
                             // iç simge küçülür, düğme küçülmez.
                             height: 48,
-                            semanticLabel: 'Geri',
+                            semanticLabel: context.l10n.goBackLabel,
                             onTap: () => Navigator.maybePop(context),
                             child: Image.asset(
                               'assets/icons2/back-prototype.png',
@@ -425,7 +426,7 @@ class ArcadeScreen extends StatelessWidget {
                             // Dokunma yüksekliği her zaman 48; dar ekranda
                             // iç '?' küçülür, düğme küçülmez.
                             height: 48,
-                            semanticLabel: 'Nasıl oynanır',
+                            semanticLabel: context.l10n.helpButtonLabel,
                             onTap: () => _showHowToPlaySheet(context),
                             child: Text(
                               '?',
@@ -451,7 +452,7 @@ class ArcadeScreen extends StatelessWidget {
                         children: [
                           wrapStat(
                             ArcadeStat(
-                              label: 'SKOR',
+                              label: context.l10n.gameScoreLabel,
                               value: _fmt(score),
                               height: statBoxHeight,
                               valueFontSize: 21,
@@ -463,7 +464,7 @@ class ArcadeScreen extends StatelessWidget {
                           SizedBox(width: isCompactW ? 4 : 8),
                           wrapStat(
                             ArcadeStat(
-                              label: 'REKOR',
+                              label: context.l10n.gameBestLabel,
                               value: _fmt(best),
                               height: statBoxHeight,
                               valueFontSize: 21,
@@ -491,7 +492,7 @@ class ArcadeScreen extends StatelessWidget {
                           SizedBox(width: isCompactW ? 4 : 8),
                           Semantics(
                             button: true,
-                            label: 'Bitir',
+                            label: context.l10n.finishRoundLabel,
                             excludeSemantics: true,
                             child: GestureDetector(
                               onTap: onRestart,
@@ -518,7 +519,7 @@ class ArcadeScreen extends StatelessWidget {
                                     horizontal: 4,
                                   ),
                                   child: Text(
-                                    'BİTİR',
+                                    context.l10n.finishCaps,
                                     style: GoogleFonts.baloo2(
                                       fontSize: 12.5,
                                       fontWeight: FontWeight.w800,
@@ -1091,18 +1092,18 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
     if (widget.mascotAsset != null) return widget.mascotAsset!;
     final m = (widget.modeTitle ?? widget.title).toLowerCase();
     if (m.contains('balon') || m.contains('makara')) {
-      return 'assets/bugs/tier3_hd.webp';
+      return 'assets/bugs/tier3_hd.png';
     }
-    if (m.contains('match')) return 'assets/bugs/tier4_hd.webp';
+    if (m.contains('match')) return 'assets/bugs/tier4_hd.png';
     if (m.contains('bağla') || m.contains('bagla')) {
       return 'assets/bugs/tier5_hd.webp';
     }
     if (m.contains('stack') || m.contains('yuva')) {
-      return 'assets/bugs/tier2_hd.webp';
+      return 'assets/bugs/tier2_hd.png';
     }
-    if (m.contains('terlik')) return 'assets/bugs/tier1_hd.webp';
+    if (m.contains('terlik')) return 'assets/bugs/tier1_hd.png';
     if (m.contains('osman') || m.contains('çığlık') || m.contains('ciglik')) {
-      return 'assets/bugs/tier7_hd.webp';
+      return 'assets/bugs/tier7_hd.png';
     }
     return 'assets/design/ui/res_mascot.png';
   }
@@ -1111,12 +1112,16 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
     if (widget.badgeLabel != null) return widget.badgeLabel!;
     final m = (widget.modeTitle ?? widget.title).toLowerCase();
     if (m.contains('2048')) return '2048';
-    if (m.contains('balon')) return 'BONUS';
-    if (m.contains('match')) return 'NEON';
-    if (m.contains('bağla') || m.contains('bagla')) return 'ZİNCİR';
-    if (m.contains('stack')) return 'KULE';
-    if (m.contains('terlik') || m.contains('yuva')) return 'YENİ';
-    return 'VİRAL';
+    if (m.contains('balon')) return context.l10n.badgeBonus;
+    if (m.contains('match')) return context.l10n.badgeNeon;
+    if (m.contains('bağla') || m.contains('bagla')) {
+      return context.l10n.connectChainBadge;
+    }
+    if (m.contains('stack')) return context.l10n.stackTowerBadge;
+    if (m.contains('terlik') || m.contains('yuva')) {
+      return context.l10n.newBadge;
+    }
+    return context.l10n.viralBadge;
   }
 
   /// Ödüllü reklam SDK'sı kurulu değil: reklam gösterilemez, devam hakkı
@@ -1127,7 +1132,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Ödüllü reklamlar yakında — şimdilik kullanılamıyor.',
+          context.l10n.rewardedAdsComingSoon,
           style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
         ),
         backgroundColor: LululuColors.carbonVoid,
@@ -1352,7 +1357,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                       textBaseline: TextBaseline.alphabetic,
                                       children: [
                                         Text(
-                                          'SKOR',
+                                          context.l10n.gameScoreLabel,
                                           style: GoogleFonts.nunito(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w900,
@@ -1383,21 +1388,26 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                     children: [
                                       Expanded(
                                         child: _buildSubMetric(
-                                          label: 'REKOR',
+                                          label: context.l10n.gameBestLabel,
                                           value: _fmt(bestVal),
                                         ),
                                       ),
                                       Expanded(
                                         child: _buildSubMetric(
-                                          label: widget.statLabel ?? 'DURUM',
+                                          label:
+                                              widget.statLabel ??
+                                              context.l10n.statusLabel,
                                           value:
                                               widget.statValue ??
-                                              (widget.won ? 'TAMAM' : 'BİTTİ'),
+                                              (widget.won
+                                                  ? context.l10n.resultComplete
+                                                  : context.l10n.resultOver),
                                         ),
                                       ),
                                       Expanded(
                                         child: _buildSubMetric(
-                                          label: 'MOD ROZETİ',
+                                          label:
+                                              context.l10n.modeBadgeTitle,
                                           value: _resolvedBadge,
                                         ),
                                       ),
@@ -1471,7 +1481,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                             FittedBox(
                                               fit: BoxFit.scaleDown,
                                               child: Text(
-                                                'KAZANILAN ALTIN',
+                                                context.l10n.goldEarnedLabel,
                                                 style: GoogleFonts.nunito(
                                                   fontSize: 10,
                                                   fontWeight: FontWeight.w900,
@@ -1553,13 +1563,13 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
 
                             // Action Buttons (`result-btns`)
                             _buildAdButton(
-                              label: 'REKLAMLA DEVAM ET · YAKINDA',
+                              label: context.l10n.continueWithAdSoon,
                               onTap: _handleContinueAd,
                               minHeight: isShort ? 44 : 52,
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Ödüllü reklamlar yakında — şimdilik kullanılamıyor.',
+                              context.l10n.rewardedAdsComingSoon,
                               textAlign: TextAlign.center,
                               style: GoogleFonts.nunito(
                                 fontSize: 11.5,
@@ -1570,8 +1580,8 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                             SizedBox(height: isShort ? 5 : 8),
                             _buildAdButton(
                               label: _doubled
-                                  ? '2X ALTIN KAZANILDI'
-                                  : 'REKLAMLA 2X ALTIN · YAKINDA',
+                                  ? context.l10n.doubleGoldEarnedCaps
+                                  : context.l10n.doubleGoldAdSoon,
                               onTap: _handleDoubleCoinsAd,
                               minHeight: isShort ? 44 : 52,
                               disabled: _doubled,
@@ -1626,7 +1636,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                             Text(
                                               widget.retryLabel.isNotEmpty
                                                   ? widget.retryLabel
-                                                  : 'TEKRAR OYNA',
+                                                  : context.l10n.playAgainButton,
                                               style: GoogleFonts.baloo2(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w800,
@@ -1687,8 +1697,8 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                               const SizedBox(width: 5),
                                               Text(
                                                 _shared
-                                                    ? 'PAYLAŞILDI!'
-                                                    : 'PAYLAŞ',
+                                                    ? context.l10n.sharedButton
+                                                    : context.l10n.shareButton,
                                                 style: GoogleFonts.baloo2(
                                                   fontSize: 16,
                                                   fontWeight: FontWeight.w800,
@@ -1728,7 +1738,8 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                   ],
                                 ),
                                 child: Text(
-                                  widget.secondaryLabel ?? 'ANA SAYFA',
+                                  widget.secondaryLabel ??
+                                  context.l10n.navHome,
                                   style: GoogleFonts.baloo2(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w800,
@@ -1855,7 +1866,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'YAKINDA',
+                    context.l10n.comingSoon,
                     style: GoogleFonts.nunito(
                       fontSize: 9,
                       fontWeight: FontWeight.w900,

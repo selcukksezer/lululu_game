@@ -300,6 +300,14 @@ class LeaderboardService extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // Y3: oturum yoksa `fetchGlobalTop` sorguları kuralca reddedilir
+    // (`isAuthenticated`, firestore.rules:435-436); 11 mod için
+    // reddedilen sorgu denemesi yapma. `fetchGlobalTop` kendisi de
+    // aynı kapıyı uygular; bu denetim döngüye hiç girilmemesini sağlar.
+    if (!CloudSyncService.instance.hasFirebaseSession) {
+      notifyListeners();
+      return;
+    }
     final List<String> targetModes;
     if (onlyModeId != null) {
       final canonical = normalizeModeId(onlyModeId);

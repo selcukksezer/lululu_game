@@ -421,34 +421,38 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                 ),
               ),
               const SizedBox(width: 6),
-              GestureDetector(
-                key: const Key('gold_pass_toggle_btn'),
-                onTap: () {
-                  if (!service.hasGoldPass) {
-                    service.activateGoldPass();
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: service.hasGoldPass
-                          ? const [Color(0xFFFFD54F), Color(0xFFFF8F00)]
-                          : const [Color(0xFF4A3B63), Color(0xFF33264A)],
+              Semantics(
+                button: true,
+                label: service.hasGoldPass ? context.l10n.goldPassActive : context.l10n.goldPassOpen,
+                child: GestureDetector(
+                  key: const Key('gold_pass_toggle_btn'),
+                  onTap: () {
+                    if (!service.hasGoldPass) {
+                      service.activateGoldPass();
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
                     ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    service.hasGoldPass ? context.l10n.goldPassActive : context.l10n.goldPassOpen,
-                    style: TextStyle(
-                      color: service.hasGoldPass
-                          ? const Color(0xFF261600)
-                          : const Color(0xFFFFD54F),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: service.hasGoldPass
+                            ? const [Color(0xFFFFD54F), Color(0xFFFF8F00)]
+                            : const [Color(0xFF4A3B63), Color(0xFF33264A)],
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      service.hasGoldPass ? context.l10n.goldPassActive : context.l10n.goldPassOpen,
+                      style: TextStyle(
+                        color: service.hasGoldPass
+                            ? const Color(0xFF261600)
+                            : const Color(0xFFFFD54F),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                 ),
@@ -783,30 +787,35 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFFFB300) : const Color(0xFF241938),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color:
-                selected ? const Color(0xFFFFE082) : const Color(0xFF473568),
+    return Semantics(
+      button: true,
+      label: label,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFB300) : const Color(0xFF241938),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color:
+                  selected ? const Color(0xFFFFE082) : const Color(0xFF473568),
+            ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: selected ? const Color(0xFF231400) : Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: selected ? const Color(0xFF231400) : Colors.white,
-            fontSize: 11.5,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
+      );
     );
   }
 }
@@ -825,28 +834,33 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF5E35B1) : const Color(0xFF231934),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color:
-                selected ? const Color(0xFFD1C4E9) : const Color(0xFF453263),
+    return Semantics(
+      button: true,
+      label: label,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF5E35B1) : const Color(0xFF231934),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color:
+                  selected ? const Color(0xFFD1C4E9) : const Color(0xFF453263),
+            ),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
+      );
     );
   }
 }
@@ -872,84 +886,89 @@ class _PassRewardTrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      key: trackKey,
-      onTap: canClaim ? onTap : null,
-      child: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: isGold ? const Color(0xFF2E2210) : const Color(0xFF1D152E),
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(
-            color: canClaim
-                ? const Color(0xFF66BB6A)
-                : (isGold
-                    ? const Color(0xFFFFB300)
-                    : const Color(0xFF47366B)),
+    return Semantics(
+      button: true,
+      enabled: canClaim,
+      label: canClaim ? "$trackTitle, ${reward.label}, ${context.l10n.claimReward}" : "$trackTitle, ${reward.label}",
+      child: GestureDetector(
+        key: trackKey,
+        onTap: canClaim ? onTap : null,
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: isGold ? const Color(0xFF2E2210) : const Color(0xFF1D152E),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: canClaim
+                  ? const Color(0xFF66BB6A)
+                  : (isGold
+                      ? const Color(0xFFFFB300)
+                      : const Color(0xFF47366B)),
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Text(reward.iconEmoji, style: const TextStyle(fontSize: 13)),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    trackTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isGold
-                          ? const Color(0xFFFFD54F)
-                          : const Color(0xFFB39DDB),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text(reward.iconEmoji, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      trackTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isGold
+                            ? const Color(0xFFFFD54F)
+                            : const Color(0xFFB39DDB),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              reward.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
+                ],
               ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: claimed
-                    ? const Color(0xFF2E4A31)
-                    : (canClaim
-                        ? const Color(0xFF43A047)
-                        : const Color(0xFF2A203B)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                claimed ? context.l10n.claimedShort : (canClaim ? context.l10n.collectButton : context.l10n.lockedLabel),
+              const SizedBox(height: 2),
+              Text(
+                reward.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: claimed
+                      ? const Color(0xFF2E4A31)
+                      : (canClaim
+                          ? const Color(0xFF43A047)
+                          : const Color(0xFF2A203B)),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  claimed ? context.l10n.claimedShort : (canClaim ? context.l10n.collectButton : context.l10n.lockedLabel),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      );
     );
   }
 }

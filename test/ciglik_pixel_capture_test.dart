@@ -106,7 +106,7 @@ void main() {
         'assets/icons2/boot.png',
         'assets/icons2/shield.png',
         'assets/icons2/potion_speed.png',
-        'assets/bugs/tier7_hd.webp',
+        'assets/bugs/tier7_hd.png',
       ]) {
         await precacheImage(
           AssetImage(asset),

@@ -67,7 +67,7 @@ class ProgressManager extends ChangeNotifier {
   /// [load] tarafından okunan yerel ilerleme anahtarları — "İlerlemeyi
   /// Sıfırla" (SettingsScreen.resetAll) ile aynı küme; hesap silme
   /// temizliği ([clearLocalData]) de bu kümeyi kaldırır. Ses/titreşim
-  /// ayar anahtarları (`lululu_music_enabled` vb.) bilinçli olarak
+  /// ayar anahtarları (`lululu_sfx_enabled` vb.) bilinçli olarak
   /// dışarıda bırakılır — sıfırlama ayarları değiştirmez.
   static const List<String> _localProgressKeys = <String>[
     'lululu_unlocked_level',
@@ -225,11 +225,9 @@ class ProgressManager extends ChangeNotifier {
   int get dailyStreak => streak;
 
   /// Ses ve titreşim ayarları.
-  bool musicEnabled = true;
   bool sfxEnabled = true;
   bool vibrationEnabled = true;
 
-  final ValueNotifier<bool> musicNotifier = ValueNotifier<bool>(true);
   final ValueNotifier<bool> sfxNotifier = ValueNotifier<bool>(true);
   final ValueNotifier<bool> vibrationNotifier = ValueNotifier<bool>(true);
 
@@ -555,10 +553,8 @@ class ProgressManager extends ChangeNotifier {
     lastStreakClaimDay = prefs.getString('lululu_last_streak_claim_day') ?? '';
 
     // Ses ve titreşim ayarları
-    musicEnabled = prefs.getBool('lululu_music_enabled') ?? true;
     sfxEnabled = prefs.getBool('lululu_sfx_enabled') ?? true;
     vibrationEnabled = prefs.getBool('lululu_vibration_enabled') ?? true;
-    musicNotifier.value = musicEnabled;
     sfxNotifier.value = sfxEnabled;
     vibrationNotifier.value = vibrationEnabled;
 
@@ -1123,14 +1119,6 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// Ses ve titreşim ayarlarını günceller ve kalıcı olarak saklar.
-  Future<void> setMusicEnabled(bool enabled) async {
-    musicEnabled = enabled;
-    musicNotifier.value = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('lululu_music_enabled', enabled);
-    notifyListeners();
-  }
-
   Future<void> setSfxEnabled(bool enabled) async {
     sfxEnabled = enabled;
     sfxNotifier.value = enabled;

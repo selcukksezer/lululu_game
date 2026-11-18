@@ -685,7 +685,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
               score: _score,
               best: _best,
               won: false,
-              modeTitle: 'Makarayız',
+              modeTitle: context.l10n.shopModeMakarayiz,
               shareLine: 'Makarayız abi!',
               retryLabel: 'YENİDEN',
               onRetry: _restart,
@@ -901,7 +901,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
               ],
             ),
           ),
@@ -1249,7 +1249,7 @@ class _MakarayizChrome extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        'MAKARAYIZ',
+                        context.l10n.makarayizTitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.baloo2(
@@ -1355,12 +1355,12 @@ class _MakarayizChrome extends StatelessWidget {
                 onTap: () => showDialog<void>(
                   context: context,
                   builder: (context) => AlertDialog(
-                    title: const Text('MAKARAYIZ'),
+                    title: Text(context.l10n.makarayizTitle),
                     content: Text(hint),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('ANLADIM'),
+                        child: Text(context.l10n.understoodButton),
                       ),
                     ],
                   ),
@@ -1407,7 +1407,7 @@ class _MakarayizChrome extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      'MAKARAYIZ',
+                      context.l10n.makarayizTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.baloo2(
@@ -1509,12 +1509,12 @@ class _MakarayizChrome extends StatelessWidget {
               onTap: () => showDialog<void>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('MAKARAYIZ'),
+                  title: Text(context.l10n.makarayizTitle),
                   content: Text(hint),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('ANLADIM'),
+                      child: Text(context.l10n.understoodButton),
                     ),
                   ],
                 ),
@@ -1537,12 +1537,12 @@ class _MakarayizChrome extends StatelessWidget {
               children: [
                 SizedBox(
                   width: wideScreen ? 104 : 108,
-                  child: _stat('SKOR', _format(score), wideScreen: wideScreen),
+                  child: _stat(context.l10n.gameScoreLabel, _format(score), wideScreen: wideScreen),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 84,
-                  child: _stat('REKOR', _format(best), wideScreen: wideScreen),
+                  child: _stat(context.l10n.gameBestLabel, _format(best), wideScreen: wideScreen),
                 ),
                 const Spacer(),
                 SizedBox(
@@ -1550,7 +1550,10 @@ class _MakarayizChrome extends StatelessWidget {
                   child: _stat('COMBO', 'x$combo', wideScreen: wideScreen),
                 ),
                 const SizedBox(width: 8),
-                GestureDetector(
+                Semantics(
+                  button: true,
+                  label: context.l10n.finishRoundLabel,
+                  child: GestureDetector(
                   onTap: onRestart,
                   behavior: HitTestBehavior.opaque,
                   child: Container(
@@ -1576,6 +1579,7 @@ class _MakarayizChrome extends StatelessWidget {
                       ),
                     ),
                   ),
+                ),
                 ),
               ],
             );
@@ -1672,7 +1676,7 @@ class _MakarayizChrome extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '${bonus.label}. $count adet',
+      label: context.l10n.boosterCountLabel(bonus.label, count),
       child: GestureDetector(
         onTap: enabled ? bonus.onTap : null,
         behavior: HitTestBehavior.opaque,
@@ -1788,7 +1792,7 @@ class _PauseHeaderButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Duraklat',
+      label: context.l10n.pause,
       child: GestureDetector(
         onTap: onTap,
         child: Container(

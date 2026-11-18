@@ -33,7 +33,7 @@
 ### 2. 2048 Grid
 - **Worked:** Opens; swipes merge (score **0→24**, peak tile **8**); speech (`Vurma kafama usta!`); undo/pause/new.
 - **Bugs:** In-mode title **`LÜLÜLÜ 2048`** vs hub **`2048 Grid`** (`grid_2048_screen.dart`). Footer **`GERİ (3)`** reads like navigation but is undo — UX confusion next to missing chrome back clarity.
-- **Fixes:** Unify title; rename undo to `UNDO` only (already in header) / drop duplicate footer label.
+- **Fixes:** Unify title; rename undo to `GERİ AL` (footer power-dock only — no `UNDO`/undo control in header) / clarify footer label so it does not read as back navigation.
 
 ### 3. Balon Patlat
 - **Worked:** Opens as **`BALON PATLAT`**; aim/drop; score spiked to **10202** with milestone `SKOR 10000!`; ceiling counter / next / hold present.
@@ -88,7 +88,7 @@
 - Do **not** `orca emulator kill/shutdown` (per session rules); used `simctl terminate/launch` only to escape overlay traps.
 
 ## Follow-up after full play agent
-- 2048 undo label `GERİ` → `UNDO` (back ile karışmasın).
+- 2048 undo label `GERİ` → `GERİ AL` (back ile karışmasın).
 - Suika back: `Semantics(label: Geri)`.
 - Result overlay: **HUB/YENİDEN önce**, PAYLAŞ alta (yanlış share sheet).
 - Terlik + chrome padding: önceki diff; iOS Xcode build hâlâ sürüyor.
@@ -97,7 +97,7 @@
 - Title sync: in-mode titles = catalog (`Suika Arena`, `2048 Grid`, `Balon Patlat`, `Match 3`, `Bağla Patlat`, `Stack Drop`, `Terlik Tap`).
 - Match3/Connect: cell hit + gap slop; Connect diagonal adjacency.
 - Overlay: header back chrome overlay üstünde kalır; PAYLAŞ debounce 900ms + alta taşındı.
-- Makarayız: ilk 4 beat window 200ms.
+- Makarayız: vuruş penceresi oyun başında geniş tutulur, oyun ilerledikçe daralır.
 - Daily card Semantics `Günlük viral` / `Günlük oyna`.
 - HomeShell cold start Ana force.
 - Regression: `test/hub_catalog_test.dart` + smoke title update.

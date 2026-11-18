@@ -94,14 +94,19 @@ void _installGlobalErrorHandlers() {
     debugPrint(
       '[lululu] ErrorWidget: ${details.exceptionAsString()}',
     );
-    return const Directionality(
+    // ErrorWidget.builder'a BuildContext ulaşmaz; cihaz diline göre
+    // tablo doğrudan çözümlenir (uygulamanın dil seçimiyle aynı kural:
+    // EN ise EN, diğer dillerde TR).
+    return Directionality(
       textDirection: TextDirection.ltr,
       child: ColoredBox(
         color: LululuColors.carbonVoid,
         child: Center(
           child: Text(
-            'Bir şeyler ters gitti.',
-            style: TextStyle(color: LululuColors.mutedTitanium),
+            AppLocalizations.lookup(
+              WidgetsBinding.instance.platformDispatcher.locale,
+            ).errorGeneric,
+            style: const TextStyle(color: LululuColors.mutedTitanium),
           ),
         ),
       ),
@@ -285,17 +290,17 @@ class _BootAppState extends State<_BootApp> {
       activeChild = Scaffold(
         key: const ValueKey('scr-boot-loading'),
         backgroundColor: LululuColors.carbonVoid,
-        body: const Center(
+        body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(
+              const CircularProgressIndicator(
                 color: LululuColors.liquidGold,
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
-                'Yükleniyor…',
-                style: TextStyle(color: LululuColors.mutedTitanium),
+                context.l10n.loading,
+                style: const TextStyle(color: LululuColors.mutedTitanium),
               ),
             ],
           ),
@@ -366,25 +371,25 @@ class _BootAppState extends State<_BootApp> {
                   size: 48,
                 ),
                 const SizedBox(height: 16),
-                const Text(
-                  'Karşılama durumu okunamadı.',
+                Text(
+                  context.l10n.welcomeStatusReadFail,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: LululuColors.cream,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Karşılama ekranı atlanmadı. Tekrar deneyin.',
+                Text(
+                  context.l10n.welcomeSkipFail,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: LululuColors.mutedTitanium),
+                  style: const TextStyle(color: LululuColors.mutedTitanium),
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: () => unawaited(_boot()),
-                  child: const Text('Tekrar Dene'),
+                  child: Text(context.l10n.retry),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
@@ -394,7 +399,7 @@ class _BootAppState extends State<_BootApp> {
                       _home = const HomeShell();
                     });
                   },
-                  child: const Text('Yine de ana ekrana devam et'),
+                  child: Text(context.l10n.continueToHomeAnyway),
                 ),
               ],
             ),
@@ -434,9 +439,9 @@ class _BootAppState extends State<_BootApp> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text(
-                          'Bazı veriler yüklenemedi. Çevrimdışı devam ediliyor.',
-                          style: TextStyle(
+                        Text(
+                          context.l10n.offlineWarning,
+                          style: const TextStyle(
                             color: LululuColors.cream,
                             fontWeight: FontWeight.w700,
                             fontSize: 13,
@@ -457,12 +462,12 @@ class _BootAppState extends State<_BootApp> {
                   ),
                   TextButton(
                     onPressed: () => unawaited(_boot()),
-                    child: const Text('Tekrar Dene'),
+                    child: Text(context.l10n.retry),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
                     color: LululuColors.mutedTitanium,
-                    tooltip: 'Kapat',
+                    tooltip: context.l10n.closeLabel,
                     onPressed: () => setState(() => _bootError = null),
                   ),
                 ],

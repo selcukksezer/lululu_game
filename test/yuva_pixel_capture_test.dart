@@ -90,7 +90,7 @@ void main() {
         'assets/icons2/yuva-slipper-prototype.png',
         'assets/icons2/premium_token.png',
         'assets/icons2/shield.png',
-        'assets/powerup_terlik.webp',
+        'assets/powerup_terlik.png',
       ]) {
         await precacheImage(
           AssetImage(asset),
@@ -100,7 +100,7 @@ void main() {
       }
       for (var tier = 1; tier <= 13; tier++) {
         await precacheImage(
-          AssetImage('assets/bugs/tier${tier}_hd.webp'),
+          AssetImage('assets/bugs/tier${tier}_hd${tier == 5 ? '.webp' : '.png'}'),
           context,
           onError: (exception, stackTrace) {},
         );

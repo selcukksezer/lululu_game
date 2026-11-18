@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -822,7 +823,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       },
       child: ArcadeScreen(
       backgroundAsset: 'assets/design/backgrounds/connect_workshop.webp',
-      title: 'Bağla Patlat',
+      title: context.l10n.shopModeLinkPop,
       tag: 'ZİNCİR',
       tagColor: const Color(0xFFFFD700),
       tagTextColor: const Color(0xFF4A2E00),
@@ -842,7 +843,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
               score: _score,
               best: _best,
               won: _won,
-              modeTitle: 'Bağla Patlat',
+              modeTitle: context.l10n.shopModeLinkPop,
               shareLine: _statsLine(),
               retryLabel: 'TEKRAR',
               onRetry: _newGame,
@@ -873,7 +874,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                      ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
                     ],
                   ),
                 ),
@@ -1200,7 +1201,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
                     child: Padding(
                       padding: EdgeInsets.all(_cellInset),
                       child: Image.asset(
-                        'assets/bugs/tier${tier}_hd.webp',
+                        'assets/bugs/tier${tier}_hd${tier == 5 ? '.webp' : '.png'}',
                         fit: BoxFit.contain,
                         filterQuality: FilterQuality.medium,
                         gaplessPlayback: true,

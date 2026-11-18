@@ -95,9 +95,9 @@ LÜLÜLÜ — merge them all!
   4 bölüm sunumunu kullanır.
 - Hışır: kademe dışı özel karakter, kasketli köy dedesi —
   `lib/models/hisir_character.dart` + `README.md` §1 notu; Terlik Tap'te nadir özel
-  hedef — `lib/modes/terlik_tap_screen.dart:465` ("~8% Hışır özel hedefi").
-- Misafir oyunu + cihazda kayıt + çevrimdışı-öncelikli: `lib/services/auth_service.dart:172`
-  ("Offline-First + Cloud-Ready") ve `:1086` (`signInAsGuest`); ilerleme
+  hedef — `lib/modes/terlik_tap_screen.dart:466` ("~8% Hışır özel hedefi").
+- Misafir oyunu + cihazda kayıt + çevrimdışı-öncelikli: `lib/services/auth_service.dart:179`
+  ("Offline-First + Cloud-Ready") ve `:1170` (`signInAsGuest`); ilerleme
   `shared_preferences` ile cihazda (`README.md` §3). Bulut eşitleme yalnızca giriş
   yapınca ve Firebase yapılandırılmışken (`lib/screens/privacy_policy_screen.dart` §2).
 - Liderlik tablosu 11 mod: `LeaderboardService.allModeIds.length == 11`
@@ -115,8 +115,8 @@ LÜLÜLÜ — merge them all!
   Taslakta Hışır yalnızca görünümü ve Terlik Tap görünümüyle anılıyor.
 - **İngilizce/Türkçe arayüz iddiası yok.** `lib/main.dart` EN + TR
   altyapısını bağlıyor (`localizationsDelegates` + `supportedLocales`) ve
-  çeviri tablosu kapsaması doğrulandı (394 anahtar: 340 getter + 54 metot,
-  EN/TR eşliği `test/l10n_parity_test.dart`'ta denetleniyor); listeleme
+  çeviri tablosu kapsaması EN/TR eşliği `test/l10n_parity_test.dart`'ta
+  denetleniyor); listeleme
   metnine dil iddiası yine de eklenmedi.
 - **Reklam iddiası yok.** Bu sürümde reklam SDK'sı yok
   (`IapService.rewardedAdsAvailable == false`; gizlilik metni: reklam gösterimi

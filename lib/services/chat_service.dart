@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ui' show Locale;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -82,10 +83,14 @@ class ChatMessage {
     // voiceLine kural sınırı (1..120): yazılan değer her zaman kırpılır.
     final safeVoiceLine =
         voiceLine == null ? null : ChatService.sanitizeVoiceLine(voiceLine!);
+    // K3: authorName kural sınırı (1..32, firestore.rules:301): ham ad
+    // yazılırsa 32 karakteri aşan adla TÜM sohbet yazımları reddedilir.
+    // Ad kesilir, reddedilmez.
+    final safeAuthorName = ChatService.sanitizeAuthorName(authorName);
     return {
       'id': id,
       'authorId': authorId,
-      'authorName': authorName,
+      'authorName': safeAuthorName,
       'body': body,
       'utcTicks': utcTicks,
       'isSystem': isSystem,
@@ -154,6 +159,8 @@ class ChatService extends ChangeNotifier {
   static const int unreadProbeLimit = 10;
   static const int maxMessageLength = 240;
   static const int maxVoiceLineLength = 120;
+  /// K3: kural `authorName` 1..32 ister (firestore.rules:301).
+  static const int maxAuthorNameLength = 32;
   static const int duplicateRateLimitMs = 1500;
   static const int burstWindowMs = 10000;
   static const int maxMessagesPerBurstWindow = 6;
@@ -460,6 +467,19 @@ class ChatService extends ChangeNotifier {
     return cleaned;
   }
 
+  /// K3: sohbet `authorName` kelepçesi — `firestore.rules` 1..32 ister.
+  /// [CloudSyncService.sanitizeDisplayName] ile aynı sınır (32): kontrol
+  /// karakterleri atılır, kırpılır, 32 karaktere kesilir, boşsa 'Oyuncu'
+  /// döner. Kesme sessizdir, reddetme yok. `toJson` buradan geçer; metin,
+  /// çıkartma ve meydan okuma dahil tüm yazım yolları korunur.
+  static String sanitizeAuthorName(String raw) {
+    final safe = raw.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
+    if (safe.isEmpty) return 'Oyuncu';
+    return safe.length > maxAuthorNameLength
+        ? safe.substring(0, maxAuthorNameLength)
+        : safe;
+  }
+
   bool _isSpamming(String cleanBody) {
     final now = DateTime.now().millisecondsSinceEpoch;
     _recentSendTimestampsMs.removeWhere((ts) => (now - ts) > burstWindowMs);
@@ -666,12 +686,40 @@ class ChatService extends ChangeNotifier {
     }
   }
 
+  /// K1/K4 (W60-6): sohbet bulut kapısı — Firebase UID ile yazılacak
+  /// `authorId` aynı olmalı. Kural `authorId == request.auth.uid` ister;
+  /// uyumsuzlukta (sentetik `playerId`, oturumsuz misafir, başarısız
+  /// anonim giriş) bulut denemesi hiç yapılmaz, mesaj yerelde kalır ve
+  /// [retryFailedCloudPushes] için başarısız işaretli kalır (çevrimdışı
+  /// kuyruk). Firebase hazır değilse `false` döner — o durumda zaten
+  /// hiçbir bulut yolu çalışmaz. Anonim girişi başarmış misafirde
+  /// `playerId` Firebase UID'si olduğundan kapı açıktır.
+  bool get _cloudIdentityAligned {
+    if (!FirebaseBootstrap.isAvailable) return false;
+    try {
+      final fbUid = fb.FirebaseAuth.instance.currentUser?.uid;
+      if (fbUid == null) return false;
+      final authorId = AuthService.instance.isSignedIn
+          ? AuthService.instance.playerId
+          : 'guest_local';
+      return fbUid == authorId;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Oturum değişiminden sonra bulut dinlemesini kapıya göre yeniden
+  /// kurar (girişte bağlan, çıkışta/uyumsuzlukta kapat). Giriş anında
+  /// kapı açılır ama kanal değiştirilmezse akışın kendiliğinden
+  /// bağlanması için [AuthService] burayı çağırır.
+  void refreshCloudBinding() => _bindCloudStreamIfReady();
+
   void _bindCloudStreamIfReady() {
     _cloudSub?.cancel();
     _cloudSub = null;
     // Yoklamalar da sıfırdan kurulur; bulut yoksa yalnız iptal edilir.
     _bindUnreadProbes();
-    if (!FirebaseBootstrap.isAvailable) return;
+    if (!FirebaseBootstrap.isAvailable || !_cloudIdentityAligned) return;
     try {
       _cloudSub = FirebaseFirestore.instance
           .collection('chat_channels')
@@ -725,7 +773,8 @@ class ChatService extends ChangeNotifier {
       sub.cancel();
     }
     _unreadSubs.clear();
-    if (!FirebaseBootstrap.isAvailable) return;
+    // K1/K4 (W60-6): kimlik uyumsuzken okunmamış yoklaması da kurulmaz.
+    if (!FirebaseBootstrap.isAvailable || !_cloudIdentityAligned) return;
     for (final channel in ChatChannel.values) {
       if (channel == _currentChannel) continue;
       try {
@@ -914,7 +963,9 @@ class ChatService extends ChangeNotifier {
     _streamController.add(messages);
     notifyListeners();
 
-    if (FirebaseBootstrap.isAvailable) {
+    // K1/K4 (W60-6): kimlik kapısı kapalıyken bulut yazımı denenmez;
+    // mesaj yerelde kalır ve başarısız işaretli kalır (çevrimdışı kuyruk).
+    if (_cloudIdentityAligned) {
       try {
         await FirebaseFirestore.instance
             .collection('chat_channels')
@@ -940,7 +991,9 @@ class ChatService extends ChangeNotifier {
   /// Tümü yazılırsa true döner; başarısız kalanlar işaretli kalır.
   Future<bool> retryFailedCloudPushes() async {
     if (_cloudFailedIds.isEmpty) return true;
-    if (!FirebaseBootstrap.isAvailable) return false;
+    // K1 (W60-6): kimlik uyumsuzken bulut denemesi yapma; işaretler
+    // kuyrukta kalır, kimlik düzelince tekrar denenir.
+    if (!_cloudIdentityAligned) return false;
     final byId = <String, ChatMessage>{};
     for (final m in _messages) {
       byId[m.id] = m;
@@ -958,12 +1011,20 @@ class ChatService extends ChangeNotifier {
     for (final id in _cloudFailedIds.toList()) {
       final msg = byId[id]!;
       try {
-        await FirebaseFirestore.instance
+        final ref = FirebaseFirestore.instance
             .collection('chat_channels')
             .doc(msg.channel.id)
             .collection('messages')
-            .doc(msg.id)
-            .set(msg.toJson());
+            .doc(msg.id);
+        // Y1 (W60-6): kural `update: false` — ilk yazım sunucuda
+        // tamamlanıp yanıtı kaybolmuşsa belge zaten vardır; yeniden
+        // `.set()` update sayılıp reddedilir. Varsa yazmadan başarılı say.
+        final existing = await ref.get();
+        if (existing.exists) {
+          _cloudFailedIds.remove(msg.id);
+          continue;
+        }
+        await ref.set(msg.toJson());
         _cloudFailedIds.remove(msg.id);
       } catch (e) {
         allOk = false;

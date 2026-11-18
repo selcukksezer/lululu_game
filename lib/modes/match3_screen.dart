@@ -1585,15 +1585,19 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 Expanded(
                                   child: Transform.translate(
                                     offset: const Offset(0, -1),
-                                    child: Text(
-                                      coinsText,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.visible,
-                                      style: GoogleFonts.nunito(
-                                        fontSize: 13.5,
-                                        height: 1.2,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        coinsText,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.visible,
+                                        style: GoogleFonts.nunito(
+                                          fontSize: 13.5,
+                                          height: 1.2,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1688,7 +1692,10 @@ class _Match3ScreenState extends State<Match3Screen> {
                           top: 9.2,
                           width: 57.8,
                           height: 48,
-                          child: GestureDetector(
+                          child: Semantics(
+                            button: true,
+                            label: context.l10n.finishRoundLabel,
+                            child: GestureDetector(
                             onTap: _newGame,
                             behavior: HitTestBehavior.opaque,
                             child: Container(
@@ -1714,6 +1721,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 ),
                               ),
                             ),
+                          ),
                           ),
                         ),
                       ],
@@ -1803,18 +1811,24 @@ class _Match3ScreenState extends State<Match3Screen> {
               ),
             ),
           ),
-          Transform.translate(
-            offset: Offset(valueDx, 0),
-            child: Text(
-              value,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.visible,
-              style: GoogleFonts.baloo2(
-                fontSize: 21,
-                height: 1.0,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Transform.translate(
+                offset: Offset(valueDx, 0),
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  style: GoogleFonts.baloo2(
+                    fontSize: 21,
+                    height: 1.0,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
           ),

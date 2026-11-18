@@ -211,6 +211,38 @@ class DailyChallengeService extends ChangeNotifier {
     return lastClaimDay != _todayKey();
   }
 
+  /// Hesap silme için yerel günlük görev verisinin tamamını temizler
+  /// (hesap-silme, yerel-temizlik): gün / mod / hedef anahtarları,
+  /// `LululuDailyV1_done_*` tamamlandı kayıtları (bugün + önceki
+  /// günlerden kalmış olabilecekler) ve aynı ad alanındaki
+  /// `_streak` / `_lastClaim` okumaları kaldırılır; bellek-içi durum
+  /// varsayılanlara döner. `_streak` / `_lastClaim` kod tabanında
+  /// hiçbir yerde yazılmaz (ölü okuma) ama aynı hesap verisi ad
+  /// alanında oldukları için yine de kaldırılır.
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('${_prefsKey}_day');
+    await prefs.remove('${_prefsKey}_modeId');
+    await prefs.remove('${_prefsKey}_modeLabel');
+    await prefs.remove('${_prefsKey}_target');
+    await prefs.remove('${_prefsKey}_streak');
+    await prefs.remove('${_prefsKey}_lastClaim');
+    for (final key in prefs
+        .getKeys()
+        .where((k) => k.startsWith('${_prefsKey}_done_'))
+        .toList()) {
+      await prefs.remove(key);
+    }
+    _dayKey = '';
+    modeId = LeaderboardService.modeOsmantus;
+    modeLabel = 'Osmantuş';
+    targetScore = 5000;
+    completedToday = false;
+    streak = 0;
+    lastClaimDay = null;
+    notifyListeners();
+  }
+
   String _todayKey() {
     final n = DateTime.now();
     return '${n.year}-${n.month}-${n.day}';

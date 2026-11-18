@@ -88,7 +88,7 @@ void main() {
         'assets/icons2/yuva-slipper-prototype.png',
         'assets/icons2/premium_token.png',
         'assets/icons2/shield.png',
-        'assets/powerup_terlik.webp',
+        'assets/powerup_terlik.png',
       ]) {
         await precacheImage(
           AssetImage(asset),

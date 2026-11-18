@@ -483,7 +483,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     required int topMerge,
   }) {
     _overlayTimer?.cancel();
-    _comboText = streak >= 2 ? 'COMBO X$streak!' : 'SÜPER!';
+    _comboText =
+        streak >= 2 ? 'COMBO X$streak!' : context.l10n.gridSuperCombo;
     _gainText = streak >= 2 ? '+$gain X$streak' : '+$gain';
     _overlayTimer = Timer(const Duration(milliseconds: 1100), () {
       if (!mounted) return;
@@ -496,7 +497,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     if (topMerge >= 3 || streak >= 2) {
       _speechTimer?.cancel();
       _speechBubble = topMerge >= 4
-          ? 'LÜLÜLÜ! SÜPER BİRLEŞİM! (${tier.title})'
+          ? context.l10n.gridSuperMergeSpeech(tier.title)
           : tier.viralReplik;
       _speechTimer = Timer(const Duration(milliseconds: 1600), () {
         if (!mounted) return;
@@ -924,8 +925,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                 color: const Color(0x8C080B12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Text(
-                '2048 GRİD',
+              child: Text(
+                context.l10n.grid2048Title,
                 style: TextStyle(
                   fontFamily: 'Baloo 2',
                   fontSize: 20,
@@ -1095,7 +1096,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       children: [
         // SKOR (`[12, 97.4, 104, 50.5]`)
         _buildScoreBox(
-          label: 'SKOR',
+          label: context.l10n.gameScoreLabel,
           value: _formatDotNumber(_score),
           width: 104,
         ),
@@ -1103,7 +1104,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
         // REKOR (`[124, 97.4, 92.1, 50.5]`)
         _buildScoreBox(
-          label: 'REKOR',
+          label: context.l10n.gameBestLabel,
           value: _formatDotNumber(_best > 0 ? _best : 12480),
           width: 92.1,
         ),
@@ -1112,38 +1113,42 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
         // HAMLE (`[278.2, 97.4, 74, 50.5]`)
         _buildScoreBox(
-          label: 'HAMLE',
+          label: context.l10n.moveLabel,
           value: '$_moveCount',
           width: 74,
         ),
         const SizedBox(width: 8),
 
         // BİTİR `.mini-btn` (`[360.2, 98.6, 57.8, 48]`)
-        GestureDetector(
-          onTap: _presentResult,
-          child: Container(
-            width: 57.8,
-            height: 48,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFB800),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0xFFB97A00),
-                  offset: Offset(0, 3),
+        Semantics(
+          button: true,
+          label: context.l10n.finishRoundLabel,
+          child: GestureDetector(
+            onTap: _presentResult,
+            child: Container(
+              width: 57.8,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFB800),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0xFFB97A00),
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Text(
+                context.l10n.finishCaps,
+                style: TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 12.5,
+                  height: 1.0,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.375,
+                  color: Color(0xFF4A2E00),
                 ),
-              ],
-            ),
-            child: const Text(
-              'BİTİR',
-              style: TextStyle(
-                fontFamily: 'Baloo 2',
-                fontSize: 12.5,
-                height: 1.0,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.375,
-                color: Color(0xFF4A2E00),
               ),
             ),
           ),
@@ -1205,7 +1210,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
           Text(
             label,
             maxLines: 1,
-            overflow: TextOverflow.visible,
+            overflow: TextOverflow.ellipsis,
             softWrap: false,
             style: const TextStyle(
               fontFamily: 'Nunito',
@@ -1336,8 +1341,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'HEDEF: 2048 BÖCEK',
+                              Text(
+                                context.l10n.gridTarget2048,
                                 style: TextStyle(
                                   fontFamily: 'Nunito',
                                   fontSize: 11,
@@ -1347,7 +1352,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                                 ),
                               ),
                               Text(
-                                'EN YÜKSEK TAŞ: ${_highestTileValue()}',
+                                context.l10n.gridHighestTile(_highestTileValue()),
                                 style: const TextStyle(
                                   fontFamily: 'Nunito',
                                   fontSize: 11,
@@ -1473,7 +1478,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'HAMLE $_moveCount',
+                              context.l10n.gridMovesCount(_moveCount),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontFamily: 'Nunito',
                                 fontSize: 12,
@@ -1656,21 +1663,21 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
           children: [
             _buildPowerBtn(
               iconPath: 'assets/icons2/back.png',
-              label: 'GERİ AL',
+              label: context.l10n.shopPowerUndoNameCaps,
               count: _undoCount,
               onTap: _useUndo,
             ),
             const SizedBox(width: 20),
             _buildPowerBtn(
               iconPath: 'assets/icons2/wand.png',
-              label: 'KARIŞTIR',
+              label: context.l10n.shopPowerShuffleName.toUpperCase(),
               count: _shuffleCount,
               onTap: _useShuffle,
             ),
             const SizedBox(width: 20),
             _buildPowerBtn(
               iconPath: 'assets/icons2/magnet.png',
-              label: 'ÇİFTLEŞTİR',
+              label: context.l10n.shopPowerMergePairName.toUpperCase(),
               count: _pairCount,
               onTap: _usePair,
             ),
@@ -1686,98 +1693,102 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     required int count,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        width: 66,
-        height: 62.9,
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.topCenter,
-          children: [
-            Positioned(
-              top: 2,
-              child: Container(
-                width: 48,
-                height: 48,
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF333F58), Color(0xFF1B2336)],
-                  ),
-                  border: Border.all(
-                    color: const Color(0x47FFFFFF),
-                    width: 1,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x73000000),
-                      offset: Offset(0, 3),
+    return Semantics(
+      button: true,
+      label: context.l10n.boosterCountLabel(label, count),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: 66,
+          height: 62.9,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
+            children: [
+              Positioned(
+                top: 2,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFF333F58), Color(0xFF1B2336)],
                     ),
-                    BoxShadow(
-                      color: Color(0x4D000000),
-                      offset: Offset(0, 6),
-                      blurRadius: 12,
+                    border: Border.all(
+                      color: const Color(0x47FFFFFF),
+                      width: 1,
                     ),
-                  ],
-                ),
-                child: Image.asset(iconPath, fit: BoxFit.contain),
-              ),
-            ),
-            Positioned(
-              top: 53,
-              left: 0,
-              right: 0,
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.visible,
-                style: const TextStyle(
-                  fontFamily: 'Nunito',
-                  fontSize: 11,
-                  height: 1.1,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.27,
-                  color: Color(0xFFD8E0EE),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x73000000),
+                        offset: Offset(0, 3),
+                      ),
+                      BoxShadow(
+                        color: Color(0x4D000000),
+                        offset: Offset(0, 6),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                  child: Image.asset(iconPath, fit: BoxFit.contain),
                 ),
               ),
-            ),
-            Positioned(
-              top: -2,
-              right: 3,
-              child: Container(
-                constraints: const BoxConstraints(minWidth: 22),
-                height: 22,
-                padding: const EdgeInsets.symmetric(horizontal: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE01E5A),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: const Color(0xFF080B12),
-                    width: 2,
-                  ),
-                ),
-                alignment: Alignment.center,
+              Positioned(
+                top: 53,
+                left: 0,
+                right: 0,
                 child: Text(
-                  '$count',
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.visible,
                   style: const TextStyle(
                     fontFamily: 'Nunito',
                     fontSize: 11,
                     height: 1.1,
                     fontWeight: FontWeight.w900,
-                    color: Colors.white,
+                    letterSpacing: 0.27,
+                    color: Color(0xFFD8E0EE),
                   ),
                 ),
               ),
-            ),
-          ],
+              Positioned(
+                top: -2,
+                right: 3,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 22),
+                  height: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE01E5A),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: const Color(0xFF080B12),
+                      width: 2,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      fontFamily: 'Nunito',
+                      fontSize: 11,
+                      height: 1.1,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      );
     );
   }
 
@@ -1808,8 +1819,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      '2048 GRİD NASIL OYNANIR?',
+                    Text(
+                      context.l10n.gridHowToTitle,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontFamily: 'Baloo 2',
@@ -1819,11 +1830,11 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    const Text(
-                      'Tahtayı 4 yöne kaydır — aynı tier böcekler çarpışınca birleşir, yeni böcek doğar. 2048\'e ulaş!\n\n'
-                      '• GERİ AL: Son hamleyi geri alır.\n'
-                      '• KARIŞTIR: Tahtadaki tüm böceklerin yerlerini karıştırır.\n'
-                      '• ÇİFTLEŞTİR: En yüksek eşleşen iki böceği anında birleştirir.',
+                    Text(
+                      context.l10n.gridHowToBody1 +
+                          context.l10n.gridHowToBody2 +
+                          context.l10n.gridHowToBody3 +
+                          context.l10n.gridHowToBody4,
                       textAlign: TextAlign.left,
                       style: TextStyle(
                         fontFamily: 'Nunito',
@@ -1834,23 +1845,27 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    GestureDetector(
-                      onTap: () => setState(() => _showHelpModal = false),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFB800),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'ANLADIM',
-                          style: TextStyle(
-                            fontFamily: 'Baloo 2',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF4A2E00),
+                    child: Semantics(
+                      button: true,
+                      label: context.l10n.understoodButton,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _showHelpModal = false),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFB800),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            context.l10n.understoodButton,
+                            style: TextStyle(
+                              fontFamily: 'Baloo 2',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF4A2E00),
+                            ),
                           ),
                         ),
                       ),
@@ -1890,8 +1905,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'OYUN DURAKLATILDI',
+                  Text(
+                    context.l10n.gamePausedTitle,
                     style: TextStyle(
                       fontFamily: 'Baloo 2',
                       fontSize: 22,
@@ -1901,7 +1916,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Hamle $_moveCount · Birleşim $_mergeTotal · Seri x$_maxStreak',
+                    context.l10n.gridPauseStats(_moveCount, _mergeTotal, _maxStreak),
                     style: const TextStyle(
                       fontFamily: 'Nunito',
                       fontSize: 12,
@@ -1910,46 +1925,54 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: _togglePause,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFB800),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        '▶ DEVAM ET',
-                        style: TextStyle(
-                          fontFamily: 'Baloo 2',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF4A2E00),
+                  child: Semantics(
+                    button: true,
+                    label: context.l10n.resume,
+                    child: GestureDetector(
+                      onTap: _togglePause,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFB800),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '▶ ${context.l10n.resumeButtonCaps}',
+                          style: TextStyle(
+                            fontFamily: 'Baloo 2',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF4A2E00),
+                          ),
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: _restart,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1C2438),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0x3DFFFFFF)),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        '🔄 YENİDEN BAŞLA',
-                        style: TextStyle(
-                          fontFamily: 'Baloo 2',
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                  child: Semantics(
+                    button: true,
+                    label: context.l10n.restart,
+                    child: GestureDetector(
+                      onTap: _restart,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1C2438),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0x3DFFFFFF)),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '🔄 ${context.l10n.restartLevelButton}',
+                          style: TextStyle(
+                            fontFamily: 'Baloo 2',
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),

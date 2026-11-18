@@ -2,19 +2,16 @@
 //
 // Her grup, düzeltmenin bulunduğu kaynak dosyadaki gerçek davranışa göre
 // yazıldı; kurulum desenleri mevcut test dosyalarından alındı:
-//  - mock prefs + load(): test/live_ops_difficulty_test.dart,
-//    test/auth_leaderboard_test.dart
+//  - mock prefs + load(): test/auth_leaderboard_test.dart
 //  - telemetri sıfırlama / kayıt deseni:
 //    test/game_enhancements_integration_test.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:lululu_game/services/anti_cheat_service.dart';
 import 'package:lululu_game/services/auth_service.dart';
 import 'package:lululu_game/services/daily_challenge_service.dart';
 import 'package:lululu_game/services/friend_invite_service.dart';
 import 'package:lululu_game/services/game_telemetry_service.dart';
-import 'package:lululu_game/services/live_ops_event_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 
 /// DailyChallengeService._todayKey / _dayKeyOffset ile aynı biçim:
@@ -105,81 +102,6 @@ void main() {
     });
   });
 
-  group('LiveOpsEventService claimIdleJarCoins (servis denetimi: ekonomi reddi claimId yakmaz)',
-      () {
-    // Kurulum deseni: test/live_ops_difficulty_test.dart setUp.
-    late AntiCheatService antiCheat;
-    late LiveOpsEventService liveOps;
-
-    setUp(() {
-      SharedPreferences.setMockInitialValues(<String, Object>{});
-      antiCheat = AntiCheatService(secretKey: 'test_liveops_secret_key');
-      liveOps = LiveOpsEventService(antiCheat: antiCheat);
-    });
-
-    test('bakiye tavanında ekonomi reddi claimIdyi tüketmez; aynı claimId ile tekrar deneme başarılı olur',
-        () {
-      // live_ops_event_service.dart:493-514: ekonomi doğrulaması
-      // cooldown/replay kaydından ÖNCE yapılır; reddedilen talebin
-      // claimId'si tüketilmez.
-      final baseTime = DateTime(2026, 11, 4, 10, 0);
-      const claimId = 'audit_cap_retry_001';
-
-      final rejected = liveOps.claimIdleJarCoins(
-        highestUnlockedTier: 1,
-        currentCoinBalance: AntiCheatService.maxCoinBalanceCap,
-        lastActiveAt: baseTime,
-        now: baseTime.add(const Duration(minutes: 60)),
-        claimId: claimId,
-      );
-      expect(rejected.isSuccess, isFalse);
-      expect(rejected.grantedCoins, 0);
-      expect(rejected.reason, 'exceeds_max_coin_balance_cap');
-
-      // Aynı claimId ile, tavan altında bakiyeyle tekrar deneme: eğer
-      // claimId yansaydı bu çağrı replay engeline takılırdı.
-      final retry = liveOps.claimIdleJarCoins(
-        highestUnlockedTier: 1,
-        currentCoinBalance: 500,
-        lastActiveAt: baseTime,
-        now: baseTime.add(const Duration(minutes: 60)),
-        claimId: claimId,
-      );
-      expect(retry.isSuccess, isTrue);
-      expect(retry.grantedCoins, 60);
-      expect(retry.newCoinBalance, 560);
-      expect(retry.reason, 'ok');
-    });
-
-    test('başarılı talep claimIdyi tüketir; aynı claimId ile tekrar deneme engellenir',
-        () {
-      // Karşıt koruma: düzeltme, başarılı talebin replay korumasını
-      // bozmamalı (live_ops_event_service.dart:516-531).
-      final baseTime = DateTime(2026, 11, 4, 10, 0);
-      const claimId = 'audit_replay_001';
-
-      final first = liveOps.claimIdleJarCoins(
-        highestUnlockedTier: 1,
-        currentCoinBalance: 500,
-        lastActiveAt: baseTime,
-        now: baseTime.add(const Duration(minutes: 60)),
-        claimId: claimId,
-      );
-      expect(first.isSuccess, isTrue);
-      expect(first.grantedCoins, 60);
-
-      final replay = liveOps.claimIdleJarCoins(
-        highestUnlockedTier: 1,
-        currentCoinBalance: first.newCoinBalance,
-        lastActiveAt: baseTime.add(const Duration(minutes: 60)),
-        now: baseTime.add(const Duration(minutes: 120)),
-        claimId: claimId,
-      );
-      expect(replay.isSuccess, isFalse);
-      expect(replay.grantedCoins, 0);
-      expect(replay.reason, 'anti_cheat_cooldown_or_replay_blocked');
-    });
-  });
 
   group('DailyChallengeService nextClaimRewardCoins (servis denetimi: seri tahmini)',
       () {

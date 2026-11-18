@@ -266,16 +266,20 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             ),
                           ),
                         ),
-                        GestureDetector(
-                          onTap: _openModes,
-                          behavior: HitTestBehavior.opaque,
-                          child: Text(
-                            l10n.seeAllArrow,
-                            style: GoogleFonts.nunito(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: const Color(0xFFE01E5A),
-                              height: 1.55,
+                        Semantics(
+                          button: true,
+                          label: l10n.seeAllButton,
+                          child: GestureDetector(
+                            onTap: _openModes,
+                            behavior: HitTestBehavior.opaque,
+                            child: Text(
+                              l10n.seeAllArrow,
+                              style: GoogleFonts.nunito(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFFE01E5A),
+                                height: 1.55,
+                              ),
                             ),
                           ),
                         ),
@@ -569,8 +573,28 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                                         'assets/design/ui/hub_hero_mascot_exact.webp',
                                         fit: BoxFit.contain,
                                         alignment: Alignment.bottomCenter,
-                                        errorBuilder: (_, _, _) =>
-                                            const SizedBox.shrink(),
+                                        errorBuilder: (_, error, _) {
+                                          // Sessiz boşluk yerine yer tutucu
+                                          // + hata kaydı (gölge katmanı:
+                                          // dış ColorFiltered siyah siluete
+                                          // çevirir, blur uygular).
+                                          debugPrint(
+                                            '[GameSelector] Hub maskot '
+                                            'gölgesi yüklenemedi: '
+                                            'assets/design/ui/hub_hero_mascot_exact.webp'
+                                            '($error)',
+                                          );
+                                          return Container(
+                                            color: Colors.black,
+                                            alignment: Alignment.center,
+                                            child: const Icon(
+                                              Icons
+                                                  .image_not_supported_outlined,
+                                              size: 40,
+                                              color: Colors.white,
+                                            ),
+                                          );
+                                        },
                                       ),
                                     ),
                                   ),
@@ -655,81 +679,85 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: _playSuika,
-                    behavior: HitTestBehavior.opaque,
-                    child: CustomPaint(
-                      painter: const _RealBoxShadowPainter(
-                        radius: 18,
-                        shadows: [
-                          BoxShadow(
-                            color: Color(0x47000000),
-                            blurRadius: 18,
-                            offset: Offset(0, 10),
-                          ),
-                          BoxShadow(
-                            color: Color(0xFF066C3C),
-                            offset: Offset(0, 5),
-                            blurRadius: 0,
-                          ),
-                        ],
-                      ),
-                      child: Container(
-                        width: double.infinity,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0xFF37E08B),
-                              Color(0xFF12B76A),
-                              Color(0xFF0A9553),
-                            ],
-                            stops: [0.0, 0.55, 1.0],
-                          ),
-                          borderRadius: BorderRadius.circular(18),
+                  Semantics(
+                    button: true,
+                    label: l10n.playNow,
+                    child: GestureDetector(
+                      onTap: _playSuika,
+                      behavior: HitTestBehavior.opaque,
+                      child: CustomPaint(
+                        painter: const _RealBoxShadowPainter(
+                          radius: 18,
+                          shadows: [
+                            BoxShadow(
+                              color: Color(0x47000000),
+                              blurRadius: 18,
+                              offset: Offset(0, 10),
+                            ),
+                            BoxShadow(
+                              color: Color(0xFF066C3C),
+                              offset: Offset(0, 5),
+                              blurRadius: 0,
+                            ),
+                          ],
                         ),
-                    alignment: Alignment.center,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Image.asset(
-                            'assets/design/ui/hub_hero_play_exact.webp',
-                            width: 23,
-                            height: 23,
-                            errorBuilder: (_, _, _) => Image.asset(
-                              'assets/design/ui/hub_hero_play_ic.webp',
+                        child: Container(
+                          width: double.infinity,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0xFF37E08B),
+                                Color(0xFF12B76A),
+                                Color(0xFF0A9553),
+                              ],
+                              stops: [0.0, 0.55, 1.0],
+                            ),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                      alignment: Alignment.center,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image.asset(
+                              'assets/design/ui/hub_hero_play_exact.webp',
                               width: 23,
                               height: 23,
+                              errorBuilder: (_, _, _) => Image.asset(
+                                'assets/design/ui/hub_hero_play_ic.webp',
+                                width: 23,
+                                height: 23,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            l10n.playNow,
-                            style: GoogleFonts.baloo2(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 0.35,
-                              shadows: const [
-                                Shadow(
-                                  color: Color(0x73066C3C),
-                                  offset: Offset(0, 2),
-                                  blurRadius: 0,
-                                ),
-                              ],
+                            const SizedBox(width: 8),
+                            Text(
+                              l10n.playNow,
+                              style: GoogleFonts.baloo2(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.35,
+                                shadows: const [
+                                  Shadow(
+                                    color: Color(0x73066C3C),
+                                    offset: Offset(0, 2),
+                                    blurRadius: 0,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+                  ),
               ],
             ),
           ),
@@ -810,15 +838,12 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ListenableBuilder(
                           listenable: ProgressManager.instance,
                           builder: (context, _) {
-                            // l10n.dailyRewardSubtitle parametresizdir
-                            // ('3. gün · ...' / 'Day 3 · ...'); yeni anahtar
-                            // eklenmeden yalnız gün sayısı gerçek seriden
-                            // (ProgressManager.dailyStreak) yazılır.
                             final streak =
                                 ProgressManager.instance.dailyStreak;
-                            final subtitle = l10n.dailyRewardSubtitle
-                                .replaceFirst('3. gün', '$streak. gün')
-                                .replaceFirst('Day 3', 'Day $streak');
+                            final subtitle =
+                                context.l10n.dailyRewardSubtitleStreak(
+                                  streak,
+                                );
                             return Text(
                               subtitle,
                               maxLines: 2,
@@ -855,149 +880,158 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       final claimed =
                           _dailyRewardClaimed ||
                           !ProgressManager.instance.canClaimDailyGiftBox;
-                      return GestureDetector(
-                        onTap: claimed ? null : _claimDailyReward,
-                    child: CustomPaint(
-                      painter: const _RealBoxShadowPainter(
-                        radius: 14,
-                        shadows: [
-                          BoxShadow(
-                            color: Color(0x47000000),
-                            blurRadius: 18,
-                            offset: Offset(0, 10),
-                          ),
-                          BoxShadow(
-                            color: Color(0xFFB97A00),
-                            offset: Offset(0, 5),
-                            blurRadius: 0,
-                          ),
-                        ],
-                      ),
-                      child: Container(
-                        height: 48,
-                        decoration: BoxDecoration(
-                          gradient: claimed
-                              ? null
-                              : const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xFFFFD34D),
-                                    Color(0xFFFFB800),
-                                    Color(0xFFF59E00),
-                                  ],
-                                  stops: [0.0, 0.55, 1.0],
-                                ),
-                          color: claimed
-                              ? const Color(0xFFE2E6EE)
-                              : null,
-                          borderRadius: BorderRadius.circular(14),
+                      return Semantics(
+                        button: true,
+                        enabled: !claimed,
+                        label: claimed ? l10n.claimedShort : l10n.claim500,
+                        child: GestureDetector(
+                          onTap: claimed ? null : _claimDailyReward,
+                      child: CustomPaint(
+                        painter: const _RealBoxShadowPainter(
+                          radius: 14,
+                          shadows: [
+                            BoxShadow(
+                              color: Color(0x47000000),
+                              blurRadius: 18,
+                              offset: Offset(0, 10),
+                            ),
+                            BoxShadow(
+                              color: Color(0xFFB97A00),
+                              offset: Offset(0, 5),
+                              blurRadius: 0,
+                            ),
+                          ],
                         ),
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Transform.translate(
-                        offset: const Offset(0, -1),
-                        child: Text(
-                          claimed ? l10n.claimedShort : l10n.claim500,
-                          style: GoogleFonts.baloo2(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.45,
-                            color: claimed
-                                ? const Color(0xFF8E9CAE)
-                                : Colors.white,
-                            shadows: claimed
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            gradient: claimed
                                 ? null
-                                : const [
-                                    Shadow(
-                                      color: Color(0x59784000),
-                                      offset: Offset(0, 2),
-                                      blurRadius: 0,
-                                    ),
-                                  ],
+                                : const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xFFFFD34D),
+                                      Color(0xFFFFB800),
+                                      Color(0xFFF59E00),
+                                    ],
+                                    stops: [0.0, 0.55, 1.0],
+                                  ),
+                            color: claimed
+                                ? const Color(0xFFE2E6EE)
+                                : null,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Transform.translate(
+                          offset: const Offset(0, -1),
+                          child: Text(
+                            claimed ? l10n.claimedShort : l10n.claim500,
+                            style: GoogleFonts.baloo2(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.45,
+                              color: claimed
+                                  ? const Color(0xFF8E9CAE)
+                                  : Colors.white,
+                              shadows: claimed
+                                  ? null
+                                  : const [
+                                      Shadow(
+                                        color: Color(0x59784000),
+                                        offset: Offset(0, 2),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                    );
+                      ),
+                      );
                   },
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 flex: 184,
-                child: GestureDetector(
-                  onTap: _claimDoubleDailyReward,
-                  child: CustomPaint(
-                    painter: const _CssBottomShadowPainter(
-                      radius: 14,
-                      offsetY: 4,
-                      shadowColor: Color(0x73000000),
-                      insetStrokeColor: Color(0x85FFB800),
-                      outerBorderWidth: 2.0,
-                    ),
-                    child: Container(
-                      height: 48,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0x8C080B12),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: const Color(0xFFFFB800),
-                          width: 2.0,
-                        ),
+                child: Semantics(
+                  button: true,
+                  label: l10n.doubleRewardLabel,
+                  child: GestureDetector(
+                    onTap: _claimDoubleDailyReward,
+                    child: CustomPaint(
+                      painter: const _CssBottomShadowPainter(
+                        radius: 14,
+                        offsetY: 4,
+                        shadowColor: Color(0x73000000),
+                        insetStrokeColor: Color(0x85FFB800),
+                        outerBorderWidth: 2.0,
                       ),
-                      alignment: Alignment.center,
-                      child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Transform.translate(
-                        offset: const Offset(0.5, 0.5),
-                        child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 58.6,
-                            height: 19,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF7C3AED),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                l10n.comingSoon,
-                                maxLines: 1,
-                                softWrap: false,
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: 0.6,
-                                  height: 1.3,
+                      child: Container(
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0x8C080B12),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFFFB800),
+                            width: 2.0,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Transform.translate(
+                          offset: const Offset(0.5, 0.5),
+                          child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 58.6,
+                              height: 19,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF7C3AED),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  l10n.comingSoon,
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: GoogleFonts.baloo2(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    letterSpacing: 0.6,
+                                    height: 1.3,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '2X · ${l10n.comingSoon}',
-                            style: GoogleFonts.baloo2(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 0.39,
+                            const SizedBox(width: 8),
+                            Text(
+                              '2X · ${l10n.comingSoon}',
+                              style: GoogleFonts.baloo2(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.39,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                        ),
                       ),
                       ),
-                    ),
                     ),
                   ),
                 ),
@@ -1006,75 +1040,79 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
           ),
           const SizedBox(height: 10),
           // #dailyEnergy button (height: 48)
-          GestureDetector(
-            onTap: _claimDailyEnergy,
-            child: CustomPaint(
-              painter: const _RealBoxShadowPainter(
-                radius: 14,
-                shadows: [
-                  BoxShadow(
-                    color: Color(0x47000000),
-                    blurRadius: 18,
-                    offset: Offset(0, 10),
-                  ),
-                  BoxShadow(
-                    color: Color(0xFF066C3C),
-                    offset: Offset(0, 5),
-                    blurRadius: 0,
-                  ),
-                ],
-              ),
-              child: Container(
-                width: double.infinity,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFF37E08B),
-                      Color(0xFF12B76A),
-                      Color(0xFF0A9553),
-                    ],
-                    stops: [0.0, 0.55, 1.0],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
+          Semantics(
+            button: true,
+            label: l10n.claimEnergy5,
+            child: GestureDetector(
+              onTap: _claimDailyEnergy,
+              child: CustomPaint(
+                painter: const _RealBoxShadowPainter(
+                  radius: 14,
+                  shadows: [
+                    BoxShadow(
+                      color: Color(0x47000000),
+                      blurRadius: 18,
+                      offset: Offset(0, 10),
+                    ),
+                    BoxShadow(
+                      color: Color(0xFF066C3C),
+                      offset: Offset(0, 5),
+                      blurRadius: 0,
+                    ),
+                  ],
                 ),
-                alignment: Alignment.center,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Image.asset(
-                        'assets/design/ui/icon_energy_bolt_exact.webp',
-                        width: 23,
-                        height: 23,
-                        errorBuilder: (_, _, _) => Image.asset(
-                          'assets/design/ui/icon_heart_exact.webp',
+                child: Container(
+                  width: double.infinity,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xFF37E08B),
+                        Color(0xFF12B76A),
+                        Color(0xFF0A9553),
+                      ],
+                      stops: [0.0, 0.55, 1.0],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'assets/design/ui/icon_energy_bolt_exact.webp',
                           width: 23,
                           height: 23,
+                          errorBuilder: (_, _, _) => Image.asset(
+                            'assets/design/ui/icon_heart_exact.webp',
+                            width: 23,
+                            height: 23,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        l10n.claimEnergy5,
-                        style: GoogleFonts.baloo2(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 0.39,
-                          shadows: const [
-                            Shadow(
-                              color: Color(0x73066C3C),
-                              offset: Offset(0, 2),
-                              blurRadius: 0,
-                            ),
-                          ],
+                        const SizedBox(width: 8),
+                        Text(
+                          l10n.claimEnergy5,
+                          style: GoogleFonts.baloo2(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.39,
+                            shadows: const [
+                              Shadow(
+                                color: Color(0x73066C3C),
+                                offset: Offset(0, 2),
+                                blurRadius: 0,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1089,276 +1127,284 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
   // Online Mod Card — .online-card (x:12, y:741.1, w:406, h:183.5)
   Widget _buildOnlineCard() {
     final l10n = context.l10n;
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute<void>(builder: (_) => const OnlineScreen()));
-      },
-      behavior: HitTestBehavior.opaque,
-      child: CustomPaint(
-        painter: const _RealBoxShadowPainter(
-          radius: 22,
-          shadows: [
-            BoxShadow(
-              color: Color(0x14141B2A),
-              blurRadius: 20,
-              offset: Offset(0, 12),
-            ),
-            BoxShadow(
-              color: Color(0x14141B2A),
-              offset: Offset(0, 6),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        child: Container(
-          height: 187.5,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
+    return Semantics(
+      button: true,
+      label: l10n.onlineModeTitle,
+      child: GestureDetector(
+        onTap: () {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute<void>(builder: (_) => const OnlineScreen()));
+        },
+        behavior: HitTestBehavior.opaque,
+        child: CustomPaint(
+          painter: const _RealBoxShadowPainter(
+            radius: 22,
+            shadows: [
+              BoxShadow(
+                color: Color(0x14141B2A),
+                blurRadius: 20,
+                offset: Offset(0, 12),
+              ),
+              BoxShadow(
+                color: Color(0x14141B2A),
+                offset: Offset(0, 6),
+                blurRadius: 0,
+              ),
+            ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                height: 91.5,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 76,
-                      height: 76,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Opacity(
-                            opacity: 0.75,
-                            child: ColorFiltered(
-                              colorFilter: const ColorFilter.matrix(<double>[
-                                0.3086, 0.5180, 0.0609, 0, 0, //
-                                0.1806, 0.6460, 0.0609, 0, 0, //
-                                0.1806, 0.5180, 0.1889, 0, 0, //
-                                0, 0, 0, 1, 0, //
-                              ]),
-                              child: Image.asset(
-                                'assets/design/ui/online_locked_bug_exact.webp',
-                                width: 76,
-                                height: 76,
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, _, _) => Image.asset(
-                                  'assets/design/ui/online_locked_bug.webp',
+          child: Container(
+            height: 187.5,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  height: 91.5,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 76,
+                        height: 76,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Opacity(
+                              opacity: 0.75,
+                              child: ColorFiltered(
+                                colorFilter: const ColorFilter.matrix(<double>[
+                                  0.3086, 0.5180, 0.0609, 0, 0, //
+                                  0.1806, 0.6460, 0.0609, 0, 0, //
+                                  0.1806, 0.5180, 0.1889, 0, 0, //
+                                  0, 0, 0, 1, 0, //
+                                ]),
+                                child: Image.asset(
+                                  'assets/design/ui/online_locked_bug_exact.webp',
                                   width: 76,
                                   height: 76,
                                   fit: BoxFit.contain,
+                                  errorBuilder: (_, _, _) => Image.asset(
+                                    'assets/design/ui/online_locked_bug.webp',
+                                    width: 76,
+                                    height: 76,
+                                    fit: BoxFit.contain,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          Positioned(
-                            right: -4,
-                            bottom: -4,
-                            child: CustomPaint(
-                              painter: const _RealBoxShadowPainter(
-                                radius: 15,
-                                shadows: [
-                                  BoxShadow(
-                                    color: Color(0x4D000000),
-                                    blurRadius: 6,
-                                    offset: Offset(0, 3),
+                            Positioned(
+                              right: -4,
+                              bottom: -4,
+                              child: CustomPaint(
+                                painter: const _RealBoxShadowPainter(
+                                  radius: 15,
+                                  shadows: [
+                                    BoxShadow(
+                                      color: Color(0x4D000000),
+                                      blurRadius: 6,
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: Container(
+                                  width: 30,
+                                  height: 30,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: const Color(0xFF141B2A),
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2.5,
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: const SizedBox(
+                                    width: 15,
+                                    height: 15,
+                                    child: CustomPaint(painter: _LockIconPainter()),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              height: 70.5,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  // Sabit 110px kaldırıldı: başlık, rozetle kalan
+                                  // alanı paylaşır; EN/TR başlık kesilmez.
+                                  Flexible(
+                                    child: Transform.translate(
+                                      offset: const Offset(0, -1),
+                                      child: Text(
+                                        l10n.onlineModeTitle,
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.baloo2(
+                                          fontSize: 19,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.05,
+                                          color: const Color(0xFF141B2A),
+                                          height: 1.05,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Transform.rotate(
+                                    angle: -0.05236, // -3deg
+                                    child: CustomPaint(
+                                      painter: const _RealBoxShadowPainter(
+                                        radius: 999,
+                                        shadows: [
+                                          BoxShadow(
+                                            color: Color(0x2E000000),
+                                            blurRadius: 5,
+                                            offset: Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 9,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFFB800),
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          l10n.comingSoon,
+                                          style: GoogleFonts.baloo2(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF4A2E00),
+                                            letterSpacing: 0.66,
+                                            height: 1.55,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
-                              child: Container(
-                                width: 30,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: const Color(0xFF141B2A),
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 2.5,
-                                  ),
-                                ),
-                                alignment: Alignment.center,
-                                child: const SizedBox(
-                                  width: 15,
-                                  height: 15,
-                                  child: CustomPaint(painter: _LockIconPainter()),
+                            ),
+                            Transform.translate(
+                              offset: const Offset(0, 3.8),
+                              child: Text(
+                                l10n.onlineModeSubtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.nunito(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.04,
+                                  color: const Color(0xFF66738A),
+                                  height: 1.38,
                                 ),
                               ),
                             ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Semantics(
+                  button: true,
+                  label: l10n.notifyMe,
+                  child: GestureDetector(
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            l10n.onlineNotifySignupSnack,
+                            style: GoogleFonts.nunito(fontWeight: FontWeight.w700),
+                          ),
+                          backgroundColor: const Color(0xFF141B2A),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      );
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: CustomPaint(
+                      painter: const _RealBoxShadowPainter(
+                        radius: 14,
+                        shadows: [
+                          BoxShadow(
+                            color: Color(0x38000000),
+                            blurRadius: 14,
+                            offset: Offset(0, 8),
+                          ),
+                          BoxShadow(
+                            color: Color(0x8C000000),
+                            offset: Offset(0, 4),
+                            blurRadius: 0,
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Container(
+                        width: double.infinity,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF141B2A),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                    alignment: Alignment.center,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          SizedBox(
-                            height: 70.5,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // Sabit 110px kaldırıldı: başlık, rozetle kalan
-                                // alanı paylaşır; EN/TR başlık kesilmez.
-                                Flexible(
-                                  child: Transform.translate(
-                                    offset: const Offset(0, -1),
-                                    child: Text(
-                                      l10n.onlineModeTitle,
-                                      maxLines: 1,
-                                      softWrap: false,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.baloo2(
-                                        fontSize: 19,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.05,
-                                        color: const Color(0xFF141B2A),
-                                        height: 1.05,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Transform.rotate(
-                                  angle: -0.05236, // -3deg
-                                  child: CustomPaint(
-                                    painter: const _RealBoxShadowPainter(
-                                      radius: 999,
-                                      shadows: [
-                                        BoxShadow(
-                                          color: Color(0x2E000000),
-                                          blurRadius: 5,
-                                          offset: Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 9,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFB800),
-                                        borderRadius: BorderRadius.circular(999),
-                                      ),
-                                      child: Text(
-                                        l10n.comingSoon,
-                                        style: GoogleFonts.baloo2(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF4A2E00),
-                                          letterSpacing: 0.66,
-                                          height: 1.55,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                          Image.asset(
+                            'assets/design/ui/icon_bell_exact.webp',
+                            width: 21,
+                            height: 21,
+                            errorBuilder: (_, _, _) => const Icon(
+                              Icons.notifications_active_rounded,
+                              color: Color(0xFFFF6B35),
+                              size: 21,
                             ),
                           ),
-                          Transform.translate(
-                            offset: const Offset(0, 3.8),
-                            child: Text(
-                              l10n.onlineModeSubtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.nunito(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.04,
-                                color: const Color(0xFF66738A),
-                                height: 1.38,
-                              ),
+                          const SizedBox(width: 8),
+                          Text(
+                            l10n.notifyMe,
+                            style: GoogleFonts.baloo2(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFFFF6B35),
+                              letterSpacing: 0.6,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        l10n.onlineNotifySignupSnack,
-                        style: GoogleFonts.nunito(fontWeight: FontWeight.w700),
-                      ),
-                      backgroundColor: const Color(0xFF141B2A),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  );
-                },
-                behavior: HitTestBehavior.opaque,
-                child: CustomPaint(
-                  painter: const _RealBoxShadowPainter(
-                    radius: 14,
-                    shadows: [
-                      BoxShadow(
-                        color: Color(0x38000000),
-                        blurRadius: 14,
-                        offset: Offset(0, 8),
-                      ),
-                      BoxShadow(
-                        color: Color(0x8C000000),
-                        offset: Offset(0, 4),
-                        blurRadius: 0,
-                      ),
-                    ],
                   ),
-                  child: Container(
-                    width: double.infinity,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF141B2A),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                alignment: Alignment.center,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Image.asset(
-                        'assets/design/ui/icon_bell_exact.webp',
-                        width: 21,
-                        height: 21,
-                        errorBuilder: (_, _, _) => const Icon(
-                          Icons.notifications_active_rounded,
-                          color: Color(0xFFFF6B35),
-                          size: 21,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        l10n.notifyMe,
-                        style: GoogleFonts.baloo2(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFFFF6B35),
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
-              ),
-              ),
-            ),
-          ],
-        ),
+                ),
+            ],
+          ),
+          ),
         ),
       ),
     );
@@ -1391,169 +1437,173 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       listenable: ChatService.instance,
       builder: (context, _) {
         final badgeLabel = _chatUnreadBadgeLabel();
-        return GestureDetector(
-          onTap: () {
-            Navigator.of(
-              context,
-            ).push(
-              MaterialPageRoute<void>(builder: (_) => const ChatScreen()),
-            );
-          },
-          behavior: HitTestBehavior.opaque,
+        return Semantics(
+          button: true,
+          label: badgeLabel != null ? l10n.dockUnreadLabel(l10n.chatTitle, badgeLabel) : l10n.chatTitle,
+          child: GestureDetector(
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(
+                MaterialPageRoute<void>(builder: (_) => const ChatScreen()),
+              );
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+          height: 126.5,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFF4538B), Color(0xFF9B5DE5), Color(0xFF7C3AED)],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF9B5DE5).withValues(alpha: 0.32),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              Container(
-        height: 126.5,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFF4538B), Color(0xFF9B5DE5), Color(0xFF7C3AED)],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF9B5DE5).withValues(alpha: 0.32),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              right: -6,
-              bottom: -24,
-              child: Opacity(
-                opacity: 0.16,
-                child: const Icon(
-                  Icons.chat_bubble_rounded,
-                  size: 76,
-                  color: Colors.white,
+              Positioned(
+                right: -6,
+                bottom: -24,
+                child: Opacity(
+                  opacity: 0.16,
+                  child: const Icon(
+                    Icons.chat_bubble_rounded,
+                    size: 76,
+                    color: Colors.white,
+                  ),
                 ),
               ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  height: 70.5,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          l10n.chatTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.baloo2(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            height: 1.05,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: 70.5,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            l10n.chatTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.baloo2(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              height: 1.05,
+                            ),
                           ),
                         ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF080B12).withValues(alpha: 0.45),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFF37E08B),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Color(0x2037E08B),
+                                      blurRadius: 0,
+                                      spreadRadius: 4.9,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                l10n.onlineCount5,
+                                style: GoogleFonts.baloo2(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    l10n.chatSubtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withValues(alpha: 0.92),
+                      height: 1.38,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+                if (badgeLabel != null)
+                  Positioned(
+                    right: -6,
+                    top: -6,
+                    child: Semantics(
+                      label: context.l10n.chatBadgeUnreadLabel(badgeLabel),
+                      child: Container(
+                        height: 22,
+                        constraints: const BoxConstraints(minWidth: 22),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF080B12).withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Color(0xFF37E08B),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Color(0x2037E08B),
-                                    blurRadius: 0,
-                                    spreadRadius: 4.9,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              l10n.onlineCount5,
-                              style: GoogleFonts.baloo2(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                letterSpacing: 0.5,
-                              ),
+                          color: const Color(0xFFE52E2E),
+                          borderRadius: BorderRadius.circular(11),
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x40000000),
+                              blurRadius: 6,
+                              offset: Offset(0, 2),
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  l10n.chatSubtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white.withValues(alpha: 0.92),
-                    height: 1.38,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-              if (badgeLabel != null)
-                Positioned(
-                  right: -6,
-                  top: -6,
-                  child: Semantics(
-                    label: '$badgeLabel okunmamış mesaj',
-                    child: Container(
-                      height: 22,
-                      constraints: const BoxConstraints(minWidth: 22),
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE52E2E),
-                        borderRadius: BorderRadius.circular(11),
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x40000000),
-                            blurRadius: 6,
-                            offset: Offset(0, 2),
+                        child: Text(
+                          badgeLabel,
+                          style: GoogleFonts.baloo2(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            height: 1.0,
+                            color: Colors.white,
                           ),
-                        ],
-                      ),
-                      child: Text(
-                        badgeLabel,
-                        style: GoogleFonts.baloo2(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          height: 1.0,
-                          color: Colors.white,
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -1632,32 +1682,36 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _openTasks,
-                  child: Container(
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFB800),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0xFFB97A00),
-                          offset: Offset(0, 3),
-                          blurRadius: 0,
+                Semantics(
+                  button: true,
+                  label: l10n.seeAllButton,
+                  child: GestureDetector(
+                    onTap: _openTasks,
+                    child: Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFB800),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0xFFB97A00),
+                            offset: Offset(0, 3),
+                            blurRadius: 0,
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        l10n.seeAllButton,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF4A2E00),
                         ),
-                      ],
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      l10n.seeAllButton,
-                      style: GoogleFonts.baloo2(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF4A2E00),
                       ),
                     ),
                   ),
@@ -1897,159 +1951,163 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     );
     final bestText = bestVal > 0 ? '$bestVal' : item.defaultBest;
 
-    return GestureDetector(
-      onTap: () => _launchMode(kind),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        height: 205,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14141B2A),
-              offset: Offset(0, 6),
-              blurRadius: 0,
-            ),
-            BoxShadow(
-              color: Color(0x14141B2A),
-              blurRadius: 20,
-              offset: Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // .art (height: 74, borderRadius: 16, marginBottom: 9)
-                Container(
-                  height: 74,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: item.artBg,
-                    borderRadius: BorderRadius.circular(16),
+    return Semantics(
+      button: true,
+      label: l10n.modeOpenLabel(item.title, item.subtitle, bestText),
+      child: GestureDetector(
+        onTap: () => _launchMode(kind),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 205,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14141B2A),
+                offset: Offset(0, 6),
+                blurRadius: 0,
+              ),
+              BoxShadow(
+                color: Color(0x14141B2A),
+                blurRadius: 20,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // .art (height: 74, borderRadius: 16, marginBottom: 9)
+                  Container(
+                    height: 74,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: item.artBg,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Image.asset(
+                          _sanitizeStickerAsset(item.bugAsset),
+                          height: 74,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => Image.asset(
+                            'assets/images/stickers/sticker_tier1_cone.png',
+                            height: 64,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        Positioned(
+                          right: 6,
+                          bottom: 5,
+                          child: Image.asset(
+                            'assets/design/ui/hub_15_img.webp',
+                            width: 33,
+                            height: 33,
+                            errorBuilder: (_, _, _) => const Icon(
+                              Icons.play_circle_fill_rounded,
+                              size: 33,
+                              color: Color(0xFFE01E5A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Stack(
-                    alignment: Alignment.center,
+                  const SizedBox(height: 22),
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.baloo2(
+                      fontSize: 16.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF141B2A),
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    item.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF66738A),
+                    ),
+                  ),
+                  const Spacer(),
+                  Row(
                     children: [
                       Image.asset(
-                        _sanitizeStickerAsset(item.bugAsset),
-                        height: 74,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => Image.asset(
-                          'assets/images/stickers/sticker_tier1_cone.png',
-                          height: 64,
-                          fit: BoxFit.contain,
+                        'assets/design/ui/hub_19_img.webp',
+                        width: 18,
+                        height: 18,
+                        errorBuilder: (_, _, _) => const Icon(
+                          Icons.emoji_events_rounded,
+                          size: 18,
+                          color: Color(0xFF8A6D00),
                         ),
                       ),
-                      Positioned(
-                        right: 6,
-                        bottom: 5,
-                        child: Image.asset(
-                          'assets/design/ui/hub_15_img.webp',
-                          width: 33,
-                          height: 33,
-                          errorBuilder: (_, _, _) => const Icon(
-                            Icons.play_circle_fill_rounded,
-                            size: 33,
-                            color: Color(0xFFE01E5A),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          l10n.recordWithValue(bestText),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.nunito(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            color: const Color(0xFF8A6D00),
                           ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 22),
-                Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.baloo2(
-                    fontSize: 16.5,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF141B2A),
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  item.subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF66738A),
-                  ),
-                ),
-                const Spacer(),
-                Row(
-                  children: [
-                    Image.asset(
-                      'assets/design/ui/hub_19_img.webp',
-                      width: 18,
-                      height: 18,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.emoji_events_rounded,
-                        size: 18,
-                        color: Color(0xFF8A6D00),
-                      ),
+                ],
+              ),
+              Positioned(
+                left: -3,
+                top: -3,
+                child: Transform.rotate(
+                  angle: -0.1047,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
                     ),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        l10n.recordWithValue(bestText),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          color: const Color(0xFF8A6D00),
+                    decoration: BoxDecoration(
+                      color: item.badgeBg,
+                      borderRadius: BorderRadius.circular(999),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x4D000000),
+                          blurRadius: 8,
+                          offset: Offset(0, 3),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ],
-            ),
-            Positioned(
-              left: -3,
-              top: -3,
-              child: Transform.rotate(
-                angle: -0.1047,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: item.badgeBg,
-                    borderRadius: BorderRadius.circular(999),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x4D000000),
-                        blurRadius: 8,
-                        offset: Offset(0, 3),
+                    child: Text(
+                      item.badge,
+                      style: GoogleFonts.baloo2(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: item.badgeFg,
+                        letterSpacing: 0.6,
                       ),
-                    ],
-                  ),
-                  child: Text(
-                    item.badge,
-                    style: GoogleFonts.baloo2(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: item.badgeFg,
-                      letterSpacing: 0.6,
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2064,83 +2122,87 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     required VoidCallback onTap,
     Color iconColor = Colors.white,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 106,
-        height: 130.3,
-        padding: const EdgeInsets.fromLTRB(8, 13, 8, 11),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14141B2A),
-              offset: Offset(0, 6),
-              blurRadius: 0,
-            ),
-            BoxShadow(
-              color: Color(0x14141B2A),
-              blurRadius: 20,
-              offset: Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: gradient,
-                ),
-                borderRadius: BorderRadius.circular(17),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x2E000000),
-                    offset: Offset(0, 4),
-                    blurRadius: 0,
+    return Semantics(
+      button: true,
+      label: '$title: $subtitle',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 106,
+          height: 130.3,
+          padding: const EdgeInsets.fromLTRB(8, 13, 8, 11),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14141B2A),
+                offset: Offset(0, 6),
+                blurRadius: 0,
+              ),
+              BoxShadow(
+                color: Color(0x14141B2A),
+                blurRadius: 20,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: gradient,
                   ),
-                ],
+                  borderRadius: BorderRadius.circular(17),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x2E000000),
+                      offset: Offset(0, 4),
+                      blurRadius: 0,
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: Icon(icon, color: iconColor, size: 29),
               ),
-              alignment: Alignment.center,
-              child: Icon(icon, color: iconColor, size: 29),
-            ),
-            const SizedBox(height: 7),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.baloo2(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF141B2A),
-                  height: 1.05,
+              const SizedBox(height: 7),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.baloo2(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF141B2A),
+                    height: 1.05,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 5),
-            Expanded(
-              child: Text(
-                subtitle,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.nunito(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF66738A),
-                  height: 1.15,
+              const SizedBox(height: 5),
+              Expanded(
+                child: Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.nunito(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF66738A),
+                    height: 1.15,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

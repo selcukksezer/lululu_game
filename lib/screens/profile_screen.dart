@@ -375,46 +375,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               mainAxisAlignment: MainAxisAlignment.start,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                GestureDetector(
-                                  onTap: _openAuth,
-                                  child: CustomPaint(
-                                    painter: const _ProfileBlurShadowPainter(
-                                      color: Color(0x59FFB800),
-                                      offset: Offset(0, 10),
-                                      blurRadius: 22,
-                                      borderRadius: 999,
-                                    ),
-                                    child: Container(
-                                      width: 118,
-                                      height: 118,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: const Color(0xFFFFB800),
-                                          width: 5,
-                                        ),
+                                Semantics(
+                                  button: true,
+                                  label: l10n.signInOrUpLabel,
+                                  child: GestureDetector(
+                                    onTap: _openAuth,
+                                    child: CustomPaint(
+                                      painter: const _ProfileBlurShadowPainter(
+                                        color: Color(0x59FFB800),
+                                        offset: Offset(0, 10),
+                                        blurRadius: 22,
+                                        borderRadius: 999,
                                       ),
-                                      child: ClipOval(
-                                        child: SizedBox(
-                                          width: 108,
-                                          height: 108,
-                                          child: Stack(
-                                            clipBehavior: Clip.hardEdge,
-                                            children: [
-                                              Positioned(
-                                                left: 5.4,
-                                                top: 9.8,
-                                                width: 97.2,
-                                                height: 176.0,
-                                                child: Image.asset(
-                                                  'assets/design/bugs_hd/tier5_hd.png',
-                                                  fit: BoxFit.contain,
-                                                  filterQuality:
-                                                      FilterQuality.medium,
+                                      child: Container(
+                                        width: 118,
+                                        height: 118,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFFFB800),
+                                            width: 5,
+                                          ),
+                                        ),
+                                        child: ClipOval(
+                                          child: SizedBox(
+                                            width: 108,
+                                            height: 108,
+                                            child: Stack(
+                                              clipBehavior: Clip.hardEdge,
+                                              children: [
+                                                Positioned(
+                                                  left: 5.4,
+                                                  top: 9.8,
+                                                  width: 97.2,
+                                                  height: 176.0,
+                                                  child: Image.asset(
+                                                    'assets/design/bugs_hd/tier5_hd.png',
+                                                    fit: BoxFit.contain,
+                                                    filterQuality:
+                                                        FilterQuality.medium,
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ),

@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -168,6 +169,40 @@ class CloudSyncService extends ChangeNotifier {
   String? get lastErrorMessage => _lastFailure?.message;
   bool get firebaseReady => FirebaseBootstrap.ready;
   bool get isAvailable => FirebaseBootstrap.isAvailable;
+
+  /// Y3: Firestore okumaları yalnız `isAuthenticated()` ister
+  /// (`firestore.rules:435-436` joker kural + `:428-432`); sahiplik
+  /// (`uid == playerId`) gerekmez. Bu yüzden salt-okuma kapısı
+  /// [_firebaseIdentityAligned] değil, salt Firebase oturumunun
+  /// varlığıdır. `AuthService.isSignedIn` burada kullanılmaz: yerel /
+  /// sentetik kimliklerde de `true` döner, oysa kural
+  /// `request.auth != null` ister.
+  bool get hasFirebaseSession {
+    if (!FirebaseBootstrap.ready) return false;
+    try {
+      return fb.FirebaseAuth.instance.currentUser != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// K1 (W60-6): Firebase UID ile `playerId` uyumu.
+  ///
+  /// Kural `isOwner` (`request.auth.uid == userId`) gerektirir; `playerId`
+  /// sentetik bir id (`local_*`, `apple_local_*`, ...) ise her bulut
+  /// yazımı deterministik `permission-denied` alır ve kuyruk hiç
+  /// boşalmaz. Bu kapı kapalıyken bulut yazımı hiç denenmez, kuyruk
+  /// korunur. Firebase henüz hazır değilse uyumsuzluk kanıtlanamaz →
+  /// `true` döner; o durumda flush çevrimdışı dalda kuyruğu korur.
+  bool get _firebaseIdentityAligned {
+    if (!FirebaseBootstrap.ready) return true;
+    try {
+      final fbUid = fb.FirebaseAuth.instance.currentUser?.uid;
+      return fbUid != null && fbUid == AuthService.instance.playerId;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Constant-time string comparison for integrity hashes.
   static bool _constantTimeEquals(String a, String b) {
@@ -496,7 +531,9 @@ class CloudSyncService extends ChangeNotifier {
 
   /// Mod skoru payload'unun `firestore.rules` sınırlarına uyup uymadığını
   /// denetler; boş liste = uygun. Skor azalmazlığı (update'te eski skordan
-  /// düşük olamaz) uzaktan durum gerektirir, burada denetlenemez.
+  /// düşük olamaz) uzaktan durum gerektirir, burada denetlenemez; onu
+  /// [flushPendingDetailed] ön-okuma + [convergedScoreForFlush]
+  /// yakınsamasıyla çözer (K2).
   static List<String> validateModeScorePayloadForRules(
     Map<String, dynamic> payload,
   ) {
@@ -559,6 +596,32 @@ class CloudSyncService extends ChangeNotifier {
         : (remoteCoins > maxValidCoins ? maxValidCoins : remoteCoins);
     final cap = safeRemote + maxCoinIncreasePerUpdate;
     return safeLocal < cap ? safeLocal : cap;
+  }
+
+  /// Tek flush'ta yazılacak skor değerini hesaplar (yakınsama adımı) —
+  /// coin yakınsamasının ([convergedCoinsForFlush]) skor karşılığı (K2).
+  ///
+  /// `firestore.rules` update'te `score >= eski skor` ister
+  /// (`isValidScoreUpdate`, `firestore.rules:252-256`). Yerel skor
+  /// uzaktakinden düşükse olduğu gibi yazımı, batch atomikliği yüzünden
+  /// profil yazısı dahil TÜM yazımları reddettirir ve her flush aynı
+  /// payload'la kalıcı ret döngüsüne girer; bu yüzden yazımdan önce uzak
+  /// skorlar ön-okunur ve her mod max(yerel, uzak) ile yazılır.
+  ///
+  /// * [remoteScore] `null` ise uzakta belge yok sayılır: yerel aynen yazılır.
+  /// * Aksi hâlde büyük olan yazılır; uzak yüksekse yazım eski skora eşit
+  ///   olur (no-op) ve kural geçer; yerel en iyi, commit sonrası
+  ///   [_pullRemoteBests] ile uzaktaki değere yükseltilir.
+  ///
+  /// Dönen değer her zaman `0..[maxValidModeScore]` aralığında bir `int`'tir.
+  static int convergedScoreForFlush({
+    required int localScore,
+    required int? remoteScore,
+  }) {
+    final safeLocal = localScore.clamp(0, maxValidModeScore);
+    if (remoteScore == null) return safeLocal;
+    final safeRemote = remoteScore.clamp(0, maxValidModeScore);
+    return max(safeLocal, safeRemote);
   }
 
   /// Validates and conflict-free merges a remote/offline profile snapshot into
@@ -880,13 +943,18 @@ class CloudSyncService extends ChangeNotifier {
   Future<void> enableOnlineWhenSignedIn() async {
     await AuthService.instance.ensureLoaded();
     await FirebaseBootstrap.ensureInitialized();
-    onlineEnabled = AuthService.instance.isSignedIn &&
+    // K1 (W60-6): yalnız oturum + misafir-olmama yetmez; Firebase UID
+    // `playerId` ile aynı olmalı, yoksa bulut yazımı denenmez.
+    final signedInNonGuest = AuthService.instance.isSignedIn &&
         !(AuthService.instance.user?.isGuest ?? true);
+    onlineEnabled = signedInNonGuest && _firebaseIdentityAligned;
     status = onlineEnabled
         ? (FirebaseBootstrap.ready
             ? 'Bağlı · senkron açık'
             : 'Hesap var · Firebase bekleniyor (kuyruk aktif)')
-        : 'Misafir / yerel — online kapalı';
+        : (signedInNonGuest
+            ? 'Kimlik uyumsuzluğu · bulut kapalı, kuyrukta bekliyor'
+            : 'Misafir / yerel — online kapalı');
     notifyListeners();
     if (onlineEnabled) unawaited(flushPending());
   }
@@ -930,6 +998,10 @@ class CloudSyncService extends ChangeNotifier {
   /// [status] kalan coin miktarını söyler, fark sonraki flush'larda
   /// yazılır. Kural değişikliği yapılmaz.
   ///
+  /// Skor yakınsaması (K2): yazımdan önce uzak skorlar ön-okunur ve her
+  /// mod max(yerel, uzak) ile yazılır ([convergedScoreForFlush]); uzaktaki
+  /// skor yüksekse tek modun bile batch'i reddetmesi önlenir.
+  ///
   /// Çevrimdışı flush (Firebase hazır değil): kuyruk KORUNUR ve tipli
   /// `unavailable` hatası döner (S2#17); [status] "kuyrukta bekliyor"
   /// der. Eski "Yerel flush" davranışı paketleri hiç yazmadan temizleyip
@@ -951,6 +1023,15 @@ class CloudSyncService extends ChangeNotifier {
 
   Future<CloudSyncFlushResult> _flushPendingDetailedAsync() async {
     if (!onlineEnabled) return const CloudSyncFlushResult.success(0);
+    // K1 (W60-6): kapı `enableOnlineWhenSignedIn` çağrılmadan açılmış
+    // bir flush'ta da kimlik uyumsuzken yazım denenmez; kuyruk korunur
+    // (`success(0)` — bekleyen paketler temizlenmez).
+    if (!_firebaseIdentityAligned) {
+      status = 'Kimlik uyumsuzluğu · bulut kapalı, kuyrukta bekliyor';
+      debugPrint('[lululu] CloudSync flush atlandı: Firebase UID != playerId');
+      notifyListeners();
+      return const CloudSyncFlushResult.success(0);
+    }
     await AuthService.instance.ensureLoaded();
     await _reconcileOfflineSignedQueue();
     final uid = AuthService.instance.playerId;
@@ -1033,8 +1114,87 @@ class CloudSyncService extends ChangeNotifier {
             'kalan=$remainingCoinDelta',
           );
         }
-        final batch = db.batch();
+        // K2 — skor azalmazlığı ön-okuması: kural update'te
+        // `score >= eski skor` ister (firestore.rules:252-256). Coin
+        // ön-okumasının skor karşılığı: uzak skorları batch'ten önce
+        // oku, her modu max(yerel, uzak) ile yakınsat, sonra yaz.
+        // Uzak skor yüksekse yazım o değere eşit olur (no-op) ve batch
+        // reddedilmez; yerel en iyiler commit sonrası _pullRemoteBests
+        // ile uzaktaki değere yükseltilir. Ön-okuma hatası aşağıdaki
+        // catch ile tipli hataya dönüşür, kuyruk korunur.
+        final remoteScores = <String, int>{};
+        final scoresSnap = await db
+            .collection('scores')
+            .doc(uid)
+            .collection('modes')
+            .get();
+        for (final doc in scoresSnap.docs) {
+          final rawScore = doc.data()['score'];
+          if (rawScore is num) {
+            remoteScores[doc.id] =
+                rawScore.toInt().clamp(0, maxValidModeScore);
+          }
+        }
+        final convergedScores = <Map<String, dynamic>>[];
         for (final signedScore in signedScores) {
+          final modeId = signedScore['modeId'] as String;
+          final localScore = signedScore['score'] as int;
+          final converged = convergedScoreForFlush(
+            localScore: localScore,
+            remoteScore: remoteScores[modeId],
+          );
+          if (converged == localScore) {
+            convergedScores.add(signedScore);
+            continue;
+          }
+          final adjusted = <String, dynamic>{
+            ...signedScore,
+            'score': converged,
+          };
+          // Skor değiştiği için bütünlük imzası yeniden hesaplanır
+          // (computeIntegrityHash eski imzayı yok sayar; yeni anahtar yok).
+          adjusted['integrityHash'] = computeIntegrityHash(adjusted);
+          convergedScores.add(adjusted);
+          debugPrint(
+            '[lululu] CloudSync skor yakınsaması: $modeId '
+            'yerel=$localScore uzak=${remoteScores[modeId]} '
+            'yazılan=$converged',
+          );
+        }
+        // Profil aynası (modeHighScores/total11/bestOverall) da uzak
+        // skorlarla yakınsatılır: uzaktaki skor yerelden yüksekse profil
+        // o modu düşük yazmasın (kural profil için azalmazlık istemez,
+        // ama skor belgeleriyle tutarlı kalır).
+        final localModeScores =
+            effectiveProfile['modeHighScores'] as Map<String, int>;
+        var profileScoresChanged = false;
+        final mergedModeScores = Map<String, int>.from(localModeScores);
+        for (final entry in mergedModeScores.entries) {
+          final remote = remoteScores[entry.key];
+          if (remote != null && remote > entry.value) {
+            mergedModeScores[entry.key] = remote;
+            profileScoresChanged = true;
+          }
+        }
+        if (profileScoresChanged) {
+          var mergedTotal11 = 0;
+          var mergedBest = 0;
+          for (final v in mergedModeScores.values) {
+            mergedTotal11 += v;
+            if (v > mergedBest) mergedBest = v;
+          }
+          effectiveProfile = <String, dynamic>{
+            ...effectiveProfile,
+            'modeHighScores': mergedModeScores,
+            'total11ModesScore':
+                mergedTotal11.clamp(0, maxTotal11ModesScore),
+            'bestOverallScore': mergedBest.clamp(0, maxValidModeScore),
+          };
+          effectiveProfile['integrityHash'] =
+              computeIntegrityHash(effectiveProfile);
+        }
+        final batch = db.batch();
+        for (final signedScore in convergedScores) {
           final ref = db
               .collection('scores')
               .doc(uid)
@@ -1050,10 +1210,48 @@ class CloudSyncService extends ChangeNotifier {
           );
           flushed++;
         }
+        // Y2: uzak profilde `uid` yoksa (veya uzaktaki `uid` yerelden
+        // farklıysa) merge payload'dan `uid` çıkarılır. Kural
+        // `isValidUserUpdate` değişmez alanların diff'te görünmesini
+        // yasaklar (`firestore.rules:216-220`,
+        // `areImmutableFieldsUnchanged` `:112-114`): uid'siz eski
+        // belgeye merge ile `uid` eklemek diff'e girer ve yazım
+        // reddedilir. `uid` kuralda zorunlu değildir
+        // (`isValidUserDoc`: `!('uid' in data) || data.uid == userId`,
+        // zorunlu alanlar yalnız `displayName` + `coins`); belge
+        // kimliği zaten uid olduğundan uid'siz merge geçerlidir.
+        // Seçilmeyen yol — merge'siz tam set: diff yine `uid`
+        // eklenmesini görür (ret aynı) ve `createdAt`/`role` gibi
+        // payload-dışı alanları silerek değişmezlik denetimine takılır.
+        // Ayrı bir `uid` yazımı da aynı diff denetimine takılır; silme
+        // yasak olduğundan (`firestore.rules:402`) sil+yeniden-oluştur
+        // da mümkün değildir — eski belge uid'siz kalır, bu kurala
+        // uygundur. Uzak belge yoksa create yoludur (`isValidUserCreate`,
+        // değişmezlik denetimi yok) ve `uid` korunur; uzaktaki `uid`
+        // yerelle aynıysa diff'e girmez, yine korunur. Bu denetim için
+        // ek okuma yapılmaz: coin yakınsaması için alınan
+        // `remoteSnap`/`remoteData` yeniden kullanılır.
+        final remoteUid = remoteData?['uid'];
+        final includeUidInProfile =
+            !remoteSnap.exists || remoteUid == uid;
+        var profilePayloadForWrite = effectiveProfile;
+        if (!includeUidInProfile) {
+          profilePayloadForWrite =
+              Map<String, dynamic>.from(effectiveProfile)..remove('uid');
+          // `uid` bütünlük imzasına dahildir (`computeIntegrityHash`
+          // tüm payload'ı kanonikleştirir); çıkarılınca imza yeniden
+          // hesaplanır, yoksa pull'da `verifyIntegrityHash` reddeder.
+          profilePayloadForWrite['integrityHash'] =
+              computeIntegrityHash(profilePayloadForWrite);
+          debugPrint(
+            '[lululu] CloudSync Y2: uzak profilde uid yok/farklı, '
+            'merge payload uid\'siz yazılıyor',
+          );
+        }
         batch.set(
           profile,
           {
-            ...effectiveProfile,
+            ...profilePayloadForWrite,
             'updatedAt': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
@@ -1204,6 +1402,11 @@ class CloudSyncService extends ChangeNotifier {
     int limit = 20,
   }) async {
     if (!FirebaseBootstrap.ready) return const [];
+    // Y3: oturum yoksa collectionGroup sorgusu kuralca reddedilir
+    // (`isAuthenticated`, firestore.rules:435-436); reddedilen sorguyu
+    // hiç yapma, [] dön. Kapı salt oturum varlığıdır — global
+    // üst-sıralama başkalarının belgelerini okur, sahiplik gerekmez.
+    if (!hasFirebaseSession) return const [];
     try {
       final safeLimit = limit.clamp(1, 100);
       final q = await FirebaseFirestore.instance

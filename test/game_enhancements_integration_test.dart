@@ -18,7 +18,6 @@ void main() {
     AppLifecycleGuard.instance.resetForTesting();
     AntiCheatService.instance.resetRewardHistory();
     AudioManager.instance.isMuted = false;
-    AudioManager.instance.musicEnabled = true;
     AudioManager.instance.sfxEnabled = true;
     CloudSyncService.instance.pending.clear();
   });

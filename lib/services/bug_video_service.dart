@@ -923,6 +923,42 @@ class BugVideoService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hesap silme için yerel stüdyo verisinin tamamını temizler
+  /// (hesap-silme, yerel-temizlik): 4 prefs anahtarı (gönderiler,
+  /// gifler, indirmeler, beğeniler) kaldırılır, bellek-içi listeler
+  /// temizlenir (viral akış varsayılan beğenileriyle yeniden tohumlanır)
+  /// ve `bug_videos` / `bug_gifs` klasörlerindeki kullanıcı dosyaları
+  /// silinir. Varsayılan indirme/gif tohumları asset yoludur, diskteki
+  /// kullanıcı dosyası değildir; getter'lar boş listeyi varsayılan
+  /// tohumlarla doldurur. Web'de dosya depolama yoktur: dizin silme
+  /// atlanır, prefs temizliği aynen yapılır.
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsKey);
+    await prefs.remove(_gifsPrefsKey);
+    await prefs.remove(_downloadsPrefsKey);
+    await prefs.remove(_likesPrefsKey);
+    _posts.clear();
+    _viralWatchFeed.clear();
+    _gifs.clear();
+    _downloads.clear();
+    for (final subFolder in const <String>['bug_videos', 'bug_gifs']) {
+      try {
+        final dir = await _resolveStorageDir(subFolder);
+        if (await dir.exists()) {
+          await for (final entity in dir.list()) {
+            try {
+              await entity.delete(recursive: true);
+            } catch (_) {}
+          }
+        }
+      } catch (_) {
+        // Web'de dosya depolama yok: prefs temizliği zaten yapıldı.
+      }
+    }
+    notifyListeners();
+  }
+
   Future<void> setPublic(String id, bool value) async {
     final i = _posts.indexWhere((p) => p.id == id);
     if (i < 0) return;

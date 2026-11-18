@@ -71,7 +71,7 @@ class VaultTopHud extends StatelessWidget {
                 const SizedBox(width: 8),
                 Semantics(
                   button: true,
-                  label: '${context.l10n.profile}: $name, Lv $level',
+                  label: context.l10n.profilePillLabel(name, level),
                   child: GestureDetector(
                   onTap: onProfileTap,
                   behavior: HitTestBehavior.opaque,
@@ -86,7 +86,7 @@ class VaultTopHud extends StatelessWidget {
                 Expanded(
                   child: Semantics(
                     button: true,
-                    label: 'Coin: ${_fmt(coins)}, ${context.l10n.addCoinPackLabel}',
+                    label: context.l10n.coinPillLabel(_fmt(coins)),
                     child: GestureDetector(
                     onTap: onShopTap,
                     behavior: HitTestBehavior.opaque,

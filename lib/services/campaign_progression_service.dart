@@ -176,6 +176,14 @@ class CampaignProgressionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hesap silme için yerel kampanya verisinin tamamını temizler
+  /// (hesap-silme, yerel-temizlik). [resetForTesting] gövdesi yalnız
+  /// bellek-içi temizlik + 5 prefs anahtarının kaldırılması yapar
+  /// (yan etkisi yok), bu yüzden üretimdeki silme aynı mantığı bu
+  /// metot üzerinden çağırır; testler `resetForTesting` adını
+  /// kullanmaya devam eder.
+  Future<void> clearLocalData() => resetForTesting();
+
   /// Seviye için kazanılan yıldız sayısını (`0..3`) döndürür.
   int getStarsForLevel(int levelNumber) {
     final safeId = levelNumber.clamp(1, CampaignDatabase.totalLevels);

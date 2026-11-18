@@ -128,6 +128,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   DateTime? _endedAt;
   bool _hitEffectActive = false;
   String _hint = 'Yuvaya yaklaşan böcekleri durdur!';
+  // W66-3: _hint'in kombo-bitiş mesajı olup olmadığı metnin
+  // sabit TR önekiyle karşılaştırılarak okunmaz; dil bağımsız
+  // bu bayrakla taşınır. Her _hint atamasında güncellenir.
+  bool _hintIsComboBroken = false;
 
   static const _gold = Color(0xFFFFB800);
   static const _ink = Color(0xFF4A2E00);
@@ -339,7 +343,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         _lastHit != null &&
         now.difference(_lastHit!).inMilliseconds >= 1600) {
       _combo = 0;
-      _hint = 'KOMBO BİTTİ: SÜRE DOLDU';
+      _hint = context.l10n.comboBreakToast(context.l10n.comboTimeoutReason);
+      _hintIsComboBroken = true;
     }
     for (final burst in _bursts) {
       burst.life -= dt * 3.8;
@@ -393,14 +398,16 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
           );
           HapticFeedback.mediumImpact();
           unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
-          _hint = 'KALKAN YUVAYI KORUDU · BÖCEK GERİ PÜSKÜRTÜLDÜ!';
+          _hint = context.l10n.yuvaShieldSaved;
+          _hintIsComboBroken = false;
           continue;
         }
         _bugs.remove(bug);
         _lives--;
         _misses++;
         _combo = 0;
-        _hint = 'Böcek orta deliğe girdi · $_lives kaçış hakkı kaldı';
+        _hint = context.l10n.yuvaBugEntered(_lives);
+        _hintIsComboBroken = false;
         escaped = true;
         break;
       }
@@ -440,7 +447,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         _score,
       ),
     );
-    setState(() => _hint = 'Yuva düştü · bir dokunuşla yeniden başla');
+    setState(() {
+      _hint = context.l10n.yuvaFellHint;
+      _hintIsComboBroken = false;
+    });
     if (!widget.prototypeVisualState && !_resultShown) {
       _resultShown = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -521,8 +531,9 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     _best = max(_best, _score);
     final wave = 1 + (_hits ~/ 8);
     _hint = _hits % 8 == 0
-        ? 'DALGA $wave · VURUŞ +$points · KOMBO x$_combo'
-        : 'VURUŞ +$points  ·  KOMBO x$_combo';
+        ? context.l10n.yuvaWaveHit(wave, points, _combo)
+        : context.l10n.yuvaHitHint(points, _combo);
+    _hintIsComboBroken = false;
     _bursts.add(
       _HitBurst(
         x: bug.x * _arenaWidth,
@@ -575,7 +586,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     setState(() {
       _doubleSlipCount--;
       _doubleSlipCharges = 3;
-      _hint = 'ÇİFT TERLİK AKTİF · 3 VURUŞ ÇİFT HEDEF EZER!';
+      _hint = context.l10n.yuvaDoubleHint;
+      _hintIsComboBroken = false;
     });
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
@@ -600,7 +612,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     setState(() {
       _goldSlipCount--;
       _goldSlipUntil = DateTime.now().add(const Duration(seconds: 12));
-      _hint = 'ALTIN TERLİK AKTİF · 12 SN BOYUNCA 2X PUAN!';
+      _hint = context.l10n.yuvaGoldHint;
+      _hintIsComboBroken = false;
     });
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
@@ -640,7 +653,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
           bug.y = (bug.y + (dy / dist) * 0.16).clamp(0.06, 0.94);
         }
       }
-      _hint = 'KALKAN & BUZ BARİYERİ AKTİF · BÖCEKLER YAVAŞLADI!';
+      _hint = context.l10n.yuvaShieldIceHint;
+      _hintIsComboBroken = false;
     });
     HapticFeedback.heavyImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
@@ -671,7 +685,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       }
       if (hit == null) {
         _combo = 0;
-        _hint = 'Iska! Kombo sıfırlandı';
+        _hint = context.l10n.yuvaMissHint;
+        _hintIsComboBroken = true;
         HapticFeedback.selectionClick();
         setState(() {});
         return;
@@ -689,7 +704,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     );
     if (lane < 0) {
       _combo = 0;
-      _hint = 'Iska! Kombo sıfırlandı';
+      _hint = context.l10n.yuvaMissHint;
+      _hintIsComboBroken = true;
       HapticFeedback.selectionClick();
       setState(() {});
       return;
@@ -707,7 +723,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     }
     if (hit == null) {
       _combo = 0;
-      _hint = 'Iska! Kombo sıfırlandı';
+      _hint = context.l10n.yuvaMissHint;
+      _hintIsComboBroken = true;
       HapticFeedback.selectionClick();
       setState(() {});
       return;
@@ -752,7 +769,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _ended = false;
       _endedAt = null;
       _shake = 0;
-      _hint = 'Yuvaya yaklaşan böcekleri durdur!';
+      _hint = context.l10n.yuvaHintIdle;
+      _hintIsComboBroken = false;
       _lastTick = DateTime.now();
       _lastHit = null;
       if (widget.prototypeVisualState) {
@@ -780,7 +798,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   Widget _pauseButton() {
     return Semantics(
       button: true,
-      label: 'Duraklat',
+      label: context.l10n.pause,
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
@@ -819,7 +837,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'DURAKLATILDI',
+                  context.l10n.pausedStatusCaps,
                   style: GoogleFonts.baloo2(
                     fontSize: 28,
                     fontWeight: FontWeight.w800,
@@ -828,7 +846,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Skor $_score · Vuruş $_hits',
+                  context.l10n.yuvaPauseScore(_score, _hits),
                   style: GoogleFonts.nunito(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
@@ -838,7 +856,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _togglePause,
-                  child: const Text('DEVAM'),
+                  child: Text(context.l10n.continueAction),
                 ),
               ],
             ),
@@ -869,12 +887,12 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
             fit: StackFit.expand,
             children: [
               if (!widget.prototypeVisualState)
-                const Positioned(
+                Positioned(
                   left: 0,
                   top: 0,
                   width: 0,
                   height: 0,
-                  child: Opacity(opacity: 0, child: Text('YUVA SAVUNMASI')),
+                  child: Opacity(opacity: 0, child: Text(context.l10n.shopModeNestDefense.toUpperCase())),
                 ),
               Opacity(
                 opacity: 0.96,
@@ -977,7 +995,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                               ),
                                             ),
                                             child: Text(
-                                              'YUVA SAVUNMASI',
+                                              context.l10n.shopModeNestDefense.toUpperCase(),
                                               maxLines: 1,
                                               style: GoogleFonts.baloo2(
                                                 fontSize: 20,
@@ -1007,7 +1025,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                               ),
                                             ),
                                             child: Text(
-                                              'YENİ',
+                                              context.l10n.newBadge,
                                               style: GoogleFonts.baloo2(
                                                 fontSize: 10.5,
                                                 height: 1.1,
@@ -1024,7 +1042,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                         width: 155.2,
                                         height: 71.3,
                                         fit: BoxFit.fill,
-                                        semanticLabel: 'YUVA SAVUNMASI, YENİ',
+                                        semanticLabel: context.l10n.yuvaTitleNewSemantic,
                                       ),
                               ),
                             ),
@@ -1133,15 +1151,15 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                               onTap: () => showDialog<void>(
                                 context: context,
                                 builder: (context) => AlertDialog(
-                                  title: const Text('YUVA SAVUNMASI'),
-                                  content: const Text(
-                                    'Yuvaya ulaşmadan böceklere dokun. '
-                                    'Hızlı vuruşlarla kombonu büyüt; üç kaçışta oyun biter.',
+                                  title: Text(context.l10n.shopModeNestDefense.toUpperCase()),
+                                  content: Text(
+                                    context.l10n.yuvaHowToBody1 +
+                                        context.l10n.yuvaHowToBody2,
                                   ),
                                   actions: [
                                     TextButton(
                                       onPressed: () => Navigator.pop(context),
-                                      child: const Text('ANLADIM'),
+                                      child: Text(context.l10n.understoodButton),
                                     ),
                                   ],
                                 ),
@@ -1163,7 +1181,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                 SizedBox(
                                   width: 104,
                                   child: _HudCard(
-                                    label: 'SKOR',
+                                    label: context.l10n.gameScoreLabel,
                                     value: '$_score',
                                     singleRowHearts: wideScreen,
                                   ),
@@ -1172,7 +1190,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                 SizedBox(
                                   width: 84,
                                   child: _HudCard(
-                                    label: 'REKOR',
+                                    label: context.l10n.gameBestLabel,
                                     value: _formatCoins(_best),
                                     singleRowHearts: wideScreen,
                                   ),
@@ -1184,13 +1202,16 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                 SizedBox(
                                   width: wideScreen ? 98.4 : 80,
                                   child: _HudCard(
-                                    label: 'CAN',
+                                    label: context.l10n.livesLabel,
                                     value: '$_lives',
                                     singleRowHearts: wideScreen,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                GestureDetector(
+                                Semantics(
+                                  button: true,
+                                  label: _ended ? context.l10n.playAgainButton : context.l10n.finishRoundLabel,
+                                  child: GestureDetector(
                                   onTap: _restart,
                                   child: Container(
                                     width: 58,
@@ -1207,7 +1228,9 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                       ],
                                     ),
                                     child: Text(
-                                      _ended ? 'YENİDEN' : 'BİTİR',
+                                      _ended
+                                          ? context.l10n.tryAgainCaps
+                                          : context.l10n.finishCaps,
                                       style: GoogleFonts.baloo2(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w900,
@@ -1215,6 +1238,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                       ),
                                     ),
                                   ),
+                                ),
                                 ),
                               ],
                             );
@@ -1301,7 +1325,17 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                         _comboPulse.value,
                                                     hits: _hits,
                                                     misses: _misses,
+                                                    hitsLabel:
+                                                        context.l10n.yuvaHitsPainter(
+                                                          _hits,
+                                                        ),
+                                                    missesLabel:
+                                                        context.l10n.yuvaMissedPainter(
+                                                          _misses,
+                                                        ),
                                                     hint: _hint,
+                                                    comboBroken:
+                                                        _hintIsComboBroken,
                                                     bursts: List<_HitBurst>.of(
                                                       _bursts,
                                                     ),
@@ -1401,7 +1435,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                                       ? 0.72
                                                                       : 1,
                                                                   child: Image.asset(
-                                                                    'assets/bugs/tier${bug.tier.tier}_hd.webp',
+                                                                    'assets/bugs/tier${bug.tier.tier}_hd${bug.tier.tier == 5 ? '.webp' : '.png'}',
                                                                     width: 48,
                                                                     height: 48,
                                                                     fit: BoxFit
@@ -1481,7 +1515,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                         child: Transform.rotate(
                                                           angle: -24 * pi / 180,
                                                           child: Image.asset(
-                                                            'assets/powerup_terlik.webp',
+                                                            'assets/powerup_terlik.png',
                                                             width: 66,
                                                             height: 66,
                                                             fit: BoxFit.contain,
@@ -1513,7 +1547,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                             MainAxisSize.min,
                                                         children: [
                                                           Text(
-                                                            'YUVA DÜŞTÜ',
+                                                            context.l10n.yuvaFellTitle,
                                                             style:
                                                                 GoogleFonts.baloo2(
                                                                   fontSize: 23,
@@ -1524,7 +1558,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                                 ),
                                                           ),
                                                           Text(
-                                                            'SKOR $_score · KOMBO x$_combo',
+                                                            context.l10n.yuvaResultScore(_score, _combo),
                                                             style:
                                                                 GoogleFonts.nunito(
                                                                   fontWeight:
@@ -1538,8 +1572,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                           ),
                                                           FilledButton(
                                                             onPressed: _restart,
-                                                            child: const Text(
-                                                              'TEKRAR OYNA',
+                                                            child: Text(
+                                                              context.l10n.playAgainButton,
                                                             ),
                                                           ),
                                                         ],
@@ -1571,7 +1605,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                               width: 66,
                               child: _BonusCard(
                                 asset: 'assets/icons2/boot.png',
-                                label: 'ÇİFT TERLİK',
+                                label: context.l10n.shopPowerDoubleSlipperNameCaps,
                                 count:
                                     '${widget.prototypeVisualState ? 3 : _doubleSlipCount}',
                                 onTap: _useDoubleSlipBonus,
@@ -1582,7 +1616,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                               width: 66,
                               child: _BonusCard(
                                 asset: 'assets/icons2/premium_token.png',
-                                label: 'ALTIN TERLİK',
+                                label: context.l10n.shopPowerGoldenSlipperNameCaps,
                                 count:
                                     '${widget.prototypeVisualState ? 2 : _goldSlipCount}',
                                 onTap: _useGoldSlipBonus,
@@ -1593,7 +1627,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                               width: 66,
                               child: _BonusCard(
                                 asset: 'assets/icons2/shield.png',
-                                label: 'KALKAN',
+                                label: context.l10n.powerShieldCaps,
                                 count:
                                     '${widget.prototypeVisualState ? 1 : _shieldCount}',
                                 onTap: _useShieldBonus,
@@ -1623,7 +1657,10 @@ class _DefenseArenaPainter extends CustomPainter {
     required this.hits,
     required this.misses,
     required this.hint,
+    required this.comboBroken,
     required this.bursts,
+    required this.hitsLabel,
+    required this.missesLabel,
     this.showRadialRings = false,
   });
 
@@ -1632,7 +1669,12 @@ class _DefenseArenaPainter extends CustomPainter {
   final int hits;
   final int misses;
   final String hint;
+  // W66-3: kombo-bitiş durumu metinden değil, state'ten
+  // gelen bu bayrakla okunur — dil bağımsızdır.
+  final bool comboBroken;
   final List<_HitBurst> bursts;
+  final String hitsLabel;
+  final String missesLabel;
   final bool showRadialRings;
 
   @override
@@ -1732,8 +1774,6 @@ class _DefenseArenaPainter extends CustomPainter {
           ..strokeWidth = 2,
       );
     }
-    final comboBroken =
-        hint.startsWith('Iska') || hint.startsWith('KOMBO BİTTİ');
     final label = comboBroken
         ? hint.toUpperCase()
         : (combo > 0 ? 'COMBO X$combo!' : 'YUVA SAVUNMASI · 360°');
@@ -1760,7 +1800,7 @@ class _DefenseArenaPainter extends CustomPainter {
     _paintAnimatedLabel(canvas, labelPainter, const Offset(12, 10));
     final hitLabel = TextPainter(
       text: TextSpan(
-        text: 'VURUŞ $hits',
+        text: hitsLabel,
         style: GoogleFonts.nunito(
           fontSize: 12,
           fontWeight: FontWeight.w900,
@@ -1792,7 +1832,7 @@ class _DefenseArenaPainter extends CustomPainter {
     if (misses > 0) {
       final missLabel = TextPainter(
         text: TextSpan(
-          text: 'KAÇAN $misses!',
+          text: missesLabel,
           style: GoogleFonts.bangers(
             fontSize: 21,
             height: 1,
@@ -1887,7 +1927,10 @@ class _DefenseArenaPainter extends CustomPainter {
       hits != oldDelegate.hits ||
       misses != oldDelegate.misses ||
       hint != oldDelegate.hint ||
-      bursts != oldDelegate.bursts;
+      comboBroken != oldDelegate.comboBroken ||
+      bursts != oldDelegate.bursts ||
+      hitsLabel != oldDelegate.hitsLabel ||
+      missesLabel != oldDelegate.missesLabel;
 }
 
 class _HudCard extends StatelessWidget {
@@ -1903,7 +1946,7 @@ class _HudCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    height: label == 'CAN' && !singleRowHearts ? 71.5 : 50.5,
+    height: label == context.l10n.livesLabel && !singleRowHearts ? 71.5 : 50.5,
     alignment: Alignment.centerLeft,
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
     decoration: BoxDecoration(
@@ -1925,8 +1968,8 @@ class _HudCard extends StatelessWidget {
             color: _YuvaDefenseScreenState._gold,
           ),
         ),
-        SizedBox(height: label == 'CAN' && singleRowHearts ? 4 : 5),
-        if (label == 'CAN' && singleRowHearts)
+        SizedBox(height: label == context.l10n.livesLabel && singleRowHearts ? 4 : 5),
+        if (label == context.l10n.livesLabel && singleRowHearts)
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1943,7 +1986,7 @@ class _HudCard extends StatelessWidget {
               ],
             ],
           )
-        else if (label == 'CAN')
+        else if (label == context.l10n.livesLabel)
           Wrap(
             spacing: 4,
             runSpacing: 1,
@@ -2061,10 +2104,16 @@ class _BonusCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTap: onTap,
-    child: Column(
+  Widget build(BuildContext context) {
+    final countValue = int.tryParse(count) ?? 0;
+    return Semantics(
+      button: true,
+      enabled: countValue > 0 && onTap != null,
+      label: context.l10n.boosterCountLabel(label, countValue),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
       children: [
       Stack(
         alignment: Alignment.center,
@@ -2160,7 +2209,9 @@ class _BonusCard extends StatelessWidget {
       ),
     ],
     ),
-  );
+      ),
+    );
+  }
 }
 
 class _YuvaStatusIndicatorsPainter extends CustomPainter {

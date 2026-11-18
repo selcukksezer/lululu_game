@@ -1082,31 +1082,35 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
               const SizedBox(height: 20),
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFFCF3F), LululuColors.liquidGold],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: LululuColors.liquidGold.withValues(alpha: 0.35),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
+              Semantics(
+                button: true,
+                label: ctx.l10n.understoodButton,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFCF3F), LululuColors.liquidGold],
                       ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    ctx.l10n.understoodButton,
-                    style: GoogleFonts.bangers(
-                      fontSize: 18,
-                      color: const Color(0xFF4A2E00),
-                      letterSpacing: 1,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: LululuColors.liquidGold.withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      ctx.l10n.understoodButton,
+                      style: GoogleFonts.bangers(
+                        fontSize: 18,
+                        color: const Color(0xFF4A2E00),
+                        letterSpacing: 1,
+                      ),
                     ),
                   ),
                 ),
@@ -1682,123 +1686,139 @@ class _GameScreenState extends State<GameScreen>
               ),
               const SizedBox(height: 18),
               // DEVAM ET (Green)
-              GestureDetector(
-                onTap: _togglePause,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF26E075),
-                        Color(0xFF00C853),
-                        Color(0xFF009624),
+              Semantics(
+                button: true,
+                label: context.l10n.resumeButtonCaps,
+                child: GestureDetector(
+                  onTap: _togglePause,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFF26E075),
+                          Color(0xFF00C853),
+                          Color(0xFF009624),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF00C853).withValues(alpha: 0.4),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
                       ],
                     ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF00C853).withValues(alpha: 0.4),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+                    alignment: Alignment.center,
+                    child: Text(
+                      context.l10n.resumeButtonCaps,
+                      style: GoogleFonts.bangers(
+                        fontSize: 20,
+                        color: const Color(0xFF04140A),
+                        letterSpacing: 1,
                       ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    context.l10n.resumeButtonCaps,
-                    style: GoogleFonts.bangers(
-                      fontSize: 20,
-                      color: const Color(0xFF04140A),
-                      letterSpacing: 1,
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
               // YENİDEN BAŞLA
-              GestureDetector(
-                onTap: () {
-                  _togglePause();
-                  _restartLevel(_currentLevel);
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFFFFCF3F),
-                        LululuColors.liquidGold,
-                        Color(0xFFF59E00),
-                      ],
+              Semantics(
+                button: true,
+                label: context.l10n.restartLevelButton,
+                child: GestureDetector(
+                  onTap: () {
+                    _togglePause();
+                    _restartLevel(_currentLevel);
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFFFFCF3F),
+                          LululuColors.liquidGold,
+                          Color(0xFFF59E00),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    context.l10n.restartLevelButton,
-                    style: GoogleFonts.bangers(
-                      fontSize: 20,
-                      color: const Color(0xFF4A2E00),
-                      letterSpacing: 1,
+                    alignment: Alignment.center,
+                    child: Text(
+                      context.l10n.restartLevelButton,
+                      style: GoogleFonts.bangers(
+                        fontSize: 20,
+                        color: const Color(0xFF4A2E00),
+                        letterSpacing: 1,
+                      ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
               // OYUNU BİTİR
-              GestureDetector(
-                onTap: () {
-                  _togglePause();
-                  _triggerVictory();
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2),
+              Semantics(
+                button: true,
+                label: context.l10n.finishGameButton,
+                child: GestureDetector(
+                  onTap: () {
+                    _togglePause();
+                    _triggerVictory();
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
                     ),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    context.l10n.finishGameButton,
-                    style: GoogleFonts.bangers(
-                      fontSize: 18,
-                      color: Colors.white,
-                      letterSpacing: 1,
+                    alignment: Alignment.center,
+                    child: Text(
+                      context.l10n.finishGameButton,
+                      style: GoogleFonts.bangers(
+                        fontSize: 18,
+                        color: Colors.white,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
               // ANA SAYFA
-              GestureDetector(
-                onTap: () {
-                  final nav = Navigator.maybeOf(context);
-                  if (nav != null && nav.canPop()) {
-                    nav.maybePop();
-                  } else {
-                    setState(() => _paused = false);
-                  }
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    context.l10n.navHome,
-                    style: GoogleFonts.bangers(
-                      fontSize: 18,
-                      color: LululuColors.mutedTitanium,
-                      letterSpacing: 1,
+              Semantics(
+                button: true,
+                label: context.l10n.navHome,
+                child: GestureDetector(
+                  onTap: () {
+                    final nav = Navigator.maybeOf(context);
+                    if (nav != null && nav.canPop()) {
+                      nav.maybePop();
+                    } else {
+                      setState(() => _paused = false);
+                    }
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      context.l10n.navHome,
+                      style: GoogleFonts.bangers(
+                        fontSize: 18,
+                        color: LululuColors.mutedTitanium,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ),
                 ),
@@ -2038,7 +2058,22 @@ class _GameScreenState extends State<GameScreen>
                   child: Image.asset(
                     tiers[i].assetPath,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    errorBuilder: (_, error, _) {
+                      // Sessiz boşluk yerine yer tutucu + hata kaydı.
+                      debugPrint(
+                        '[GameScreen] Kademe görseli yüklenemedi: '
+                        '${tiers[i].assetPath} ($error)',
+                      );
+                      return Container(
+                        color: tiers[i].color.withValues(alpha: 0.28),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.image_not_supported_outlined,
+                          size: 12,
+                          color: LululuColors.mutedTitanium,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -2150,7 +2185,22 @@ class _GameScreenState extends State<GameScreen>
                     errorBuilder: (_, _, _) => Image.asset(
                       _currentLevel.backgroundPath,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const SizedBox(),
+                      errorBuilder: (_, error, _) {
+                        // Sessiz boşluk yerine yer tutucu + hata kaydı.
+                        debugPrint(
+                          '[GameScreen] Seviye arka planı yüklenemedi: '
+                          '${_currentLevel.backgroundPath} ($error)',
+                        );
+                        return Container(
+                          color: LululuColors.carbonVoid,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.bug_report_rounded,
+                            size: 72,
+                            color: Color(0x33FFFFFF),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),

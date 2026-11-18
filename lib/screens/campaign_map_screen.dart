@@ -27,11 +27,12 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   bool _isStartingLevel = false;
 
   /// 4 regions × 20 levels = 80. Colors from LululuColors only.
-  final List<(int, String, String, Color)> _chapters = const [
-    (1, 'Mutfak Tezgahı', '🍳', LululuColors.coralFlare),
-    (2, 'Diva Malikanesi', '👑', LululuColors.liquidGold),
-    (3, 'Pikomotions Sahnesi', '🎬', LululuColors.cyberFuchsia),
-    (4, 'Kongo İstilası', '⚡', LululuColors.toxicNeon),
+  /// Chapter names are localized (getter, not const: context.l10n is runtime).
+  List<(int, String, String, Color)> get _chapters => [
+    (1, context.l10n.campaignChapter1, '🍳', LululuColors.coralFlare),
+    (2, context.l10n.campaignChapter2, '👑', LululuColors.liquidGold),
+    (3, context.l10n.campaignChapter3, '🎬', LululuColors.cyberFuchsia),
+    (4, context.l10n.campaignChapter4, '⚡', LululuColors.toxicNeon),
   ];
 
   @override
@@ -153,38 +154,42 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: GestureDetector(
-              onTap: _open2048,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  gradient: LululuGradients.fuchsiaToGold,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: LululuColors.coralFlare.withValues(alpha: 0.4),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      context.l10n.campaign2048Header,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
+            child: Semantics(
+              button: true,
+              label: context.l10n.play2048Label,
+              child: GestureDetector(
+                onTap: _open2048,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: LululuGradients.fuchsiaToGold,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: LululuColors.coralFlare.withValues(alpha: 0.4),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        context.l10n.campaign2048Header,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: LululuColors.carbonVoid,
+                        ),
+                      ),
+                      SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 10,
                         color: LululuColors.carbonVoid,
                       ),
-                    ),
-                    SizedBox(width: 4),
-                    Icon(
-                      Icons.arrow_forward_ios,
-                      size: 10,
-                      color: LululuColors.carbonVoid,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -279,14 +284,18 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(
-                tooltip: context.l10n.navShop,
-                icon: const Icon(
-                  Icons.storefront,
-                  color: LululuColors.liquidGold,
-                  size: 26,
+              Semantics(
+                button: true,
+                label: context.l10n.navShop,
+                child: IconButton(
+                  tooltip: context.l10n.navShop,
+                  icon: const Icon(
+                    Icons.storefront,
+                    color: LululuColors.liquidGold,
+                    size: 26,
+                  ),
+                  onPressed: () => ShopDialog.show(context),
                 ),
-                onPressed: () => ShopDialog.show(context),
               ),
             ],
           ),
@@ -306,69 +315,74 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
         itemBuilder: (context, idx) {
           final ch = _chapters[idx];
           final isSelected = ch.$1 == _selectedChapter;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedChapter = ch.$1),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? ch.$4
-                    : LululuColors.darkObsidian.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
+          return Semantics(
+            button: true,
+            label: context.l10n.chapterLabel(ch.$1),
+            selected: isSelected,
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedChapter = ch.$1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
                   color: isSelected
-                      ? LululuColors.liquidGold
-                      : LululuColors.mutedTitanium.withValues(alpha: 0.6),
-                  width: isSelected ? 2 : 1,
+                      ? ch.$4
+                      : LululuColors.darkObsidian.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected
+                        ? LululuColors.liquidGold
+                        : LululuColors.mutedTitanium.withValues(alpha: 0.6),
+                    width: isSelected ? 2 : 1,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: ch.$4.withValues(alpha: 0.4),
+                            blurRadius: 10,
+                          ),
+                        ]
+                      : [],
                 ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: ch.$4.withValues(alpha: 0.4),
-                          blurRadius: 10,
-                        ),
-                      ]
-                    : [],
-              ),
-              child: Row(
-                children: [
-                  Text(ch.$3, style: const TextStyle(fontSize: 16)),
-                  const SizedBox(width: 6),
-                  Text(
-                    ch.$2,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight:
-                          isSelected ? FontWeight.w900 : FontWeight.w600,
-                      color: isSelected
-                          ? LululuColors.carbonVoid
-                          : LululuColors.mutedTitanium,
+                child: Row(
+                  children: [
+                    Text(ch.$3, style: const TextStyle(fontSize: 16)),
+                    const SizedBox(width: 6),
+                    Text(
+                      ch.$2,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            isSelected ? FontWeight.w900 : FontWeight.w600,
+                        color: isSelected
+                            ? LululuColors.carbonVoid
+                            : LululuColors.mutedTitanium,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    () {
-                      final levels =
-                          CampaignDatabase.getLevelsForChapter(ch.$1);
-                      var earned = 0;
-                      for (final l in levels) {
-                        earned += progress.getStarCount(l.id);
-                      }
-                      final maxStars = levels.length * 3;
-                      return '$earned/$maxStars';
-                    }(),
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: isSelected
-                          ? LululuColors.carbonVoid.withValues(alpha: 0.75)
-                          : LululuColors.liquidGold,
+                    const SizedBox(width: 6),
+                    Text(
+                      () {
+                        final levels =
+                            CampaignDatabase.getLevelsForChapter(ch.$1);
+                        var earned = 0;
+                        for (final l in levels) {
+                          earned += progress.getStarCount(l.id);
+                        }
+                        final maxStars = levels.length * 3;
+                        return '$earned/$maxStars';
+                      }(),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: isSelected
+                            ? LululuColors.carbonVoid.withValues(alpha: 0.75)
+                            : LululuColors.liquidGold,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            );
           );
         },
       ),
@@ -837,137 +851,141 @@ class _LevelMapTileState extends State<_LevelMapTile> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      onTapDown: (_) => _setPressed(true),
-      onTapUp: (_) => _setPressed(false),
-      onTapCancel: () => _setPressed(false),
-      child: AnimatedScale(
-        scale: _pressScale,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOutCubic,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
+    return Semantics(
+      button: true,
+      label: context.l10n.levelTileLabel(widget.level.id, widget.stars, !widget.isUnlocked),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onTapDown: (_) => _setPressed(true),
+        onTapUp: (_) => _setPressed(false),
+        onTapCancel: () => _setPressed(false),
+        child: AnimatedScale(
+          scale: _pressScale,
+          duration: const Duration(milliseconds: 120),
           curve: Curves.easeOutCubic,
-          decoration: _cardDecoration(),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Stack(
-              children: [
-                Positioned(
-                  top: 0,
-                  left: 10,
-                  right: 10,
-                  child: Container(
-                    height: 1.2,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          LululuColors.mutedTitanium.withValues(alpha: 0),
-                          LululuColors.mutedTitanium.withValues(
-                            alpha: widget.isUnlocked ? 0.45 : 0.12,
-                          ),
-                          LululuColors.mutedTitanium.withValues(alpha: 0),
-                        ],
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            decoration: _cardDecoration(),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 0,
+                    left: 10,
+                    right: 10,
+                    child: Container(
+                      height: 1.2,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            LululuColors.mutedTitanium.withValues(alpha: 0),
+                            LululuColors.mutedTitanium.withValues(
+                              alpha: widget.isUnlocked ? 0.45 : 0.12,
+                            ),
+                            LululuColors.mutedTitanium.withValues(alpha: 0),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (widget.isUnlocked) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: LululuColors.carbonVoid.withValues(
-                              alpha: 0.32,
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: LululuColors.mutedTitanium.withValues(
-                                alpha: 0.18,
-                              ),
-                            ),
-                          ),
-                          child: Text(
-                            '${widget.level.id}',
-                            style: TextStyle(
-                              fontSize: widget.isFrontier ? 20 : 18,
-                              fontWeight: FontWeight.w900,
-                              color: LululuColors.warningSolar,
-                              shadows: [
-                                Shadow(
-                                  color: LululuColors.carbonVoid.withValues(
-                                    alpha: 0.45,
-                                  ),
-                                  blurRadius: 4,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (widget.isFrontier) ...[
-                          const SizedBox(height: 3),
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (widget.isUnlocked) ...[
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 1,
+                              horizontal: 10,
+                              vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: LululuColors.cyberFuchsia.withValues(
-                                alpha: 0.35,
+                              color: LululuColors.carbonVoid.withValues(
+                                alpha: 0.32,
                               ),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: LululuColors.mutedTitanium.withValues(
+                                  alpha: 0.18,
+                                ),
+                              ),
                             ),
                             child: Text(
-                              context.l10n.upNextLabel,
+                              '${widget.level.id}',
                               style: TextStyle(
-                                fontSize: 7,
+                                fontSize: widget.isFrontier ? 20 : 18,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 0.8,
                                 color: LululuColors.warningSolar,
+                                shadows: [
+                                  Shadow(
+                                    color: LululuColors.carbonVoid.withValues(
+                                      alpha: 0.45,
+                                    ),
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (widget.isFrontier) ...[
+                            const SizedBox(height: 3),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: LululuColors.cyberFuchsia.withValues(
+                                  alpha: 0.35,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                context.l10n.upNextLabel,
+                                style: TextStyle(
+                                  fontSize: 7,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8,
+                                  color: LululuColors.warningSolar,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ] else ...[
+                          Icon(
+                            Icons.lock_rounded,
+                            color: LululuColors.mutedTitanium.withValues(
+                              alpha: 0.55,
+                            ),
+                            size: 26,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${widget.level.id}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: LululuColors.mutedTitanium.withValues(
+                                alpha: 0.45,
                               ),
                             ),
                           ),
                         ],
-                      ] else ...[
-                        Icon(
-                          Icons.lock_rounded,
-                          color: LululuColors.mutedTitanium.withValues(
-                            alpha: 0.55,
-                          ),
-                          size: 26,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${widget.level.id}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: LululuColors.mutedTitanium.withValues(
-                              alpha: 0.45,
-                            ),
-                          ),
-                        ),
+                        const SizedBox(height: 5),
+                        _buildStarRow(),
+                        _buildModifierDots(),
                       ],
-                      const SizedBox(height: 5),
-                      _buildStarRow(),
-                      _buildModifierDots(),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      ),
+      );
     );
   }
 }

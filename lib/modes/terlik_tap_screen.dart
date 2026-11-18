@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/hisir_character.dart';
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
@@ -1054,7 +1055,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   Widget _pauseButton() {
     return Semantics(
       button: true,
-      label: 'Duraklat',
+      label: context.l10n.pause,
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
@@ -1110,7 +1111,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
               ],
             ),
           ),
@@ -1256,7 +1257,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                       children: [
                         Semantics(
                           button: true,
-                          label: 'Geri',
+                          label: context.l10n.goBackLabel,
                           child: GestureDetector(
                             onTap: () {
                               _refundEnergyIfNoHit();
@@ -1306,7 +1307,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Text(
-                                      'TERLİK TAP',
+                                      context.l10n.slipperTapTitle,
                                       style: GoogleFonts.baloo2(
                                         fontSize: 20,
                                         height: 1.05,
@@ -1396,12 +1397,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                             onTap: () => showDialog<void>(
                               context: context,
                               builder: (ctx) => AlertDialog(
-                                title: const Text('TERLİK TAP'),
+                                title: Text(ctx.l10n.slipperTapTitle),
                                 content: Text(_hint),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(ctx),
-                                    child: const Text('ANLADIM'),
+                                    child: Text(ctx.l10n.understoodButton),
                                   ),
                                 ],
                               ),
@@ -1471,7 +1472,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                     child: Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        'SKOR',
+                                        context.l10n.gameScoreLabel,
                                         style: GoogleFonts.nunito(
                                           fontSize: 10,
                                           height: 1,
@@ -1529,7 +1530,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                     child: Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        'REKOR',
+                                        context.l10n.gameBestLabel,
                                         style: GoogleFonts.nunito(
                                           fontSize: 10,
                                           height: 1,
@@ -1620,7 +1621,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                               ),
                             ),
                             const SizedBox(width: 8),
-                            GestureDetector(
+                            Semantics(
+                              button: true,
+                              label: context.l10n.finishRoundLabel,
+                              child: GestureDetector(
                               onTap: _restart,
                               child: Container(
                                 width: 57.8,
@@ -1646,6 +1650,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                   ),
                                 ),
                               ),
+                            ),
                             ),
                           ],
                         );
@@ -1695,14 +1700,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                     child: Stack(
                                       children: [
                                         if (!widget.prototypeVisualState)
-                                          const Positioned(
+                                          Positioned(
                                             left: 0,
                                             top: 0,
                                             width: 0,
                                             height: 0,
                                             child: Opacity(
                                               opacity: 0,
-                                              child: Text('TERLIK TAP'),
+                                              child: Text(context.l10n.slipperTapTitle),
                                             ),
                                           ),
                                         Center(
@@ -1904,7 +1909,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                   score: _score,
                   best: _best,
                   won: false,
-                  modeTitle: 'TERLİK TAP',
+                  modeTitle: context.l10n.slipperTapTitle,
                   shareLine: _stats(),
                   retryLabel: 'YENİDEN',
                   onRetry: _restart,
@@ -2172,7 +2177,7 @@ class _TerlikBonusButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '${item.label}. ${item.count} adet',
+      label: context.l10n.boosterCountLabel(item.label, item.count),
       child: GestureDetector(
         onTap: enabled ? item.onTap : null,
         behavior: HitTestBehavior.opaque,

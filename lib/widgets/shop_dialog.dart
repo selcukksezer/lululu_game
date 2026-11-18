@@ -89,21 +89,21 @@ class _ShopScreenState extends State<ShopScreen> {
         _PowerRowItem(
           id: 'raid',
           name: l10n.shopPowerRaidSprayName,
-          iconAsset: 'assets/powerup_raid_spreyi.webp',
+          iconAsset: 'assets/powerup_raid_spreyi.png',
           desc: l10n.shopPowerRaidSprayDesc,
           cost: 450,
         ),
         _PowerRowItem(
           id: 'terlik',
           name: l10n.shopPowerSlipperShakeName,
-          iconAsset: 'assets/powerup_terlik.webp',
+          iconAsset: 'assets/powerup_terlik.png',
           desc: l10n.shopPowerSlipperShakeDesc,
           cost: 300,
         ),
         _PowerRowItem(
           id: 'f16',
           name: l10n.shopPowerLightItUpName,
-          iconAsset: 'assets/powerup_aydinlat.webp',
+          iconAsset: 'assets/powerup_aydinlat.png',
           desc: l10n.shopPowerLightItUpDesc,
           cost: 250,
         ),
@@ -910,53 +910,57 @@ class _ShopScreenState extends State<ShopScreen> {
                               const SizedBox(width: 12),
                               Transform.translate(
                                 offset: const Offset(0, 0.5),
-                                child: GestureDetector(
-                                  onTap: _watchFreeChestAd,
-                                  child: Container(
-                                    width: 97.1,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFEDF0F6),
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(
-                                        color: const Color(0xFFD5DAE4),
-                                        width: 2,
-                                      ),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Color(0x26000000),
-                                          offset: Offset(0, 4),
-                                          blurRadius: 0,
-                                        ),
-                                      ],
-                                    ),
+                                child: Semantics(
+                                  button: true,
+                                  label: l10n.watchAdChestLabel,
+                                  child: GestureDetector(
+                                    onTap: _watchFreeChestAd,
                                     child: Container(
+                                      width: 97.1,
+                                      height: 48,
                                       decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(12),
+                                        color: const Color(0xFFEDF0F6),
+                                        borderRadius: BorderRadius.circular(14),
                                         border: Border.all(
                                           color: const Color(0xFFD5DAE4),
-                                          width: 1,
+                                          width: 2,
                                         ),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Color(0x26000000),
+                                            offset: Offset(0, 4),
+                                            blurRadius: 0,
+                                          ),
+                                        ],
                                       ),
-                                      child: Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 6,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: const Color(0xFFD5DAE4),
+                                            width: 1,
+                                          ),
                                         ),
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            l10n.comingSoon,
-                                            maxLines: 1,
-                                            softWrap: false,
-                                            style: TextStyle(
-                                              fontFamily: 'Baloo 2',
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w800,
-                                              fontVariations: [
-                                                FontVariation('wght', 800)
-                                              ],
-                                              color: Color(0xFF9AA3B2),
-                                              height: 1.1,
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                          ),
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                              l10n.comingSoon,
+                                              maxLines: 1,
+                                              softWrap: false,
+                                              style: TextStyle(
+                                                fontFamily: 'Baloo 2',
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w800,
+                                                fontVariations: [
+                                                  FontVariation('wght', 800)
+                                                ],
+                                                color: Color(0xFF9AA3B2),
+                                                height: 1.1,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1234,18 +1238,22 @@ class _ShopScreenState extends State<ShopScreen> {
           ),
           const Spacer(),
           if (rightText != null)
-            GestureDetector(
-              onTap: onTapRight,
-              child: Text(
-                rightText,
-                style: const TextStyle(
-                  fontFamily: 'Nunito',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  fontVariations: [FontVariation('wght', 900)],
-                  letterSpacing: -0.06,
-                  color: Color(0xFFE01E5A),
-                  height: 1.55,
+            Semantics(
+              button: true,
+              label: rightText,
+              child: GestureDetector(
+                onTap: onTapRight,
+                child: Text(
+                  rightText,
+                  style: const TextStyle(
+                    fontFamily: 'Nunito',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    fontVariations: [FontVariation('wght', 900)],
+                    letterSpacing: -0.06,
+                    color: Color(0xFFE01E5A),
+                    height: 1.55,
+                  ),
                 ),
               ),
             ),

@@ -341,7 +341,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                               child: Text(
                                 cur['title'] as String,
                                 maxLines: 1,
-                                overflow: TextOverflow.visible,
+                                overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w800,
@@ -674,7 +674,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                       child: Text(
                                         _videos[i]['title'] as String,
                                         maxLines: 1,
-                                        overflow: TextOverflow.visible,
+                                        overflow: TextOverflow.ellipsis,
                                         style: GoogleFonts.baloo2(
                                           fontSize: 14.5,
                                           fontWeight: FontWeight.w800,
@@ -2671,7 +2671,28 @@ class _DropShadowImage extends StatelessWidget {
           width: width,
           height: height,
           fit: BoxFit.contain,
-          errorBuilder: (c, e, s) => const SizedBox.shrink(),
+          errorBuilder: (c, error, s) {
+            // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+            if (kDebugMode) {
+              debugPrint(
+                '[_DropShadowImage] Görsel yüklenemedi: $assetPath ($error)',
+              );
+            }
+            return Container(
+              width: width,
+              height: height,
+              color: const Color(0xFFF1F4FA),
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                size: math.min(
+                  48.0,
+                  math.max(24.0, math.min(width, height) * 0.4),
+                ),
+                color: const Color(0xFF66738A),
+              ),
+            );
+          },
         ),
       ],
     );

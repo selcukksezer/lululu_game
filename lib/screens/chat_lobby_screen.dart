@@ -224,62 +224,67 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
     required bool selected,
     required int unreadCount,
   }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => ChatService.instance.switchChannel(channel),
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: selected ? LululuColors.inkDark : LululuColors.paperSoft,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected
-                ? LululuColors.inkDark
-                : LululuColors.mutedTitanium.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Flexible(
-              child: Text(
-                channel.displayNameFor(Localizations.localeOf(context)),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.exo2(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color:
-                      selected ? LululuColors.paper : LululuColors.inkDark,
-                ),
-              ),
+    return Semantics(
+      button: true,
+      label: context.l10n.channelSelectLabel(channel.displayNameFor(Localizations.localeOf(context))),
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => ChatService.instance.switchChannel(channel),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected ? LululuColors.inkDark : LululuColors.paperSoft,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected
+                  ? LululuColors.inkDark
+                  : LululuColors.mutedTitanium.withValues(alpha: 0.3),
             ),
-            if (unreadCount > 0) ...[
-              const SizedBox(width: 6),
-              Container(
-                height: 18,
-                constraints: const BoxConstraints(minWidth: 18),
-                padding: const EdgeInsets.symmetric(horizontal: 5),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: LululuColors.mysticRuby,
-                  borderRadius: BorderRadius.circular(9),
-                ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
                 child: Text(
-                  _unreadLabel(unreadCount),
+                  channel.displayNameFor(Localizations.localeOf(context)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.exo2(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
-                    color: LululuColors.paper,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color:
+                        selected ? LululuColors.paper : LululuColors.inkDark,
                   ),
                 ),
               ),
+              if (unreadCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  height: 18,
+                  constraints: const BoxConstraints(minWidth: 18),
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: LululuColors.mysticRuby,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    _unreadLabel(unreadCount),
+                    style: GoogleFonts.exo2(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      height: 1.0,
+                      color: LululuColors.paper,
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
-      ),
+      );
     );
   }
 

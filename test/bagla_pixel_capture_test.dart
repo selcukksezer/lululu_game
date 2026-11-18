@@ -95,7 +95,7 @@ void main() {
       }
       for (var tier = 1; tier <= 5; tier++) {
         await precacheImage(
-          AssetImage('assets/bugs/tier${tier}_hd.webp'),
+          AssetImage('assets/bugs/tier${tier}_hd${tier == 5 ? '.webp' : '.png'}'),
           context,
           onError: (exception, stackTrace) {},
         );

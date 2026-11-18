@@ -104,48 +104,52 @@ class PrivacyPolicyScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            GestureDetector(
-              onTap: () => Navigator.of(context).maybePop(),
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 52),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 26,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0.0, 0.55, 1.0],
-                    colors: [
-                      Color(0xFFFFCF3F),
-                      Color(0xFFFFB800),
-                      Color(0xFFF59E00),
+            Semantics(
+              button: true,
+              label: context.l10n.closeLabel,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).maybePop(),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 52),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 26,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0.0, 0.55, 1.0],
+                      colors: [
+                        Color(0xFFFFCF3F),
+                        Color(0xFFFFB800),
+                        Color(0xFFF59E00),
+                      ],
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFFB97A00),
+                        offset: Offset(0, 5),
+                        blurRadius: 0,
+                      ),
+                      BoxShadow(
+                        color: Color(0x47000000),
+                        offset: Offset(0, 10),
+                        blurRadius: 18,
+                      ),
                     ],
                   ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0xFFB97A00),
-                      offset: Offset(0, 5),
-                      blurRadius: 0,
+                  alignment: Alignment.center,
+                  child: Text(
+                    context.l10n.close,
+                    style: GoogleFonts.baloo2(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 0.36,
+                      height: 1.0,
                     ),
-                    BoxShadow(
-                      color: Color(0x47000000),
-                      offset: Offset(0, 10),
-                      blurRadius: 18,
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  context.l10n.close,
-                  style: GoogleFonts.baloo2(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: 0.36,
-                    height: 1.0,
                   ),
                 ),
               ),
@@ -286,58 +290,63 @@ class _DeleteAccountButtonState extends State<_DeleteAccountButton> {
                 ? context.l10n.confirmDeleteAgain
                 : context.l10n.deleteAccountCaps;
         final armedOrBusy = _armed || _busy;
-        return GestureDetector(
-          onTap: _busy ? null : _handleTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 52),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 26,
-              vertical: 12,
-            ),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              color: armedOrBusy ? null : const Color(0xFF121826),
-              gradient: armedOrBusy
-                  ? const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: [0.0, 0.55, 1.0],
-                      colors: [
-                        Color(0xFFF4538B),
-                        Color(0xFFE01E5A),
-                        Color(0xFFB80F42),
-                      ],
-                    )
-                  : null,
-              border: armedOrBusy
-                  ? null
-                  : Border.all(
-                      color: const Color(0xFFE01E5A),
-                      width: 1.5,
-                    ),
-              boxShadow: armedOrBusy
-                  ? const [
-                      BoxShadow(
-                        color: Color(0xFF7E0A2E),
-                        offset: Offset(0, 5),
-                        blurRadius: 0,
+        return Semantics(
+          button: true,
+          enabled: !_busy,
+          label: label,
+          child: GestureDetector(
+            onTap: _busy ? null : _handleTap,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 52),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 26,
+                vertical: 12,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                color: armedOrBusy ? null : const Color(0xFF121826),
+                gradient: armedOrBusy
+                    ? const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: [0.0, 0.55, 1.0],
+                        colors: [
+                          Color(0xFFF4538B),
+                          Color(0xFFE01E5A),
+                          Color(0xFFB80F42),
+                        ],
+                      )
+                    : null,
+                border: armedOrBusy
+                    ? null
+                    : Border.all(
+                        color: const Color(0xFFE01E5A),
+                        width: 1.5,
                       ),
-                    ]
-                  : null,
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.baloo2(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: armedOrBusy ? Colors.white : const Color(0xFFF4538B),
-                letterSpacing: 0.36,
-                height: 1.0,
+                boxShadow: armedOrBusy
+                    ? const [
+                        BoxShadow(
+                          color: Color(0xFF7E0A2E),
+                          offset: Offset(0, 5),
+                          blurRadius: 0,
+                        ),
+                      ]
+                    : null,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.baloo2(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: armedOrBusy ? Colors.white : const Color(0xFFF4538B),
+                  letterSpacing: 0.36,
+                  height: 1.0,
+                ),
               ),
             ),
-          ),
+          );
         );
       },
     );

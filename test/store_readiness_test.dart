@@ -111,7 +111,6 @@ void main() {
         expect(gift!.coins, greaterThanOrEqualTo(500));
 
         // Settings persistence
-        await pm.setMusicEnabled(false);
         await pm.setSfxEnabled(false);
         await pm.setVibrationEnabled(false);
 
@@ -122,7 +121,6 @@ void main() {
         expect(pm.getHighScore(1), 2450);
         expect(pm.getModeHighScore('suika'), 8900);
         expect(pm.isTierUnlocked(9), isTrue);
-        expect(pm.musicEnabled, isFalse);
         expect(pm.sfxEnabled, isFalse);
         expect(pm.vibrationEnabled, isFalse);
 
@@ -133,7 +131,6 @@ void main() {
         expect(pm.coins, ProgressManager.defaultCoins);
         expect(pm.getStarCount(1), 0);
         expect(pm.getModeHighScore('suika'), 0);
-        expect(pm.musicEnabled, isTrue);
       },
     );
 
@@ -398,11 +395,9 @@ void main() {
         audio.initialize();
 
         audio.setSfxEnabled(true);
-        audio.setMusicEnabled(true);
         audio.setVoiceEnabled(true);
         audio.setVibrationEnabled(true);
         expect(audio.sfxEnabled, isTrue);
-        expect(audio.musicEnabled, isTrue);
         expect(audio.voiceEnabled, isTrue);
         expect(audio.vibrationEnabled, isTrue);
 

@@ -105,7 +105,14 @@ flutter:
     - assets/design/bugs_new/
     - assets/design/images/
     - assets/design/images/stickers/
-    - assets/design/icons/extra_icons/All_Icons/
+    - assets/design/icons/extra_icons/All_Icons/blue_diamond.png
+    - assets/design/icons/extra_icons/All_Icons/clock.png
+    - assets/design/icons/extra_icons/All_Icons/daily_streak_flame.png
+    - assets/design/icons/extra_icons/All_Icons/energy_bolt.png
+    - assets/design/icons/extra_icons/All_Icons/explosion.png
+    - assets/design/icons/extra_icons/All_Icons/hammer.png
+    - assets/design/icons/extra_icons/All_Icons/magnet_boost.png
+    - assets/design/icons/extra_icons/All_Icons/target.png
     - assets/design/osman/
     - assets/design/ui/
     - assets/design/ui/icons/

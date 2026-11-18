@@ -189,7 +189,7 @@ void main() {
           context: 'InsectTier.${insect.name}.assetPath',
         );
         expectValidAsset(
-          'assets/bugs/tier${insect.tier}_hd.webp',
+          'assets/bugs/tier${insect.tier}_hd${insect.tier == 5 ? '.webp' : '.png'}',
           context: 'WebP bug sticker tier ${insect.tier}',
         );
         expectValidAsset(

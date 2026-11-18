@@ -562,35 +562,39 @@ class _AuthPanelState extends State<AuthPanel> {
             ),
           ),
           const SizedBox(width: 9),
-          GestureDetector(
-            onTap: _busy
-                ? null
-                : () async {
-                    AudioManager().playPop();
-                    await AuthService.instance.signOut();
-                    await LeaderboardService.instance.onAuthChanged();
-                    if (!mounted) return;
-                    setState(() {});
-                  },
-            child: Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(
-                  color: const Color(0x66E52E2E),
-                  width: 2,
+          Semantics(
+            button: true,
+            label: context.l10n.signOutButton,
+            child: GestureDetector(
+              onTap: _busy
+                  ? null
+                  : () async {
+                      AudioManager().playPop();
+                      await AuthService.instance.signOut();
+                      await LeaderboardService.instance.onAuthChanged();
+                      if (!mounted) return;
+                      setState(() {});
+                    },
+              child: Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: const Color(0x66E52E2E),
+                    width: 2,
+                  ),
                 ),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                context.l10n.signOutButton,
-                style: _baloo2(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFFE52E2E),
-                  height: 1.0,
+                alignment: Alignment.center,
+                child: Text(
+                  context.l10n.signOutButton,
+                  style: _baloo2(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFE52E2E),
+                    height: 1.0,
+                  ),
                 ),
               ),
             ),
@@ -647,48 +651,53 @@ class _AuthPanelState extends State<AuthPanel> {
     required bool active,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 48,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: active
-              ? const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: [0.0, 0.55, 1.0],
-                  colors: [
-                    Color(0xFFFFCF3F),
-                    Color(0xFFFFB800),
-                    Color(0xFFF59E00),
-                  ],
-                )
-              : null,
-          boxShadow: active
-              ? const [
-                  BoxShadow(
-                    color: Color(0xFFB97A00),
-                    offset: Offset(0, 3),
-                    blurRadius: 0,
-                  ),
-                ]
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: _baloo2(
-            fontSize: 16.5,
-            fontWeight: FontWeight.w800,
-            color: active
-                ? const Color(0xFF4A2E00)
-                : const Color(0xFF8A6A30),
-            letterSpacing: 0.3,
-            height: 1.0,
+    return Semantics(
+      button: true,
+      label: label,
+      selected: active,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 48,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: active
+                ? const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.0, 0.55, 1.0],
+                    colors: [
+                      Color(0xFFFFCF3F),
+                      Color(0xFFFFB800),
+                      Color(0xFFF59E00),
+                    ],
+                  )
+                : null,
+            boxShadow: active
+                ? const [
+                    BoxShadow(
+                      color: Color(0xFFB97A00),
+                      offset: Offset(0, 3),
+                      blurRadius: 0,
+                    ),
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: _baloo2(
+              fontSize: 16.5,
+              fontWeight: FontWeight.w800,
+              color: active
+                  ? const Color(0xFF4A2E00)
+                  : const Color(0xFF8A6A30),
+              letterSpacing: 0.3,
+              height: 1.0,
+            ),
           ),
         ),
-      ),
+      );
     );
   }
 
@@ -747,56 +756,60 @@ class _AuthPanelState extends State<AuthPanel> {
   }
 
   Widget _buildSubmitButton() {
-    return GestureDetector(
-      onTap: _busy ? null : _submitLocal,
-      child: Container(
-        height: 56,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(17),
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: [0.0, 0.55, 1.0],
-            colors: [
-              Color(0xFFFFCF3F),
-              Color(0xFFFFB800),
-              Color(0xFFF59E00),
-            ],
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x47000000),
-              offset: Offset(0, 10),
-              blurRadius: 18,
+    return Semantics(
+      button: true,
+      label: _isRegister ? context.l10n.createAccountButton : context.l10n.signInButton,
+      child: GestureDetector(
+        onTap: _busy ? null : _submitLocal,
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(17),
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: [0.0, 0.55, 1.0],
+              colors: [
+                Color(0xFFFFCF3F),
+                Color(0xFFFFB800),
+                Color(0xFFF59E00),
+              ],
             ),
-            BoxShadow(
-              color: Color(0xFFB97A00),
-              offset: Offset(0, 5),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          _isRegister
-              ? context.l10n.createAccountButton
-              : context.l10n.signInButton,
-          style: _baloo2(
-            fontSize: 19,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-            letterSpacing: 0.4,
-            height: 1.0,
-            shadows: const [
-              Shadow(
-                color: Color(0x59000000),
-                offset: Offset(0, 2),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x47000000),
+                offset: Offset(0, 10),
+                blurRadius: 18,
+              ),
+              BoxShadow(
+                color: Color(0xFFB97A00),
+                offset: Offset(0, 5),
                 blurRadius: 0,
               ),
             ],
           ),
+          alignment: Alignment.center,
+          child: Text(
+            _isRegister
+                ? context.l10n.createAccountButton
+                : context.l10n.signInButton,
+            style: _baloo2(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: 0.4,
+              height: 1.0,
+              shadows: const [
+                Shadow(
+                  color: Color(0x59000000),
+                  offset: Offset(0, 2),
+                  blurRadius: 0,
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
+      );
     );
   }
 
@@ -839,44 +852,48 @@ class _AuthPanelState extends State<AuthPanel> {
     required Widget icon,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: _busy ? null : onTap,
-      child: Container(
-        height: 52,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFE3C98F),
-            width: 2,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0xFFE0C184),
-              offset: Offset(0, 4),
-              blurRadius: 0,
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: _busy ? null : onTap,
+        child: Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFE3C98F),
+              width: 2,
             ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            icon,
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: _baloo2(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF33200A),
-                letterSpacing: 0.3,
-                height: 1.0,
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0xFFE0C184),
+                offset: Offset(0, 4),
+                blurRadius: 0,
               ),
-            ),
-          ],
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              icon,
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: _baloo2(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF33200A),
+                  letterSpacing: 0.3,
+                  height: 1.0,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      );
     );
   }
 }

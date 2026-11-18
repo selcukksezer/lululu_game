@@ -62,23 +62,23 @@ class _TiersScreenState extends State<TiersScreen> {
       name: 'Bebek Huni',
       rarity: 'Sıradan',
       points: '10',
-      asset: 'assets/bugs/tier1_hd.webp',
+      asset: 'assets/bugs/tier1_hd.png',
       quote: 'HOP, GELDİM!',
     ),
     _BugTierInfo(
       tier: 2,
       name: 'Tencereli Çırak',
       rarity: 'Seyrek',
-      points: '30',
-      asset: 'assets/bugs/tier2_hd.webp',
+      points: '25',
+      asset: 'assets/bugs/tier2_hd.png',
       quote: 'TENCERE KAFADA, HAZIRIZ!',
     ),
     _BugTierInfo(
       tier: 3,
       name: 'Makaracı Fan',
       rarity: 'Nadir',
-      points: '60',
-      asset: 'assets/bugs/tier3_hd.webp',
+      points: '50',
+      asset: 'assets/bugs/tier3_hd.png',
       quote: 'MAKARAYIZ ABİ!',
     ),
     _BugTierInfo(
@@ -86,14 +86,14 @@ class _TiersScreenState extends State<TiersScreen> {
       name: 'Pijamalı Dansçı',
       rarity: 'Destansı',
       points: '100',
-      asset: 'assets/bugs/tier4_hd.webp',
+      asset: 'assets/bugs/tier4_hd.png',
       quote: 'DANS PİSTİNE!',
     ),
     _BugTierInfo(
       tier: 5,
       name: 'Hamam Diva',
       rarity: 'Efsanevi',
-      points: '150',
+      points: '200',
       asset: 'assets/bugs/tier5_hd.webp',
       quote: 'DİVA GELDİ!',
     ),
@@ -101,24 +101,24 @@ class _TiersScreenState extends State<TiersScreen> {
       tier: 6,
       name: 'Hamam Can',
       rarity: 'Mitik',
-      points: '220',
-      asset: 'assets/bugs/tier6_hd.webp',
+      points: '400',
+      asset: 'assets/bugs/tier6_hd.png',
       quote: 'HERKES HAVUZDAN ÇIKSIN!',
     ),
     _BugTierInfo(
       tier: 7,
       name: 'Kongo Lideri',
       rarity: 'Gizli',
-      points: '300',
-      asset: 'assets/bugs/tier7_hd.webp',
+      points: '800',
+      asset: 'assets/bugs/tier7_hd.png',
       quote: 'LİDER KONUŞTU!',
     ),
     _BugTierInfo(
       tier: 8,
       name: 'Hasta Bilge',
       rarity: 'Evrim Kristali',
-      points: '400',
-      asset: 'assets/bugs/tier8_hd.webp',
+      points: '1.600',
+      asset: 'assets/bugs/tier8_hd.png',
       quote: 'BİLGE YORGUN AMA EFSANE!',
     ),
     _BugTierInfo(
@@ -126,7 +126,7 @@ class _TiersScreenState extends State<TiersScreen> {
       name: 'Millî Formalı',
       rarity: 'EFSANEVİ',
       points: '3.200',
-      asset: 'assets/bugs/tier9_hd.webp',
+      asset: 'assets/bugs/tier9_hd.png',
       quote: 'GOLLL LÜLÜLÜ!',
     ),
     _BugTierInfo(
@@ -134,7 +134,7 @@ class _TiersScreenState extends State<TiersScreen> {
       name: 'Pembe Ceketli',
       rarity: 'DESTANSI',
       points: '6.400',
-      asset: 'assets/bugs/tier10_hd.webp',
+      asset: 'assets/bugs/tier10_hd.png',
       quote: 'PEMBE CEKETİM YAKIYOR!',
     ),
     _BugTierInfo(
@@ -142,7 +142,7 @@ class _TiersScreenState extends State<TiersScreen> {
       name: 'Beyaz Hayalet',
       rarity: 'MİTİK',
       points: '12.800',
-      asset: 'assets/bugs/tier11_hd.webp',
+      asset: 'assets/bugs/tier11_hd.png',
       quote: 'BUUUUU! KORKTUN MU?',
     ),
     _BugTierInfo(
@@ -150,7 +150,7 @@ class _TiersScreenState extends State<TiersScreen> {
       name: 'Gri Tişörtlü',
       rarity: 'KOZMİK',
       points: '25.600',
-      asset: 'assets/bugs/tier12_hd.webp',
+      asset: 'assets/bugs/tier12_hd.png',
       quote: 'SPORCU BÖCEK GELİYOR!',
     ),
     _BugTierInfo(
@@ -158,7 +158,7 @@ class _TiersScreenState extends State<TiersScreen> {
       name: 'Pembe Bornozlu',
       rarity: 'ZİRVE',
       points: '51.200',
-      asset: 'assets/bugs/tier13_hd.webp',
+      asset: 'assets/bugs/tier13_hd.png',
       quote: 'BORNOZUMU GİYDİM KEYİFTEYİM!',
     ),
   ];
@@ -254,8 +254,8 @@ class _TiersScreenState extends State<TiersScreen> {
                       Expanded(
                         child: Transform.translate(
                           offset: const Offset(0, 1.0),
-                          child: const Text(
-                            'BÖCEK AİLESİ',
+                          child: Text(
+                            context.l10n.bugFamilyTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -273,10 +273,10 @@ class _TiersScreenState extends State<TiersScreen> {
                   ),
                 ),
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(16, 2.8, 16, 0),
                 child: Text(
-                  'İki aynı tier çarpışır, bir üst tier doğar. Zincirin sonu: Pembe Bornozlu. Bir böceğe dokun — sesini duy, repliğini gör.',
+                  context.l10n.bugFamilySubtitle,
                   strutStyle: StrutStyle(
                     fontFamily: 'Nunito',
                     fontSize: 13,
@@ -321,130 +321,134 @@ class _TiersScreenState extends State<TiersScreen> {
   }
 
   Widget _buildEvoRow(_BugTierInfo t) {
-    return GestureDetector(
-      onTap: () => _onTapTier(t),
-      child: Container(
-        height: 72,
-        padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0F141B2A),
-              offset: Offset(0, 4),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // .evo-tno
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8.5, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF080B12),
-                borderRadius: BorderRadius.circular(999),
+    return Semantics(
+      button: true,
+      label: '${context.l10n.tierLabel(t.tier)}, ${_trUpper(t.name, Localizations.localeOf(context))}, ${t.rarity}',
+      child: GestureDetector(
+        onTap: () => _onTapTier(t),
+        child: Container(
+          height: 72,
+          padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0F141B2A),
+                offset: Offset(0, 4),
+                blurRadius: 0,
               ),
-              child: Transform.translate(
-                offset: const Offset(0, -1.0),
-                child: Text(
-                  'T${t.tier}',
-                  style: const TextStyle(
-                    fontFamily: 'Baloo 2',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFFFFB800),
-                    letterSpacing: 0.48,
-                    height: 1.55,
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // .evo-tno
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8.5, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF080B12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Transform.translate(
+                  offset: const Offset(0, -1.0),
+                  child: Text(
+                    'T${t.tier}',
+                    style: const TextStyle(
+                      fontFamily: 'Baloo 2',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFFFB800),
+                      letterSpacing: 0.48,
+                      height: 1.55,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            // .evo-bug
-            Image.asset(
-              t.asset,
-              width: 56,
-              height: 56,
-              fit: BoxFit.contain,
-            ),
-            const SizedBox(width: 12),
-            // .evo-tx
-            Expanded(
-              child: Transform.translate(
-                offset: const Offset(0, -1.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _trUpper(t.name, Localizations.localeOf(context)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Baloo 2',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0,
-                        color: Color(0xFF141B2A),
-                        height: 1.1,
+              const SizedBox(width: 12),
+              // .evo-bug
+              Image.asset(
+                t.asset,
+                width: 56,
+                height: 56,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(width: 12),
+              // .evo-tx
+              Expanded(
+                child: Transform.translate(
+                  offset: const Offset(0, -1.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _trUpper(t.name, Localizations.localeOf(context)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                          color: Color(0xFF141B2A),
+                          height: 1.1,
+                        ),
                       ),
+                      const SizedBox(height: 2),
+                      Text(
+                        t.rarity,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Nunito',
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                          color: Color(0xFF66738A),
+                          height: 1.55,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // .evo-pts
+              Transform.translate(
+                offset: const Offset(0, -1.0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/design/ui/res_star.png',
+                      width: 21,
+                      height: 21,
+                      fit: BoxFit.contain,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      t.rarity,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Nunito',
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0,
-                        color: Color(0xFF66738A),
-                        height: 1.55,
+                    const SizedBox(width: 5),
+                    Transform.translate(
+                      offset: const Offset(0, -1.0),
+                      child: Text(
+                        '+${t.points}',
+                        style: const TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                          color: Color(0xFF8A6D00),
+                          height: 1.55,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            // .evo-pts
-            Transform.translate(
-              offset: const Offset(0, -1.0),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/design/ui/res_star.png',
-                    width: 21,
-                    height: 21,
-                    fit: BoxFit.contain,
-                  ),
-                  const SizedBox(width: 5),
-                  Transform.translate(
-                    offset: const Offset(0, -1.0),
-                    child: Text(
-                      '+${t.points}',
-                      style: const TextStyle(
-                        fontFamily: 'Baloo 2',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0,
-                        color: Color(0xFF8A6D00),
-                        height: 1.55,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+      );
     );
   }
 

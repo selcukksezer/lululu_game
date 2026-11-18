@@ -357,6 +357,32 @@ class EnergyService extends ChangeNotifier {
     await prefs.setInt(_keyLastSeen, _lastSeen.millisecondsSinceEpoch);
   }
 
+  /// Hesap silme için yerel enerji verisinin tamamını temizler
+  /// (hesap-silme, yerel-temizlik): 4 enerji anahtarı
+  /// (`lululu.energy`, `LululuEnergyCount`,
+  /// `lululu.energy_last_refill`, `lululu.energy_last_seen`) kaldırılır,
+  /// bellek-içi enerji varsayılan değere (5) döner ve bekleyen yazmalar
+  /// atılır. Kayıt yapılmaz, böylece kaldırılan anahtarlar yeniden
+  /// yazılmaz; sonraki `load()` prefs'ten varsayılanları okur.
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyEnergy);
+    await prefs.remove(_keyLegacyEnergy);
+    await prefs.remove(_keyLastRefill);
+    await prefs.remove(_keyLastSeen);
+    _pendingWrites.clear();
+    _energy = defaultEnergy;
+    _lastRefill = DateTime.now();
+    _lastSeen = DateTime.now();
+    _autoRegenTimer?.cancel();
+    _autoRegenTimer = null;
+    energyNotifier.value = _energy;
+    timeToNextNotifier.value = timeToNext;
+    notifyListeners();
+    ProgressManager.instance.notifyListeners();
+    _ensureAutoTimer();
+  }
+
   @override
   void dispose() {
     _autoRegenTimer?.cancel();

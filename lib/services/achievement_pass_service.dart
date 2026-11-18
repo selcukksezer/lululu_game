@@ -960,6 +960,14 @@ class AchievementPassService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hesap silme için yerel başarım / sezon verisinin tamamını temizler
+  /// (hesap-silme, yerel-temizlik). [resetForTesting] gövdesi yalnız
+  /// bellek-içi temizlik + 9 prefs anahtarının kaldırılması yapar
+  /// (yan etkisi yok), bu yüzden üretimdeki silme aynı mantığı bu
+  /// metot üzerinden çağırır; testler `resetForTesting` adını
+  /// kullanmaya devam eder.
+  Future<void> clearLocalData() => resetForTesting();
+
   /// Altın Bilet (Gold Pass) kilidini açar.
   Future<bool> activateGoldPass({int coinCost = 0}) async {
     if (_hasGoldPass) return true;

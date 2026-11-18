@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 
 /// 1:1 Pixel-Perfect `#infoOverlay` (`.info-card`) popup matching `LÜLÜLÜ UI:UX Tasarım.html`.
@@ -241,63 +242,67 @@ class ItemDetailPopup extends StatelessWidget {
                       ),
                       const SizedBox(height: 16),
                       // `#btnCloseInfo` (.btn)
-                      GestureDetector(
-                        onTap: () {
-                          AudioManager().playPop();
-                          if (onClose != null) {
-                            onClose!();
-                          } else if (Navigator.of(context).canPop()) {
-                            Navigator.of(context).pop();
-                          }
-                        },
-                        child: Container(
-                          width: double.infinity,
-                          constraints: const BoxConstraints(minHeight: 52),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 26,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(18),
-                            gradient: const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              stops: [0.0, 0.55, 1.0],
-                              colors: [
-                                Color(0xFFFFCF3F),
-                                Color(0xFFFFB800),
-                                Color(0xFFF59E00),
-                              ],
+                      Semantics(
+                        button: true,
+                        label: context.l10n.understoodButton,
+                        child: GestureDetector(
+                          onTap: () {
+                            AudioManager().playPop();
+                            if (onClose != null) {
+                              onClose!();
+                            } else if (Navigator.of(context).canPop()) {
+                              Navigator.of(context).pop();
+                            }
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(minHeight: 52),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 26,
+                              vertical: 12,
                             ),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0xFFB97A00),
-                                offset: Offset(0, 5),
-                                blurRadius: 0,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(18),
+                              gradient: const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                stops: [0.0, 0.55, 1.0],
+                                colors: [
+                                  Color(0xFFFFCF3F),
+                                  Color(0xFFFFB800),
+                                  Color(0xFFF59E00),
+                                ],
                               ),
-                              BoxShadow(
-                                color: Color(0x47000000),
-                                offset: Offset(0, 10),
-                                blurRadius: 18,
-                              ),
-                            ],
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'ANLADIM',
-                            style: GoogleFonts.baloo2(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 0.36,
-                              height: 1.0,
-                              shadows: const [
-                                Shadow(
-                                  color: Color(0x59784000),
-                                  offset: Offset(0, 1),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0xFFB97A00),
+                                  offset: Offset(0, 5),
                                   blurRadius: 0,
                                 ),
+                                BoxShadow(
+                                  color: Color(0x47000000),
+                                  offset: Offset(0, 10),
+                                  blurRadius: 18,
+                                ),
                               ],
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              context.l10n.understoodButton,
+                              style: GoogleFonts.baloo2(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.36,
+                                height: 1.0,
+                                shadows: const [
+                                  Shadow(
+                                    color: Color(0x59784000),
+                                    offset: Offset(0, 1),
+                                    blurRadius: 0,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

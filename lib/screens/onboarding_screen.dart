@@ -139,7 +139,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             // WebP ikizi (81 KB, PNG ile piksel-birebir aynı; S2#34).
             'assets/design/splash/splash_logo.webp',
             fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            errorBuilder: (_, error, _) {
+              // Sessiz boşluk yerine görünür yer tutucu + hata kaydı.
+              if (kDebugMode) {
+                debugPrint(
+                  '[OnboardingScreen] Splash logo yüklenemedi: $error',
+                );
+              }
+              return Container(
+                color: const Color(0x1FFFFFFF),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.image_not_supported_outlined,
+                  size: 32,
+                  color: Color(0xFFFFD34D),
+                ),
+              );
+            },
           ),
         ),
         const SizedBox(height: 4),

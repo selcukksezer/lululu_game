@@ -298,64 +298,68 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
     required bool hasTextShadow,
     required VoidCallback? onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        constraints: const BoxConstraints(minHeight: 52),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          color: solidColor,
-          gradient: gradient,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: shadowColor,
-              offset: Offset(0, shadowOffsetY),
-              blurRadius: 0,
-            ),
-            if (hasBlurShadow)
-              const BoxShadow(
-                color: Color(0x47000000),
-                offset: Offset(0, 10),
-                blurRadius: 18,
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 52),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: solidColor,
+            gradient: gradient,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: shadowColor,
+                offset: Offset(0, shadowOffsetY),
+                blurRadius: 0,
               ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (leadingIcon != null) ...[
-              leadingIcon,
-              const SizedBox(width: 8),
+              if (hasBlurShadow)
+                const BoxShadow(
+                  color: Color(0x47000000),
+                  offset: Offset(0, 10),
+                  blurRadius: 18,
+                ),
             ],
-            Flexible(
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.baloo2(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
-                  letterSpacing: 0.36,
-                  height: 1.0,
-                  shadows: hasTextShadow
-                      ? const [
-                          Shadow(
-                            color: Color(0x59784000),
-                            offset: Offset(0, 1),
-                            blurRadius: 0,
-                          ),
-                        ]
-                      : null,
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (leadingIcon != null) ...[
+                leadingIcon,
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.baloo2(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: textColor,
+                    letterSpacing: 0.36,
+                    height: 1.0,
+                    shadows: hasTextShadow
+                        ? const [
+                            Shadow(
+                              color: Color(0x59784000),
+                              offset: Offset(0, 1),
+                              blurRadius: 0,
+                            ),
+                          ]
+                        : null,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+      );
     );
   }
 }

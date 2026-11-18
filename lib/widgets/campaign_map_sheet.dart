@@ -344,61 +344,66 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
               final chStars = _progression.getChapterStars(ch.chapterIndex);
               final accent = _accentForChapter(ch.chapterIndex);
 
-              return GestureDetector(
-                key: Key('campaign_chapter_tab_${ch.chapterIndex}'),
-                onTap: () => setState(() {
-                  _selectedChapterIndex = ch.chapterIndex;
-                  _chestFeedbackBanner = null;
-                }),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 6 : 8,
-                    vertical: compact ? 3 : 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? accent.withValues(alpha: 0.24)
-                        : LululuColors.darkObsidian.withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
+              return Semantics(
+                button: true,
+                label: context.l10n.chapterTabLabel(ch.chapterIndex, chStars),
+                selected: selected,
+                child: GestureDetector(
+                  key: Key('campaign_chapter_tab_${ch.chapterIndex}'),
+                  onTap: () => setState(() {
+                    _selectedChapterIndex = ch.chapterIndex;
+                    _chestFeedbackBanner = null;
+                  }),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 6 : 8,
+                      vertical: compact ? 3 : 4,
+                    ),
+                    decoration: BoxDecoration(
                       color: selected
-                          ? LululuColors.liquidGold
-                          : LululuColors.mutedTitanium.withValues(alpha: 0.3),
-                      width: selected ? 1.6 : 1.0,
+                          ? accent.withValues(alpha: 0.24)
+                          : LululuColors.darkObsidian.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? LululuColors.liquidGold
+                            : LululuColors.mutedTitanium.withValues(alpha: 0.3),
+                        width: selected ? 1.6 : 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          ch.iconEmoji,
+                          style: TextStyle(fontSize: compact ? 10 : 11.5),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          'B${ch.chapterIndex}',
+                          style: TextStyle(
+                            fontSize: compact ? 9.5 : 10.5,
+                            fontWeight:
+                                selected ? FontWeight.w900 : FontWeight.w700,
+                            color: selected
+                                ? LululuColors.cream
+                                : LululuColors.mutedTitanium,
+                          ),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '$chStars/30⭐',
+                          style: TextStyle(
+                            fontSize: compact ? 8.5 : 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: LululuColors.liquidGold,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        ch.iconEmoji,
-                        style: TextStyle(fontSize: compact ? 10 : 11.5),
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        'B${ch.chapterIndex}',
-                        style: TextStyle(
-                          fontSize: compact ? 9.5 : 10.5,
-                          fontWeight:
-                              selected ? FontWeight.w900 : FontWeight.w700,
-                          color: selected
-                              ? LululuColors.cream
-                              : LululuColors.mutedTitanium,
-                        ),
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        '$chStars/30⭐',
-                        style: TextStyle(
-                          fontSize: compact ? 8.5 : 9.5,
-                          fontWeight: FontWeight.w800,
-                          color: LululuColors.liquidGold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                );
               );
             },
           ),
@@ -546,76 +551,81 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
             ? LululuColors.liquidGold
             : LululuColors.mutedTitanium.withValues(alpha: 0.35);
 
-    return GestureDetector(
-      key: Key('campaign_chest_${chapterIndex}_$milestoneStars'),
-      onTap:
-          claimable ? () => _handleClaimChest(chapterIndex, milestoneStars) : null,
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 5 : 7,
-          vertical: compact ? 4 : 5,
-        ),
-        decoration: BoxDecoration(
-          color: claimable
-              ? LululuColors.liquidGold.withValues(alpha: 0.18)
-              : claimed
-                  ? LululuColors.toxicNeon.withValues(alpha: 0.12)
-                  : LululuColors.darkObsidian.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: borderColor,
-            width: claimable ? 1.6 : 1.0,
+    return Semantics(
+      button: true,
+      enabled: claimable,
+      label: context.l10n.chestClaimLabel(milestoneStars, claimed ? 'claimed' : claimable ? 'claimable' : 'locked'),
+      child: GestureDetector(
+        key: Key('campaign_chest_${chapterIndex}_$milestoneStars'),
+        onTap:
+            claimable ? () => _handleClaimChest(chapterIndex, milestoneStars) : null,
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 5 : 7,
+            vertical: compact ? 4 : 5,
+          ),
+          decoration: BoxDecoration(
+            color: claimable
+                ? LululuColors.liquidGold.withValues(alpha: 0.18)
+                : claimed
+                    ? LululuColors.toxicNeon.withValues(alpha: 0.12)
+                    : LululuColors.darkObsidian.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: borderColor,
+              width: claimable ? 1.6 : 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                claimed
+                    ? '✅'
+                    : claimable
+                        ? '🎁'
+                        : '🔒',
+                style: TextStyle(fontSize: compact ? 11 : 13),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      context.l10n.chestStarsLabel(milestoneStars),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: compact ? 9 : 10,
+                        fontWeight: FontWeight.w900,
+                        color: claimable
+                            ? LululuColors.warningSolar
+                            : claimed
+                                ? LululuColors.toxicNeon
+                                : LululuColors.cream,
+                      ),
+                    ),
+                    Text(
+                      claimed
+                          ? context.l10n.claimedPlain
+                          : context.l10n.chestRewardLine(reward.coinsGranted, reward.boosterCount),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: compact ? 8 : 8.5,
+                        fontWeight: FontWeight.w700,
+                        color: LululuColors.mutedTitanium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              claimed
-                  ? '✅'
-                  : claimable
-                      ? '🎁'
-                      : '🔒',
-              style: TextStyle(fontSize: compact ? 11 : 13),
-            ),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    context.l10n.chestStarsLabel(milestoneStars),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: compact ? 9 : 10,
-                      fontWeight: FontWeight.w900,
-                      color: claimable
-                          ? LululuColors.warningSolar
-                          : claimed
-                              ? LululuColors.toxicNeon
-                              : LululuColors.cream,
-                    ),
-                  ),
-                  Text(
-                    claimed
-                        ? context.l10n.claimedPlain
-                        : context.l10n.chestRewardLine(reward.coinsGranted, reward.boosterCount),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: compact ? 8 : 8.5,
-                      fontWeight: FontWeight.w700,
-                      color: LululuColors.mutedTitanium,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      );
     );
   }
 
@@ -685,104 +695,108 @@ class _CampaignLevelNodeCard extends StatelessWidget {
                 ? LululuColors.warningSolar
                 : accent.withValues(alpha: 0.85);
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
-        decoration: BoxDecoration(
-          gradient: !isUnlocked
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [LululuColors.darkObsidian, LululuColors.carbonVoid],
-                )
-              : isBoss
-                  ? LululuGradients.rubyToFuchsia
-                  : stars > 0
-                      ? LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            accent.withValues(alpha: 0.45),
-                            LululuColors.spaceNavy,
-                          ],
-                        )
-                      : const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            LululuColors.spaceNavy,
-                            LululuColors.darkObsidian,
-                          ],
-                        ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: borderColor,
-            width: isBoss ? 1.8 : 1.2,
+    return Semantics(
+      button: true,
+      label: context.l10n.levelTileLabel(level.id, stars, !isUnlocked),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+          decoration: BoxDecoration(
+            gradient: !isUnlocked
+                ? const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [LululuColors.darkObsidian, LululuColors.carbonVoid],
+                  )
+                : isBoss
+                    ? LululuGradients.rubyToFuchsia
+                    : stars > 0
+                        ? LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              accent.withValues(alpha: 0.45),
+                              LululuColors.spaceNavy,
+                            ],
+                          )
+                        : const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              LululuColors.spaceNavy,
+                              LululuColors.darkObsidian,
+                            ],
+                          ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: borderColor,
+              width: isBoss ? 1.8 : 1.2,
+            ),
           ),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (isBoss)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.workspace_premium_rounded,
-                      key: Key('boss_crown_icon_${level.id}'),
-                      size: compact ? 11 : 12,
-                      color: LululuColors.warningSolar,
-                    ),
-                    const SizedBox(width: 2),
-                    Text(
-                      context.l10n.bossShort,
-                      style: TextStyle(
-                        fontSize: compact ? 7.5 : 8,
-                        fontWeight: FontWeight.w900,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isBoss)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.workspace_premium_rounded,
+                        key: Key('boss_crown_icon_${level.id}'),
+                        size: compact ? 11 : 12,
                         color: LululuColors.warningSolar,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 2),
+                      Text(
+                        context.l10n.bossShort,
+                        style: TextStyle(
+                          fontSize: compact ? 7.5 : 8,
+                          fontWeight: FontWeight.w900,
+                          color: LululuColors.warningSolar,
+                        ),
+                      ),
+                    ],
+                  ),
+                if (!isUnlocked)
+                  Icon(
+                    Icons.lock_rounded,
+                    key: Key('level_lock_icon_${level.id}'),
+                    size: compact ? 13 : 15,
+                    color: LululuColors.mutedTitanium.withValues(alpha: 0.65),
+                  ),
+                Text(
+                  '${level.id}',
+                  style: TextStyle(
+                    fontSize: compact ? 12 : 14,
+                    fontWeight: FontWeight.w900,
+                    color: isUnlocked
+                        ? LululuColors.cream
+                        : LululuColors.mutedTitanium.withValues(alpha: 0.65),
+                  ),
                 ),
-              if (!isUnlocked)
-                Icon(
-                  Icons.lock_rounded,
-                  key: Key('level_lock_icon_${level.id}'),
-                  size: compact ? 13 : 15,
-                  color: LululuColors.mutedTitanium.withValues(alpha: 0.65),
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (starIdx) {
+                    final filled = isUnlocked && starIdx < stars;
+                    return Icon(
+                      filled ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: compact ? 9.5 : 10.5,
+                      color: filled
+                          ? LululuColors.warningSolar
+                          : LululuColors.mutedTitanium.withValues(alpha: 0.45),
+                    );
+                  }),
                 ),
-              Text(
-                '${level.id}',
-                style: TextStyle(
-                  fontSize: compact ? 12 : 14,
-                  fontWeight: FontWeight.w900,
-                  color: isUnlocked
-                      ? LululuColors.cream
-                      : LululuColors.mutedTitanium.withValues(alpha: 0.65),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(3, (starIdx) {
-                  final filled = isUnlocked && starIdx < stars;
-                  return Icon(
-                    filled ? Icons.star_rounded : Icons.star_border_rounded,
-                    size: compact ? 9.5 : 10.5,
-                    color: filled
-                        ? LululuColors.warningSolar
-                        : LululuColors.mutedTitanium.withValues(alpha: 0.45),
-                  );
-                }),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
+      );
     );
   }
 }

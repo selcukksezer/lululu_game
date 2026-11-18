@@ -202,7 +202,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
   bool _shouldAutoPauseGame = false;
   bool _isAudioPausedByLifecycle = false;
   bool _wasAudioMutedBeforePause = false;
-  bool _wasMusicEnabledBeforePause = true;
   bool _wasSfxEnabledBeforePause = true;
 
   DateTime _sessionStartedAt = DateTime.now();
@@ -350,7 +349,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
     final audio = AudioManager.instance;
     if (!_isAudioPausedByLifecycle) {
       _wasAudioMutedBeforePause = audio.isMuted;
-      _wasMusicEnabledBeforePause = audio.musicEnabled;
       _wasSfxEnabledBeforePause = audio.sfxEnabled;
       _isAudioPausedByLifecycle = true;
     }
@@ -395,9 +393,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
     final audio = AudioManager.instance;
     if (_isAudioPausedByLifecycle) {
       audio.isMuted = _wasAudioMutedBeforePause;
-      if (_wasMusicEnabledBeforePause != audio.musicEnabled) {
-        audio.musicEnabled = _wasMusicEnabledBeforePause;
-      }
       if (_wasSfxEnabledBeforePause != audio.sfxEnabled) {
         audio.sfxEnabled = _wasSfxEnabledBeforePause;
       }
@@ -534,7 +529,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
     _shouldAutoPauseGame = false;
     _isAudioPausedByLifecycle = false;
     _wasAudioMutedBeforePause = false;
-    _wasMusicEnabledBeforePause = true;
     _wasSfxEnabledBeforePause = true;
     _sessionStartedAt = DateTime.now();
     _lastPausedAt = null;

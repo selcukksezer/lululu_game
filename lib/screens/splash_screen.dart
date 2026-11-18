@@ -272,29 +272,34 @@ class _SplashScreenState extends State<SplashScreen>
           Positioned(
             top: 44,
             right: 14,
-            child: GestureDetector(
-              onTap: _skipToEnd,
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                width: 86,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xB8080B12), // rgba(8,11,18,.72)
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: const Color(0x73FFFFFF), // rgba(255,255,255,.45)
-                    width: 2,
+            child: Semantics(
+              button: true,
+              label: l10n.splashSkipPlain,
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: _skipToEnd,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  width: 86,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xB8080B12), // rgba(8,11,18,.72)
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: const Color(0x73FFFFFF), // rgba(255,255,255,.45)
+                      width: 2,
+                    ),
                   ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  l10n.splashSkip,
-                  style: GoogleFonts.baloo2(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: 1.2,
-                    height: 1.0,
+                  alignment: Alignment.center,
+                  child: Text(
+                    l10n.splashSkip,
+                    style: GoogleFonts.baloo2(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 1.2,
+                      height: 1.0,
+                    ),
                   ),
                 ),
               ),
@@ -338,36 +343,42 @@ class _SplashScreenState extends State<SplashScreen>
                       children: [
                         for (var i = 0; i < 3; i++) ...[
                           if (i > 0) const SizedBox(width: 2),
-                          GestureDetector(
-                            onTap: () {
-                              _pageController.animateToPage(
-                                i,
-                                duration: const Duration(milliseconds: 320),
-                                curve: Curves.easeOutCubic,
-                              );
-                            },
-                            child: Container(
-                              width: 48,
-                              height: 48,
-                              alignment: Alignment.center,
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 250),
-                                width: _pageIndex == i ? 30 : 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: _pageIndex == i
-                                      ? const Color(0xFFFFB800)
-                                      : const Color(0x73FFFFFF),
-                                  borderRadius: BorderRadius.circular(999),
-                                  boxShadow: _pageIndex == i
-                                      ? const [
-                                          BoxShadow(
-                                            color: Color(0xB3FFB800),
-                                            blurRadius: 8,
-                                            offset: Offset(0, 2),
-                                          ),
-                                        ]
-                                      : null,
+                          Semantics(
+                            button: true,
+                            selected: _pageIndex == i,
+                            label: l10n.onboardingPageLabel(i + 1),
+                            excludeSemantics: true,
+                            child: GestureDetector(
+                              onTap: () {
+                                _pageController.animateToPage(
+                                  i,
+                                  duration: const Duration(milliseconds: 320),
+                                  curve: Curves.easeOutCubic,
+                                );
+                              },
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                alignment: Alignment.center,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 250),
+                                  width: _pageIndex == i ? 30 : 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: _pageIndex == i
+                                        ? const Color(0xFFFFB800)
+                                        : const Color(0x73FFFFFF),
+                                    borderRadius: BorderRadius.circular(999),
+                                    boxShadow: _pageIndex == i
+                                        ? const [
+                                            BoxShadow(
+                                              color: Color(0xB3FFB800),
+                                              blurRadius: 8,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ]
+                                        : null,
+                                  ),
                                 ),
                               ),
                             ),
@@ -378,55 +389,62 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   const SizedBox(height: 4),
                   // DEVAM › Butonu
-                  GestureDetector(
-                    onTap: _nextPage,
-                    behavior: HitTestBehavior.opaque,
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 200),
-                      opacity: _pageIndex == 2 && _loading ? 0.0 : 1.0,
-                      child: Container(
-                        width: 190,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            stops: [0.0, 0.55, 1.0],
-                            colors: [
-                              Color(0xFFFFCF3F),
-                              Color(0xFFFFB800),
-                              Color(0xFFF59E00),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0xFFB97A00),
-                              offset: Offset(0, 5),
+                  Semantics(
+                    button: true,
+                    label: _pageIndex == 2
+                        ? l10n.splashStartButtonPlain
+                        : l10n.splashContinueButtonPlain,
+                    excludeSemantics: true,
+                    child: GestureDetector(
+                      onTap: _nextPage,
+                      behavior: HitTestBehavior.opaque,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 200),
+                        opacity: _pageIndex == 2 && _loading ? 0.0 : 1.0,
+                        child: Container(
+                          width: 190,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              stops: [0.0, 0.55, 1.0],
+                              colors: [
+                                Color(0xFFFFCF3F),
+                                Color(0xFFFFB800),
+                                Color(0xFFF59E00),
+                              ],
                             ),
-                            BoxShadow(
-                              color: Color(0x47000000), // rgba(0,0,0,.28)
-                              blurRadius: 18,
-                              offset: Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _pageIndex == 2
-                              ? l10n.splashStartButton
-                              : l10n.splashContinueButton,
-                          style: GoogleFonts.baloo2(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.36,
-                            shadows: const [
-                              Shadow(
-                                color: Color(0x59784000),
-                                offset: Offset(0, 1),
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0xFFB97A00),
+                                offset: Offset(0, 5),
+                              ),
+                              BoxShadow(
+                                color: Color(0x47000000), // rgba(0,0,0,.28)
+                                blurRadius: 18,
+                                offset: Offset(0, 10),
                               ),
                             ],
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            _pageIndex == 2
+                                ? l10n.splashStartButton
+                                : l10n.splashContinueButton,
+                            style: GoogleFonts.baloo2(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.36,
+                              shadows: const [
+                                Shadow(
+                                  color: Color(0x59784000),
+                                  offset: Offset(0, 1),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -580,7 +598,7 @@ class _SplashScreenState extends State<SplashScreen>
                             sigmaY: 12.0,
                           ),
                           child: Image.asset(
-                            'assets/design/logo_lululu.webp',
+                            'assets/design/ui/logo_lululu.webp',
                             width: 336.0,
                             height: 112.0,
                             fit: BoxFit.contain,
@@ -590,7 +608,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                       Image.asset(
-                        'assets/design/logo_lululu.webp',
+                        'assets/design/ui/logo_lululu.webp',
                         width: 336.0,
                         height: 112.0,
                         fit: BoxFit.contain,
@@ -937,52 +955,52 @@ class _SplashScreenState extends State<SplashScreen>
               children: [
                 _ModeChip(
                   title: l10n.suikaArenaTitle,
-                  assetPath: 'assets/design/bugs/tier1_hd.webp',
+                  assetPath: 'assets/bugs/tier1_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier1_hd.png',
                 ),
                 _ModeChip(
                   title: l10n.grid2048Title,
-                  assetPath: 'assets/design/bugs/tier2_hd.webp',
+                  assetPath: 'assets/bugs/tier2_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier2_hd.png',
                 ),
                 _ModeChip(
                   title: l10n.balloonPopTitle,
-                  assetPath: 'assets/design/bugs/tier1_hd.webp',
+                  assetPath: 'assets/bugs/tier1_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier1_hd.png',
                 ),
                 _ModeChip(
                   title: l10n.match3Title,
-                  assetPath: 'assets/design/bugs/tier5_hd.webp',
+                  assetPath: 'assets/bugs/tier5_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier5_hd.png',
                 ),
                 _ModeChip(
                   title: l10n.linkPopTitle,
-                  assetPath: 'assets/design/bugs/tier3_hd.webp',
+                  assetPath: 'assets/bugs/tier3_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier3_hd.png',
                 ),
                 _ModeChip(
                   title: l10n.stackDropTitle,
-                  assetPath: 'assets/design/bugs/tier6_hd.webp',
+                  assetPath: 'assets/bugs/tier6_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier6_hd.png',
                 ),
                 _ModeChip(
                   title: l10n.slipperTapTitle,
-                  assetPath: 'assets/design/powerup_terlik.webp',
-                  fallbackAssetPath: 'assets/design/powerup_terlik.png',
+                  assetPath: 'assets/design/ui/powerup_terlik.png',
+                  fallbackAssetPath: 'assets/design/ui/powerup_terlik.png',
                 ),
                 _ModeChip(
                   title: l10n.osmantusTitle,
-                  assetPath: 'assets/design/osman/osmantus_kisi_a.webp',
+                  assetPath: 'assets/osman/osmantus_kisi_a.png',
                   fallbackAssetPath: 'assets/design/osman/osmantus_kisi_a.png',
                 ),
                 _ModeChip(
                   title: l10n.screamBugTitle,
-                  assetPath: 'assets/design/bugs/tier7_hd.webp',
+                  assetPath: 'assets/bugs/tier7_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier7_hd.png',
                 ),
                 _ModeChip(
                   title: l10n.makarayizTitle,
-                  assetPath: 'assets/design/bugs/tier3_hd.webp',
+                  assetPath: 'assets/bugs/tier3_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier3_hd.png',
                 ),
               ],
@@ -1111,68 +1129,77 @@ class _SplashScreenState extends State<SplashScreen>
           const SizedBox(height: 16),
 
           // Fuchsia Start Button (#btnStart)
-          GestureDetector(
-            onTap: _startLoading,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 248),
-              height: 56,
-              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFFFF3377),
-                    Color(0xFFE01E5A),
-                    Color(0xFFB80F42),
+          Semantics(
+            button: true,
+            label: _loading
+                ? (_done
+                    ? l10n.splashStarting
+                    : l10n.splashLoadingPercent(_progress.round()))
+                : l10n.splashStartAdventure,
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: _startLoading,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 248),
+                height: 56,
+                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFFFF3377),
+                      Color(0xFFE01E5A),
+                      Color(0xFFB80F42),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0xFF7A082E),
+                      offset: Offset(0, 5),
+                    ),
+                    BoxShadow(
+                      color: Color(0x47000000),
+                      blurRadius: 18,
+                      offset: Offset(0, 10),
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0xFF7A082E),
-                    offset: Offset(0, 5),
-                  ),
-                  BoxShadow(
-                    color: Color(0x47000000),
-                    blurRadius: 18,
-                    offset: Offset(0, 10),
-                  ),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.asset(
-                    'assets/design/icons/play.png',
-                    width: 23,
-                    height: 23,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 23,
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/design/ui/icons/play.png',
+                      width: 23,
+                      height: 23,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 23,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _loading
-                        ? (_done
-                            ? l10n.splashStarting
-                            : l10n.splashLoadingPercent(_progress.round()))
-                        : l10n.splashStartAdventure,
-                    style: GoogleFonts.baloo2(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                      height: 1.15,
+                    const SizedBox(width: 8),
+                    Text(
+                      _loading
+                          ? (_done
+                              ? l10n.splashStarting
+                              : l10n.splashLoadingPercent(_progress.round()))
+                          : l10n.splashStartAdventure,
+                      style: GoogleFonts.baloo2(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                        height: 1.15,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

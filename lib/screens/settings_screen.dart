@@ -91,7 +91,10 @@ class SettingsScreen extends StatefulWidget {
               Row(
                 children: [
                   Expanded(
-                    child: GestureDetector(
+                    child: Semantics(
+                      button: true,
+                      label: dialogContext.l10n.cancel,
+                      child: GestureDetector(
                       onTap: () {
                         AudioManager().playPop();
                         Navigator.of(dialogContext).pop(false);
@@ -120,10 +123,14 @@ class SettingsScreen extends StatefulWidget {
                         ),
                       ),
                     ),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: GestureDetector(
+                    child: Semantics(
+                      button: true,
+                      label: dialogContext.l10n.resetButton,
+                      child: GestureDetector(
                       onTap: () {
                         AudioManager().playPop();
                         Navigator.of(dialogContext).pop(true);
@@ -160,6 +167,7 @@ class SettingsScreen extends StatefulWidget {
                           ),
                         ),
                       ),
+                    ),
                     ),
                   ),
                 ],
@@ -218,7 +226,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final AudioManager _audio = AudioManager();
   final ProgressManager _pm = ProgressManager.instance;
-  bool _musicOn = true;
   bool _sfxOn = true;
   bool _voiceOn = true;
   bool _vibOn = false;
@@ -229,7 +236,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _musicOn = _pm.musicEnabled;
     _sfxOn = _pm.sfxEnabled && !_audio.isMuted;
     _voiceOn = _audio.voiceEnabled;
     _vibOn = false;
@@ -244,9 +250,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final music = prefs.getBool('LululuSetMusic') ??
-        prefs.getBool('lululu_music_enabled') ??
-        true;
     final sfx = prefs.getBool('LululuSetSfx') ??
         prefs.getBool('lululu_sfx_enabled') ??
         !_audio.isMuted;
@@ -255,7 +258,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         true;
     final vib = prefs.getBool('LululuSetVib') ?? false;
 
-    _audio.setMusicEnabled(music);
     _audio.setSfxEnabled(sfx);
     // Ses ve sesli anahtarları bağımsızdır: her bayrak yalnız kendi
     // saklanan değerinden beslenir (SFX kapalıyken voice ezilmez).
@@ -265,7 +267,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (!mounted) return;
     setState(() {
-      _musicOn = music;
       _sfxOn = sfx;
       _voiceOn = voice;
       _vibOn = vib;
@@ -275,14 +276,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _savePref(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
-  }
-
-  void _onMusicChanged(bool v) {
-    AudioManager().playPop();
-    setState(() => _musicOn = v);
-    AudioManager().setMusicEnabled(v);
-    unawaited(ProgressManager.instance.setMusicEnabled(v));
-    unawaited(_savePref('LululuSetMusic', v));
   }
 
   void _onSfxChanged(bool v) {
@@ -454,13 +447,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 _buildSwitchRow(
                   iconAsset: 'assets/design/ui/icons/sound_on.png',
-                  title: context.l10n.musicTitle,
-                  subtitle: context.l10n.musicSubtitle,
-                  value: _musicOn,
-                  onChanged: _onMusicChanged,
-                ),
-                _buildSwitchRow(
-                  iconAsset: 'assets/design/ui/icons/sound_on.png',
                   title: context.l10n.sfxTitle,
                   subtitle: context.l10n.sfxSubtitle,
                   value: _sfxOn,
@@ -516,7 +502,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
                 const SizedBox(height: 14),
-                GestureDetector(
+                Semantics(
+                  button: true,
+                  label: context.l10n.closeLabel,
+                  child: GestureDetector(
                   onTap: _close,
                   child: Container(
                     constraints: const BoxConstraints(minHeight: 52),
@@ -568,6 +557,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ),
+                  ),
                 ),
               ],
             );
@@ -618,7 +608,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: '$title, $subtitle',
+      child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
@@ -674,6 +667,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -686,7 +680,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: title,
+      toggled: value,
+      child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onChanged(!value),
       child: Container(
@@ -754,6 +752,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 }

@@ -249,7 +249,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           _maxScreamStreak = 7;
           _power = 0.7;
           _bug = InsectTier.kongo;
-          _callout = 'KAPI X7!';
+          _callout = context.l10n.screamGatePrototype;
           _scorePopup = '+50 X7';
           _x = 24;
           _y = _arenaH * 0.30 - 3;
@@ -308,7 +308,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       if (_aliveFor > _startGrace &&
           _groundIdle > _groundGrace &&
           _power < 0.12) {
-        _die('Çimde uyudun! Zıpla / spam et.');
+        _die(context.l10n.screamIdleGround);
         return;
       }
     } else {
@@ -339,7 +339,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           _hop = false;
           continue;
         }
-        _die('${g.kind.deathLine} Kapı $_gatesPassed');
+        _die(context.l10n.screamDeathLine(g.kind.deathLineFor(context.l10n), _gatesPassed));
         return;
       }
       if (!g.scored && g.x + _gateW < _x) {
@@ -347,10 +347,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         _gatesPassed++;
         final gain = 10 + _screamStreak * 5 + (_nitro ? 25 : 0);
         _score += gain;
-        _callout = 'KAPI X$_screamStreak!';
+        _callout = context.l10n.screamGateStreak(_screamStreak);
         _scorePopup = '+$gain X$_screamStreak';
         HapticFeedback.lightImpact();
-        _hint = '${g.kind.passLine} · spam x$_screamStreak';
+        _hint = '${g.kind.passLineFor(context.l10n)} · spam x$_screamStreak';
         unawaited(
           DailyChallengeService.instance.tryCompleteWithScore(
             LeaderboardService.modeScream,
@@ -412,7 +412,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (_shield) {
       _shield = false;
       _vy = -280;
-      _hint = 'Kalkan tuttu.';
+      _hint = context.l10n.screamShieldSaved;
       setState(() {});
       return;
     }
@@ -423,7 +423,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _moveMade = true;
     _screamStreak = 0;
     _hint =
-        reason ?? 'Ezildin! Kapı $_gatesPassed · max spam x$_maxScreamStreak';
+        reason ?? context.l10n.screamCrushedHint(_gatesPassed, _maxScreamStreak);
     HapticFeedback.heavyImpact();
     unawaited(AudioManager().playLose());
     unawaited(
@@ -528,8 +528,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       if (mounted) {
         setState(() {
           _hint = permission.isPermanentlyDenied
-              ? 'Ses kontrolü için Ayarlar’dan mikrofon izni ver.'
-              : 'Ses izni verilmedi · dokunarak zıplayabilirsin.';
+              ? context.l10n.screamMicPermissionSettings
+              : context.l10n.screamMicDeniedHint;
         });
       }
       return;
@@ -589,7 +589,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _scorePopup = '';
       _voiceBusy = false;
       _voiceArmed = true;
-      _hint = 'Spam dokun = zıpla. Terlik · sprey · tava arasından geç!';
+      _hint = context.l10n.screamHintIdle;
       _last = Duration.zero;
       if (_layoutReady) _spawnGate(initial: true);
     });
@@ -598,7 +598,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   String _statsLine() =>
-      'Kapı $_gatesPassed · Max spam x$_maxScreamStreak · Streak $_dayStreak';
+      context.l10n.screamStatsLine(_gatesPassed, _maxScreamStreak, _dayStreak);
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
@@ -609,8 +609,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     setState(() {
       _vy = -520;
       _hop = true;
-      _callout = 'MEGA ZIPLAMA!';
-      _hint = 'Mega zıplama aktif · ilk engel sıyırır!';
+      _callout = context.l10n.screamMegaJumpCallout;
+      _hint = context.l10n.screamMegaJumpHint;
     });
     return true;
   }
@@ -621,8 +621,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _shield = true;
-      _callout = 'KALKAN BALONU!';
-      _hint = 'Kalkan balonu aktif · çarpışmayı korur!';
+      _callout = context.l10n.screamShieldBalloonCallout;
+      _hint = context.l10n.screamShieldBalloonHint;
     });
     return true;
   }
@@ -634,8 +634,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     setState(() {
       _nitroUntil = DateTime.now().add(const Duration(seconds: 8));
       _power = 1;
-      _callout = 'NİTRO ÇIĞLIK!';
-      _hint = 'Nitro aktif · 8 sn hızlı uçuş ve +25 kapı bonusu!';
+      _callout = context.l10n.screamNitroCallout;
+      _hint = context.l10n.screamNitroHint;
     });
     return true;
   }
@@ -688,7 +688,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     final bonuses = [
       stockBonusWithResult(
         id: 'jump',
-        label: 'ZIPLAMA',
+        label: context.l10n.powerJumpCaps,
         asset: 'assets/icons2/boot.png',
         effect: () {
           final applied = _useJump();
@@ -698,7 +698,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       ),
       stockBonusWithResult(
         id: 'shield',
-        label: 'KALKAN',
+        label: context.l10n.powerShieldCaps,
         asset: 'assets/icons2/shield.png',
         effect: () {
           final applied = _useShield();
@@ -708,7 +708,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       ),
       stockBonusWithResult(
         id: 'nitro',
-        label: 'NİTRO',
+        label: context.l10n.shopPowerNitroNameCaps,
         asset: 'assets/icons2/potion_speed.png',
         effect: () {
           final applied = _useNitro();
@@ -946,7 +946,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                             ),
                             alignment: Alignment.center,
                             child: Text(
-                              'SONRAKİ: KAPI ${_gatesPassed + 1}',
+                              context.l10n.screamNextGate(_gatesPassed + 1),
                               style: (wideScreen
                                   ? GoogleFonts.nunito
                                   : GoogleFonts.exo2)(
@@ -999,7 +999,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                               duration: const Duration(milliseconds: 90),
                               child: Image.asset(
                                 key: ValueKey(_bug),
-                                'assets/bugs/tier${_bug.tier}_hd.webp',
+                                'assets/bugs/tier${_bug.tier}_hd${_bug.tier == 5 ? '.webp' : '.png'}',
                                 width: widget.prototypeVisualState ? 98 : 50,
                                 height: widget.prototypeVisualState ? null : 54,
                                 fit: BoxFit.contain,
@@ -1016,8 +1016,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                               height: 48,
                               child: IconButton(
                                 tooltip: _voiceInputEnabled
-                                    ? 'Mikrofonu kapat'
-                                    : 'Bağırarak zıplamayı aç',
+                                    ? context.l10n.screamMicOffLabel
+                                    : context.l10n.screamMicOnLabel,
                                 onPressed: _toggleVoiceInput,
                                 icon: Icon(
                                   _voiceInputEnabled
@@ -1042,7 +1042,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                               width: 48,
                               height: 48,
                               child: IconButton(
-                                tooltip: 'Duraklat',
+                                tooltip: context.l10n.pause,
                                 onPressed: _togglePause,
                                 icon: const Icon(
                                   Icons.pause_rounded,
@@ -1071,7 +1071,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                         children: [
                           Expanded(
                             child: Text(
-                              'SES GÜCÜ',
+                              context.l10n.screamVoicePower,
                               style: GoogleFonts.nunito(
                                 fontSize: 11,
                                 height: 1,
@@ -1084,7 +1084,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                           Expanded(
                             child: Text(
                               _voiceInputEnabled || _power >= 0.7
-                                  ? '%${(_power * 100).round()} · BAĞIRIYOR'
+                                  ? context.l10n.screamShoutingPercent((_power * 100).round())
                                   : '%${(_power * 100).round()} · DOKUN${isTutorialActive ? ' · İLK 15 SN YAVAŞ' : ''}',
                               maxLines: 1,
                               textAlign: TextAlign.right,
@@ -1153,13 +1153,13 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         },
         child: ArcadeScreen(
         backgroundAsset: 'assets/scream_sky.webp',
-        title: 'ÇIĞLIK BÖCEK',
+        title: context.l10n.screamBugTitle,
         score: _score,
         best: _best,
-        hint: 'Dokun veya mikrofonu açıp bağırarak zıpla. $_hint',
-        statLabel: 'KAPI',
+        hint: context.l10n.screamArcadeHint(_hint),
+        statLabel: context.l10n.screamGateStat,
         statValue: '$_gatesPassed',
-        tag: 'VİRAL',
+        tag: context.l10n.viralBadge,
         tagColor: const Color(0xFF00C853),
         tagTextColor: const Color(0xFF04140A),
         prototypeChrome: true,
@@ -1169,14 +1169,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         onRestart: _restart,
         overlay: (!_alive && !_resultShown)
             ? ArcadeResultOverlay(
-                title: 'EZİLDİN',
+                title: context.l10n.screamCrushedTitle,
                 message: _statsLine(),
                 score: _score,
                 best: _best,
                 won: false,
-                modeTitle: 'Çığlık Böcek',
+                modeTitle: context.l10n.shopModeScreamBug,
                 shareLine: _statsLine(),
-                retryLabel: 'YENİDEN',
+                retryLabel: context.l10n.tryAgainCaps,
                 onRetry: _restart,
               )
             : (_paused
@@ -1273,14 +1273,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
             if (!_alive && !_resultShown)
               Positioned.fill(
                 child: ArcadeResultOverlay(
-                  title: 'EZİLDİN',
+                  title: context.l10n.screamCrushedTitle,
                   message: _statsLine(),
                   score: _score,
                   best: _best,
                   won: false,
-                  modeTitle: 'Çığlık Böcek',
+                  modeTitle: context.l10n.shopModeScreamBug,
                   shareLine: _statsLine(),
-                  retryLabel: 'YENİDEN',
+                  retryLabel: context.l10n.tryAgainCaps,
                   onRetry: _restart,
                 ),
               ),
@@ -1298,7 +1298,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   Widget _pauseButton() {
     return Semantics(
       button: true,
-      label: 'Duraklat',
+      label: context.l10n.pause,
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
@@ -1337,7 +1337,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'DURAKLATILDI',
+                  context.l10n.pausedStatusCaps,
                   style: GoogleFonts.baloo2(
                     fontSize: 28,
                     fontWeight: FontWeight.w800,
@@ -1346,7 +1346,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Skor $_score · Kapı $_gatesPassed',
+                  context.l10n.screamPauseScore(_score, _gatesPassed),
                   style: GoogleFonts.nunito(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
@@ -1354,7 +1354,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
               ],
             ),
           ),
@@ -1444,7 +1444,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      'ÇIĞLIK BÖCEK',
+                      context.l10n.screamBugTitle,
                       style: GoogleFonts.baloo2(
                         fontSize: 20,
                         height: 1.05,
@@ -1477,7 +1477,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                       borderRadius: BorderRadius.circular(99),
                     ),
                     child: Text(
-                      'VİRAL',
+                      context.l10n.viralBadge,
                       style: GoogleFonts.baloo2(
                         fontSize: 10.5,
                         height: 1.1,
@@ -1546,12 +1546,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               onTap: () => showDialog<void>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('ÇIĞLIK BÖCEK'),
-                  content: Text('Dokun veya mikrofonu açıp bağırarak zıpla. $_hint'),
+                  title: Text(context.l10n.screamBugTitle),
+                  content: Text(context.l10n.screamArcadeHint(_hint)),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('ANLADIM'),
+                      child: Text(context.l10n.understoodButton),
                     ),
                   ],
                 ),
@@ -1592,13 +1592,16 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
         child: Row(
           children: [
-            _prototypeStat('SKOR', _fmtInt(_score), 104),
+            _prototypeStat(context.l10n.gameScoreLabel, _fmtInt(_score), 104),
             const SizedBox(width: 8),
-            _prototypeStat('REKOR', _fmtInt(_best), 84),
+            _prototypeStat(context.l10n.gameBestLabel, _fmtInt(_best), 84),
             const Spacer(),
-            _prototypeStat('KAPI', '$_gatesPassed', 74),
+            _prototypeStat(context.l10n.screamGateStat, '$_gatesPassed', 74),
             const SizedBox(width: 8),
-            GestureDetector(
+            Semantics(
+              button: true,
+              label: context.l10n.finishRoundLabel,
+              child: GestureDetector(
               onTap: _restart,
               child: Container(
                 width: 57.8,
@@ -1612,7 +1615,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ],
                 ),
                 child: Text(
-                  'BİTİR',
+                  context.l10n.finishCaps,
                   style: GoogleFonts.baloo2(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800,
@@ -1620,6 +1623,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ),
                 ),
               ),
+            ),
             ),
           ],
         ),
@@ -1704,9 +1708,13 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   Widget _prototypeBonusButton(ModeBonus item, int count) {
-    return GestureDetector(
-      onTap: count > 0 ? item.onTap : null,
-      behavior: HitTestBehavior.opaque,
+    return Semantics(
+      button: true,
+      enabled: count > 0,
+      label: context.l10n.boosterCountLabel(item.label, count),
+      child: GestureDetector(
+        onTap: count > 0 ? item.onTap : null,
+        behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 66,
         height: 62.9,
@@ -1798,6 +1806,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1905,16 +1914,48 @@ class _PipeColumn extends StatelessWidget {
 
 /// Mutfak / viral engeller — Flappy boru yok.
 enum _GateKind {
-  terlik(deathLine: 'Terlik şılapp!', passLine: 'Terlik sıyırdı!'),
-  raid(deathLine: 'Raid bulutu!', passLine: 'Spreyi geçtin!'),
-  tava(deathLine: 'Tava tokattı!', passLine: 'Tava altından!'),
-  tuzak(deathLine: 'Yapışkan tuzak!', passLine: 'Tuzaktan kaçtın!'),
-  hamamTas(deathLine: 'Tas kafaya!', passLine: 'Hamam tas geçti!'),
-  vuvuzela(deathLine: 'Vuvuzela ezdi!', passLine: 'Kongo koridoru!');
+  terlik,
+  raid,
+  tava,
+  tuzak,
+  hamamTas,
+  vuvuzela;
 
-  const _GateKind({required this.deathLine, required this.passLine});
-  final String deathLine;
-  final String passLine;
+  const _GateKind();
+
+  String deathLineFor(AppLocalizations l10n) {
+    switch (this) {
+      case _GateKind.terlik:
+        return l10n.gateTerlikDeath;
+      case _GateKind.raid:
+        return l10n.gateRaidDeath;
+      case _GateKind.tava:
+        return l10n.gateTavaDeath;
+      case _GateKind.tuzak:
+        return l10n.gateTuzakDeath;
+      case _GateKind.hamamTas:
+        return l10n.gateHamamDeath;
+      case _GateKind.vuvuzela:
+        return l10n.gateVuvuzelaDeath;
+    }
+  }
+
+  String passLineFor(AppLocalizations l10n) {
+    switch (this) {
+      case _GateKind.terlik:
+        return l10n.gateTerlikPass;
+      case _GateKind.raid:
+        return l10n.gateRaidPass;
+      case _GateKind.tava:
+        return l10n.gateTavaPass;
+      case _GateKind.tuzak:
+        return l10n.gateTuzakPass;
+      case _GateKind.hamamTas:
+        return l10n.gateHamamPass;
+      case _GateKind.vuvuzela:
+        return l10n.gateVuvuzelaPass;
+    }
+  }
 }
 
 class _Gate {

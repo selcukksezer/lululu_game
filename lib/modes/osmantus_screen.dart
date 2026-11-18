@@ -507,7 +507,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   Widget _pauseButton() {
     return Semantics(
       button: true,
-      label: 'Duraklat',
+      label: context.l10n.pause,
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
@@ -563,7 +563,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
               ],
             ),
           ),
@@ -671,7 +671,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                     score: _score,
                     best: _best,
                     won: false,
-                    modeTitle: 'Osmantuş',
+                    modeTitle: context.l10n.shopModeOsmantus,
                     shareLine: _statsLine(),
                     retryLabel: 'YENİDEN',
                     onRetry: _restart,
@@ -778,7 +778,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          'OSMANTUŞ',
+                          context.l10n.osmantusTitle,
                           style: GoogleFonts.baloo2(
                             fontSize: 20,
                             height: 1.05,
@@ -879,7 +879,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
               onTap: () => showDialog<void>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('OSMANTUŞ'),
+                  title: Text(context.l10n.osmantusTitle),
                   content: const Text(
                     'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! '
                     'Zamanında basarak kombo yap ve özel sahne güçlerini kullan.',
@@ -887,7 +887,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('ANLADIM'),
+                      child: Text(context.l10n.understoodButton),
                     ),
                   ],
                 ),
@@ -933,34 +933,38 @@ class _OsmantusScreenState extends State<OsmantusScreen>
           builder: (context, statsBox) {
             final row = Row(
               children: [
-                _scoreBox('SKOR', '$_score', width: 104),
+                _scoreBox(context.l10n.gameScoreLabel, '$_score', width: 104),
                 const SizedBox(width: 8),
-                _scoreBox('REKOR', '$_best', width: 84),
+                _scoreBox(context.l10n.gameBestLabel, '$_best', width: 84),
                 const Spacer(),
                 _scoreBox('COMBO', 'x$_combo', width: 74),
                 const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _restart,
-                  child: Container(
-                    width: 57.81,
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFB800),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0xFFB97A00),
-                          offset: Offset(0, 3),
+                Semantics(
+                  button: true,
+                  label: context.l10n.finishRoundLabel,
+                  child: GestureDetector(
+                    onTap: _restart,
+                    child: Container(
+                      width: 57.81,
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFB800),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0xFFB97A00),
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        'BİTİR',
+                        style: GoogleFonts.baloo2(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF4A2E00),
                         ),
-                      ],
-                    ),
-                    child: Text(
-                      'BİTİR',
-                      style: GoogleFonts.baloo2(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF4A2E00),
                       ),
                     ),
                   ),
@@ -1084,109 +1088,114 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   Widget _powerButton(ModeBonus item) {
-    return GestureDetector(
-      onTap: item.count > 0 ? item.onTap : null,
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 66,
-        height: 62.89,
-        child: Column(
-          children: [
-            const SizedBox(height: 2),
-            SizedBox(
-              height: 48,
-              width: 66,
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFF333F58), Color(0xFF1B2336)],
-                      ),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0x47FFFFFF),
-                        width: 1.5,
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x73000000),
-                          offset: Offset(0, 3),
+    return Semantics(
+      button: true,
+      enabled: item.count > 0,
+      label: context.l10n.boosterCountLabel(item.label, item.count),
+      child: GestureDetector(
+        onTap: item.count > 0 ? item.onTap : null,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: 66,
+          height: 62.89,
+          child: Column(
+            children: [
+              const SizedBox(height: 2),
+              SizedBox(
+                height: 48,
+                width: 66,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xFF333F58), Color(0xFF1B2336)],
                         ),
-                        BoxShadow(
-                          color: Color(0x4D000000),
-                          offset: Offset(0, 6),
-                          blurRadius: 12,
-                        ),
-                      ],
-                    ),
-                    child: Image.asset(
-                      item.asset,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.auto_awesome_rounded,
-                        color: Color(0xFFFFB800),
-                        size: 24,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: -4,
-                    right: 3,
-                    child: Container(
-                      width: 22,
-                      height: 22,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE01E5A),
                         shape: BoxShape.circle,
-                        border: Border.fromBorderSide(
-                          BorderSide(color: Color(0xFF141B2A), width: 2),
+                        border: Border.all(
+                          color: const Color(0x47FFFFFF),
+                          width: 1.5,
                         ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x73000000),
+                            offset: Offset(0, 3),
+                          ),
+                          BoxShadow(
+                            color: Color(0x4D000000),
+                            offset: Offset(0, 6),
+                            blurRadius: 12,
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        '${item.count}',
-                        style: GoogleFonts.nunito(
-                          fontSize: 11,
-                          height: 1,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
+                      child: Image.asset(
+                        item.asset,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Color(0xFFFFB800),
+                          size: 24,
                         ),
                       ),
                     ),
-                  ),
-                ],
+                    Positioned(
+                      top: -4,
+                      right: 3,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE01E5A),
+                          shape: BoxShape.circle,
+                          border: Border.fromBorderSide(
+                            BorderSide(color: Color(0xFF141B2A), width: 2),
+                          ),
+                        ),
+                        child: Text(
+                          '${item.count}',
+                          style: GoogleFonts.nunito(
+                            fontSize: 11,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 3),
-            SizedBox(
-              height: 9.89,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  item.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 9,
-                    height: 1.1,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.18,
-                    color: const Color(0xFFD8E0EE),
+              const SizedBox(height: 3),
+              SizedBox(
+                height: 9.89,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.nunito(
+                      fontSize: 9,
+                      height: 1.1,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.18,
+                      color: const Color(0xFFD8E0EE),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+      );
     );
   }
 
@@ -1340,7 +1349,25 @@ class _OsmantusScreenState extends State<OsmantusScreen>
               child: Image.asset(
                 'assets/images/stickers/osman_$n.png',
                 fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => const SizedBox(),
+                errorBuilder: (_, _, _) {
+                  if (kDebugMode) {
+                    debugPrint(
+                      'Osmantus çıkartması yüklenemedi: assets/images/stickers/osman_$n.png',
+                    );
+                  }
+                  return Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0x33FFFFFF),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: const Icon(
+                      Icons.broken_image_rounded,
+                      color: Color(0xCCFFFFFF),
+                      size: 20,
+                    ),
+                  );
+                },
               ),
             ),
           ],

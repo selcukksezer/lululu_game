@@ -61,25 +61,8 @@ void main() {
       expect(find.byType(SettingsScreen), findsOneWidget);
       expect(find.text('AYARLAR'), findsOneWidget);
       // Çekirdek anahtar satırları mevcut.
-      expect(find.text('Müzik'), findsOneWidget);
       expect(find.text('Ses Efektleri'), findsOneWidget);
       expect(find.text('Titreşim'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
-    });
-
-    testWidgets('music toggle flips the persisted setting', (tester) async {
-      await _pumpScreen(tester, const SettingsScreen());
-      expect(ProgressManager.instance.musicEnabled, isTrue);
-
-      await tester.ensureVisible(find.text('Müzik'));
-      await tester.tap(find.text('Müzik'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-
-      expect(ProgressManager.instance.musicEnabled, isFalse);
-      expect(find.byType(SettingsScreen), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
