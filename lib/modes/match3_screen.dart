@@ -10,6 +10,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/global_notify.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
@@ -96,6 +97,13 @@ class _Match3ScreenState extends State<Match3Screen>
 
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
+
+  /// Çıkış-sonrası iade bildirimi (S6): `PopScope` `didPop` anında
+  /// bağlam artık ağaçta değildir; bildirim metni her `build`'de
+  /// ÖNCEDEN yakalanır ve iade gerçekten verildiğinde paylaşılan
+  /// `GlobalNotify` üzerinden çıkış yapılan ekranın üstünde
+  /// gösterilir (balon/stack deseninin paylaşılan karşılığı).
+  String? _refundNotice;
 
   bool _swiped = false;
   Point<int>? _selected;
@@ -1032,7 +1040,13 @@ class _Match3ScreenState extends State<Match3Screen>
       return;
     }
     _energyRefunded = true;
+    // S6: bildirim yalnız iade GERÇEKTEN verildiğinde gösterilir —
+    // enerji zaten doluysa `addEnergy` kelepçelenir, değişim olmaz.
+    final before = EnergyService.instance.energy;
     EnergyService.instance.addEnergy(1);
+    if (EnergyService.instance.energy > before) {
+      GlobalNotify.showSnackBar(_refundNotice);
+    }
   }
 
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
@@ -1054,6 +1068,9 @@ class _Match3ScreenState extends State<Match3Screen>
 
   @override
   Widget build(BuildContext context) {
+    // S6: iade bildirimi metni çıkıştan ÖNCE yakalanır
+    // (`didPop` anında bağlam ağaçta değildir).
+    _refundNotice = context.l10n.energyRefundNotice;
     if (_ended && !_resultShown) _edgeShowResult();
     // Ölü sonuç overlay'i kaldırıldı (F6): build kenarı `_resultShown`'u
     // senkron set ettiği için bu dal hiç çizilmiyordu; tek sonuç yolu

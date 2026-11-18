@@ -1210,6 +1210,15 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                 ),
                 const SizedBox(height: 16),
                 ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+                const SizedBox(height: 12),
+                // N6: duraklatmadan çıkış — mevcut geri yolu
+                // (`maybePop`); iade kuralları PopScope handler'da
+                // aynen korunur, yeni iade mantığı yok.
+                ArcadeButton(
+                  label: context.l10n.quit,
+                  primary: false,
+                  onPressed: () => Navigator.maybePop(context),
+                ),
               ],
             ),
           ),

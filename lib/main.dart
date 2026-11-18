@@ -22,6 +22,7 @@ import 'services/daily_challenge_service.dart';
 import 'services/energy_service.dart';
 import 'services/firebase_bootstrap.dart';
 import 'services/firebase_options.dart';
+import 'services/global_notify.dart';
 import 'services/iap_service.dart';
 import 'services/leaderboard_service.dart';
 import 'services/locale_service.dart';
@@ -390,6 +391,10 @@ class _BootAppState extends State<_BootApp> {
         // web/index.html ile aynı: 'LÜLÜLÜ'.
         title: 'LÜLÜLÜ',
         debugShowCheckedModeBanner: false,
+        // S6: pop-sonrası bildirimler (enerji iadesi) için paylaşılan
+        // messenger anahtarı — `GlobalNotify.messengerKey` rota
+        // çıkışlarında hayatta kalır.
+        scaffoldMessengerKey: GlobalNotify.messengerKey,
         theme: buildLululuTheme(),
         // Madde 95 [P1]: yerelleştirme altyapısı — EN + TR. Dil
         // varsayılanı cihaz dilinden alınır (desteklenmeyen dilde TR);

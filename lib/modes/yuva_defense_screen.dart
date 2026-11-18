@@ -11,6 +11,7 @@ import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/global_notify.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
@@ -128,6 +129,13 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
 
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
+
+  /// Çıkış-sonrası iade bildirimi (S6): `PopScope` `didPop` anında
+  /// bağlam artık ağaçta değildir; bildirim metni her `build`'de
+  /// ÖNCEDEN yakalanır ve iade gerçekten verildiğinde paylaşılan
+  /// `GlobalNotify` üzerinden çıkış yapılan ekranın üstünde
+  /// gösterilir (balon/stack deseninin paylaşılan karşılığı).
+  String? _refundNotice;
   double _spawnElapsed = 0;
   double _arenaWidth = 300;
   double _arenaHeight = 360;
@@ -541,7 +549,13 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       return;
     }
     _energyRefunded = true;
+    // S6: bildirim yalnız iade GERÇEKTEN verildiğinde gösterilir —
+    // enerji zaten doluysa `addEnergy` kelepçelenir, değişim olmaz.
+    final before = EnergyService.instance.energy;
     EnergyService.instance.addEnergy(1);
+    if (EnergyService.instance.energy > before) {
+      GlobalNotify.showSnackBar(_refundNotice);
+    }
   }
 
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
@@ -1000,6 +1014,17 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                   onPressed: _togglePause,
                   child: Text(context.l10n.continueAction),
                 ),
+                const SizedBox(height: 12),
+                // N6: duraklatmadan çıkış — mevcut geri yolu
+                // (`maybePop`); iade kuralları PopScope handler'da
+                // aynen korunur, yeni iade mantığı yok.
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(120, 48),
+                  ),
+                  onPressed: () => Navigator.maybePop(context),
+                  child: Text(context.l10n.quit),
+                ),
               ],
             ),
           ),
@@ -1010,6 +1035,9 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
 
   @override
   Widget build(BuildContext context) {
+    // S6: iade bildirimi metni çıkıştan ÖNCE yakalanır
+    // (`didPop` anında bağlam ağaçta değildir).
+    _refundNotice = context.l10n.energyRefundNotice;
     final coins = widget.prototypeVisualState ? 12450 : ProgressManager().coins;
     final topPad = MediaQuery.paddingOf(context).top;
     final hasHostStatusBar = topPad > 0;
