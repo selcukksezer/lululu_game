@@ -13,7 +13,6 @@ import '../services/finish_run.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
-import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -843,7 +842,6 @@ class _StackDropScreenState extends State<StackDropScreen>
     final score = _score;
     final best = _best;
     final bestCombo = _maxCombo;
-    final coins = score > 0 ? max(1, ResultScoring.coinsFor(score)) : 0;
     // S1#49: ödeme + liderlik (yalnız skor > 0) + görev kaydı + sonuç
     // ekranı finishRun() üzerinden (tek-ödeme korunur). Doğal bitiş
     // kulenin devrilmesidir (kayıp); `won` verilmezse kayıp başlığı
@@ -854,7 +852,6 @@ class _StackDropScreenState extends State<StackDropScreen>
         context,
         score: score,
         best: best,
-        coins: coins,
         bestCombo: bestCombo,
         won: won ?? false,
         leaderboardMode: LeaderboardService.modeStack,

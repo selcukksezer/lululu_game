@@ -187,8 +187,10 @@ void main() {
       expect(await _pendingRun, isFalse);
     });
 
-    testWidgets('stillValid false ise ekran açılmaz ama ödeme yapılmıştır',
+    testWidgets('stillValid false ise ödeme yapılmaz ve ekran açılmaz',
         (tester) async {
+      // Y2: geçerlilik ödeme ÖNCESİNDE kontrol edilir; bayat turun
+      // ödemesi hiç yapılmaz (eski davranış ödemeyi yapıyordu).
       await pumpHost(
         tester,
         (context) => finishRun(
@@ -200,7 +202,7 @@ void main() {
       );
 
       expect(find.text('SEVİYE TAMAM!'), findsNothing);
-      expect(ProgressManager.instance.coins, 1005);
+      expect(ProgressManager.instance.coins, 1000);
       expect(await _pendingRun, isFalse);
     });
   });

@@ -23,6 +23,12 @@ class LeaderboardService extends ChangeNotifier {
 
   static const String prefsKey = 'LululuLeaderboardV3';
   static const String legacyPrefsKey = 'LululuLeaderboardV2';
+
+  /// Bütünüyle ayrıştırılamayan tahta JSON'unun yedeklendiği prefs
+  /// anahtarı (O6): ham metin buraya yazılır, tahta varsayılanla (boş)
+  /// devam eder. Kayıt bazlı hatalarda yalnız bozuk kayıt atlanır,
+  /// sağlam kayıtlar korunur; yedek gerekmez.
+  static const String corruptBackupPrefsKey = 'LululuLeaderboardV3_corrupt';
   static const int maxTop = 100;
 
   static const String modeSuika = 'suika';
@@ -173,25 +179,29 @@ class LeaderboardService extends ChangeNotifier {
     if (json == null || json.isEmpty) {
       final legacy = prefs.getString(legacyPrefsKey);
       if (legacy != null && legacy.isNotEmpty) {
-        try {
-          _data = LeaderboardData.fromJson(
-            jsonDecode(legacy) as Map<String, dynamic>,
-          );
+        final parsed = _parseBoardJson(legacy);
+        if (parsed != null) {
+          _data = parsed;
           _stripFakeSeededRivals();
           await _save();
           await prefs.remove(legacyPrefsKey);
-        } catch (_) {
+        } else {
+          // Eski anahtar da bütünüyle bozuk: yedekle, anahtarı kaldır
+          // (her yüklemede tekrar ayrıştırma denemesi olmasın) ve
+          // varsayılanla devam et.
+          await _backupCorruptPrefs(prefs, legacy);
+          await prefs.remove(legacyPrefsKey);
           _data = LeaderboardData(modes: []);
         }
       } else {
         _data = LeaderboardData(modes: []);
       }
     } else {
-      try {
-        _data = LeaderboardData.fromJson(
-          jsonDecode(json) as Map<String, dynamic>,
-        );
-      } catch (_) {
+      final parsed = _parseBoardJson(json);
+      if (parsed != null) {
+        _data = parsed;
+      } else {
+        await _backupCorruptPrefs(prefs, json);
         _data = LeaderboardData(modes: []);
       }
     }
@@ -200,15 +210,47 @@ class LeaderboardService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tahta JSON'unu ayrıştırır. Kayıt bazlı hatalarda sağlam kayıtlar
+  /// korunur ([LeaderboardData.fromJson] bozuk tahta/kayıtları
+  /// atlar). Üst düzey JSON veya şekil bozuksa `null` döner.
+  LeaderboardData? _parseBoardJson(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      return LeaderboardData.fromJson(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Bozuk tahta ham metnini yedek anahtara yazar (O6). Yedek
+  /// yazılamazsa da yükleme varsayılanla devam eder; hata görünür
+  /// kılınır.
+  Future<void> _backupCorruptPrefs(
+    SharedPreferences prefs,
+    String raw,
+  ) async {
+    try {
+      await prefs.setString(corruptBackupPrefsKey, raw);
+      debugPrint(
+        '[lululu] Leaderboard: bozuk tahta yedeklenip varsayılanla '
+        'devam ediliyor.',
+      );
+    } catch (error) {
+      debugPrint('[lululu] Leaderboard: bozuk tahta yedeklenemedi: $error');
+    }
+  }
+
   /// Hesap silme için yerel liderlik önbelleğini temizler (hesap-silme,
   /// yerel-temizlik): tahtalar + bulut çekme zamanları bellekten
-  /// silinir, kalıcı anahtarlar (güncel + eski) kaldırılır. Bulut
-  /// skorları silinmez (sunucu tarafı silme işi AuthService.deleteAccount
-  /// dokümantasyonundadır).
+  /// silinir, kalıcı anahtarlar (güncel + eski + bozuk-tahta yedeği)
+  /// kaldırılır. Bulut skorları silinmez (sunucu tarafı silme işi
+  /// AuthService.deleteAccount dokümantasyonundadır).
   Future<void> clearLocalData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(prefsKey);
     await prefs.remove(legacyPrefsKey);
+    await prefs.remove(corruptBackupPrefsKey);
     _data = LeaderboardData(modes: []);
     _lastCloudFetchAt.clear();
     notifyListeners();
@@ -246,10 +288,19 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   /// Recompute each mode's bestScore for the signed-in player.
+  ///
+  /// Birleştirme (max) semantiği (K2): [ProgressManager.modeHighScores]
+  /// asla temizlenmez. Tahtada olmayan modların, tahtada kaydı
+  /// bulunmayan oyuncunun ve tahta skorundan yüksek PM skorlarının
+  /// değerleri korunur; tahta skoru PM skorundan yüksekse PM güncellenir.
+  /// Böylece boş/bozuk tahta yüklemesi PM skorlarını kalıcı olarak
+  /// silmez (tahta boşken eski `clear()` + geri-yazma PM haritasını
+  /// sıfırlıyor ve sonraki `recordModeScore` kalıcılığı da bu boş
+  /// hâli diske yazıyordu).
   void _rebindCurrentUserBests() {
     final uid = AuthService.instance.playerId;
     final name = AuthService.instance.displayName;
-    ProgressManager.instance.modeHighScores.clear();
+    final pmScores = ProgressManager.instance.modeHighScores;
     for (final board in _data.modes) {
       board.top.removeWhere(
         (e) => !isScoreValidForMode(board.modeId, e.score),
@@ -268,8 +319,11 @@ class LeaderboardService extends ChangeNotifier {
       }
       board.bestScore = best;
       if (best > 0) {
-        ProgressManager.instance.modeHighScores[normalizeModeId(board.modeId)] =
-            best;
+        final key = normalizeModeId(board.modeId);
+        final previous = pmScores[key] ?? 0;
+        if (best > previous) {
+          pmScores[key] = best;
+        }
       }
     }
   }
@@ -487,13 +541,18 @@ class LeaderboardService extends ChangeNotifier {
       board.bestScore = personal;
     }
 
+    if (!changed) return false;
+
+    // Yan etkiler yalnız tahta gerçekten değiştiyse çalışır (O7):
+    // iyileştirmeyen gönderim PM skorunu, günlük görevi ve bulut
+    // itme kuyruğunu tetiklemez. (Yüklemedeki max-birleştirme — K2 —
+    // sayesinde PM zaten tahta rekorunu bildiği için değişmeyen
+    // gönderimde `recordModeScore` atlamak skor kaybına yol açmaz.)
     await ProgressManager.instance.recordModeScore(canonicalMode, score);
     unawaited(
       DailyChallengeService.instance.tryCompleteWithScore(canonicalMode, score),
     );
     unawaited(CloudSyncService.instance.enqueueLeaderboardPush());
-
-    if (!changed) return false;
 
     board.top.sort((a, b) {
       final byScore = b.score.compareTo(a.score);
@@ -927,12 +986,19 @@ class ModeBoard {
 
   factory ModeBoard.fromJson(Map<String, dynamic> json) {
     final rawTop = json['top'] as List<dynamic>? ?? [];
+    final entries = <LeaderboardEntry>[];
+    for (final raw in rawTop) {
+      if (raw is! Map<String, dynamic>) continue;
+      try {
+        entries.add(LeaderboardEntry.fromJson(raw));
+      } catch (_) {
+        // Bozuk tek kayıt atlanır; tahtanın sağlam kayıtları korunur (O6).
+      }
+    }
     return ModeBoard(
       modeId: json['modeId'] as String? ?? '',
       bestScore: (json['bestScore'] as num?)?.toInt() ?? 0,
-      top: rawTop
-          .map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>))
-          .toList(),
+      top: entries,
     );
   }
 
@@ -950,11 +1016,16 @@ class LeaderboardData {
 
   factory LeaderboardData.fromJson(Map<String, dynamic> json) {
     final raw = json['modes'] as List<dynamic>? ?? [];
-    return LeaderboardData(
-      modes: raw
-          .map((e) => ModeBoard.fromJson(e as Map<String, dynamic>))
-          .toList(),
-    );
+    final boards = <ModeBoard>[];
+    for (final rawBoard in raw) {
+      if (rawBoard is! Map<String, dynamic>) continue;
+      try {
+        boards.add(ModeBoard.fromJson(rawBoard));
+      } catch (_) {
+        // Bozuk tek tahta atlanır; diğer modların tahtaları korunur (O6).
+      }
+    }
+    return LeaderboardData(modes: boards);
   }
 
   Map<String, dynamic> toJson() => {
