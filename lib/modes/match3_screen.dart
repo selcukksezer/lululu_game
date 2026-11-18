@@ -3,7 +3,6 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
@@ -11,6 +10,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
@@ -39,7 +39,8 @@ class Match3Screen extends StatefulWidget {
   State<Match3Screen> createState() => _Match3ScreenState();
 }
 
-class _Match3ScreenState extends State<Match3Screen> {
+class _Match3ScreenState extends State<Match3Screen>
+    with WidgetsBindingObserver {
   static const int rows = 8;
   int get _cols => widget.prototypeVisualState ? 8 : 6;
 
@@ -70,6 +71,15 @@ class _Match3ScreenState extends State<Match3Screen> {
   bool _lost = false;
   bool _resultShown = false;
   bool _paused = false;
+
+  /// Yaşam döngüsü duraklatması ayrımı (Osmantus deseni): arka plana
+  /// alınınca duraklatılan oyun dönüşte yalnız bu bayrakla devam eder;
+  /// elle duraklatılmış oyun kendiliğinden başlamaz.
+  bool _pausedByLifecycle = false;
+
+  /// Sonuç sunumu deneme sayacı: `finishRun` kalıcı hata verirse
+  /// build kenarının sonsuz yeniden denemesini keser (en fazla 2).
+  int _resultAttempts = 0;
 
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk takas denemesi
   /// (`_resolve`, eşleşmese de) veya tur tamamlanması (`_endCheck`)
@@ -123,6 +133,7 @@ class _Match3ScreenState extends State<Match3Screen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _deal();
     if (widget.prototypeVisualState) {
@@ -155,6 +166,7 @@ class _Match3ScreenState extends State<Match3Screen> {
       if (!hasBomb) return;
       setState(() => _bombPulse += 0.22);
     });
+    _armIdleHint();
   }
 
   // Varsayılan stok YALNIZ ilk kurulumda verilir. ProgressManager.load()
@@ -178,6 +190,7 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _comboTimer?.cancel();
     _milestoneTimer?.cancel();
@@ -187,9 +200,50 @@ class _Match3ScreenState extends State<Match3Screen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Tur bitmişse / sonuç gösterilmişse dokunma; elle zaten
+        // duraklatılmışsa yaşam döngüsü bayrağını koyma ki dönüşte
+        // kendiliğinden devam etmesin.
+        if (_ended || _resultShown || _paused) return;
+        _pausedByLifecycle = true;
+        // Kısa süreli UI zamanlayıcıları arka planda boşa akmasın
+        // (bu dosyada kaydırılacak duvar-saati son tarihi yok;
+        // Osmantus `_shiftPauseDeadlines` karşılığı budur).
+        _comboTimer?.cancel();
+        _milestoneTimer?.cancel();
+        _powerFxTimer?.cancel();
+        _hintTimer?.cancel();
+        setState(() {
+          _paused = true;
+          _hintCells = [];
+        });
+        break;
+      case AppLifecycleState.resumed:
+        if (_pausedByLifecycle && _paused) {
+          _pausedByLifecycle = false;
+          setState(() => _paused = false);
+          _armIdleHint();
+        }
+        break;
+    }
+  }
+
   Future<void> _loadBest() async {
     if (widget.prototypeVisualState) return;
-    await LeaderboardService.instance.ensureLoaded();
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+    } catch (_) {
+      // En iyi skor okunamazsa oyun 0 ile devam eder; ateşle-unut
+      // çağrıda işlenmemiş hata bırakma.
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _best = LeaderboardService.instance.getBest(
@@ -200,25 +254,39 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   Future<void> _persist() async {
     if (_score <= 0) return;
-    await LeaderboardService.instance.ensureLoaded();
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeMatch3,
-      _score,
-    );
-    final best = LeaderboardService.instance.getBest(
-      LeaderboardService.modeMatch3,
-    );
-    if (mounted && best > _best) setState(() => _best = best);
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+      await LeaderboardService.instance.submitScore(
+        LeaderboardService.modeMatch3,
+        _score,
+      );
+      final best = LeaderboardService.instance.getBest(
+        LeaderboardService.modeMatch3,
+      );
+      if (mounted && best > _best) setState(() => _best = best);
+    } catch (_) {
+      // Liderlik kaydı başarısız olursa oyun akışı ve sonuç ekranı
+      // bozulmaz; `_endCheck`'in await zincirine hata taşımaz.
+    }
   }
 
   void _newGame() {
     _epoch++;
+    _comboTimer?.cancel();
+    _milestoneTimer?.cancel();
+    _hintTimer?.cancel();
+    _powerFxTimer?.cancel();
+    // `_bombPulseTimer` yaşam boyu periyodik zamanlayıcıdır: iptal
+    // edilmez (geri kurulumu yok; geri çağrısı `_paused`/`_ended`
+    // korumalı, yeni turda kendiliğinden devam eder).
     _score = 0;
     _moves = startMoves;
     _busy = false;
     _won = false;
     _lost = false;
     _paused = false;
+    _pausedByLifecycle = false;
+    _resultAttempts = 0;
     _swiped = false;
     _selected = null;
     _dragFrom = null;
@@ -231,9 +299,12 @@ class _Match3ScreenState extends State<Match3Screen> {
     _milestone = null;
     _comboText = null;
     _gainText = null;
+    _activePowerFx = null;
+    _bombPulse = 0;
     _hintCells = [];
     _deal();
     setState(() {});
+    _armIdleHint();
   }
 
   void _deal() {
@@ -257,6 +328,24 @@ class _Match3ScreenState extends State<Match3Screen> {
       _plantEasySwap();
       if (_findMatches().isEmpty && _hasMove()) return;
     }
+    // 40 deneme de temiz tahta üretemedi: deterministik yedek kur.
+    _buildCleanFallbackBoard();
+  }
+
+  /// Deterministik temiz tahta (F17 yedeği). Desen `v = (r + 2c) % kinds`
+  /// yatay/dikey 3'lü üretemez (komşu farklar 2 ve 1, mod 5'te 0 değil).
+  /// (0,0..3) hücrelerine eklenen [1,1,2,1] deseni temizliği bozmaz
+  /// (0. satırın üst komşusu yok; sağdaki desen değeri 4) ve
+  /// (0,2)↔(0,3) takası [1,1,1] eşleşmesi vererek hamleyi garantiler.
+  void _buildCleanFallbackBoard() {
+    _grid = List.generate(
+      rows,
+      (r) => List.generate(_cols, (c) => ((r + 2 * c) % kinds) + 1),
+    );
+    _grid[0][0] = 1;
+    _grid[0][1] = 1;
+    _grid[0][2] = 2;
+    _grid[0][3] = 1;
   }
 
   /// Guarantees a center-row swap that pops — coarse pans still score.
@@ -409,8 +498,57 @@ class _Match3ScreenState extends State<Match3Screen> {
     matches.addAll(extra);
   }
 
+  /// Boşta ipucu sayacı: 8 sn etkileşimsiz kalınırsa `_showHint`
+  /// çalışır. `_hintTimer` hem boşta sayacı hem ipucu temizleme
+  /// sayacıdır; her kurulumda önceki iptal edilir.
+  void _armIdleHint() {
+    if (widget.prototypeVisualState || _ended || _paused) return;
+    _hintTimer?.cancel();
+    _hintTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted) _showHint();
+    });
+  }
+
+  /// İlk bulunabilir takası (connect deseni) 1400 ms vurgular.
+  void _showHint() {
+    if (_busy || _ended || _paused) return;
+    final pair = _findHintPair();
+    if (pair == null) {
+      _armIdleHint();
+      return;
+    }
+    _hintTimer?.cancel();
+    unawaited(HapticService.instance.selectionClick());
+    setState(() => _hintCells = pair);
+    _hintTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (!mounted) return;
+      setState(() => _hintCells = []);
+      _armIdleHint();
+    });
+  }
+
+  /// Eşleşme üreten ilk komşu takası; yoksa `null`.
+  List<Point<int>>? _findHintPair() {
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < _cols; c++) {
+        if (c + 1 < _cols && _wouldMatch(r, c, r, c + 1)) {
+          return [Point(r, c), Point(r, c + 1)];
+        }
+        if (r + 1 < rows && _wouldMatch(r, c, r + 1, c)) {
+          return [Point(r, c), Point(r + 1, c)];
+        }
+      }
+    }
+    return null;
+  }
+
   void _onCell(Point<int> cell) {
     if (_busy || _ended || _paused) return;
+    // Etkileşim ipucunu tüketir: vurguyu kaldır, boşta sayacını
+    // sıfırla (takas başlarsa `_resolve` sayacı yine iptal eder).
+    _hintTimer?.cancel();
+    _hintCells = [];
+    _armIdleHint();
     final sel = _selected;
     if (sel == null) {
       setState(() => _selected = cell);
@@ -435,6 +573,8 @@ class _Match3ScreenState extends State<Match3Screen> {
     // olmasa da hamle sayılır — Suika'da ıska atış gibi).
     _moveMade = true;
     final epoch = _epoch;
+    _hintTimer?.cancel();
+    _hintCells = [];
     setState(() => _busy = true);
     _swap(r0, c0, r1, c1);
     setState(() {});
@@ -444,15 +584,18 @@ class _Match3ScreenState extends State<Match3Screen> {
     var matches = _findMatches();
     if (matches.isEmpty) {
       _swap(r0, c0, r1, c1);
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
       setState(() {
         _busy = false;
         _comboMeter = max(0, _comboMeter - 0.2);
       });
+      // Eşleşmesiz takas `_endCheck`'e uğramaz; boşta ipucu
+      // sayacını burada kur ki ipucu sistemi ölmesin.
+      _armIdleHint();
       return;
     }
 
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
 
     _moves--;
     var chain = 0;
@@ -462,7 +605,7 @@ class _Match3ScreenState extends State<Match3Screen> {
     while (matches.isNotEmpty) {
       chain++;
       if (chain > _maxChain) _maxChain = chain;
-      if (chain > 1) HapticFeedback.lightImpact();
+      if (chain > 1) unawaited(HapticService.instance.lightImpact());
       _expandBombs(matches);
 
       // First cascade step: spawn bomb from 4+ before clear.
@@ -540,7 +683,19 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   void _togglePause() {
     if (_ended || _busy) return;
-    setState(() => _paused = !_paused);
+    if (_paused) {
+      setState(() {
+        _paused = false;
+        _pausedByLifecycle = false;
+      });
+      _armIdleHint();
+    } else {
+      _hintTimer?.cancel();
+      setState(() {
+        _paused = true;
+        _hintCells = [];
+      });
+    }
   }
 
   void _showMilestone(String text) {
@@ -582,22 +737,27 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   Future<void> _endCheck(int epoch) async {
     if (!mounted || epoch != _epoch) return;
-    if (_score >= target) {
-      // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
-      _moveMade = true;
-      _won = true;
-      HapticFeedback.heavyImpact();
-      AudioManager().playWin();
-      await _persist();
-    } else if (_moves <= 0) {
-      _moveMade = true;
-      _lost = true;
-      HapticFeedback.heavyImpact();
-      AudioManager().playLose();
-      await _persist();
-    } else {
+    try {
+      if (_score >= target) {
+        // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
+        _moveMade = true;
+        _won = true;
+        unawaited(HapticService.instance.heavyImpact());
+        AudioManager().playWin();
+        await _persist();
+      } else if (_moves <= 0) {
+        _moveMade = true;
+        _lost = true;
+        unawaited(HapticService.instance.heavyImpact());
+        AudioManager().playLose();
+        await _persist();
+      }
+    } finally {
+      if (mounted && epoch == _epoch) {
+        setState(() => _busy = false);
+        if (!_ended) _armIdleHint();
+      }
     }
-    if (mounted && epoch == _epoch) setState(() => _busy = false);
   }
 
   String _statsLine() =>
@@ -659,36 +819,53 @@ class _Match3ScreenState extends State<Match3Screen> {
   }
 
   Future<void> _resolveCascadeAfterPower() async {
-    if (_ended) return;
+    if (_ended || _busy) return;
     final epoch = _epoch;
-    var chain = 1;
-    var matches = _findMatches();
-    while (matches.isNotEmpty) {
-      chain++;
-      if (chain > _maxChain) _maxChain = chain;
-      _expandBombs(matches);
-      var gained = 0;
-      for (final p in matches) {
-        final raw = _grid[p.x][p.y];
-        if (raw == 0) continue;
-        gained += 12 * _base(raw) * chain;
-        _grid[p.x][p.y] = 0;
+    // F1: cascade süresince giriş kilitli — `await` aralarında takas
+    // başlarsa ikinci akış tahtayı bozar. Bayrak normal akışta
+    // `_endCheck`'in `finally` bloğuyla, istisna yolunda aşağıdaki
+    // `finally` ile düşer; epoch değişmişse `_newGame` zaten
+    // düşürmüştür, bu akış bayrağa dokunmadan döner.
+    _busy = true;
+    _hintTimer?.cancel();
+    _hintCells = [];
+    try {
+      var chain = 1;
+      var matches = _findMatches();
+      while (matches.isNotEmpty) {
+        chain++;
+        if (chain > _maxChain) _maxChain = chain;
+        _expandBombs(matches);
+        var gained = 0;
+        for (final p in matches) {
+          final raw = _grid[p.x][p.y];
+          if (raw == 0) continue;
+          gained += 12 * _base(raw) * chain;
+          _grid[p.x][p.y] = 0;
+        }
+        _mergeTotal += matches.length;
+        _score += gained;
+        if (_score > _best) _best = _score;
+        _checkMilestones();
+        setState(() {});
+        await Future<void>.delayed(const Duration(milliseconds: 110));
+        if (!mounted || epoch != _epoch) return;
+        _collapse();
+        setState(() {});
+        await Future<void>.delayed(const Duration(milliseconds: 90));
+        if (!mounted || epoch != _epoch) return;
+        matches = _findMatches();
       }
-      _mergeTotal += matches.length;
-      _score += gained;
-      if (_score > _best) _best = _score;
-      _checkMilestones();
-      setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 110));
-      if (!mounted || epoch != _epoch) return;
-      _collapse();
-      setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 90));
-      if (!mounted || epoch != _epoch) return;
-      matches = _findMatches();
+      if (!_ended && !_hasMove()) _reshuffle();
+      await _endCheck(epoch);
+    } finally {
+      // İstisna yolunda da kilit düşsün. Normal akışta `_endCheck`
+      // zaten düşürmüştür (`_busy` false ise dokunma); epoch
+      // değişmişse `_newGame` düşürmüştür.
+      if (mounted && epoch == _epoch && _busy) {
+        setState(() => _busy = false);
+      }
     }
-    if (!_ended && !_hasMove()) _reshuffle();
-    await _endCheck(epoch);
   }
 
   /// Güçler skor verir ama bedava değildir: kalıcı stoktan 1 adet
@@ -698,9 +875,10 @@ class _Match3ScreenState extends State<Match3Screen> {
     if (_ended || _paused || _busy) return false;
     final cell = _selected ?? _firstFilled();
     if (cell == null) return false;
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: max(1, _base(_grid[cell.x][cell.y])));
     setState(() {
+      _selected = null;
       _grid[cell.x][cell.y] = 0;
       _moves--;
       _score += 48;
@@ -717,9 +895,10 @@ class _Match3ScreenState extends State<Match3Screen> {
   bool _useBomb3() {
     if (_ended || _paused || _busy) return false;
     final cell = _selected ?? const Point<int>(3, 3);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: 4);
     setState(() {
+      _selected = null;
       var n = 0;
       for (var r = cell.x - 1; r <= cell.x + 1; r++) {
         for (var c = cell.y - 1; c <= cell.y + 1; c++) {
@@ -762,9 +941,10 @@ class _Match3ScreenState extends State<Match3Screen> {
       if (counts[i] > counts[best]) best = i;
     }
     if (counts[best] == 0) return false;
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: best);
     setState(() {
+      _selected = null;
       var n = 0;
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < _cols; c++) {
@@ -797,16 +977,29 @@ class _Match3ScreenState extends State<Match3Screen> {
     // S1#49: ödeme + mod skoru + liderlik + görev kaydı + sonuç ekranı
     // finishRun() üzerinden (tek-ödeme korunur). `won` verilmezse
     // hedefin tutup tutmadığı (_won) başlığı belirler.
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      bestCombo: _maxChain,
-      merges: _mergeTotal,
-      won: won ?? _won,
-      leaderboardMode: LeaderboardService.modeMatch3,
-      modeScoreId: 'match3',
-    );
+    _resultAttempts++;
+    bool replay;
+    try {
+      replay = await finishRun(
+        context,
+        score: _score,
+        best: _best,
+        bestCombo: _maxChain,
+        merges: _mergeTotal,
+        won: won ?? _won,
+        leaderboardMode: LeaderboardService.modeMatch3,
+        modeScoreId: 'match3',
+      );
+    } catch (_) {
+      // `finishRun` fırlatırsa sonuçsuz takılma: bayrağı düşür ki
+      // build kenarı / BİTİR yeniden deneyebilsin. Kalıcı hatada
+      // sonsuz döngüye girme: 2. başarısızlıkta bayrak yukarıda
+      // kalır, kullanıcı geri düğmesiyle çıkabilir.
+      if (_resultAttempts < 2 && mounted) {
+        setState(() => _resultShown = false);
+      }
+      return;
+    }
     if (!mounted) return;
     if (!replay) {
       Navigator.of(context).maybePop();
@@ -849,19 +1042,10 @@ class _Match3ScreenState extends State<Match3Screen> {
   @override
   Widget build(BuildContext context) {
     if (_ended && !_resultShown) _edgeShowResult();
-    final overlayWidget = (_ended && !_resultShown)
-        ? ArcadeResultOverlay(
-            title: _won ? context.l10n.targetTitle : context.l10n.movesOutTitle,
-            message: _statsLine(),
-            score: _score,
-            best: _best,
-            won: _won,
-            modeTitle: 'Match 3',
-            shareLine: _statsLine(),
-            retryLabel: context.l10n.retryShort,
-            onRetry: _newGame,
-          )
-        : _paused
+    // Ölü sonuç overlay'i kaldırıldı (F6): build kenarı `_resultShown`'u
+    // senkron set ettiği için bu dal hiç çizilmiyordu; tek sonuç yolu
+    // `finishRun` diyaloğudur.
+    final overlayWidget = _paused
         ? Positioned.fill(
             child: ColoredBox(
               color: LululuColors.carbonVoid.withValues(alpha: 0.72),
@@ -1725,6 +1909,46 @@ class _Match3ScreenState extends State<Match3Screen> {
                           ),
                           ),
                         ),
+                        // Duraklatma girişi (F3): makara deseninde başlık
+                        // bandında, '?' düğmesiyle aynı dairesel dilde;
+                        // prototip vitrininde gizli (piksel düzeni bozulmaz).
+                        if (!widget.prototypeVisualState)
+                          Positioned(
+                            left: 219,
+                            top: 9.2,
+                            width: 48,
+                            height: 48,
+                            child: Semantics(
+                              button: true,
+                              label: context.l10n.pause,
+                              child: GestureDetector(
+                                onTap: _togglePause,
+                                behavior: HitTestBehavior.opaque,
+                                child: Container(
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xDB080B12),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: const Color(0xB3FFB800),
+                                      width: 2,
+                                    ),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x66000000),
+                                        offset: Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.pause_rounded,
+                                    size: 22,
+                                    color: Color(0xFFFFB800),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
