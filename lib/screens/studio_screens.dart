@@ -72,6 +72,8 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
   bool _isPlaying = false;
   int _likes = 1248;
   bool _liked = false;
+  bool _likeBusy = false;
+  bool _downloadBusy = false;
 
   final _videos = [
     {
@@ -135,6 +137,8 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
   }
 
   Future<void> _toggleLikeCurrent() async {
+    if (_likeBusy) return;
+    _likeBusy = true;
     final cur = _videos[_activeVideoIndex];
     final id = cur['id'] as String? ?? 'viral_watch_$_activeVideoIndex';
     setState(() {
@@ -143,8 +147,29 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       cur['likes'] = _likes;
     });
     unawaited(AudioManager().playButtonTap());
-    unawaited(BugVideoService.instance.toggleLike(id));
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
+    var persisted = false;
+    try {
+      persisted = await BugVideoService.instance.toggleLike(id) != null;
+    } catch (_) {
+      persisted = false;
+    }
+    _likeBusy = false;
+    if (!persisted) {
+      // Kalıcı kayıt başarısız olduysa iyimser güncelleme geri alınır.
+      if (mounted) {
+        setState(() {
+          _liked = !_liked;
+          _likes += _liked ? 1 : -1;
+          cur['likes'] = _likes;
+        });
+      }
+      return;
+    }
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; beğeni sonucunu etkilemez.
+    }
   }
 
   Future<void> _shareCurrent() async {
@@ -154,6 +179,8 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
   }
 
   Future<void> _downloadCurrent() async {
+    if (_downloadBusy) return;
+    _downloadBusy = true;
     final cur = _videos[_activeVideoIndex];
     unawaited(AudioManager().playButtonTap());
     final post = BugVideoPost(
@@ -171,8 +198,25 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       likes: _likes,
       likedByMe: _liked,
     );
-    unawaited(BugVideoService.instance.downloadPost(post));
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
+    var succeeded = false;
+    try {
+      await BugVideoService.instance.downloadPost(post);
+      succeeded = true;
+    } catch (_) {
+      succeeded = false;
+    }
+    _downloadBusy = false;
+    if (!mounted) return;
+    if (!succeeded) {
+      _toast(context.l10n.errorGeneric);
+      return;
+    }
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; indirme sonucunu etkilemez.
+    }
+    if (!mounted) return;
     _toast(context.l10n.videoAddedToDownloadsToast);
   }
 
@@ -792,6 +836,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
   double _trimPercent = 62.0;
   String _caption = 'LÜLÜLÜ!';
   int _selectedSticker = 1;
+  bool _saveBusy = false;
   final _textController = TextEditingController(text: 'LÜLÜLÜ!');
 
   final _stickers = [
@@ -808,18 +853,37 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_saveBusy) return;
+    _saveBusy = true;
     unawaited(AudioManager().playButtonTap());
-    unawaited(AudioManager().playWin());
-    unawaited(
-      BugVideoService.instance.createSceneVideo(
+    var succeeded = false;
+    try {
+      await BugVideoService.instance.createSceneVideo(
         caption: _caption,
         trimPercent: _trimPercent,
         stickerIndex: _selectedSticker,
         stickerAsset: _stickers[_selectedSticker],
-      ),
-    );
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
+      );
+      succeeded = true;
+    } catch (_) {
+      succeeded = false;
+    }
+    _saveBusy = false;
+    if (!mounted) return;
+    if (!succeeded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    unawaited(AudioManager().playWin());
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; kaydetme sonucunu etkilemez.
+    }
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1740,6 +1804,7 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
   int _selectedSpeed = 1; // 1: NORMAL is active (.on) in reference spec
   late final TextEditingController _captionCtrl;
   bool _captionInitialized = false;
+  bool _generateBusy = false;
 
   final _frameAssets = [
     'assets/design/ui/studio_gif/gifImg.png',
@@ -1764,17 +1829,36 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
     super.dispose();
   }
 
-  void _generate() {
+  Future<void> _generate() async {
+    if (_generateBusy) return;
+    _generateBusy = true;
     unawaited(AudioManager().playButtonTap());
-    unawaited(AudioManager().playWin());
-    unawaited(
-      BugVideoService.instance.createAnimatedGif(
+    var succeeded = false;
+    try {
+      await BugVideoService.instance.createAnimatedGif(
         caption: _captionCtrl.text,
         selectedFrames: _selectedFrames,
         speedIndex: _selectedSpeed,
-      ),
-    );
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
+      );
+      succeeded = true;
+    } catch (_) {
+      succeeded = false;
+    }
+    _generateBusy = false;
+    if (!mounted) return;
+    if (!succeeded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    unawaited(AudioManager().playWin());
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; GIF sonucunu etkilemez.
+    }
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.gifCreatedSnack)),
     );
@@ -2287,6 +2371,7 @@ class StudioDownloadsScreen extends StatefulWidget {
 }
 
 class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
+  bool _deleteBusy = false;
   final _downloads = [
     {
       'title': 'birlesme_rekoru.mp4',
@@ -2356,11 +2441,27 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
     return '${totalMb.toStringAsFixed(1).replaceAll('.', ',')} MB';
   }
 
-  void _delete(int index) {
+  Future<void> _delete(int index) async {
+    if (_deleteBusy) return;
+    if (index < 0 || index >= _downloads.length) return;
+    _deleteBusy = true;
     unawaited(AudioManager().playButtonTap());
     final item = _downloads[index];
+    var removed = false;
+    try {
+      removed = await BugVideoService.instance.removeDownloadAt(index) != null;
+    } catch (_) {
+      removed = false;
+    }
+    _deleteBusy = false;
+    if (!mounted) return;
+    if (!removed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
     setState(() => _downloads.removeAt(index));
-    unawaited(BugVideoService.instance.removeDownloadAt(index));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.deletedItemSnack(item['title'] as String))),
     );
