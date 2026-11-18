@@ -116,6 +116,12 @@ class _StackDropScreenState extends State<StackDropScreen>
   /// tur değiştiyse eski turun sonucunu göstermez (`stillValid`).
   int _runId = 0;
 
+  /// Tur başlangıç damgası (Y3): her `_boot`'ta `_runId` ile birlikte
+  /// bir kez yakalanır; aynı turun tüm `finishRun` bitiş yolları aynı
+  /// `idempotencyKey`'i (`'stack:<damga>'`) paylaşır, yeni tur yeni
+  /// damga alır. Bitiş anında `DateTime.now()` alınmaz.
+  int _runStartedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
+
   /// Yaşam döngüsü duraklatması ayrımı (L1): `resumed` yalnız bu
   /// bayrak setliyken oyunu devam ettirir; elle duraklatma sürer.
   bool _pausedByLifecycle = false;
@@ -139,6 +145,14 @@ class _StackDropScreenState extends State<StackDropScreen>
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
 
+  /// Çıkış-sonrası iade bildirimi (S6): `PopScope` `didPop` anında
+  /// bağlam artık ağaçta değildir; bu yüzden `ScaffoldMessenger` +
+  /// bildirim metni her `build`'de ÖNCEDEN yakalanır
+  /// (`energy_empty_popup` deseni) ve iade gerçekten verildiğinde
+  /// çıkış yapılan ekranın üstünde gösterilir.
+  ScaffoldMessengerState? _refundMessenger;
+  String? _refundNotice;
+
   bool _laidOut = false;
   bool _paused = false;
   double _arenaW = 320;
@@ -159,10 +173,6 @@ class _StackDropScreenState extends State<StackDropScreen>
   int _nears = 0;
   double _comboMeter = 0;
   double _elapsedSeconds = 0;
-  // Ş5: başlatıcı boş — ilk karede EN oyuncu TR metin görmesin diye
-  // gerçek metin `didChangeDependencies`'te l10n'den atanır (Osmantus deseni).
-  String _hint = '';
-  bool _hintSeeded = false;
   String? _feedback;
   String? _milestone;
   Timer? _milestoneTimer;
@@ -181,15 +191,6 @@ class _StackDropScreenState extends State<StackDropScreen>
   /// Yavaşlatma gücünün geçici çarpan son tarihi (F8): `_speed`'e
   /// yazılmaz, süre bitince eski hız aynen sürer.
   DateTime? _slowDropUntil;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_hintSeeded) {
-      _hintSeeded = true;
-      _hint = context.l10n.stackHintIdle;
-    }
-  }
 
   @override
   void initState() {
@@ -330,6 +331,9 @@ class _StackDropScreenState extends State<StackDropScreen>
     // `stillValid` ile elenir. Bayrak sıfırlamadan ÖNCE artırılır ki
     // araya giren async sunum yeni turu kirletmesin.
     _runId++;
+    // Y3: tur başlangıç damgası — aynı turun bitiş yolları bu damgayı
+    // paylaşır, yeni tur yeni damga alır.
+    _runStartedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
     _stack.clear();
     _cutPieces.clear();
     _activePowerFx = null;
@@ -384,7 +388,6 @@ class _StackDropScreenState extends State<StackDropScreen>
     _resultShown = false;
     _phase = _Phase.ready;
     _failedAt = null;
-    _hint = context.l10n.stackHintIdle;
   }
 
   void _ensure(double w, double h) {
@@ -586,7 +589,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     final offset = (_moverX - top.center).abs();
 
     if (overlap <= 2) {
-      _fail(context.l10n.stackMissedFall);
+      _fail();
       return;
     }
 
@@ -599,7 +602,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     final center = perfect ? top.center : (overlapL + overlapR) / 2;
     final placedTier = _tier;
     if (width < 14) {
-      _fail(context.l10n.stackSliceThin);
+      _fail();
       return;
     }
 
@@ -638,7 +641,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       final heat = 1.0 + min(1.0, (_combo - 1) * 0.15);
       final gain = ((28 + _combo * 8 + _floors) * heat).round();
       _score += gain;
-      _hint = context.l10n.stackDirectHit(_combo, gain);
       _showFeedback(context.l10n.stackPerfectHit(_combo));
       AudioManager().playMerge(tierNumber: _tier, comboCount: _combo);
       AudioManager().triggerMediumHaptic();
@@ -651,7 +653,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       _comboMeter = min(1.0, 0.25 + _combo * 0.08);
       final gain = 16 + _floors + _combo * 2;
       _score += gain;
-      _hint = context.l10n.stackNearHint(gain, _floors);
       _showFeedback(context.l10n.stackNearCallout(gain));
       AudioManager().playMerge(tierNumber: _tier);
       unawaited(HapticService.instance.lightImpact());
@@ -660,7 +661,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       _comboMeter = max(0, _comboMeter - 0.25);
       final gain = 10 + _floors;
       _score += gain;
-      _hint = context.l10n.stackEdgeCutHint(gain, _floors);
       _showFeedback(context.l10n.stackEdgeCutCallout(gain));
       AudioManager().playMerge(tierNumber: _tier);
       unawaited(HapticService.instance.selectionClick());
@@ -689,13 +689,12 @@ class _StackDropScreenState extends State<StackDropScreen>
     setState(() {});
   }
 
-  void _fail(String why) {
+  void _fail() {
     // Tur tamamlandı: iade hakkı biter (tekrar oynayıp hamlesiz
     // çıkmak da iade vermez — bayrak oturum ömründe kalır).
     _moveMade = true;
     _phase = _Phase.failed;
     _failedAt = DateTime.now();
-    _hint = why;
     _paused = false;
     _shake = 1.0;
     unawaited(HapticService.instance.heavyImpact());
@@ -792,7 +791,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       _freezeUntil = DateTime.now().add(const Duration(seconds: 4));
       _activePowerFx = 'freeze';
       _powerFxLife = 1.0;
-      _hint = context.l10n.stackMagnetHint;
     });
     _showMilestone(context.l10n.stackMagnetMilestone);
     return true;
@@ -810,7 +808,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       _moverX = _moverX.clamp(_moverW / 2, _arenaW - _moverW / 2);
       _activePowerFx = 'widen';
       _powerFxLife = 1.0;
-      _hint = context.l10n.stackWidenHint;
     });
     _showMilestone(context.l10n.stackWidenMilestone);
     return true;
@@ -827,7 +824,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       _slowDropUntil = DateTime.now().add(const Duration(seconds: 8));
       _activePowerFx = 'slows';
       _powerFxLife = 1.0;
-      _hint = context.l10n.stackSlowHint;
     });
     _showMilestone(context.l10n.stackSlowMilestone);
     return true;
@@ -856,6 +852,12 @@ class _StackDropScreenState extends State<StackDropScreen>
         won: won ?? false,
         leaderboardMode: LeaderboardService.modeStack,
         leaderboardOnlyIfPositiveScore: true,
+        // K16: mod skoru `bestScoreKey` ile aynı kimlikle yazılır
+        // (ModesScreen `getModeBestScore('stack_drop')` okur).
+        modeScoreId: 'stack_drop',
+        // Y3: tur-başlangıç damgalı anahtar — aynı turun çift bitiş
+        // yolu (BİTİR + ölüm kenarı) ikinci kez ödemez/göstermez.
+        idempotencyKey: 'stack:$_runStartedAtEpochMs',
         // F2: sunum anında tur değişmişse dialog açılmadan `false` döner.
         stillValid: () => mounted && runId == _runId,
       );
@@ -894,7 +896,35 @@ class _StackDropScreenState extends State<StackDropScreen>
       return;
     }
     _energyRefunded = true;
+    // S6: bildirim yalnız iade GERÇEKTEN verildiğinde gösterilir —
+    // enerji zaten doluysa `addEnergy` kelepçelenir, değişim olmaz.
+    final before = EnergyService.instance.energy;
     EnergyService.instance.addEnergy(1);
+    if (EnergyService.instance.energy > before) _showRefundNotice();
+  }
+
+  /// S6 iade bildirimi: `build`'de yakalanan messenger üzerinden
+  /// çıkış sonrası ekranda görünür; messenger/metni yoksa sessiz
+  /// geçilir (iade yine de yapılmış olur).
+  void _showRefundNotice() {
+    final messenger = _refundMessenger;
+    final notice = _refundNotice;
+    if (messenger == null || notice == null) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          notice,
+          style: const TextStyle(
+            fontFamily: 'Nunito',
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+        duration: const Duration(milliseconds: 1600),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF141B2A),
+      ),
+    );
   }
 
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
@@ -917,6 +947,10 @@ class _StackDropScreenState extends State<StackDropScreen>
 
   @override
   Widget build(BuildContext context) {
+    // S6: iade bildirimi için messenger + metin çıkıştan ÖNCE yakalanır
+    // (`didPop` anında bağlam ağaçta değildir).
+    _refundMessenger = ScaffoldMessenger.maybeOf(context);
+    _refundNotice = context.l10n.energyRefundNotice;
     if (_phase == _Phase.failed && !_resultShown) _edgeShowResult();
     return PopScope(
       canPop: true,
@@ -926,11 +960,13 @@ class _StackDropScreenState extends State<StackDropScreen>
       child: ArcadeScreen(
       backgroundAsset: 'assets/design/backgrounds/stack_nightcity.webp',
       title: context.l10n.shopModeStackDrop,
-      hint: _paused
-          ? context.l10n.pausedStatusCaps
-          : _elapsedSeconds < 15 && !widget.prototypeVisualState
-          ? context.l10n.stackTutorialHint(_hint)
-          : _hint,
+      // Yardım (F4): chrome '?' diyaloğu bu `hint` metnini gösterir;
+      // canlı oyun geri bildirimi değil, kural metni verilir. İlk 15
+      // saniyedeki öğretici öneki korunur (stack_play_test diyaloğun
+      // bu öneki içerdiğini doğrular).
+      hint: _elapsedSeconds < 15 && !widget.prototypeVisualState
+          ? context.l10n.stackTutorialHint(context.l10n.stackHelpBody)
+          : context.l10n.stackHelpBody,
       score: _score,
       best: _best,
       tag: context.l10n.stackTowerTag,

@@ -75,6 +75,13 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   bool _flying = false;
   bool _over = false;
   bool _resultShown = false;
+
+  /// Tur başlangıç damgası (Y3): her `_boot`'ta bir kez yakalanır; aynı
+  /// turun tüm `finishRun` bitiş yolları aynı `idempotencyKey`'i
+  /// (`'balloon_pop:<damga>'`) paylaşır, yeni tur yeni damga alır.
+  /// Bitiş anında `DateTime.now()` alınmaz.
+  int _runStartedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
+
   bool _paused = false;
 
   /// Yaşam döngüsü duraklatması (L1, Osmantuş deseni): arka plana
@@ -93,6 +100,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
+
+  /// Çıkış-sonrası iade bildirimi (S6): `PopScope` `didPop` anında
+  /// bağlam artık ağaçta değildir; bu yüzden `ScaffoldMessenger` +
+  /// bildirim metni her `build`'de ÖNCEDEN yakalanır
+  /// (`energy_empty_popup` deseni) ve iade gerçekten verildiğinde
+  /// çıkış yapılan ekranın üstünde gösterilir.
+  ScaffoldMessengerState? _refundMessenger;
+  String? _refundNotice;
 
   bool _shotArmed = false;
   _BalloonHint _hintKind = _BalloonHint.drift;
@@ -277,6 +292,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   void _boot() {
+    // Y3: tur başlangıç damgası — aynı turun bitiş yolları bu damgayı
+    // paylaşır, yeni tur yeni damga alır.
+    _runStartedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
     // Yeniden başlatma bekleyen geçici UI zamanlayıcılarını iptal
     // eder (F11): yoksa önceki turun zamanlayıcısı yeni turun
     // kombo/milestone/ıska yazısını erken siler.
@@ -1008,6 +1026,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         won: won ?? false,
         leaderboardMode: LeaderboardService.modeBalloon,
         modeScoreId: 'balloon_pop',
+        // Y3: tur-başlangıç damgalı anahtar — aynı turun çift bitiş
+        // yolu (BİTİR + bitiş kenarı) ikinci kez ödemez/göstermez.
+        idempotencyKey: 'balloon_pop:$_runStartedAtEpochMs',
       );
     } catch (_) {
       _resultShown = false;
@@ -1026,7 +1047,35 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       return;
     }
     _energyRefunded = true;
+    // S6: bildirim yalnız iade GERÇEKTEN verildiğinde gösterilir —
+    // enerji zaten doluysa `addEnergy` kelepçelenir, değişim olmaz.
+    final before = EnergyService.instance.energy;
     EnergyService.instance.addEnergy(1);
+    if (EnergyService.instance.energy > before) _showRefundNotice();
+  }
+
+  /// S6 iade bildirimi: `build`'de yakalanan messenger üzerinden
+  /// çıkış sonrası ekranda görünür; messenger/metni yoksa sessiz
+  /// geçilir (iade yine de yapılmış olur).
+  void _showRefundNotice() {
+    final messenger = _refundMessenger;
+    final notice = _refundNotice;
+    if (messenger == null || notice == null) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          notice,
+          style: const TextStyle(
+            fontFamily: 'Nunito',
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+        duration: const Duration(milliseconds: 1600),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF141B2A),
+      ),
+    );
   }
 
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
@@ -1048,6 +1097,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   @override
   Widget build(BuildContext context) {
+    // S6: iade bildirimi için messenger + metin çıkıştan ÖNCE yakalanır
+    // (`didPop` anında bağlam ağaçta değildir).
+    _refundMessenger = ScaffoldMessenger.maybeOf(context);
+    _refundNotice = context.l10n.energyRefundNotice;
     final until = descendEvery - (_shots % descendEvery);
     if (_over && !_resultShown) _edgeShowResult();
     final bonusItems = [

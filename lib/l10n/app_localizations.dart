@@ -856,6 +856,7 @@ abstract class AppLocalizations {
   String get shopAddedDoubleCoinToast;
   String get shopAddedLuckPotionToast;
   String get energyPackBoughtToast;
+  String get energyRefundNotice;
   String get shopPurchaseFailedRefundToast;
   String get shopPurchaseConfirmTitle;
   String get shopEnergyEmptyConfirmBody;
@@ -1101,6 +1102,7 @@ abstract class AppLocalizations {
   String screamPauseScore(int score, int gates);
   // --- W65-1: G8 stack_drop (i18n göç planı) ---
   String get stackHintIdle;
+  String get stackHelpBody;
   String get stackPerfectPrototype;
   String get stackMissedFall;
   String get stackSliceThin;

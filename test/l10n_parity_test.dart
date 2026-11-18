@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 838 getter + 179 metot = 1017 anahtar,
+// açıkça sayılır (soyut sınıftaki 840 getter + 179 metot = 1019 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -539,6 +539,7 @@ void main() {
         'shopAddedDoubleCoinToast': l10n.shopAddedDoubleCoinToast,
         'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
         'energyPackBoughtToast': l10n.energyPackBoughtToast,
+        'energyRefundNotice': l10n.energyRefundNotice,
         'shopPurchaseFailedRefundToast': l10n.shopPurchaseFailedRefundToast,
         'shopPurchaseConfirmTitle': l10n.shopPurchaseConfirmTitle,
         'shopEnergyEmptyConfirmBody': l10n.shopEnergyEmptyConfirmBody,
@@ -690,6 +691,7 @@ void main() {
         'gateVuvuzelaPass': l10n.gateVuvuzelaPass,
         // W65-1: G8 stack_drop (i18n göç planı)
         'stackHintIdle': l10n.stackHintIdle,
+        'stackHelpBody': l10n.stackHelpBody,
         'stackPerfectPrototype': l10n.stackPerfectPrototype,
         'stackMissedFall': l10n.stackMissedFall,
         'stackSliceThin': l10n.stackSliceThin,
@@ -1396,6 +1398,7 @@ void main() {
         'shopAddedDoubleCoinToast': l10n.shopAddedDoubleCoinToast,
         'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
         'energyPackBoughtToast': l10n.energyPackBoughtToast,
+        'energyRefundNotice': l10n.energyRefundNotice,
         'shopPurchaseFailedRefundToast': l10n.shopPurchaseFailedRefundToast,
         'shopPurchaseConfirmTitle': l10n.shopPurchaseConfirmTitle,
         'shopEnergyEmptyConfirmBody': l10n.shopEnergyEmptyConfirmBody,
@@ -1547,6 +1550,7 @@ void main() {
         'gateVuvuzelaPass': l10n.gateVuvuzelaPass,
         // W65-1: G8 stack_drop (i18n göç planı)
         'stackHintIdle': l10n.stackHintIdle,
+        'stackHelpBody': l10n.stackHelpBody,
         'stackPerfectPrototype': l10n.stackPerfectPrototype,
         'stackMissedFall': l10n.stackMissedFall,
         'stackSliceThin': l10n.stackSliceThin,
@@ -2194,21 +2198,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 1017 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1019 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 838);
-    expect(tr.length, 838);
+    expect(en.length, 840);
+    expect(tr.length, 840);
     expect(enMethods.length, 179);
     expect(trMethods.length, 179);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1017);
+    expect(en.length + enMethods.length, 1019);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

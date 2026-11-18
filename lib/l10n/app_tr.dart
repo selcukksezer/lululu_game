@@ -1864,6 +1864,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get energyPackBoughtToast => '+5 enerji eklendi!';
 
   @override
+  String get energyRefundNotice => 'Hiç hamle yapılmadı — 1 enerji iade edildi.';
+
+  @override
   String get shopPurchaseFailedRefundToast => 'Satın alma başarısız oldu, altınların iade edildi.';
 
   @override
@@ -2480,6 +2483,10 @@ class AppLocalizationsTr extends AppLocalizations {
   // --- W65-1: G8 stack_drop (i18n göç planı) ---
   @override
   String get stackHintIdle => 'Dokun. Tam ortala = combo. Kenar kesilir.';
+
+  @override
+  String get stackHelpBody =>
+      'Dokunarak sallanan bloğu kulenin üstüne bırak. Tam ortala, combo artsın; taşan kenar kesilir. Kuleyi kaçırırsan ya da dilim çok incelirse tur biter!';
 
   @override
   String get stackPerfectPrototype => 'MÜKEMMEL İSABET! X3';

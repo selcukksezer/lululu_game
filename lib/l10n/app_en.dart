@@ -1866,6 +1866,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get energyPackBoughtToast => '+5 energy added!';
 
   @override
+  String get energyRefundNotice => 'No moves made — 1 energy refunded.';
+
+  @override
   String get shopPurchaseFailedRefundToast => 'Purchase failed — your coins were refunded.';
 
   @override
@@ -2482,6 +2485,10 @@ class AppLocalizationsEn extends AppLocalizations {
   // --- W65-1: G8 stack_drop (i18n göç planı) ---
   @override
   String get stackHintIdle => 'Tap. Dead centre = combo. The edge gets cut.';
+
+  @override
+  String get stackHelpBody =>
+      'Tap to drop the swaying block onto the tower. Dead centre builds your combo; the overhanging edge gets cut. Miss the tower or shave the block too thin and the run ends!';
 
   @override
   String get stackPerfectPrototype => 'PERFECT HIT! X3';
