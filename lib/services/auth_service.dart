@@ -143,6 +143,51 @@ class RegisteredAccount {
   }
 }
 
+/// Kullanıcı, Apple/Google giriş sayfasını onaylamadan kapattı.
+/// Çağırıcılar bu türü sessizce yutabilir (hata iletisi göstermeden);
+/// sağlayıcı hataları ise [StateError] olarak görünür iletilir.
+/// Mevcut çağırıcılar (auth_screen/auth_panel) genel `catch` ile
+/// [toString] çıktısını gösterir; ileti bu yüzden nötr tutulur.
+class AuthSignInCancelledException implements Exception {
+  const AuthSignInCancelledException({required this.provider});
+
+  final AuthProviderKind provider;
+
+  String get message => 'Giriş iptal edildi';
+
+  @override
+  String toString() => message;
+}
+
+/// [AuthService.deleteAccount] özeti: hesabın silindiğini ve hangi
+/// temizlik adımlarının başarısız olduğunu çağırıcıya bildirir.
+/// Fırlatma yoksa hesap silinmiştir; listedeki adımlar kısmi
+/// temizliktir (kalan yerel/bulut artığı olabilir). Çağırıcı UI'ı
+/// Faz 2'de bu sonuca bağlanacak; bu dosyada yalnız sözleşme hazır.
+/// `requires-recent-login` durumunda metot fırlatır, sonuç dönmez
+/// (o durumda hiçbir şey silinmemiştir, yerel veri korunur).
+class AccountDeletionResult {
+  const AccountDeletionResult({
+    required this.failedLocalCleanups,
+    required this.failedCloudCleanups,
+    required this.cloudDeletionAttempted,
+  });
+
+  /// Başarısız yerel temizlik adımları (servis adları).
+  final List<String> failedLocalCleanups;
+
+  /// Başarısız bulut temizlik adımları (servis/adım adları).
+  final List<String> failedCloudCleanups;
+
+  /// Bulut silme denendi mi (Firebase hazır + Firebase oturumu var).
+  final bool cloudDeletionAttempted;
+
+  bool get hasFailures =>
+      failedLocalCleanups.isNotEmpty || failedCloudCleanups.isNotEmpty;
+
+  bool get success => !hasFailures;
+}
+
 /// Snapshot of guest progress captured before account registration or linking.
 class _GuestProgressSnapshot {
   const _GuestProgressSnapshot({
@@ -191,6 +236,17 @@ class AuthService extends ChangeNotifier {
   static const _localAccountsKey = 'LululuAccountsV1';
   static const _guestIdKey = 'LululuGuestIdV1';
 
+  /// O9: kaba-kuvvet sayaçları + kilit bitiş damgaları
+  /// (`{'attempts': {kullanıcı: sayı}, 'locks': {kullanıcı: bitişMs}}`).
+  /// Bellek-içi sayaçlar uygulama yeniden başlayınca sıfırlanıyordu;
+  /// kilit durumu artık kalıcıdır, [_loadAsync] geri yükler.
+  static const _rateLimitKey = 'LululuLoginRateLimitV1';
+
+  /// O11: Firebase kaydı başarısız olup yalnız yerel kasaya yazılan
+  /// hesapların kullanıcı adları (JSON liste). Girişte uzlaştırma
+  /// denenir; başarılı uzlaştırmada kayıttan çıkarılır.
+  static const _pendingFirebaseSyncKey = 'LululuPendingFirebaseSyncV1';
+
   /// Misafir kimliği -> hesap UID eşlemesi (JSON harita): misafir
   /// giriş yaptığında göç kaydı buraya yazılır. Göçün tek seferlik
   /// olduğunun kanıtı (idempotency işareti) ve sohbet engel/rapor
@@ -230,6 +286,9 @@ class AuthService extends ChangeNotifier {
   final Map<String, RegisteredAccount> _accounts = {};
   final Map<String, int> _failedLoginAttempts = {};
   final Map<String, int> _loginLockoutUntilMs = {};
+  final Set<String> _pendingFirebaseSync = {};
+  bool _lastRegistrationLocalOnly = false;
+  String? _lastRegistrationFirebaseError;
   final ValueNotifier<AuthUser?> userNotifier = ValueNotifier<AuthUser?>(null);
 
   AuthUser? get user => _user;
@@ -247,6 +306,23 @@ class AuthService extends ChangeNotifier {
   List<RegisteredAccount> get registeredAccounts =>
       _accounts.values.toList(growable: false);
 
+  /// O11: Firebase kaydı başarısız olduğu için yalnız yerel kasada
+  /// duran hesapların kullanıcı adları (uzlaştırma bekleyenler).
+  Set<String> get pendingFirebaseSyncUsernames =>
+      Set<String>.unmodifiable(_pendingFirebaseSync);
+
+  /// O11: son [register] çağrısında Firebase kaydı başarısız olup
+  /// hesap yalnız yerel kasaya yazıldıysa true. Çağırıcı, kayıt
+  /// başarısından sonra bunu okuyup kullanıcıya bildirebilir
+  /// (hesap bu cihazda oluşturuldu; bulut eşitlemesi bir sonraki
+  /// girişte denenecek). Firebase hiç denenmediyse (hazır değil)
+  /// false'tur — o durumda yerel-öncelikli kayıt beklenen kip'tir.
+  bool get lastRegistrationWasLocalOnly => _lastRegistrationLocalOnly;
+
+  /// O11: son kaydın Firebase hata kodu (yalnız
+  /// [lastRegistrationWasLocalOnly] true ise anlamlıdır).
+  String? get lastRegistrationFirebaseError => _lastRegistrationFirebaseError;
+
   /// Returns consecutive failed login count for [usernameOrEmail].
   int failedAttemptsFor(String usernameOrEmail) {
     final key = _normalizeUsername(usernameOrEmail);
@@ -254,15 +330,18 @@ class AuthService extends ChangeNotifier {
   }
 
   /// Clears brute-force counters (for testing or administrative reset).
+  /// O9: kalıcı kopya da güncellenir — sıfırlama yeniden başlatmada
+  /// geri gelmez.
   void resetLoginRateLimit([String? usernameOrEmail]) {
     if (usernameOrEmail == null) {
       _failedLoginAttempts.clear();
       _loginLockoutUntilMs.clear();
-      return;
+    } else {
+      final key = _normalizeUsername(usernameOrEmail);
+      _failedLoginAttempts.remove(key);
+      _loginLockoutUntilMs.remove(key);
     }
-    final key = _normalizeUsername(usernameOrEmail);
-    _failedLoginAttempts.remove(key);
-    _loginLockoutUntilMs.remove(key);
+    unawaited(_persistLoginRateLimit());
   }
 
   void _setUser(AuthUser? next) {
@@ -309,8 +388,11 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> _loadAsync() async {
-    resetLoginRateLimit();
     final prefs = await SharedPreferences.getInstance();
+    // O9: hız sınırı sıfırlanmaz, kalıcı hâlden geri yüklenir —
+    // yeniden başlatma kilidi/sayacı silmez.
+    _restoreLoginRateLimit(prefs);
+    _loadPendingFirebaseSync(prefs);
     await _loadAccounts(prefs);
     final raw = prefs.getString(_sessionKey);
     if (raw != null && raw.isNotEmpty) {
@@ -592,6 +674,7 @@ class AuthService extends ChangeNotifier {
         );
       }
       _loginLockoutUntilMs.remove(userKey);
+      unawaited(_persistLoginRateLimit());
     }
   }
 
@@ -609,11 +692,114 @@ class AuthService extends ChangeNotifier {
       _loginLockoutUntilMs[userKey] =
           DateTime.now().toUtc().millisecondsSinceEpoch + duration;
     }
+    unawaited(_persistLoginRateLimit());
   }
 
   void _clearFailedLoginAttempts(String userKey) {
-    _failedLoginAttempts.remove(userKey);
-    _loginLockoutUntilMs.remove(userKey);
+    final hadAttempts = _failedLoginAttempts.remove(userKey) != null;
+    final hadLock = _loginLockoutUntilMs.remove(userKey) != null;
+    if (hadAttempts || hadLock) {
+      unawaited(_persistLoginRateLimit());
+    }
+  }
+
+  /// O9: kalıcı hız sınırı durumunu bellek-içi haritalara yükler.
+  /// Haritalar kalıcı hâlden atanır (birleştirilmez): boş kalıcı hâl
+  /// eski bellek durumunu temizler (test izolasyonu + taze kurulum).
+  /// Süresi dolmuş kilitler atılır; sayaçlar korunur (kilit bitince
+  /// yeni başarısız deneme, eskiden olduğu gibi katlanan kilit kurar).
+  void _restoreLoginRateLimit(SharedPreferences prefs) {
+    _failedLoginAttempts.clear();
+    _loginLockoutUntilMs.clear();
+    final raw = prefs.getString(_rateLimitKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final attempts = decoded['attempts'];
+      if (attempts is Map<String, dynamic>) {
+        attempts.forEach((key, value) {
+          final count = (value as num?)?.toInt() ?? 0;
+          if (key.isNotEmpty && count > 0) {
+            _failedLoginAttempts[key] = count;
+          }
+        });
+      }
+      final locks = decoded['locks'];
+      if (locks is Map<String, dynamic>) {
+        final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+        var prunedAny = false;
+        locks.forEach((key, value) {
+          final untilMs = (value as num?)?.toInt() ?? 0;
+          if (key.isEmpty || untilMs <= 0) return;
+          if (untilMs > nowMs) {
+            _loginLockoutUntilMs[key] = untilMs;
+          } else {
+            prunedAny = true;
+          }
+        });
+        if (prunedAny) {
+          unawaited(_persistLoginRateLimit());
+        }
+      }
+    } catch (_) {
+      _failedLoginAttempts.clear();
+      _loginLockoutUntilMs.clear();
+    }
+  }
+
+  /// O9: hız sınırı durumunu kalıcı yazar. Best-effort: yazım
+  /// başarısızlığı giriş akışını bozmaz (bellek-içi hâl geçerlidir).
+  Future<void> _persistLoginRateLimit() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_failedLoginAttempts.isEmpty && _loginLockoutUntilMs.isEmpty) {
+        await prefs.remove(_rateLimitKey);
+        return;
+      }
+      await prefs.setString(
+        _rateLimitKey,
+        jsonEncode({
+          'attempts': _failedLoginAttempts,
+          'locks': _loginLockoutUntilMs,
+        }),
+      );
+    } catch (e) {
+      debugPrint('[lululu] rate-limit persist failed: $e');
+    }
+  }
+
+  /// O11: uzlaştırma bekleyen kullanıcı adlarını kalıcı hâlden yükler.
+  void _loadPendingFirebaseSync(SharedPreferences prefs) {
+    _pendingFirebaseSync.clear();
+    final raw = prefs.getString(_pendingFirebaseSyncKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      for (final item in decoded) {
+        if (item is String && item.isNotEmpty) {
+          _pendingFirebaseSync.add(item);
+        }
+      }
+    } catch (_) {
+      _pendingFirebaseSync.clear();
+    }
+  }
+
+  /// O11: uzlaştırma bekleyen listesini kalıcı yazar (best-effort).
+  Future<void> _persistPendingFirebaseSync() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_pendingFirebaseSync.isEmpty) {
+        await prefs.remove(_pendingFirebaseSyncKey);
+        return;
+      }
+      await prefs.setString(
+        _pendingFirebaseSyncKey,
+        jsonEncode(_pendingFirebaseSync.toList()),
+      );
+    } catch (e) {
+      debugPrint('[lululu] pending Firebase sync persist failed: $e');
+    }
   }
 
   /// Misafir kimliği -> hesap UID eşlemesini okur (göç kayıtları).
@@ -899,10 +1085,25 @@ class AuthService extends ChangeNotifier {
           }
         }
       }
+    }
+
+    // O4: göç, ProgressManager alanlarına doğrudan yazdı; bütünlük
+    // imzasını PM'nin kendi kalıcı kayıt yolundan yenile. Doğrudan
+    // prefs yazımı imza hesaplamaz ve `coins` setter'ının ertelenmiş
+    // kaydı ara durumdan imza üretebilir (skor birleştirme henüz
+    // bitmeden) — bu yüzden skor yazımı + imza tazelemesi, TÜM
+    // birleştirmeler bittikten sonra tek noktada yapılır.
+    // `persistBoosters()` güçlendirici prefs'lerini + bütünlük
+    // imzasını son bellek-içi durumdan yazar (coin/seviye/kozmetik
+    // prefs'leri yukarıda aynı değerlerle yazıldı). Liderlik
+    // yeniden bağlama da skorları değiştirmiş olabilir
+    // (`boardUpdated`), o yüzden koşul iki yolu da kapsar.
+    if (snapshot.includeInMemoryScores || boardUpdated) {
       await prefs.setString(
         'lululu_mode_high_scores',
         jsonEncode(pm.modeHighScores),
       );
+      await pm.persistBoosters();
     }
 
     await CloudSyncService.instance.enableOnlineWhenSignedIn();
@@ -1004,6 +1205,11 @@ class AuthService extends ChangeNotifier {
 
   /// Register a durable username+password (or email+password) account
   /// (device vault + optional Firebase Auth).
+  ///
+  /// O11: Firebase kaydı başarısız olursa hesap yalnız yerel kasaya
+  /// yazılır ve [lastRegistrationWasLocalOnly] true olur; hesap
+  /// uzlaştırma listesine alınır, bir sonraki girişte Firebase
+  /// hesabı oluşturulup UID uzlaştırılır (bkz. [login]).
   Future<AuthUser> register({
     required String username,
     required String password,
@@ -1011,6 +1217,9 @@ class AuthService extends ChangeNotifier {
     String? email,
   }) async {
     await ensureLoaded();
+    // O11: önceki kaydın yerel-öncelikli işareti bu kayda taşınmaz.
+    _lastRegistrationLocalOnly = false;
+    _lastRegistrationFirebaseError = null;
     final rawTrimmed = _sanitizeInput(username, fieldLabel: 'Kullanıcı adı');
     final isEmailInput = rawTrimmed.contains('@');
     if (email != null && email.trim().isNotEmpty) {
@@ -1044,6 +1253,8 @@ class AuthService extends ChangeNotifier {
     );
 
     var firebaseUid = id;
+    var firebaseFailed = false;
+    String? firebaseErrorCode;
     await FirebaseBootstrap.ensureInitialized();
     if (FirebaseBootstrap.ready) {
       try {
@@ -1058,11 +1269,23 @@ class AuthService extends ChangeNotifier {
         if (e.code == 'email-already-in-use') {
           throw StateError('Bu kullanıcı adı bulutta da kayıtlı — giriş yap');
         }
+        firebaseFailed = true;
+        firebaseErrorCode = e.code;
         debugPrint('[lululu] Firebase register: ${e.code} ${e.message}');
-        // Continue with local vault — offline-first.
+        // O11: sessiz yerel-devam YOK — yerel-öncelikli kayıt açıkça
+        // işaretlenir (çağırıcı bildirebilir) ve uzlaştırma listesine
+        // alınır; çevrimdışı-öncelikli akış korunur (kayıt sürer).
       } catch (e) {
+        firebaseFailed = true;
+        firebaseErrorCode = 'unknown';
         debugPrint('[lululu] Firebase register failed: $e');
       }
+    }
+    _lastRegistrationLocalOnly = firebaseFailed;
+    _lastRegistrationFirebaseError = firebaseErrorCode;
+    if (firebaseFailed) {
+      _pendingFirebaseSync.add(userKey);
+      unawaited(_persistPendingFirebaseSync());
     }
 
     final account = RegisteredAccount(
@@ -1181,6 +1404,46 @@ class AuthService extends ChangeNotifier {
           );
           final uid = cred.user?.uid;
           if (uid != null && uid.isNotEmpty) firebaseUid = uid;
+          // O11: Firebase oturumu açıldı — bekleyen uzlaştırma
+          // (varsa) çözüldü, hesap bulutta da var demektir.
+          if (_pendingFirebaseSync.remove(resolvedAccount.username)) {
+            unawaited(_persistPendingFirebaseSync());
+          }
+        } on fb.FirebaseAuthException catch (e) {
+          // O11 uzlaştırması: kayıt sırasında Firebase hesabı hiç
+          // oluşmamışsa (uzlaştırma listesinde) ve giriş
+          // "kullanıcı yok" ile reddedildiyse, aynı kimlik
+          // bilgileriyle Firebase hesabını şimdi oluştur ve UID'yi
+          // benimse (aşağıdaki çakışma koruması aynen geçerlidir).
+          // E-posta bulutta zaten varsa oluşturma
+          // `email-already-in-use` ile reddedilir — üzerine yazma
+          // yok, bekleyen kayıt kalır, sonraki girişte tekrar
+          // denenir. Yerel giriş her durumda başarılıdır.
+          if (_pendingFirebaseSync.contains(resolvedAccount.username) &&
+              (e.code == 'user-not-found' ||
+                  e.code == 'invalid-credential')) {
+            try {
+              final created = await fb.FirebaseAuth.instance
+                  .createUserWithEmailAndPassword(
+                email: authEmail,
+                password: password,
+              );
+              await created.user
+                  ?.updateDisplayName(resolvedAccount.displayName);
+              final createdUid = created.user?.uid;
+              if (createdUid != null && createdUid.isNotEmpty) {
+                firebaseUid = createdUid;
+              }
+              _pendingFirebaseSync.remove(resolvedAccount.username);
+              unawaited(_persistPendingFirebaseSync());
+            } catch (reconcileError) {
+              debugPrint(
+                '[lululu] Firebase login uzlaştırma başarısız: $reconcileError',
+              );
+            }
+          } else {
+            debugPrint('[lululu] Firebase login (local ok): $e');
+          }
         } catch (e) {
           debugPrint('[lululu] Firebase login (local ok): $e');
         }
@@ -1244,6 +1507,11 @@ class AuthService extends ChangeNotifier {
         _accounts[userKey] = account;
         await _persistAccounts();
         _clearFailedLoginAttempts(userKey);
+        // O11: Firebase girişi başarılı — yetim kalmış bekleyen
+        // uzlaştırma kaydı (kasa temizlenmişse) çözüldü sayılır.
+        if (_pendingFirebaseSync.remove(userKey)) {
+          unawaited(_persistPendingFirebaseSync());
+        }
         _setUser(
           AuthUser(
             id: uid,
@@ -1325,6 +1593,18 @@ class AuthService extends ChangeNotifier {
     return sha256.convert(bytes).toString();
   }
 
+  /// Apple ile giriş. Y4: sağlayıcı hatası/iptali HATA olarak döner —
+  /// sahte yerel oturum (`apple_local_*`) üretilmez, önceki oturum
+  /// (misafir dahil) aynen korunur. Kullanıcı iptali
+  /// [AuthSignInCancelledException] (çağırıcı sessizce yutabilir),
+  /// sağlayıcı hatası görünür [StateError] fırlatır.
+  ///
+  /// Sağlayıcı kimliği doğrulandıktan sonra Firebase bağlantısı
+  /// denenir: Firebase hazırsa ve jeton varsa bağlantı hatası da
+  /// görünür hatadır (sessiz yerel-devam yok). Firebase hazır
+  /// değilse veya jeton yoksa, sağlayıcı-doğrulanmış kimlikle yerel
+  /// oturum açılır (çevrimdışı-öncelikli; bulut yazımı CloudSync
+  /// kapısında engellenir, sahte kimlik değildir).
   Future<AuthUser> signInWithApple() async {
     await ensureLoaded();
     final guestSnapshot = await _captureGuestProgressBeforeLink();
@@ -1341,19 +1621,17 @@ class AuthService extends ChangeNotifier {
         ],
         nonce: hashed,
       );
-    } catch (e) {
-      debugPrint('[lululu] Apple Sign In fallback: $e');
-      _setUser(
-        AuthUser(
-          id: 'apple_local_${DateTime.now().millisecondsSinceEpoch}',
-          displayName: 'Apple Oyuncu',
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        throw const AuthSignInCancelledException(
           provider: AuthProviderKind.apple,
-          username: 'apple_oyuncu',
-        ),
-      );
-      await _mergeGuestProgressIntoAccount(guestSnapshot);
-      await _afterSignIn();
-      return _user!;
+        );
+      }
+      debugPrint('[lululu] Apple Sign In failed: ${e.code} ${e.message}');
+      throw StateError('Apple ile giriş başarısız — tekrar deneyin');
+    } catch (e) {
+      debugPrint('[lululu] Apple Sign In failed: $e');
+      throw StateError('Apple ile giriş başarısız — tekrar deneyin');
     }
 
     final given = credential.givenName;
@@ -1364,10 +1642,25 @@ class AuthService extends ChangeNotifier {
     ].join(' ');
     final display =
         _clampDisplayName(composed.isEmpty ? 'Apple Oyuncu' : composed);
-    final idToken = credential.identityToken;
-    final stableId = idToken != null && idToken.isNotEmpty
-        ? 'apple_${_sha256of(idToken).substring(0, 24)}'
-        : 'apple_${credential.userIdentifier ?? DateTime.now().millisecondsSinceEpoch}';
+    final rawIdToken = credential.identityToken;
+    // Boş jeton, jeton yok sayılır (doğrudan null kontrolü, `!` yok).
+    final idToken = rawIdToken != null && rawIdToken.isNotEmpty
+        ? rawIdToken
+        : null;
+    final userIdentifier = credential.userIdentifier;
+    // Y4: ne jeton ne sağlayıcı kimliği varsa doğrulanmış kimlik
+    // yoktur — zaman damgalı sentetik id üretilmez, hata döner.
+    final String stableId;
+    if (idToken != null) {
+      stableId = 'apple_${_sha256of(idToken).substring(0, 24)}';
+    } else if (userIdentifier != null && userIdentifier.isNotEmpty) {
+      stableId = 'apple_$userIdentifier';
+    } else {
+      debugPrint(
+        '[lululu] Apple Sign In: kimlik jetonu ve kullanıcı kimliği yok',
+      );
+      throw StateError('Apple ile giriş başarısız — tekrar deneyin');
+    }
 
     if (FirebaseBootstrap.ready && idToken != null) {
       try {
@@ -1391,7 +1684,10 @@ class AuthService extends ChangeNotifier {
         await _afterSignIn();
         return _user!;
       } catch (e) {
+        // Y4: Firebase hazır + jeton varken bağlantı hatası görünür
+        // hatadır; sessizce yerel oturuma düşülmez (UID ayrışması).
         debugPrint('[lululu] Firebase Apple link failed: $e');
+        throw StateError('Apple ile giriş tamamlanamadı — tekrar deneyin');
       }
     }
 
@@ -1415,6 +1711,14 @@ class AuthService extends ChangeNotifier {
     _googleReady = true;
   }
 
+  /// Google ile giriş. Y4: sağlayıcı hatası/iptali HATA olarak döner —
+  /// sahte yerel oturum (`google_local_*`) üretilmez, önceki oturum
+  /// aynen korunur. Kullanıcı iptali
+  /// [AuthSignInCancelledException] (çağırıcı sessizce yutabilir),
+  /// sağlayıcı hatası görünür [StateError] fırlatır. Firebase
+  /// bağlantısı hazırsa hatası görünürdür; Firebase hazır değilse
+  /// sağlayıcı-doğrulanmış kimlikle yerel oturum açılır (bkz.
+  /// [signInWithApple] sözleşmesi).
   Future<AuthUser> signInWithGoogle() async {
     await ensureLoaded();
     final guestSnapshot = await _captureGuestProgressBeforeLink();
@@ -1422,7 +1726,11 @@ class AuthService extends ChangeNotifier {
     try {
       await _ensureGoogle();
       final account = await GoogleSignIn.instance.authenticate();
-      final idToken = account.authentication.idToken;
+      final rawIdToken = account.authentication.idToken;
+      // Boş jeton, jeton yok sayılır (doğrudan null kontrolü, `!` yok).
+      final idToken = rawIdToken != null && rawIdToken.isNotEmpty
+          ? rawIdToken
+          : null;
       final stableId = 'google_${account.id}';
 
       if (FirebaseBootstrap.ready && idToken != null) {
@@ -1448,7 +1756,12 @@ class AuthService extends ChangeNotifier {
           await _afterSignIn();
           return _user!;
         } catch (e) {
+          // Y4: Firebase hazır + jeton varken bağlantı hatası görünür
+          // hatadır; sessizce yerel oturuma düşülmez (UID ayrışması).
+          // Dış `catch` tarafından yeniden sarılmaması için
+          // [StateError] dışarıda aynen fırlatılır.
           debugPrint('[lululu] Firebase Google link failed: $e');
+          throw StateError('Google ile giriş tamamlanamadı — tekrar deneyin');
         }
       }
 
@@ -1466,19 +1779,23 @@ class AuthService extends ChangeNotifier {
       await _mergeGuestProgressIntoAccount(guestSnapshot);
       await _afterSignIn();
       return _user!;
-    } catch (e) {
-      debugPrint('[lululu] Google Sign In fallback: $e');
-      _setUser(
-        AuthUser(
-          id: 'google_local_${DateTime.now().millisecondsSinceEpoch}',
-          displayName: 'Google Oyuncu',
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        throw const AuthSignInCancelledException(
           provider: AuthProviderKind.google,
-          username: 'google_oyuncu',
-        ),
+        );
+      }
+      debugPrint(
+        '[lululu] Google Sign In failed: ${e.code} ${e.description}',
       );
-      await _mergeGuestProgressIntoAccount(guestSnapshot);
-      await _afterSignIn();
-      return _user!;
+      throw StateError('Google ile giriş başarısız — tekrar deneyin');
+    } on AuthSignInCancelledException {
+      rethrow;
+    } on StateError {
+      rethrow;
+    } catch (e) {
+      debugPrint('[lululu] Google Sign In failed: $e');
+      throw StateError('Google ile giriş başarısız — tekrar deneyin');
     }
   }
 
@@ -1523,26 +1840,33 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Oturumu açık hesabın YEREL kaydını siler ve oturumu kapatır.
+  /// Oturumu açık hesabı siler ve oturumu kapatır; temizlik
+  /// sonucunu [AccountDeletionResult] olarak döndürür (O27: kısmi
+  /// temizlikler artık yalnız logda kalmaz, çağırıcıya bildirilir).
+  ///
+  /// Bulut tarafı (tek ifade): Firebase hazırsa ve Firebase oturumu
+  /// varsa, [_deleteCloudAccount] önce Firestore profil/skor
+  /// belgelerini, sohbet mesajlarını (göç eşlemeli misafir
+  /// mesajları dahil) ve Firebase Auth kullanıcısını siler; sonra
+  /// yerel kasa temizlenir. Firebase hazır değilse veya Firebase
+  /// oturumu yoksa bulut silme denenmez — o durumda bulut kopyası
+  /// varsa kalır ve aynı e-postayla yeniden kayıt Firebase'te
+  /// `email-already-in-use` ile reddedilebilir.
+  /// `requires-recent-login` durumunda fırlatılır ve yerel veri
+  /// korunur — kullanıcı yeniden giriş yapıp tekrar dener.
   ///
   /// Cihazda yapılanlar:
   /// * Hesap, yerel hesap kasasından ([_localAccountsKey]) çıkarılır ve
   ///   kalan hesaplar kalıcı hâle getirilir — cihazdaki diğer hesaplara
   ///   dokunulmaz. Sosyal girişlerde (Apple/Google) kasa kaydı olmayabilir;
   ///   o durumda yalnız oturum silinir.
-  /// * Silinen hesabın başarısız-giriş sayaçları temizlenir.
+  /// * Silinen hesabın başarısız-giriş sayaçları ve bekleyen Firebase
+  ///   uzlaştırma kaydı temizlenir.
   /// * [signOut] ile oturum kapatılır (Firebase + Google oturum sonlandırma
   ///   ve oturum anahtarının silinmesi).
   /// * [CloudSyncService.enableOnlineWhenSignedIn] yeniden değerlendirilir:
   ///   kimse oturumda olmayınca çevrimiçi eşitleme kapanır, bekleyen kuyruk
   ///   gönderilmez.
-  ///
-  /// Yapılmayanlar — sunucu tarafı silme uç noktası YOK:
-  /// TODO(hesap-silme, sunucu): Firebase Auth kullanıcısı ile Firestore
-  /// `players`/skor/sohbet verilerinin silinmesi için backend uç noktası
-  /// (örn. Cloud Function + yeniden kimlik doğrulama akışı) gerekir. Bu
-  /// sürümde bulut kopyaları silinmez; aynı e-postayla yeniden kayıt,
-  /// Firebase'te `email-already-in-use` ile reddedilebilir.
   ///
   /// Yerel temizlik: [ProgressManager.clearLocalData],
   /// [LeaderboardService.clearLocalData], [ChatService.clearLocalData],
@@ -1555,17 +1879,12 @@ class AuthService extends ChangeNotifier {
   /// hesabın cihazdaki ilerleme / liderlik / sohbet / senkron kuyruğu /
   /// enerji / günlük görev / kampanya / başarım-sezon / zorluk geçmişi /
   /// stüdyo kayıtları temizlenir. Ses/titreşim ayarlarına dokunulmaz
-  /// (cihaz tercihi).
+  /// (cihaz tercihi). Bir adım başarısız olursa diğer adımlar yine
+  /// çalışır; başarısız adımlar sonuçta listelenir.
   ///
   /// Oturum açık değilse veya oturum misafir oturumuysa [StateError] fırlatır
   /// (misafirlerin silinecek hesap kaydı yoktur).
-  ///
-  /// Bulut tarafı: Firebase derlemesinde [deleteAccount] önce
-  /// [_deleteCloudAccount] ile Firestore profil/skor belgelerini,
-  /// sohbet mesajlarını ve Firebase Auth kullanıcısını siler; sonra
-  /// yerel kasayı temizler. `requires-recent-login` durumunda yerel
-  /// veri korunur — kullanıcı yeniden giriş yapıp tekrar dener.
-  Future<void> deleteAccount() async {
+  Future<AccountDeletionResult> deleteAccount() async {
     await ensureLoaded();
     final current = _user;
     if (current == null) {
@@ -1576,7 +1895,7 @@ class AuthService extends ChangeNotifier {
     }
     // Bulut temizliği yerel silmeden ÖNCE: yeniden giriş gerekirse
     // yerel veri korunur, kullanıcı tekrar deneyebilir.
-    await _deleteCloudAccount();
+    final cloudResult = await _deleteCloudAccount();
     final usernameKey = current.username;
     final accountId = current.id;
     final vaultKeys = _accounts.entries
@@ -1587,9 +1906,14 @@ class AuthService extends ChangeNotifier {
         )
         .map((entry) => entry.key)
         .toList();
+    var pendingChanged = false;
     for (final key in vaultKeys) {
       _accounts.remove(key);
       _clearFailedLoginAttempts(key);
+      if (_pendingFirebaseSync.remove(key)) pendingChanged = true;
+    }
+    if (pendingChanged) {
+      unawaited(_persistPendingFirebaseSync());
     }
     if (vaultKeys.isNotEmpty) {
       await _persistAccounts();
@@ -1600,71 +1924,74 @@ class AuthService extends ChangeNotifier {
     // aşağıda temizlenir).
     await _removeGuestIdentityLinksForUid(accountId);
     // Yerel temizlik: silinen hesabın cihazdaki ilerleme / liderlik /
-    // sohbet / senkron kuyruğu kayıtları temizlenir.
-    final failedCleanups = <String>[];
-    try {
+    // sohbet / senkron kuyruğu kayıtları temizlenir. Her adım ayrı
+    // korunur; başarısız adım sonuçta listelenir (O27), ayrıntı
+    // logda kalır.
+    final failedLocalCleanups = <String>[];
+    final failedDetails = <String>[];
+    Future<void> runCleanup(String name, Future<void> Function() task) async {
       try {
-        await ProgressManager.instance.clearLocalData();
+        await task();
       } catch (e) {
-        failedCleanups.add('ProgressManager: $e');
-      }
-      try {
-        await LeaderboardService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('LeaderboardService: $e');
-      }
-      try {
-        await ChatService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('ChatService: $e');
-      }
-      try {
-        await CloudSyncService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('CloudSyncService: $e');
-      }
-      try {
-        await EnergyService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('EnergyService: $e');
-      }
-      try {
-        await DailyChallengeService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('DailyChallengeService: $e');
-      }
-      try {
-        await CampaignProgressionService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('CampaignProgressionService: $e');
-      }
-      try {
-        await AchievementPassService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('AchievementPassService: $e');
-      }
-      try {
-        await AdaptiveDifficultyService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('AdaptiveDifficultyService: $e');
-      }
-      try {
-        await BugVideoService.instance.clearLocalData();
-      } catch (e) {
-        failedCleanups.add('BugVideoService: $e');
-      }
-    } finally {
-      try {
-        await CloudSyncService.instance.enableOnlineWhenSignedIn();
-      } catch (e) {
-        failedCleanups.add('CloudSyncService.enableOnlineWhenSignedIn: $e');
+        failedLocalCleanups.add(name);
+        failedDetails.add('$name: $e');
       }
     }
-    if (failedCleanups.isNotEmpty) {
-      debugPrint(
-        '[lululu] deleteAccount: yerel temizlikte başarısız olanlar: ${failedCleanups.join('; ')}',
+
+    try {
+      await runCleanup(
+        'ProgressManager',
+        ProgressManager.instance.clearLocalData,
+      );
+      await runCleanup(
+        'LeaderboardService',
+        LeaderboardService.instance.clearLocalData,
+      );
+      await runCleanup('ChatService', ChatService.instance.clearLocalData);
+      await runCleanup(
+        'CloudSyncService',
+        CloudSyncService.instance.clearLocalData,
+      );
+      await runCleanup(
+        'EnergyService',
+        EnergyService.instance.clearLocalData,
+      );
+      await runCleanup(
+        'DailyChallengeService',
+        DailyChallengeService.instance.clearLocalData,
+      );
+      await runCleanup(
+        'CampaignProgressionService',
+        CampaignProgressionService.instance.clearLocalData,
+      );
+      await runCleanup(
+        'AchievementPassService',
+        AchievementPassService.instance.clearLocalData,
+      );
+      await runCleanup(
+        'AdaptiveDifficultyService',
+        AdaptiveDifficultyService.instance.clearLocalData,
+      );
+      await runCleanup(
+        'BugVideoService',
+        BugVideoService.instance.clearLocalData,
+      );
+    } finally {
+      await runCleanup(
+        'CloudSyncService.enableOnlineWhenSignedIn',
+        CloudSyncService.instance.enableOnlineWhenSignedIn,
       );
     }
+    if (failedDetails.isNotEmpty) {
+      debugPrint(
+        '[lululu] deleteAccount: yerel temizlikte başarısız olanlar: ${failedDetails.join('; ')}',
+      );
+    }
+    return AccountDeletionResult(
+      failedLocalCleanups: failedLocalCleanups,
+      failedCloudCleanups: cloudResult.failures,
+      cloudDeletionAttempted: cloudResult.attempted,
+    );
   }
 
   /// Firebase tarafı hesap silme (Google Play Kullanıcı Verisi
@@ -1672,26 +1999,35 @@ class AuthService extends ChangeNotifier {
   ///
   /// Sıra: Firestore profil/skor belgeleri → sohbet mesajları →
   /// Firebase Auth kullanıcısı. Belge/mesaj silme başarısız olursa
-  /// (kural/ağ) loglanır ama hesap silme engellenmez — yerel kasa ve
-  /// Auth silme yine yapılır. `requires-recent-login` durumunda ise
-  /// [StateError] fırlatılır; çağrı noktası yerel veriyi silmeden
-  /// durur, kullanıcı yeniden giriş yapıp tekrar dener.
+  /// (kural/ağ) adım adı döndürülen listeye eklenir ama hesap silme
+  /// engellenmez — yerel kasa ve Auth silme yine yapılır.
+  /// `requires-recent-login` durumunda ise [StateError] fırlatılır;
+  /// çağrı noktası yerel veriyi silmeden durur, kullanıcı yeniden
+  /// giriş yapıp tekrar dener.
   ///
   /// Yerel-derlemede (Firebase hazır değil) veya Firebase oturumu
-  /// yoksa hiçbir şey yapmaz.
-  Future<void> _deleteCloudAccount() async {
-    if (!FirebaseBootstrap.ready) return;
+  /// yoksa hiçbir şey yapmaz (`attempted: false` döner).
+  Future<({bool attempted, List<String> failures})>
+      _deleteCloudAccount() async {
+    if (!FirebaseBootstrap.ready) {
+      return (attempted: false, failures: <String>[]);
+    }
     final fbUser = fb.FirebaseAuth.instance.currentUser;
-    if (fbUser == null) return;
+    if (fbUser == null) {
+      return (attempted: false, failures: <String>[]);
+    }
     final uid = fbUser.uid;
+    final failures = <String>[];
     try {
       await CloudSyncService.instance.deleteCloudDataForUid(uid);
     } catch (e) {
+      failures.add('CloudSyncService');
       debugPrint('[lululu] deleteAccount: bulut profili silinemedi: $e');
     }
     try {
       await ChatService.instance.deleteMessagesByAuthor(uid);
     } catch (e) {
+      failures.add('ChatService');
       debugPrint(
         '[lululu] deleteAccount: bulut sohbet mesajları silinemedi: $e',
       );
@@ -1711,6 +2047,7 @@ class AuthService extends ChangeNotifier {
       }
       await ChatService.instance.deleteGuestIdentityLinksCloud(guestIds);
     } catch (e) {
+      failures.add('ChatService.guestLinks');
       debugPrint(
         '[lululu] deleteAccount: göç eşlemeli mesajlar silinemedi: $e',
       );
@@ -1724,10 +2061,12 @@ class AuthService extends ChangeNotifier {
           'tekrar giriş yaptıktan sonra hesap silmeyi yeniden deneyin.',
         );
       }
+      failures.add('FirebaseAuth');
       debugPrint(
         '[lululu] deleteAccount: Firebase Auth silme hatası: ${e.code}',
       );
     }
+    return (attempted: true, failures: failures);
   }
 
   Future<void> signOut() async {
