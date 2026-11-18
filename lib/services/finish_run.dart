@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../screens/result_screen.dart';
+import 'achievement_pass_service.dart';
 import 'game_telemetry_service.dart';
 import 'leaderboard_service.dart';
 import 'progress_manager.dart';
@@ -78,7 +79,15 @@ Future<void> _runSettleStep(
 ///    [leaderboardOnlyIfPositiveScore] `true` ise yalnız `score > 0` iken.
 /// 4. Görev: [recordPlayTask] `true` ise `recordTaskProgress('play')`
 ///    kaydedilir.
-/// 5. Sonuç ekranı: [showGameResult] ile gösterilir; dönüş değeri
+/// 5. Başarım/pass (K1a): `modeScoreId ?? leaderboardMode` kimliğiyle
+///    `evaluateModeScore` çağrılır (mod→başarım eşlemesi servis
+///    tarafındadır; `grid2048` gibi takma adlar `normalizeModeId` ile
+///    çözülür) ve skor > 0 ise tur XP'si verilir (kural aşağıda).
+///    Kimlik geçmeyen çağırıcıda (Suika) değerlendirme atlanır; hak
+///    edilen ustalık boot senkronuyla (`syncWithProgressManager`)
+///    kapanır. Ödeme adımından bağımsızdır: `settle` veren çağırıcılar
+///    da bu adımdan geçer.
+/// 6. Sonuç ekranı: [showGameResult] ile gösterilir; dönüş değeri
 ///    "TEKRAR OYNA" seçildiyse `true`'dur.
 ///
 /// TEK-ÖDEME SÖZLEŞMESİ (korunur): ödeme bu yardımcı (çağırıcı tarafı)
@@ -86,7 +95,7 @@ Future<void> _runSettleStep(
 /// (`true`) ile tekrar ödemez. [settle] veren çağırıcılar ödemeyi
 /// yalnızca o kapama içinde yapar; yardımcı ayrıca ödemez.
 ///
-/// ADIM YALITIMI (Y1/B8): 1–4. adımların her biri kendi try-catch'iyle
+/// ADIM YALITIMI (Y1/B8): 1–5. adımların her biri kendi try-catch'iyle
 /// çalışır; bir adım hata verse bile kalan adımlar kaydedilir ve sonuç
 /// diyaloğu gösterilir. Hatalar log'a + telemetriye yazılır.
 ///
@@ -104,7 +113,7 @@ Future<void> _runSettleStep(
 /// aynı turun geçerli yeniden denemesi engellenmez; ödeme yapıldıktan
 /// sonra anahtar tüketilmiş kalır.
 ///
-/// [awaitSettle] `false` ise 1–4. adımlar ateşle-unut başlatılır ve
+/// [awaitSettle] `false` ise 1–5. adımlar ateşle-unut başlatılır ve
 /// sonuç ekranı beklenmeden gösterilir (Suika / 2048'in eski
 /// `unawaited` davranışı). `true` (varsayılan) ise adımlar sırayla
 /// beklenir (diğer modların eski `await` davranışı). Adımlar
@@ -205,6 +214,32 @@ Future<bool> finishRun(
           await pm.recordTaskProgress('play');
         });
       }
+      // K1a — başarım/pass adımı (Y1 yalıtımlı): hata verse bile
+      // kalan adımlar ve sonuç diyaloğu çalışır. Ödeme adımından
+      // bağımsızdır; `settle` veren çağırıcılar da buradan geçer.
+      await _runSettleStep('achievements', () async {
+        final service = AchievementPassService.instance;
+        await service.ensureLoaded();
+        final modeId = modeScoreId ?? leaderboardMode;
+        if (modeId != null) {
+          await service.evaluateModeScore(modeId, score);
+        }
+        // Tur XP kuralı (K1a kararı): tur başına sabit 10 + yıldız
+        // başına 5 (yıldız 0..3 ile sınırlı → tur başına en çok 25),
+        // yalnız skor > 0 iken (0 skorlu tur XP çiftçiliği yapmaz).
+        // Emsal: kademe-1 eşiği 100 XP, kademe aralıkları 150..800 XP,
+        // başarım XP ödülleri 60..600 — tur XP'si bilinçli olarak
+        // bunların çok altında tutuldu; kademe 1 yaklaşık 5-7 skorlu
+        // turda açılır. STATUS bayrağı: kural koordinatör/Selçuk
+        // onayına açıktır.
+        if (score > 0) {
+          final starBonus = 5 * effectiveStars.clamp(0, 3);
+          await service.addSeasonXp(
+            10 + starBonus,
+            reason: 'finish_run:${modeId ?? 'unknown'}',
+          );
+        }
+      });
     } catch (error, stack) {
       // Adım yalıtımı üstündeki beklenmedik hata: sonuç diyaloğu yine
       // gösterilsin (B8); hata görünür kılınır.

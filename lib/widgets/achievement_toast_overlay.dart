@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/achievement_pass_service.dart';
+import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
 
 /// Yeni bir başarım açıldığında ekranın üstünden kayarak gelen altın çerçeveli bildirim banner'ı.
@@ -270,6 +271,34 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
   void initState() {
     super.initState();
     _tabIndex = widget.initialTabIndex.clamp(0, 1);
+  }
+
+  /// Kademe ödülünü talep eder; başarıda ses + görünür bildirim (S3),
+  /// başarısızlıkta (yarışta kaybedilen talep) hata bildirimi gösterir
+  /// (tasks_screen `_claimTask` deseni). Gold track davranışı ve
+  /// `activateGoldPass` akışı değiştirilmez.
+  Future<void> _claimTier({
+    required int tier,
+    required bool goldTrack,
+    required String rewardLabel,
+  }) async {
+    final ok = await AchievementPassService.instance.claimPassTierReward(
+      tier,
+      goldTrack: goldTrack,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    AudioManager().playWin();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.l10n.taskRewardClaimedSnack(rewardLabel)),
+      ),
+    );
   }
 
   @override
@@ -744,9 +773,10 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                   claimed: freeClaimed,
                   canClaim: canClaimFree,
                   isGold: false,
-                  onTap: () => service.claimPassTierReward(
-                    tierDef.tier,
+                  onTap: () => _claimTier(
+                    tier: tierDef.tier,
                     goldTrack: false,
+                    rewardLabel: tierDef.freeReward.label,
                   ),
                 ),
               ),
@@ -759,9 +789,10 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                   claimed: goldClaimed,
                   canClaim: canClaimGold,
                   isGold: true,
-                  onTap: () => service.claimPassTierReward(
-                    tierDef.tier,
+                  onTap: () => _claimTier(
+                    tier: tierDef.tier,
                     goldTrack: true,
+                    rewardLabel: tierDef.goldReward.label,
                   ),
                 ),
               ),

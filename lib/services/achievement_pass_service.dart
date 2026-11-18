@@ -820,6 +820,12 @@ class AchievementPassService extends ChangeNotifier {
   bool _loaded = false;
   bool get isLoaded => _loaded;
 
+  /// Devam eden `load()` çağrısı (uçuş koruması, Y5): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları (yapıcıdaki `_autoLoad`, boot
+  /// yüklemesi, tur-bitirme adımı) aynı yüklemeyi paylaşır; çift
+  /// yükleme yarışı olmaz (DailyChallenge `ensureLoaded` deseni).
+  Future<void>? _loadFuture;
+
   /// Mevcut Sezon Bileti kademesini (0..20) hesaplar.
   int get currentPassTier {
     var tier = 0;
@@ -880,8 +886,30 @@ class AchievementPassService extends ChangeNotifier {
         .toList(growable: false);
   }
 
-  /// Kalıcı verileri `SharedPreferences` üzerinden yükler.
+  /// Kalıcı durum zaten yüklüyse hemen döner; değilse `load()`'u
+  /// bekler. Tur-bitirme adımının yükleme yarışına girmesini önler.
+  Future<void> ensureLoaded() async {
+    if (_loaded) return;
+    await load();
+  }
+
+  /// Kalıcı verileri `SharedPreferences` üzerinden yükler. Eşzamanlı
+  /// çağrılar aynı yüklemeyi paylaşır (uçuş koruması); yükleme
+  /// bittikten sonra yeniden çağrılırsa prefs'ten tekrar okur
+  /// (yeniden yükleme korunur — kalıcılık testleri buna dayanır).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     unlockedAchievementIds
       ..clear()

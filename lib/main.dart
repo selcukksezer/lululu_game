@@ -10,6 +10,7 @@ import 'navigation/game_routes.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/achievement_pass_service.dart';
 import 'services/adaptive_quality_scaler.dart';
 import 'services/app_lifecycle_guard.dart';
 import 'services/audio_manager.dart';
@@ -242,6 +243,22 @@ class _BootAppState extends State<_BootApp> {
       await CampaignProgressionService.instance
           .load()
           .timeout(const Duration(seconds: 3));
+      // Başarım/pass (K1b): PM yüklemesinden sonra, kampanya deseniyle
+      // (3 sn zaman aşımı). `load()` uçuş korumalıdır; yapıcıdaki
+      // `_autoLoad` ile aynı yükleme paylaşılır.
+      await AchievementPassService.instance
+          .load()
+          .timeout(const Duration(seconds: 3));
+      // Boot senkronu (K1b): önceden kazanılmış ilerlemeden hak edilen
+      // başarımları açar. `syncWithProgressManager` idempotenttir
+      // (`recordProgress` yalnız mutlak-değer artışı yazar, açık
+      // başarım tekrar ödül vermez) — boot'ta bir kez çağrılır.
+      // Senkron hatası boot'u düşürmez: kayıt + varsayılanlarla devam.
+      try {
+        await AchievementPassService.instance.syncWithProgressManager();
+      } catch (e) {
+        debugPrint('[lululu] başarım boot senkronu başarısız: $e');
+      }
       // Firebase hazırlığı kapı kararını etkilemez: kapı oturum/kimlik
       // temellidir; hazırlık durumu flush'un iç dallarında ele alınır.
       await _ensureFirebaseWithRetry();
