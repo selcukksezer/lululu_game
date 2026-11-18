@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/online_notify_service.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 /// 1:1 Pixel-Perfect OnlineScreen matching HTML prototype `#scr-online`
@@ -20,7 +22,13 @@ class OnlineScreen extends StatefulWidget {
 }
 
 class _OnlineScreenState extends State<OnlineScreen> {
-  bool _notified = false;
+  // B7/K19 — bellek-içi `_notified` bool'u kaldırıldı: tercih tek
+  // kaynak [OnlineNotifyService]'tedir (kalıcı, hub ile paylaşılır).
+  @override
+  void initState() {
+    super.initState();
+    unawaited(OnlineNotifyService.instance.ensureLoaded());
+  }
 
   // CSS filter: grayscale(.85) opacity(.75)
   static const List<double> _grayscale85Opacity75Matrix = <double>[
@@ -101,9 +109,10 @@ class _OnlineScreenState extends State<OnlineScreen> {
     goTo(context, route, replace: true);
   }
 
-  void _toggleNotify() {
+  Future<void> _toggleNotify() async {
     AudioManager().playPop();
-    setState(() => _notified = !_notified);
+    final subscribed = await OnlineNotifyService.instance.toggle();
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -112,7 +121,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF141B2A),
           content: Text(
-            _notified
+            subscribed
                 ? context.l10n.onlineNotifySignupSnack
                 : context.l10n.onlineNotifyRemovedSnack,
             style: _nunito(
@@ -373,10 +382,16 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ),
               ),
               const SizedBox(height: 16.0),
-              Semantics(
-                button: true,
-                label: _notified ? context.l10n.notifyOnLabel : context.l10n.notifyMe,
-                child: GestureDetector(
+              ListenableBuilder(
+                listenable: OnlineNotifyService.instance,
+                builder: (context, _) {
+                  final notified = OnlineNotifyService.instance.isSubscribed;
+                  return Semantics(
+                    button: true,
+                    label: notified
+                        ? context.l10n.notifyOnLabel
+                        : context.l10n.notifyMe,
+                    child: GestureDetector(
                   onTap: _toggleNotify,
                   child: CustomPaint(
                     painter: const _OnlineBlurredRRectShadowPainter(
@@ -414,7 +429,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _notified ? context.l10n.notifyOnCaps : context.l10n.notifyMe,
+                            notified ? context.l10n.notifyOnCaps : context.l10n.notifyMe,
                             style: _baloo2(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
@@ -428,6 +443,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
                     ),
                   ),
                 ),
+                  );
+                },
               ),
             ],
           ),

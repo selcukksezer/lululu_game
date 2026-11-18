@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/daily_challenge_service.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
@@ -71,6 +73,8 @@ class _TasksScreenState extends State<TasksScreen> {
     ),
   ];
 
+  bool _dailyChallengeClaiming = false;
+
   static String _formatDots(int value) {
     final s = value.toString();
     final buf = StringBuffer();
@@ -88,6 +92,7 @@ class _TasksScreenState extends State<TasksScreen> {
     super.initState();
     _syncFromProgressManager();
     ProgressManager.instance.addListener(_handleProgressChanged);
+    unawaited(DailyChallengeService.instance.ensureLoaded());
   }
 
   @override
@@ -167,6 +172,36 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
+  /// K2-UI — görev ekranındaki günlük challenge talebi; hub kartıyla
+  /// aynı API ve aynı kapı (completedToday + canClaimToday). Ödül,
+  /// talep ÖNCESİ okunur (talep sonrası `nextClaimRewardCoins`
+  /// değişir). MEVCUT 4 görevle birleştirilmez.
+  Future<void> _claimDailyChallenge() async {
+    final daily = DailyChallengeService.instance;
+    if (_dailyChallengeClaiming ||
+        !daily.completedToday ||
+        !daily.canClaimToday) {
+      return;
+    }
+    setState(() => _dailyChallengeClaiming = true);
+    final reward = daily.nextClaimRewardCoins;
+    final ok = await daily.claimDailyChallengeReward();
+    if (!mounted) return;
+    setState(() => _dailyChallengeClaiming = false);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    AudioManager().playVictorySfx(includeVoice: false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.l10n.dailyChallengeClaimedSnack(reward)),
+      ),
+    );
+  }
+
   void _handleDockSelect(BuildContext context, LululuDockTab tab) {
     if (widget.onSelectDockTab != null) {
       widget.onSelectDockTab!(tab);
@@ -192,6 +227,7 @@ class _TasksScreenState extends State<TasksScreen> {
       listenable: Listenable.merge([
         ProgressManager.instance,
         EnergyService.instance,
+        DailyChallengeService.instance,
       ]),
       builder: (context, _) {
         final l10n = context.l10n;
@@ -514,6 +550,10 @@ class _TasksScreenState extends State<TasksScreen> {
 
                           for (int i = 1; i < _tasks.length; i++)
                             _buildTaskCard(context, l10n, _tasks[i]),
+
+                          // Günlük Challenge bölümü (K2-UI): hub kartıyla
+                          // aynı veri; mevcut 4 görevden ayrıdır.
+                          _buildDailyChallengeCard(l10n),
 
                           // .tasks-note (margin: 12px 16px 4px)
                           Padding(
@@ -861,6 +901,267 @@ class _TasksScreenState extends State<TasksScreen> {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Günlük Challenge bölümü (K2-UI): hub kartıyla AYNI veri
+  /// ([DailyChallengeService]); mevcut 4 görev kartından ayrıdır,
+  /// hedef/ödül tanımlarına dokunulmaz. Build içindeki
+  /// [ListenableBuilder] birleşimi servis değişince kartı günceller.
+  Widget _buildDailyChallengeCard(AppLocalizations l10n) {
+    final daily = DailyChallengeService.instance;
+    final pct = daily.progressTowardTarget;
+    final claimed = !daily.canClaimToday;
+    final claimable = daily.completedToday && daily.canClaimToday;
+    final title = l10n.dailyChallengeTitle;
+    final rewardText = l10n.rewardCoins(daily.nextClaimRewardCoins);
+
+    return Opacity(
+      opacity: claimed ? 0.68 : 1.0,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            if (claimable)
+              const BoxShadow(
+                color: Color(0xFF12B76A),
+                spreadRadius: 2,
+                blurRadius: 0,
+              ),
+            const BoxShadow(
+              color: Color(0x12141B2A),
+              offset: Offset(0, 5),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment(-0.342, -0.940),
+                      end: Alignment(0.342, 0.940),
+                      colors: [Color(0xFFFFCF3F), Color(0xFFFFB800)],
+                    ),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  alignment: Alignment.center,
+                  child: Image.asset(
+                    'assets/icons2/trophy.png',
+                    width: 34,
+                    height: 34,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF141B2A),
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        daily.headline,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Nunito',
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF66738A),
+                          height: 1.55,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset(
+                            'assets/icons2/coin.png',
+                            width: 18,
+                            height: 18,
+                            fit: BoxFit.contain,
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              rewardText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Nunito',
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF8A6D00),
+                                height: 1.55,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (claimed)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F8F0),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      l10n.claimedWithCheck,
+                      style: const TextStyle(
+                        fontFamily: 'Baloo 2',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0A9553),
+                      ),
+                    ),
+                  )
+                else if (claimable)
+                  Semantics(
+                    button: true,
+                    label: l10n.claimTaskLabel(title, rewardText),
+                    child: GestureDetector(
+                      key: const Key('daily_challenge_claim_tasks'),
+                      onTap: _dailyChallengeClaiming
+                          ? null
+                          : _claimDailyChallenge,
+                      child: Container(
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Color(0xFF37E08B),
+                              Color(0xFF12B76A),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0xFF066C3C),
+                              offset: Offset(0, 3),
+                              blurRadius: 0,
+                            ),
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          l10n.claimReward,
+                          style: const TextStyle(
+                            fontFamily: 'Baloo 2',
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  RichText(
+                    text: TextSpan(
+                      style: const TextStyle(
+                        fontFamily: 'Baloo 2',
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF66738A),
+                        height: 1.55,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: '${daily.bestTowardTarget}',
+                          style: const TextStyle(
+                            fontFamily: 'Baloo 2',
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF141B2A),
+                            height: 1.55,
+                          ),
+                        ),
+                        TextSpan(text: '/${daily.targetScore}'),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            Container(
+              height: 13,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFDADEE8),
+                    Color(0xFFEDF0F6),
+                    Color(0xFFEDF0F6),
+                  ],
+                  stops: [0.0, 0.25, 1.0],
+                ),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: pct,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: daily.completedToday
+                          ? const [Color(0xFF37E08B), Color(0xFF12B76A)]
+                          : const [Color(0xFFFFD84A), Color(0xFFE01E5A)],
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+            ),
+            if (!claimed && !daily.completedToday) ...[
+              const SizedBox(height: 8),
+              Text(
+                l10n.dailyChallengeHint,
+                style: const TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF66738A),
+                  height: 1.55,
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -1437,6 +1437,12 @@ abstract class AppLocalizations {
   String balloonBombGain(int gained);
   String makaraComboBroken(String reason);
   String osmantusLastError(String reason);
+
+  // --- Dalga 3H: günlük challenge kartı + kampanya/davet girişleri ---
+  String get dailyChallengeTitle;
+  String get dailyChallengeHint;
+  String get campaignHubSubtitle;
+  String dailyChallengeClaimedSnack(int coins);
 }
 
 /// [AppLocalizations.of] kısayolu: `context.l10n.play`.

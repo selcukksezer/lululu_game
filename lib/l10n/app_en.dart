@@ -3141,4 +3141,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String balloonBombGain(int gained) => '+$gained BOMB!';
   String makaraComboBroken(String reason) => 'COMBO BROKEN · $reason';
   String osmantusLastError(String reason) => 'Last error: $reason';
+
+  // --- Dalga 3H: günlük challenge kartı + kampanya/davet girişleri ---
+  @override
+  String get dailyChallengeTitle => 'DAILY CHALLENGE';
+  @override
+  String get dailyChallengeHint => 'Reach the target to claim the reward.';
+  @override
+  String get campaignHubSubtitle => 'Clear chapters and beat the bosses';
+  @override
+  String dailyChallengeClaimedSnack(int coins) =>
+      'Daily challenge reward claimed: +$coins coins!';
 }
