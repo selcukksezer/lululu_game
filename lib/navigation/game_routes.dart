@@ -512,6 +512,12 @@ abstract final class LululuRoutes {
 /// Mod adları daima [openGameMode] kapısından geçer (B4: tek enerji
 /// tüketimi); bilinmeyen adlar sessizce yok sayılmaz, ana sayfa
 /// yedeğine düşer (B30a — [LululuRoutes.onGenerateRoute] ile aynı).
+///
+/// N4: `replace: true` ile hub'a (`hub` veya boş ad) gidildiğinde
+/// yığın tek [HomeShell] rotasına indirilir (`pushAndRemoveUntil`):
+/// bağımsız ekrandaki dock'tan hub'a dönüldüğünde altta eski shell
+/// kalmaz, geri tuşu eski shell'e dönmez. Hub-dışı hedeflerde
+/// `replace` davranışı değişmez (yalnız üst rota değişir).
 Future<void> goTo(
   BuildContext context,
   String target, {
@@ -553,7 +559,12 @@ Future<void> goTo(
       routeName: LululuRoutes.hub,
     );
     if (replace) {
-      await Navigator.of(context).pushReplacement(fallbackRoute);
+      // N4: hub yedeği yığını tek HomeShell'e indirir (bkz. goTo
+      // dokümanı); altta eski shell kalmaz.
+      await Navigator.of(context).pushAndRemoveUntil(
+        fallbackRoute,
+        (_) => false,
+      );
     } else {
       await Navigator.of(context).push(fallbackRoute);
     }
@@ -568,7 +579,14 @@ Future<void> goTo(
   );
 
   if (replace) {
-    await Navigator.of(context).pushReplacement(route);
+    // N4: hub hedefi (`hub` veya boş ad — ikisi de HomeShell çözer)
+    // yığını tek shell rotasına indirir; hub-dışı hedeflerde yalnız
+    // üst rota değişir (önceki davranış).
+    if (normalized == LululuRoutes.hub || normalized.isEmpty) {
+      await Navigator.of(context).pushAndRemoveUntil(route, (_) => false);
+    } else {
+      await Navigator.of(context).pushReplacement(route);
+    }
   } else {
     await Navigator.of(context).push(route);
   }

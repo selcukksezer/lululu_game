@@ -426,7 +426,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                         ),
                         const SizedBox(width: 3),
                         Text(
-                          'B${ch.chapterIndex}',
+                          context.l10n.chapterBadgeLabel(ch.chapterIndex),
                           style: TextStyle(
                             fontSize: compact ? 9.5 : 10.5,
                             fontWeight:

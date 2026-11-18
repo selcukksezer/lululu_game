@@ -799,6 +799,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String chapterLabel(int id) => 'Chapter $id';
 
   @override
+  String chapterBadgeLabel(int id) => 'C$id';
+
+  @override
   String overflowingCountdown(String seconds) =>
       'OVERFLOWING! ${seconds}s';
 
@@ -1746,7 +1749,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemEnergyPackDesc => '+10 energy · fills instantly, no waiting';
 
   @override
-  String get shopItemEnergyDepotTitle => 'Energy Depot';
+  String get shopItemEnergyDepotTitle => 'Full Energy';
 
   @override
   String get shopItemEnergyDepotDesc => 'Fill hearts to 30/30 · full energy in one go';

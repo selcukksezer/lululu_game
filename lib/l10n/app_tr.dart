@@ -802,6 +802,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String chapterLabel(int id) => 'Bölüm $id';
 
   @override
+  String chapterBadgeLabel(int id) => 'B$id';
+
+  @override
   String overflowingCountdown(String seconds) => 'TAŞIYOR! ${seconds}s';
 
   @override
@@ -1744,7 +1747,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemEnergyPackDesc => '+10 enerji · anında dolar, bekleme yok';
 
   @override
-  String get shopItemEnergyDepotTitle => 'Enerji Deposu';
+  String get shopItemEnergyDepotTitle => 'Tam Enerji';
 
   @override
   String get shopItemEnergyDepotDesc => 'Kalbi 30/30 fulle · tek seferde tam enerji';

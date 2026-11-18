@@ -426,6 +426,11 @@ abstract class AppLocalizations {
   String get surviveLabel;
   String bossLabel(String name);
   String chapterLabel(int id);
+
+  /// Kampanya haritası bölüm sekmesindeki kompakt rozet etiketi
+  /// ('B1' / 'C1'): [chapterLabel] tam biçiminden farklıdır, dar
+  /// rozet alanına sığan baş harf kısaltmasıdır.
+  String chapterBadgeLabel(int id);
   String overflowingCountdown(String seconds);
   String get nearLineWarning;
   String comboToast(int count);

@@ -75,54 +75,63 @@ class _HomeShellState extends State<HomeShell> {
     // sekmelerin kendisinde (örn. mqTop) hesaplanır, burada
     // yinelenmez.
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark,
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: LululuColors.paperSoft,
-        body: Stack(
-          children: [
-            // İçerik: dock'un üstünde biter; alt boşluk merkezi.
-            Positioned.fill(
-              child: Padding(
-                padding:
-                    EdgeInsets.only(bottom: _dockClearance + bottomInset),
-                child: _buildActiveTab(),
-              ),
-            ),
-            // Floating dock: içeriğin üstünde (etkileşim katmanı).
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: bottomInset,
-              child: Opacity(
-                opacity: 0.0,
-                child: LululuDockBar(
-                  selected: _tab,
-                  onSelect: _select,
+    return PopScope(
+      // N5: hub-dışı sekmede geri hub sekmesine döner; hub sekmesinde
+      // geri varsayılan davranıştır (uygulamadan çıkış).
+      canPop: _tab == LululuDockTab.home,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _select(LululuDockTab.home);
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.dark,
+        child: Scaffold(
+          extendBody: true,
+          backgroundColor: LululuColors.paperSoft,
+          body: Stack(
+            children: [
+              // İçerik: dock'un üstünde biter; alt boşluk merkezi.
+              Positioned.fill(
+                child: Padding(
+                  padding:
+                      EdgeInsets.only(bottom: _dockClearance + bottomInset),
+                  child: _buildActiveTab(),
                 ),
               ),
-            ),
-            // CSS v5 dock specular highlights + active label color (--paper)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: bottomInset,
-              child: IgnorePointer(
-                child: _DockVisualOverlay(selected: _tab),
+              // Floating dock: içeriğin üstünde (etkileşim katmanı).
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: bottomInset,
+                child: Opacity(
+                  opacity: 0.0,
+                  child: LululuDockBar(
+                    selected: _tab,
+                    onSelect: _select,
+                  ),
+                ),
               ),
-            ),
-            // K1-mount: başarım toast banner'ı, engelsiz üst katman.
-            // Banner toast yokken sıfır boyutludur (SizedBox.shrink) ve
-            // yerleşimi kaydırmaz; toast varken yalnız kendi kutusu
-            // kadar yer kaplar (kapatma düğmesi dokunulabilir kalır).
-            const Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: AchievementToastBanner(),
-            ),
-          ],
+              // CSS v5 dock specular highlights + active label color (--paper)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: bottomInset,
+                child: IgnorePointer(
+                  child: _DockVisualOverlay(selected: _tab),
+                ),
+              ),
+              // K1-mount: başarım toast banner'ı, engelsiz üst katman.
+              // Banner toast yokken sıfır boyutludur (SizedBox.shrink) ve
+              // yerleşimi kaydırmaz; toast varken yalnız kendi kutusu
+              // kadar yer kaplar (kapatma düğmesi dokunulabilir kalır).
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: AchievementToastBanner(),
+              ),
+            ],
+          ),
         ),
       ),
     );
