@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
 import '../navigation/game_routes.dart';
+import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
@@ -199,38 +200,80 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     );
   }
 
+  /// B17-geri: kampanya haritası hub menüsüne bağlı değildir (bağlantı
+  /// kararı bekliyor — bu düğme bağlantı yapmaz, yalnız gezinir):
+  /// geride rota varsa geri döner, yoksa hub yedeğine gider.
+  Future<void> _goBack() async {
+    AudioManager().playPop();
+    final popped = await Navigator.of(context).maybePop();
+    if (!popped && mounted) {
+      await goTo(context, LululuRoutes.hub, replace: true);
+    }
+  }
+
   Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Image.asset('assets/design/bugs_hd/tier1_hd.png', width: 34, height: 34),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'LÜLÜLÜ',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: LululuColors.liquidGold,
-                      letterSpacing: 1.2,
+          Expanded(
+            child: Row(
+              children: [
+                Semantics(
+                  button: true,
+                  label: context.l10n.goBackLabel,
+                  child: GestureDetector(
+                    onTap: _goBack,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: LululuColors.carbonVoid.withValues(alpha: 0.72),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: LululuColors.liquidGold.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: LululuColors.liquidGold,
+                        size: 24,
+                      ),
                     ),
                   ),
-                  Text(
-                    context.l10n.campaignMapTitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: LululuColors.mutedTitanium,
-                    ),
+                ),
+                const SizedBox(width: 8),
+                Image.asset('assets/design/bugs_hd/tier1_hd.png', width: 34, height: 34),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'LÜLÜLÜ',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: LululuColors.liquidGold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      Text(
+                        context.l10n.campaignMapTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: LululuColors.mutedTitanium,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
           Row(
             children: [
@@ -434,7 +477,11 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const GameAudioGate(child: Grid2048Screen()),
+          // K11: enerji yukarıda tüketildi — bayrak true geçilir ki hiç
+          // hamle yapılmadan çıkılırsa enerji iade edilsin.
+          builder: (_) => const GameAudioGate(
+            child: Grid2048Screen(energyConsumed: true),
+          ),
         ),
       );
     } finally {
@@ -471,7 +518,9 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => GameAudioGate(
-            child: GameScreen(level: level),
+            // K11: enerji yukarıda tüketildi — bayrak true geçilir ki
+            // hiç hamle yapılmadan çıkılırsa enerji iade edilsin.
+            child: GameScreen(level: level, energyConsumed: true),
           ),
         ),
       );

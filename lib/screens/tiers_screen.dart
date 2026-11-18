@@ -189,7 +189,11 @@ class _TiersScreenState extends State<TiersScreen> {
   ];
 
   void _onTapTier(_BugTierInfo info) {
-    if (info.tier >= 1 && info.tier <= 8) {
+    // B21: tek ses yolu AudioManager.playTierVoice'tır (tasarım sesi
+    // `tierN_ses.mp3` önce, `voice_tierN.mp3` yedek); 13 çiftin tamamı
+    // assets/audio altında mevcuttur. Eski 1..8 sınırı 9..13. tierleri
+    // sessiz bırakıyordu — 13 tierın tamamı seslendirilir.
+    if (info.tier >= 1 && info.tier <= 13) {
       AudioManager().playTierVoice(info.tier);
     }
     ScaffoldMessenger.of(context)

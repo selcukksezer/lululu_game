@@ -59,6 +59,97 @@ class _GameAudioGateState extends State<GameAudioGate> {
   Widget build(BuildContext context) => RepaintBoundary(child: widget.child);
 }
 
+/// Energy gate for named-route game opens (B4).
+///
+/// [LululuRoutes.resolveScreen] is a synchronous pure resolver and cannot
+/// consume energy, so [LululuRoutes.onGenerateRoute] wraps every mode
+/// route in this gate: deep links and `pushNamed` go through the same
+/// single gate as [openGameMode] — one [EnergyService.tryConsume] call —
+/// and the game widget is built with `energyConsumed: true`, so a
+/// move-less early exit refunds exactly that one unit. No double
+/// consumption: this gate and [openGameMode] are alternative entries,
+/// never stacked ([goTo] routes mode names through [openGameMode] and
+/// never through [LululuRoutes.onGenerateRoute]).
+class _EnergyGatedGameMode extends StatefulWidget {
+  const _EnergyGatedGameMode({required this.kind});
+
+  final GameModeKind kind;
+
+  @override
+  State<_EnergyGatedGameMode> createState() => _EnergyGatedGameModeState();
+}
+
+class _EnergyGatedGameModeState extends State<_EnergyGatedGameMode> {
+  bool _admitted = false;
+  bool _consumed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_attemptEntry());
+  }
+
+  @override
+  void dispose() {
+    // Tüketim tamamlandı ama oyun hiç gösterilmeden rota atıldıysa
+    // 1 enerjiyi iade et — mod ekranlarının hamlesiz-çıkış iadesiyle
+    // aynı sözleşme. (Oyun gösterildiyse iade mod ekranına aittir.)
+    if (_consumed && !_admitted) {
+      EnergyService.instance.addEnergy(1);
+    }
+    super.dispose();
+  }
+
+  Future<void> _attemptEntry() async {
+    final ok = await EnergyService.instance.tryConsume();
+    if (!mounted) {
+      // Ağaçtan atıldık (dispose çoktan geçti): tüketim yapıldıysa
+      // iade burada yapılır, yoksa enerji oyunsuz harcanır.
+      if (ok) EnergyService.instance.addEnergy(1);
+      return;
+    }
+    if (!ok) {
+      await showEnergyEmptyPopup(context);
+      if (!mounted) return;
+      // Popup başka bir rotaya gitmediyse kapıyı kapat: geride rota
+      // varsa geri dön, yoksa (derin bağlantıyla ilk rota) hub'a geç.
+      if (ModalRoute.of(context)?.isCurrent != true) return;
+      final navigator = Navigator.of(context);
+      if (navigator.canPop()) {
+        navigator.pop();
+      } else {
+        await navigator.pushReplacement(
+          LululuRoutes.buildZeroJankRoute<void>(
+            child: const HomeShell(),
+            routeName: LululuRoutes.hub,
+          ),
+        );
+      }
+      return;
+    }
+    _consumed = true;
+    setState(() => _admitted = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_admitted) {
+      return const Scaffold(
+        backgroundColor: LululuColors.carbonVoid,
+        body: Center(
+          child: CircularProgressIndicator(color: LululuColors.liquidGold),
+        ),
+      );
+    }
+    return GameAudioGate(
+      child: LululuRoutes.buildGameModeWidget(
+        widget.kind,
+        energyConsumed: true,
+      ),
+    );
+  }
+}
+
 /// Canonical enum of the 11 playable LÜLÜLÜ arcade game modes.
 /// Kept in `game_routes.dart` for full compatibility across legacy and new callers.
 enum GameModeKind {
@@ -75,8 +166,9 @@ enum GameModeKind {
   makarayiz,
 }
 
-/// Authoritative registry and zero-jank router for all 18 main screens and
-/// 11 game modes matching `gotoScreen(name)` / `data-goto` in `LÜLÜLÜ UI/UX Tasarım.html`.
+/// Authoritative registry and zero-jank router for all 21 named screens
+/// (18 primary + settings, campaign, onboarding) and 11 game modes
+/// matching `gotoScreen(name)` / `data-goto` in `LÜLÜLÜ UI/UX Tasarım.html`.
 abstract final class LululuRoutes {
   static const String splash = 'splash';
   static const String hub = 'hub';
@@ -160,7 +252,8 @@ abstract final class LululuRoutes {
 
   /// Builds the widget for any of the 11 [GameModeKind] arcade modes.
   ///
-  /// [energyConsumed] yalnız [openGameMode] tarafından `true` geçilir:
+  /// [energyConsumed] yalnız [openGameMode] ve isimli-rota enerji kapısı
+  /// (`_EnergyGatedGameMode`) tarafından `true` geçilir:
   /// giriş enerjisi gerçekten tüketildi demektir. Bayrak, 11 mod
   /// ekranının tümüne geçirilir; bu ekranlar hiç hamle yapılmadan
   /// çıkılırsa enerjiyi iade eder. Doğrudan rota çözümleme
@@ -221,7 +314,13 @@ abstract final class LululuRoutes {
     return normalized.trim();
   }
 
-  /// Resolves any of the 18 main screens or 11 game modes by route name.
+  /// Resolves any of the 21 named screens or 11 game modes by route name.
+  ///
+  /// Saf çözümleyicidir: enerji kontrolü yapmaz (B4 kapısı
+  /// [onGenerateRoute] / [goTo] / [openGameMode] içindedir) ve çağrıcı
+  /// verisi (`RouteSettings.arguments`) okumaz — sonuç rotası da dahil
+  /// hiçbir rota skor/modeId parametresi kabul etmez (B5); gerçek
+  /// sonuç akışı `finishRun`/`showGameResult` üzerinden yürür.
   ///
   /// Bilinmeyen isimlerde `null` döner; bilinmeyen-rota yedeği
   /// (ana sayfaya düşme) [onGenerateRoute] içindedir.
@@ -246,6 +345,8 @@ abstract final class LululuRoutes {
           child: buildGameModeWidget(GameModeKind.suika),
         );
       case result:
+        // Prototip önizleme: sabit varsayılanlarla kurulur (skor 2346,
+        // 0 coin, ödeme yok); rota üzerinden skor geçirilemez (B5).
         return const GameResultScreen();
       case shop:
         return const ShopScreen();
@@ -343,7 +444,11 @@ abstract final class LululuRoutes {
     );
   }
 
-  /// Hook for `MaterialApp.onGenerateRoute` supporting all 18 screens & 11 modes.
+  /// Hook for `MaterialApp.onGenerateRoute` supporting all 21 named screens & 11 modes.
+  ///
+  /// Mod rotaları enerji kapısından geçer (B4): [modeAliases] ile
+  /// eşleşen adlar oyun ekranını doğrudan değil, tek tüketim yapan
+  /// `_EnergyGatedGameMode` kapısıyla açar.
   ///
   /// Bilinmeyen rota yedeği: [resolveScreen] tanımsız bir isim için
   /// `null` dönerse boş sayfa / çökme yerine ana sayfa ([HomeShell])
@@ -353,6 +458,22 @@ abstract final class LululuRoutes {
   /// bağlanırsa da sunar.
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     final name = settings.name ?? hub;
+    final normalized = _normalizeRouteName(name);
+    // B4: isimli rotayla açılan mod, openGameMode ile aynı enerji
+    // kapısından geçer. resolveScreen eşzamanlı saf çözümleyicidir
+    // (sözleşmesi route_fallback_test ile sabittir); kapı burada
+    // uygulanır, oyun ekranı tüketim SONRASINDA energyConsumed: true
+    // ile kurulur.
+    final modeKind = modeAliases[normalized];
+    if (modeKind != null) {
+      return buildZeroJankRoute<dynamic>(
+        child: _EnergyGatedGameMode(kind: modeKind),
+        routeName: normalized,
+        duration: const Duration(milliseconds: 340),
+        reverseDuration: LululuMotion.screenReverseDuration,
+        scaleTransition: true,
+      );
+    }
     final screen = resolveScreen(name);
     if (screen == null) {
       debugPrint('[LululuRoutes] bilinmeyen rota: "$name" -> ana sayfa (hub)');
@@ -361,16 +482,11 @@ abstract final class LululuRoutes {
         routeName: hub,
       );
     }
-    final normalized = _normalizeRouteName(name);
-    final isMode = modeAliases.containsKey(normalized);
     return buildZeroJankRoute<dynamic>(
       child: screen,
       routeName: normalized,
-      duration: isMode
-          ? const Duration(milliseconds: 340)
-          : LululuMotion.screenTransitionDuration,
+      duration: LululuMotion.screenTransitionDuration,
       reverseDuration: LululuMotion.screenReverseDuration,
-      scaleTransition: isMode,
     );
   }
 
@@ -391,11 +507,19 @@ abstract final class LululuRoutes {
 }
 
 /// Flutter equivalent of HTML `gotoScreen(name)` / `goTo(name)` for smooth,
-/// zero-jank navigation across all 18 main screens and 11 game modes.
+/// zero-jank navigation across all 21 named screens and 11 game modes.
+///
+/// Mod adları daima [openGameMode] kapısından geçer (B4: tek enerji
+/// tüketimi); bilinmeyen adlar sessizce yok sayılmaz, ana sayfa
+/// yedeğine düşer (B30a — [LululuRoutes.onGenerateRoute] ile aynı).
 Future<void> goTo(
   BuildContext context,
   String target, {
   bool replace = false,
+  @Deprecated(
+    'B4: mod açılışları daima enerji kapısından geçer; bu bayrak '
+    'artık davranışı değiştirmez.',
+  )
   bool checkEnergyForModes = false,
 }) async {
   ZeroJankPreloader.instance.notePointerDown();
@@ -407,15 +531,32 @@ Future<void> goTo(
   }
 
   final modeKind = LululuRoutes.modeAliases[normalized];
-  if (modeKind != null && checkEnergyForModes) {
+  if (modeKind != null) {
+    // B4: kısayol/mod adıyla açılan oyun daima openGameMode kapısından
+    // geçer — tek tüketim, enerji yoksa oyun açılmaz.
+    // checkEnergyForModes bayrağı artık okunmaz (yalnız kaynak
+    // uyumluluğu için durur).
     await openGameMode(context, modeKind);
     return;
   }
 
   final widget = LululuRoutes.resolveScreen(normalized, context: context);
   if (widget == null) {
-    // Bilinmeyen isim: gezinme yok (mevcut davranış), yalnız debug kaydı.
-    debugPrint('[LululuRoutes] goTo: bilinmeyen rota "$target" (yok sayıldı)');
+    // B30a: bilinmeyen rota onGenerateRoute yedeğiyle aynı davranır —
+    // ana sayfaya düşer (sessiz yok sayma yok).
+    debugPrint(
+      '[LululuRoutes] goTo: bilinmeyen rota "$target" -> ana sayfa (hub)',
+    );
+    if (!context.mounted) return;
+    final fallbackRoute = LululuRoutes.buildZeroJankRoute<void>(
+      child: const HomeShell(),
+      routeName: LululuRoutes.hub,
+    );
+    if (replace) {
+      await Navigator.of(context).pushReplacement(fallbackRoute);
+    } else {
+      await Navigator.of(context).push(fallbackRoute);
+    }
     return;
   }
   if (!context.mounted) return;
@@ -433,6 +574,12 @@ Future<void> goTo(
   }
 }
 
+/// Tek enerji kapısından oyun açar (B4): 1 enerji tüketir, enerji
+/// yoksa enerji-boş popup'ı gösterip oyunu açmaz. [goTo] mod adlarını
+/// buraya yönlendirir; isimli rota açılışlarında aynı kapı
+/// [LululuRoutes.onGenerateRoute] içindeki `_EnergyGatedGameMode`
+/// tarafından uygulanır. Tüketim her girişte tam bir kez yapılır;
+/// oyun ekranı `energyConsumed: true` ile kurulur.
 Future<void> openGameMode(BuildContext context, GameModeKind kind) async {
   ZeroJankPreloader.instance.notePointerDown();
 
