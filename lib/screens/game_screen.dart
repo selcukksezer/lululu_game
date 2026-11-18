@@ -5,7 +5,6 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:vibration/vibration.dart';
 import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
 import '../models/hisir_character.dart';
@@ -15,6 +14,7 @@ import '../services/adaptive_quality_scaler.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
@@ -63,7 +63,7 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   CircularPhysicsEngine? _engine;
   late Ticker _ticker;
   Duration _lastElapsed = Duration.zero;
@@ -147,6 +147,16 @@ class _GameScreenState extends State<GameScreen>
 
   // Mechanics / features
   bool _paused = false;
+
+  /// Yaşam döngüsü (arka plan) duraklatması bayrağı (Osmantus deseni):
+  /// yardım diyaloğu açıkken arka plana alınmış oyun, diyalog kapanınca
+  /// kendiliğinden başlamaz — DEVAM beklenir (B9). Yalnız açık devam
+  /// yolları ([_togglePause] ile devam, [_restartLevel]) temizler.
+  bool _pausedByLifecycle = false;
+
+  /// Hamle-sonu değerlendirmesi duraklatma yüzünden ertelendiyse bekleyen
+  /// turun kimliği ([_dropGen]); devamda [_flushPendingMovesEnd] okur.
+  int? _pendingMovesEndGen;
   bool _waitingSettle = false;
   double _settleHold = 0;
 
@@ -204,6 +214,7 @@ class _GameScreenState extends State<GameScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentLevel = widget.level;
     _survivalTimeRemaining = _currentLevel.timeLimitSeconds.toDouble();
     _remainingMoves = widget.arcade ? -1 : _currentLevel.allowedMoves;
@@ -388,6 +399,8 @@ class _GameScreenState extends State<GameScreen>
       _overflowAccum = 0;
       _dangerProximity = 0;
       _paused = false;
+      _pausedByLifecycle = false;
+      _pendingMovesEndGen = null;
       _waitingSettle = false;
       _settleHold = 0;
       _mergeTotal = 0;
@@ -413,6 +426,7 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Madde 35: giriş enerjisi tüketildiyse ve oyun bitmeden (zafer/yenilgi
     // olmadan) hiç hamle yapılmadan çıkıldıysa 1 enerjiyi iade et.
     // Kampanya ve doğrudan rota girişlerinde energyConsumed false'tur.
@@ -439,6 +453,37 @@ class _GameScreenState extends State<GameScreen>
     _hisirTimer?.cancel();
     _hisirHideTimer?.cancel();
     super.dispose();
+  }
+
+  /// Arka plan / ön plan geçişleri (B9, Osmantus deseni): arka planda
+  /// oyun duraklatılır ve kaplama gösterilir; dönüşte kendiliğinden
+  /// başlamaz, DEVAM beklenir ([_pausedByLifecycle] bayrağı, yardım
+  /// diyaloğu kapanışının bile tek başına başlatmasını engeller).
+  /// Duvar-saati kaydırma gerekmez: hayatta
+  /// kalma / taşma / kombo saatleri dt ile işler ve [_paused] kapısına
+  /// takılır; tek duvar-saati oyun kararı [_movesEndTimer] ise
+  /// duraklatmada ertelenir ([_pendingMovesEndGen]).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted || widget.prototypeVisualState || _isFinished) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Bayrak, oyun zaten duraklatılmış olsa da (örn. yardım diyaloğu
+        // açıkken arka plana alınma) kurulur: dönüşte diyalog kapanışı
+        // tek başına başlatmasın, DEVAM beklensin.
+        _pausedByLifecycle = true;
+        if (!_paused) {
+          setState(() => _paused = true);
+        }
+        break;
+      case AppLifecycleState.resumed:
+        // Bilerek boş: yaşam döngüsü duraklatması yalnız DEVAM ile
+        // açılır; elle duraklatılmış oyun da kendiliğinden başlamaz.
+        break;
+    }
   }
 
   // Settle gate is only `_waitingSettle` (with timeout). Do NOT also require
@@ -588,22 +633,13 @@ class _GameScreenState extends State<GameScreen>
     unawaited(_triggerMergeVibration(combo, event.tier.tier));
   }
 
+  /// Birleşme titreşimi: tek kapılı yol — [HapticService.onMerge] hem
+  /// `vibrationEnabled` kapısına hem test ortamına saygı duyar, özel
+  /// titreşim desteği yoksa hafif/orta/ağır dokunuş yedeğine düşer (H1).
+  /// Eski kapısız `Vibration.vibrate` + `triggerHaptic` karışımı
+  /// kaldırıldı; ölçekleme (kombo/kademe) serviste korunur.
   Future<void> _triggerMergeVibration(int combo, int tier) async {
-    try {
-      final hasVibrator = await Vibration.hasVibrator();
-      if (hasVibrator != true) {
-        AudioManager().triggerHaptic();
-        return;
-      }
-      final duration = min(120, 28 + combo * 18 + tier * 4);
-      await Vibration.vibrate(duration: duration);
-      if (combo >= 3) {
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-        await Vibration.vibrate(duration: min(80, 20 + combo * 8));
-      }
-    } catch (_) {
-      AudioManager().triggerHaptic();
-    }
+    await HapticService.instance.onMerge(tier: tier, combo: combo);
   }
 
   void _handleMerges(List<MergeEvent> mergeEvents) {
@@ -763,6 +799,12 @@ class _GameScreenState extends State<GameScreen>
         _movesEndTimer?.cancel();
         _movesEndTimer = Timer(const Duration(seconds: 2), () {
           if (!mounted || _isFinished || gen != _dropGen) return;
+          // Duraklatma (elle / diyalog / arka plan) sürerken tur sonu
+          // karara bağlanmaz: devamda [_flushPendingMovesEnd] okur (B9).
+          if (_paused) {
+            _pendingMovesEndGen = gen;
+            return;
+          }
           if (_hasMetObjective()) {
             _triggerVictory();
           } else {
@@ -775,7 +817,32 @@ class _GameScreenState extends State<GameScreen>
 
   void _togglePause() {
     if (_isFinished) return;
+    // Devama geçişte yaşam döngüsü bayrağı temizlenir (Osmantus deseni):
+    // DEVAM / YENİDEN BAŞLAT / OYUNU BİTİR hep bu yoldan geçer.
+    if (_paused) _pausedByLifecycle = false;
     setState(() => _paused = !_paused);
+  }
+
+  /// Duraklatma kaplamasındaki DEVAM: duraklatmayı açar, ertelenmiş
+  /// hamle-sonu değerlendirmesi varsa hemen karara bağlar (B9). Yalnızca
+  /// DEVAM bu yoldan geçer; YENİDEN BAŞLAT / OYUNU BİTİR bekleyen
+  /// değerlendirmeyi ateşlemeden [_togglePause] kullanır.
+  void _resumeFromPause() {
+    if (_isFinished || !_paused) return;
+    _togglePause();
+    _flushPendingMovesEnd();
+  }
+
+  /// Ertelenmiş hamle-sonu değerlendirmesini (varsa) çalıştırır.
+  void _flushPendingMovesEnd() {
+    final gen = _pendingMovesEndGen;
+    _pendingMovesEndGen = null;
+    if (gen == null || !mounted || _isFinished || gen != _dropGen) return;
+    if (_hasMetObjective()) {
+      _triggerVictory();
+    } else {
+      _triggerDefeat();
+    }
   }
 
   void _showMilestone(InsectTier tier) {
@@ -794,7 +861,10 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _showHisir() {
-    if (!mounted || _engine == null || _isFinished || _paused) {
+    // Bağlı değilse (dispose sonrası) zamanlama yapılmaz: aksi hâlde
+    // ölü durumda her 20 saniyede bir yeniden zamanlanan timer sızar (D4).
+    if (!mounted) return;
+    if (_engine == null || _isFinished || _paused) {
       _scheduleHisir(const Duration(seconds: 20));
       return;
     }
@@ -870,6 +940,7 @@ class _GameScreenState extends State<GameScreen>
   Future<void> _triggerVictory() async {
     if (_isFinished) return;
     _isFinished = true;
+    _pendingMovesEndGen = null;
 
     // Yıldız gerçek eşiklere bırakılır: hedef karşılansa bile skor yıldız
     // eşiğinin altındaysa 0 gösterilir (dürüst skor, garanti yok).
@@ -936,6 +1007,7 @@ class _GameScreenState extends State<GameScreen>
   Future<void> _triggerDefeat() async {
     if (_isFinished) return;
     _isFinished = true;
+    _pendingMovesEndGen = null;
 
     final earnedCoins = ResultScoring.coinsFor(_score);
 
@@ -958,6 +1030,9 @@ class _GameScreenState extends State<GameScreen>
       bestScore: max(_score, _bestScore),
       bestCombo: max(1, _maxCombo),
       merges: _mergeTotal,
+      // Yenilgi başlığı skordan bağımsızdır: pes etme / taşma / hamle
+      // bitimi skor > 0 olsa da zafer başlığı göstermez (B1).
+      won: false,
       awaitSettle: false,
     );
     if (!mounted) return;
@@ -1092,87 +1167,102 @@ class _GameScreenState extends State<GameScreen>
     _showSpeechBubble(context.l10n.speechSpray, durationSeconds: 2);
   }
 
-  void _showInfoDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: const Color(0xFF141A29),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: LululuColors.liquidGold.withValues(alpha: 0.5),
-              width: 1.5,
+  Future<void> _showInfoDialog() async {
+    // Yardım açıkken fizik/sayaç durur: önceden duraklatılmamışsa
+    // duraklat, diyalog kapanınca devam ettir (B4-suika) — araya arka
+    // plan duraklatması girdiyse ([_pausedByLifecycle]) devam ettirme,
+    // DEVAM beklensin (B9).
+    final wasPaused = _paused;
+    if (!_isFinished && !wasPaused) {
+      setState(() => _paused = true);
+    }
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF141A29),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: LululuColors.liquidGold.withValues(alpha: 0.5),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 24,
+                ),
+              ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.6),
-                blurRadius: 24,
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                ctx.l10n.howToTitle,
-                style: GoogleFonts.exo2(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: LululuColors.liquidGold,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ctx.l10n.howToTitle,
+                  style: GoogleFonts.exo2(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: LululuColors.liquidGold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                ctx.l10n.howToBody,
-                style: GoogleFonts.exo2(
-                  fontSize: 13,
-                  height: 1.45,
-                  color: Colors.white.withValues(alpha: 0.9),
+                const SizedBox(height: 14),
+                Text(
+                  ctx.l10n.howToBody,
+                  style: GoogleFonts.exo2(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Semantics(
-                button: true,
-                label: ctx.l10n.understoodButton,
-                child: GestureDetector(
-                  onTap: () => Navigator.pop(ctx),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFFCF3F), LululuColors.liquidGold],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: LululuColors.liquidGold.withValues(alpha: 0.35),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
+                const SizedBox(height: 20),
+                Semantics(
+                  button: true,
+                  label: ctx.l10n.understoodButton,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFCF3F), LululuColors.liquidGold],
                         ),
-                      ],
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      ctx.l10n.understoodButton,
-                      style: GoogleFonts.bangers(
-                        fontSize: 18,
-                        color: const Color(0xFF4A2E00),
-                        letterSpacing: 1,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: LululuColors.liquidGold.withValues(alpha: 0.35),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        ctx.l10n.understoodButton,
+                        style: GoogleFonts.bangers(
+                          fontSize: 18,
+                          color: const Color(0xFF4A2E00),
+                          letterSpacing: 1,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      if (mounted && !_isFinished && !wasPaused && !_pausedByLifecycle) {
+        setState(() => _paused = false);
+        _flushPendingMovesEnd();
+      }
+    }
   }
 
   Widget _buildGameHud() {
@@ -1194,8 +1284,8 @@ class _GameScreenState extends State<GameScreen>
             child: GestureDetector(
             onTap: _togglePause,
             child: Container(
-              width: 42,
-              height: 42,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: const Color(0xFF1B2336),
                 borderRadius: BorderRadius.circular(14),
@@ -1328,8 +1418,8 @@ class _GameScreenState extends State<GameScreen>
             child: GestureDetector(
             onTap: _showInfoDialog,
             child: Container(
-              width: 38,
-              height: 38,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: const Color(0xFF1B2336),
@@ -1743,7 +1833,7 @@ class _GameScreenState extends State<GameScreen>
                 button: true,
                 label: context.l10n.resumeButtonCaps,
                 child: GestureDetector(
-                  onTap: _togglePause,
+                  onTap: _resumeFromPause,
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1812,14 +1902,15 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
               const SizedBox(height: 12),
-              // OYUNU BİTİR
+              // OYUNU BİTİR (pes et): yenilgi akışı — kilit açmaz,
+              // yıldız kaydetmez; zafer sayılmaz (B1).
               Semantics(
                 button: true,
                 label: context.l10n.finishGameButton,
                 child: GestureDetector(
                   onTap: () {
                     _togglePause();
-                    _triggerVictory();
+                    _triggerDefeat();
                   },
                   child: Container(
                     width: double.infinity,
@@ -1854,7 +1945,9 @@ class _GameScreenState extends State<GameScreen>
                     if (nav != null && nav.canPop()) {
                       nav.maybePop();
                     } else {
+                      _pausedByLifecycle = false;
                       setState(() => _paused = false);
+                      _flushPendingMovesEnd();
                     }
                   },
                   child: Container(
