@@ -831,7 +831,14 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String trimLabel(double percent) {
+      final sec = (percent * 0.47).round().toString().padLeft(2, '0');
+      return '0:00 – 0:$sec';
+    }
+
     final endSec = (_trimPercent * 0.47).round().toString().padLeft(2, '0');
+    final increasedTrim = trimLabel(math.min(100, _trimPercent + 5));
+    final decreasedTrim = trimLabel(math.max(20, _trimPercent - 5));
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
@@ -1035,6 +1042,8 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
                                   slider: true,
                                   label: context.l10n.trimEndLabel,
                                   value: '0:00 – 0:$endSec',
+                                  increasedValue: increasedTrim,
+                                  decreasedValue: decreasedTrim,
                                   onIncrease: () => setState(() => _trimPercent = math.min(100.0, _trimPercent + 5.0)),
                                   onDecrease: () => setState(() => _trimPercent = math.max(20.0, _trimPercent - 5.0)),
                                   child: GestureDetector(

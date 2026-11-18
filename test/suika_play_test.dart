@@ -61,6 +61,7 @@ void main() {
     expect(find.text('SIRADAKİ'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });

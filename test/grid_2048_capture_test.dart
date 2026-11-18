@@ -33,10 +33,12 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 300));
-    final image = await (key.currentContext!.findRenderObject()
-            as RenderRepaintBoundary)
-        .toImage();
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    final boundary =
+        key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final image = await tester.runAsync(() => boundary.toImage());
+    final data = await tester.runAsync(
+      () => image!.toByteData(format: ui.ImageByteFormat.png),
+    );
     File('/tmp/lululu-2048-current.png')
         .writeAsBytesSync(Uint8List.sublistView(data!));
     // Madde 99: yakalama dosyası doğrulanır (varlık + boyut + PNG imzası).

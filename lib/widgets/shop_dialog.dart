@@ -681,7 +681,7 @@ class _ShopScreenState extends State<ShopScreen> {
                       children: [
                         // .shop-banner (rect: x=12, y=92, w=406, h=119)
                         Container(
-                          height: 119.0,
+                          constraints: const BoxConstraints(minHeight: 119),
                           margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                           padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
                           decoration: BoxDecoration(
@@ -796,7 +796,7 @@ class _ShopScreenState extends State<ShopScreen> {
 
                         // .free-ad-card (rect: x=12, y=221, w=406, h=185)
                         Container(
-                          height: 185.0,
+                          constraints: const BoxConstraints(minHeight: 185),
                           margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(

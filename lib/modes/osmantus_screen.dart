@@ -1234,7 +1234,17 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                         children: [
                           _cards(),
                           _faces(),
-                          Expanded(child: _arena(wideScreen: true)),
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.center,
+                              child: SizedBox(
+                                width: box.maxWidth,
+                                height: 189.94,
+                                child: _arena(wideScreen: true),
+                              ),
+                            ),
+                          ),
                           _tapButton(),
                         ],
                       )

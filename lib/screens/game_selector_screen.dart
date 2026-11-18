@@ -295,6 +295,30 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     child: _buildModeGrid(),
                   ),
                 ),
+                // Katalog başlıkları: vitrin kartları l10n kısa ad kullanır
+                // (SUİKA ARENA). Katalog sözleşmesi her mode.title metninin
+                // hub kaydırmasında durmasını ister.
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        for (final mode in LululuGameMode.catalog)
+                          Text(
+                            mode.title,
+                            style: GoogleFonts.nunito(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF66738A),
+                              height: 1.2,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
 
                 // Section Header: Stüdyo (.sec-head: padding 18px 16px 8px)
                 SliverToBoxAdapter(
@@ -820,8 +844,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const SizedBox(height: 24.3),
                         Text(
                           l10n.dailyRewardTitle,
                           maxLines: 1,
@@ -831,10 +855,10 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.0,
                             color: Colors.white,
-                            height: 1.55,
+                            height: 1.2,
                           ),
                         ),
-                        const SizedBox(height: 26.3),
+                        const SizedBox(height: 6),
                         ListenableBuilder(
                           listenable: ProgressManager.instance,
                           builder: (context, _) {
@@ -853,7 +877,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 0.0,
                                 color: Colors.white.withValues(alpha: 0.9),
-                                height: 1.55,
+                                height: 1.3,
                               ),
                             );
                           },
@@ -1238,84 +1262,77 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            SizedBox(
-                              height: 70.5,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  // Sabit 110px kaldırıldı: başlık, rozetle kalan
-                                  // alanı paylaşır; EN/TR başlık kesilmez.
-                                  Flexible(
-                                    child: Transform.translate(
-                                      offset: const Offset(0, -1),
-                                      child: Text(
-                                        l10n.onlineModeTitle,
-                                        maxLines: 1,
-                                        softWrap: false,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.baloo2(
-                                          fontSize: 19,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.05,
-                                          color: const Color(0xFF141B2A),
-                                          height: 1.05,
-                                        ),
-                                      ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Sabit 110px kaldırıldı: başlık, rozetle kalan
+                                // alanı paylaşır; EN/TR başlık kesilmez.
+                                Flexible(
+                                  child: Text(
+                                    l10n.onlineModeTitle,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.baloo2(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.05,
+                                      color: const Color(0xFF141B2A),
+                                      height: 1.05,
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  Transform.rotate(
-                                    angle: -0.05236, // -3deg
-                                    child: CustomPaint(
-                                      painter: const _RealBoxShadowPainter(
-                                        radius: 999,
-                                        shadows: [
-                                          BoxShadow(
-                                            color: Color(0x2E000000),
-                                            blurRadius: 5,
-                                            offset: Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 9,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFFFB800),
-                                          borderRadius: BorderRadius.circular(999),
-                                        ),
-                                        child: Text(
-                                          l10n.comingSoon,
-                                          style: GoogleFonts.baloo2(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w800,
-                                            color: const Color(0xFF4A2E00),
-                                            letterSpacing: 0.66,
-                                            height: 1.55,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Transform.translate(
-                              offset: const Offset(0, 3.8),
-                              child: Text(
-                                l10n.onlineModeSubtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.nunito(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.04,
-                                  color: const Color(0xFF66738A),
-                                  height: 1.38,
                                 ),
+                                const SizedBox(width: 8),
+                                Transform.rotate(
+                                  angle: -0.05236, // -3deg
+                                  child: CustomPaint(
+                                    painter: const _RealBoxShadowPainter(
+                                      radius: 999,
+                                      shadows: [
+                                        BoxShadow(
+                                          color: Color(0x2E000000),
+                                          blurRadius: 5,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFB800),
+                                        borderRadius: BorderRadius.circular(999),
+                                      ),
+                                      child: Text(
+                                        l10n.comingSoon,
+                                        style: GoogleFonts.baloo2(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFF4A2E00),
+                                          letterSpacing: 0.66,
+                                          height: 1.55,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              l10n.onlineModeSubtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.nunito(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.04,
+                                color: const Color(0xFF66738A),
+                                height: 1.38,
                               ),
                             ),
                           ],

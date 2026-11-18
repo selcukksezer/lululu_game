@@ -257,12 +257,16 @@ void main() {
         expect(board.getGlobalTop(limit: 20), isNotEmpty);
         expect(board.get11ModeTotalTop(limit: 20), isNotEmpty);
 
-        // CloudSync queue & flush in offline/test environment
+        // CloudSync queue & flush in offline/test environment.
+        // S2#17: Firebase hazır değilken flush başarı sayılmaz ve kuyruk
+        // korunur. Eski sözleşme kuyruğu silip paketi buluta yazmadan
+        // düşürüyordu.
         await sync.enqueueProgressPush();
         await sync.enqueueLeaderboardPush();
         final flushed = await sync.flushPending();
-        expect(flushed, greaterThanOrEqualTo(0));
-        expect(sync.pending, isEmpty);
+        expect(flushed, 0);
+        expect(sync.pending, isNotEmpty);
+        expect(sync.lastFailure, isNotNull);
 
         // Reload & verify persistence
         await board.load();
@@ -746,7 +750,11 @@ void main() {
       expect(privacyFile.existsSync(), isTrue);
       final privacyContent = privacyFile.readAsStringSync();
       expect(privacyContent, contains('class PrivacyPolicyScreen'));
-      expect(privacyContent, contains('GİZLİLİK POLİTİKASI'));
+      expect(privacyContent, contains('privacyTitle'));
+      final trCopy = File(
+        '${projectRoot.path}/lib/l10n/app_tr.dart',
+      ).readAsStringSync();
+      expect(trCopy, contains("privacyTitle => 'GİZLİLİK POLİTİKASI'"));
 
       final settingsFile = File(
         '${projectRoot.path}/lib/screens/settings_screen.dart',

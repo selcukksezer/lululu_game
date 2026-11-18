@@ -57,7 +57,7 @@ void main() {
       GameScreen(level: CampaignDatabase.kitchenLevel1, arcade: true),
       null,
     );
-    await playMount(tester, const Grid2048Screen(), '2048 Grid');
+    await playMount(tester, const Grid2048Screen(), '2048 GRİD');
     await playMount(tester, const BalloonPopScreen(), 'Balon Patlat');
     await playMount(tester, const Match3Screen(), 'Match 3');
     await playMount(tester, const ConnectPopScreen(), 'Bağla Patlat');
@@ -65,7 +65,7 @@ void main() {
     await playMount(tester, const OsmantusScreen(), 'Osmantuş');
     await playMount(tester, const ScreamRoachScreen(), 'Çığlık Böcek');
     await playMount(tester, const MakarayizScreen(), 'Makarayız');
-    await playMount(tester, const TerlikTapScreen(), 'Terlik Tap');
+    await playMount(tester, const TerlikTapScreen(), 'TERLİK TAP');
     await playMount(tester, const YuvaDefenseScreen(), 'YUVA SAVUNMASI');
   });
 }

@@ -202,9 +202,14 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.center,
+        child: SizedBox(
+          width: 398,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
           Row(
             children: [
               Image.asset('assets/design/bugs_hd/tier1_hd.png', width: 34, height: 34),
@@ -301,7 +306,9 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
           ),
         ],
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _buildChapterSelector() {
@@ -893,91 +900,95 @@ class _LevelMapTileState extends State<_LevelMapTile> {
                   Padding(
                     padding:
                         const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (widget.isUnlocked) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: LululuColors.carbonVoid.withValues(
-                                alpha: 0.32,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: LululuColors.mutedTitanium.withValues(
-                                  alpha: 0.18,
-                                ),
-                              ),
-                            ),
-                            child: Text(
-                              '${widget.level.id}',
-                              style: TextStyle(
-                                fontSize: widget.isFrontier ? 20 : 18,
-                                fontWeight: FontWeight.w900,
-                                color: LululuColors.warningSolar,
-                                shadows: [
-                                  Shadow(
-                                    color: LululuColors.carbonVoid.withValues(
-                                      alpha: 0.45,
-                                    ),
-                                    blurRadius: 4,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (widget.isFrontier) ...[
-                            const SizedBox(height: 3),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (widget.isUnlocked) ...[
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
+                                horizontal: 10,
+                                vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: LululuColors.cyberFuchsia.withValues(
-                                  alpha: 0.35,
+                                color: LululuColors.carbonVoid.withValues(
+                                  alpha: 0.32,
                                 ),
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: LululuColors.mutedTitanium.withValues(
+                                    alpha: 0.18,
+                                  ),
+                                ),
                               ),
                               child: Text(
-                                context.l10n.upNextLabel,
+                                '${widget.level.id}',
                                 style: TextStyle(
-                                  fontSize: 7,
+                                  fontSize: widget.isFrontier ? 20 : 18,
                                   fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.8,
                                   color: LululuColors.warningSolar,
+                                  shadows: [
+                                    Shadow(
+                                      color: LululuColors.carbonVoid.withValues(
+                                        alpha: 0.45,
+                                      ),
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (widget.isFrontier) ...[
+                              const SizedBox(height: 3),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: LululuColors.cyberFuchsia.withValues(
+                                    alpha: 0.35,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  context.l10n.upNextLabel,
+                                  style: TextStyle(
+                                    fontSize: 7,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.8,
+                                    color: LululuColors.warningSolar,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ] else ...[
+                            Icon(
+                              Icons.lock_rounded,
+                              color: LululuColors.mutedTitanium.withValues(
+                                alpha: 0.55,
+                              ),
+                              size: 26,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${widget.level.id}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: LululuColors.mutedTitanium.withValues(
+                                  alpha: 0.45,
                                 ),
                               ),
                             ),
                           ],
-                        ] else ...[
-                          Icon(
-                            Icons.lock_rounded,
-                            color: LululuColors.mutedTitanium.withValues(
-                              alpha: 0.55,
-                            ),
-                            size: 26,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${widget.level.id}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: LululuColors.mutedTitanium.withValues(
-                                alpha: 0.45,
-                              ),
-                            ),
-                          ),
+                          const SizedBox(height: 5),
+                          _buildStarRow(),
+                          _buildModifierDots(),
                         ],
-                        const SizedBox(height: 5),
-                        _buildStarRow(),
-                        _buildModifierDots(),
-                      ],
+                      ),
                     ),
                   ),
                 ],

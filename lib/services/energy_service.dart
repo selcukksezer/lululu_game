@@ -214,7 +214,10 @@ class EnergyService extends ChangeNotifier {
     timeToNextNotifier.value = timeToNext;
     // Monoton son-görülen zamanı kalıcı tut: saat geriye alınmış bir
     // sonraki açılışta bu değer yok sayma dayanağıdır.
-    unawaited(_save());
+    // load() dönmeden kayıt bitsin. Aksi hâlde bir sonraki
+    // setMockInitialValues tohumunun üstüne eski _save() yazar
+    // (eski anahtar 100 iken yeni anahtar 5 kalır).
+    await _save();
     _ensureAutoTimer();
     notifyListeners();
   }

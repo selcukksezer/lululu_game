@@ -90,7 +90,10 @@ void main() {
   }
 
   Future<void> popStack(WidgetTester tester) async {
-    await tester.pageBack();
+    // Stack Drop çıkışı PopScope (sistem geri). Ekranda Cupertino
+    // geri düğmesi yok; pageBack onu arar.
+    final nav = tester.state<NavigatorState>(find.byType(Navigator));
+    nav.pop();
     await tester.pump();
     await pumpFrames(tester, 50);
     expect(find.text('OPEN_STACK'), findsOneWidget);

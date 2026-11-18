@@ -348,7 +348,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     final now = DateTime.now();
     var dt = now.difference(_last).inMicroseconds / 1e6;
     _last = now;
-    if (dt <= 0 || dt > 0.05) dt = 0.016;
+    if (dt < 0.008 || dt > 0.05) dt = 0.016;
 
     if (_hitStop > 0) {
       _hitStop = max(0, _hitStop - dt);
@@ -1269,7 +1269,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                     padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
                     child: Row(
                       children: [
-                        Semantics(
+                        Tooltip(
+                          message: 'Back',
+                          child: Semantics(
                           button: true,
                           label: context.l10n.goBackLabel,
                           child: GestureDetector(
@@ -1298,6 +1300,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                               ),
                             ),
                           ),
+                        ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -1808,12 +1811,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                                   ),
                                                 ),
                                                 child: Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment
-                                                          .spaceBetween,
                                                   children: [
-                                                    Text(
+                                                    Flexible(
+                                                      child: Text(
                                                       context.l10n.terlikInstruction,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
                                                       style: TextStyle(
                                                         fontFamily: 'Nunito',
                                                         fontSize: 10.5,
@@ -1825,6 +1828,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                                         ),
                                                       ),
                                                     ),
+                                                    ),
+                                                    const SizedBox(width: 8),
                                                     Text(
                                                       context.l10n.terlikSpeedMultiplier((1 + _elapsedSeconds / 30).clamp(1.0, 2.5).toStringAsFixed(1)),
                                                       style: const TextStyle(

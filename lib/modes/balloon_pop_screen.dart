@@ -679,7 +679,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   bool _reachedDanger() {
     for (var c = 0; c < cols; c++) {
-      if (_grid[rows - 1][c] != 0 || _grid[rows - 2][c] != 0) return true;
+      if (_grid[rows - 1][c] != 0) return true;
     }
     return false;
   }

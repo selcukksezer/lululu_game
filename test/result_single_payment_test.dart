@@ -30,6 +30,10 @@ void main() {
     required int coins,
     required bool coinsAwardedByCaller,
   }) async {
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await pumpWithL10n(
       tester,
       GameResultScreen(
@@ -70,7 +74,7 @@ void main() {
     expect(ProgressManager.instance.coins, 1000);
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
   });
 
   testWidgets('coinsAwardedByCaller false ise tam bir kez öder', (
@@ -84,7 +88,7 @@ void main() {
     expect(ProgressManager.instance.coins, 1050);
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
   });
 
   testWidgets('sıfır coin ödemesi bakiyeyi değiştirmez', (tester) async {
@@ -92,7 +96,7 @@ void main() {
     expect(ProgressManager.instance.coins, 1000);
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
   });
 
   group('finishRun tek-ödeme akışı', () {
@@ -100,6 +104,10 @@ void main() {
       WidgetTester tester,
       Future<bool> Function(BuildContext context) run,
     ) async {
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       Future<bool>? pending;
       await pumpWithL10n(
         tester,

@@ -76,11 +76,11 @@ class LululuGameMode {
       case LululuGameModeId.match3:
         return 'Match 3';
       case LululuGameModeId.connectBlast:
-        return 'Link Pop';
+        return 'Connect Blast';
       case LululuGameModeId.stackDrop:
         return 'Stack Drop';
       case LululuGameModeId.terlikTap:
-        return 'Slipper Tap';
+        return 'Terlik Tap';
       case LululuGameModeId.yuvaDefense:
         return 'Nest Defense';
       case LululuGameModeId.osmantus:

@@ -461,9 +461,10 @@ class ProgressManager extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     unlockedLevel =
         (prefs.getInt('lululu_unlocked_level') ?? 1).clamp(1, maxCampaignLevels);
-    coins = prefs.getInt('lululu_coins') ??
+    _coins = (prefs.getInt('lululu_coins') ??
         prefs.getInt('LululuCoinBalance') ??
-        defaultCoins;
+        defaultCoins).clamp(0, maxTotalCoins);
+    coinsNotifier.value = _coins;
     sprayCount = prefs.getInt('lululu_spray') ??
         prefs.getInt('lululu_raid') ??
         3;
@@ -1433,12 +1434,13 @@ class ProgressManager extends ChangeNotifier {
   void _scheduleCoinPersist() {
     if (_coinPersistScheduled) return;
     _coinPersistScheduled = true;
-    unawaited(
-      Future(() async {
-        _coinPersistScheduled = false;
-        await _persistCoinsOnly();
-      }),
-    );
+    // Microtask: aynı senkron bloktaki coin atamaları birleşir, ama
+    // `Future()` sahte test saatinde sıfır süreli Timer bırakıp
+    // `timersPending` ile testi kilitliyordu.
+    scheduleMicrotask(() async {
+      _coinPersistScheduled = false;
+      await _persistCoinsOnly();
+    });
   }
 
   /// Yalnız coin bakiyesi + bütünlük imzası yazar ([addCoins] ile aynı

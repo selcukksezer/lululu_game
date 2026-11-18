@@ -1511,25 +1511,25 @@ class _GameScreenState extends State<GameScreen>
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0x73FFB800)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            style: const TextStyle(
-              fontFamily: 'Nunito',
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1,
-              height: 1.5,
-              color: LululuColors.liquidGold,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              style: const TextStyle(
+                fontFamily: 'Nunito',
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
+                height: 1.5,
+                color: LululuColors.liquidGold,
+              ),
             ),
-          ),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
+            Text(
               value,
               maxLines: 1,
               style: const TextStyle(
@@ -1540,8 +1540,8 @@ class _GameScreenState extends State<GameScreen>
                 color: Colors.white,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2807,62 +2807,67 @@ class _GameScreenState extends State<GameScreen>
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Column(
-                    children: [
-                      const SizedBox(height: 2),
-                      Container(
-                        width: 48,
-                        height: 48,
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Color(0xFF333F58), Color(0xFF1B2336)],
-                          ),
-                          border: Border.all(
-                            color: const Color(0x47FFFFFF),
-                            width: 1,
-                          ),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x73000000),
-                              offset: Offset(0, 3),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.topCenter,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 2),
+                        Container(
+                          width: 48,
+                          height: 48,
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Color(0xFF333F58), Color(0xFF1B2336)],
                             ),
-                            BoxShadow(
-                              color: Color(0x4D000000),
-                              offset: Offset(0, 6),
-                              blurRadius: 12,
+                            border: Border.all(
+                              color: const Color(0x47FFFFFF),
+                              width: 1,
                             ),
-                          ],
-                        ),
-                        child: Image.asset(
-                          asset,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => const Icon(
-                            Icons.auto_awesome_rounded,
-                            color: LululuColors.liquidGold,
-                            size: 28,
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x73000000),
+                                offset: Offset(0, 3),
+                              ),
+                              BoxShadow(
+                                color: Color(0x4D000000),
+                                offset: Offset(0, 6),
+                                blurRadius: 12,
+                              ),
+                            ],
+                          ),
+                          child: Image.asset(
+                            asset,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) => const Icon(
+                              Icons.auto_awesome_rounded,
+                              color: LululuColors.liquidGold,
+                              size: 28,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontFamily: 'Nunito',
-                          fontSize: 9,
-                          height: 1.1,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFFD8E0EE),
-                          letterSpacing: 0.18,
+                        const SizedBox(height: 3),
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontFamily: 'Nunito',
+                            fontSize: 9,
+                            height: 1.1,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFFD8E0EE),
+                            letterSpacing: 0.18,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   Positioned(
                     top: -2,

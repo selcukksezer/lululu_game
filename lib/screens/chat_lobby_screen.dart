@@ -345,7 +345,7 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
           _buildChannelRow(),
           // Çevrimiçi oyuncular.
           SizedBox(
-            height: 98, // 11pt seviye satırı taşmasın diye.
+            height: 110, // 11pt seviye satırı ve 1.3x metin ölçeği taşmasın diye.
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
