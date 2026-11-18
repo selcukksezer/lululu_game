@@ -7,10 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lululu_game/models/campaign_level.dart';
 import 'package:lululu_game/modes/connect_pop_screen.dart';
 import 'package:lululu_game/modes/stack_drop_screen.dart';
+import 'package:lululu_game/screens/campaign_map_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/services/campaign_progression_service.dart';
 import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
+import 'package:lululu_game/theme/lululu_theme.dart';
 import 'package:lululu_game/widgets/campaign_map_sheet.dart';
 
 import 'test_helpers.dart';
@@ -370,6 +372,206 @@ void main() {
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
+    });
+  });
+
+  group('5. Dalga 3B: uçuş koruması, kanonik kilit, harita sandığı, ödül görünürlüğü', () {
+    test('O17: eşzamanlı çift load() tek uçuşu paylaşır (tek bildirim, durum korunur)',
+        () async {
+      final service = CampaignProgressionService.instance;
+      for (int id = 1; id <= 4; id++) {
+        await service.setStarsForLevel(id, 3);
+      }
+      expect(service.getChapterStars(1), 12);
+
+      var notifications = 0;
+      void count() => notifications++;
+      service.addListener(count);
+      try {
+        await Future.wait([service.load(), service.load()]);
+      } finally {
+        service.removeListener(count);
+      }
+      expect(notifications, 1);
+      expect(service.getChapterStars(1), 12);
+      expect(service.isLevelCompleted(4), isTrue);
+
+      // Kapı serbest bırakılır: sonraki sıralı load() yeniden yükler.
+      notifications = 0;
+      service.addListener(count);
+      try {
+        await service.load();
+      } finally {
+        service.removeListener(count);
+      }
+      expect(notifications, 1);
+    });
+
+    test(
+        'B15: kanonik kilit tanımı PM kilidi kapalıyken bile tamamlanan önceki seviyeyle açılır',
+        () async {
+      final service = CampaignProgressionService.instance;
+      final pm = ProgressManager.instance;
+
+      await service.setStarsForLevel(1, 3);
+      expect(service.isLevelCompleted(1), isTrue);
+
+      // PM tarafı kilitli duruma getir: yalnız PM tanımı 2. seviyeyi
+      // kilitli gösterir, kanonik (servis) tanım açık gösterir.
+      pm.unlockedLevel = 1;
+      expect(pm.isLevelUnlocked(2), isFalse);
+      expect(service.isLevelUnlocked(2), isTrue);
+
+      // Kanonik tanım PM'yi içerir: PM açıkken servis de açıktır;
+      // iki kapı da kapalıyken kilitlidir.
+      pm.unlockedLevel = 5;
+      expect(service.isLevelUnlocked(5), isTrue);
+      expect(service.isLevelUnlocked(6), isFalse);
+      expect(service.isLevelUnlocked(1), isTrue);
+    });
+
+    testWidgets(
+        'K3a: harita ekranında sandık barı talep edilebilir sandığı öder ve banner gösterir',
+        (tester) async {
+      AudioManager().isMuted = true;
+      final service = CampaignProgressionService.instance;
+      final pm = ProgressManager.instance;
+      for (int id = 1; id <= 4; id++) {
+        await service.setStarsForLevel(id, 3);
+      }
+      expect(service.canClaimChapterChest(1, 10), isTrue);
+
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        wrapWithL10n(
+          const CampaignMapScreen(),
+          theme: buildLululuTheme(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.byKey(const Key('campaign_map_chest_bar')), findsOneWidget);
+      expect(find.byKey(const Key('campaign_map_chest_1_10')), findsOneWidget);
+      expect(find.byKey(const Key('campaign_map_chest_2_10')), findsOneWidget);
+
+      final coinsBefore = pm.coins;
+      await tester.tap(find.byKey(const Key('campaign_map_chest_1_10')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(service.isChapterChestClaimed(1, 10), isTrue);
+      expect(pm.coins, greaterThan(coinsBefore));
+      expect(
+        find.byKey(const Key('campaign_map_chest_feedback_banner')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      // Boş ağaçta drenaj: sistem-fontu transient callback'i test
+      // sonunda asılı kalıp scheduler hatasına yol açabiliyor
+      // (missing_screens_test CampaignMap grubunda da aynı dalgalanma
+      // görülüyor); ağaç boşken pumpAndSettle anında durulur.
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 10),
+      );
+    });
+
+    testWidgets(
+        'K3b: tamamlanmış seviye modalı ödül göstermez, boss modalı ilk geçiş bonusunu gösterir',
+        (tester) async {
+      AudioManager().isMuted = true;
+      final service = CampaignProgressionService.instance;
+      for (int id = 1; id <= 9; id++) {
+        await service.setStarsForLevel(id, 3);
+      }
+      expect(service.isLevelCompleted(1), isTrue);
+      expect(service.isLevelUnlocked(10), isTrue);
+      expect(service.isBossFirstCleared(10), isFalse);
+
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      Future<void> pumpMap() async {
+        await tester.pumpWidget(
+          wrapWithL10n(
+            const CampaignMapScreen(),
+            theme: buildLululuTheme(),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      Future<void> openLevelModal(String numberLabel) async {
+        await tester.tap(
+          find.descendant(
+            of: find.byType(GridView),
+            matching: find.text(numberLabel),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      // Tamamlanmış seviye: ödül etiketi yok.
+      await pumpMap();
+      await openLevelModal('1');
+      expect(find.text('BÖLÜM 1'), findsOneWidget);
+      expect(find.textContaining('Ödül:'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+
+      // Boss seviyesi: taban ödül + ilk geçiş bonusu etiketleri var.
+      await pumpMap();
+      await openLevelModal('10');
+      expect(find.text('BÖLÜM 10'), findsOneWidget);
+      expect(find.textContaining('Ödül: +'), findsOneWidget);
+      expect(
+        find.textContaining('Boss ilk geçiş bonusu: +250 COIN'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    testWidgets('K3b: sheet bölüm bandı boss ilk geçiş bonusunu gösterir',
+        (tester) async {
+      AudioManager().isMuted = true;
+      tester.view.physicalSize = const Size(430, 932);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        wrapWithL10n(
+          Scaffold(
+            body: SizedBox(
+              width: 430,
+              height: 932,
+              child: CampaignMapSheet(initialChapterIndex: 1),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Boss ilk geçiş bonusu: +250 COIN'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 }

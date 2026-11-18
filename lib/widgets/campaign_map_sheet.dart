@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
+import '../services/audio_manager.dart';
 import '../services/campaign_progression_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
@@ -113,6 +114,9 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
     }
     if (!mounted) return;
     if (reward != null) {
+      // K3a/S11: sandık talebi başarısında tek ses (playWin); dokunuş
+      // sesi ayrı çalınmaz (çift ses yok).
+      AudioManager().playWin();
       setState(() {
         _chestFeedbackTone = _FeedbackTone.success;
         _chestFeedbackBanner = context.l10n.chestUnlockedToast(
@@ -133,6 +137,8 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
   }
 
   void _handleNodeTap(CampaignLevel level) {
+    // S11: düğüm dokunuşu tek katman ses (kilitli/açık ayrımı yok).
+    AudioManager().playPop();
     if (!_progression.isLevelUnlocked(level.id)) {
       // Kilitli düğüm: kilit sebebini banner'da göster.
       final previousLevel = level.id > 1 ? level.id - 1 : 1;
@@ -385,11 +391,14 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                 selected: selected,
                 child: GestureDetector(
                   key: Key('campaign_chapter_tab_${ch.chapterIndex}'),
-                  onTap: () => setState(() {
-                    _selectedChapterIndex = ch.chapterIndex;
-                    _chestFeedbackBanner = null;
-                    _chestFeedbackTone = _FeedbackTone.success;
-                  }),
+                  onTap: () {
+                    AudioManager().playPop();
+                    setState(() {
+                      _selectedChapterIndex = ch.chapterIndex;
+                      _chestFeedbackBanner = null;
+                      _chestFeedbackTone = _FeedbackTone.success;
+                    });
+                  },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     padding: EdgeInsets.symmetric(
@@ -498,6 +507,24 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                     color: LululuColors.warningSolar,
                   ),
                 ),
+                // K3b (salt-görünüm): boss ilk geçiş bonusu tutarı.
+                // Ödeme mantığı değişmez; bonus alındıysa gösterilmez.
+                if (bossLevel.isBossLevel &&
+                    !_progression.isBossFirstCleared(bossLevel.id)) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    context.l10n.bossFirstClearBonus(
+                      bossLevel.firstClearBonusCoins,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: compact ? 9 : 10,
+                      fontWeight: FontWeight.w700,
+                      color: LululuColors.cyberFuchsia,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

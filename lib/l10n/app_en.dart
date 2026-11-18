@@ -153,6 +153,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String rewardCoins(int amount) => 'Reward: +$amount COIN';
 
   @override
+  String bossFirstClearBonus(int amount) =>
+      'Boss first-clear bonus: +$amount COIN';
+
+  @override
   String rewardEnergy(int amount) => 'Reward: +$amount ENERGY';
 
   @override

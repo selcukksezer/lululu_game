@@ -69,8 +69,25 @@ class CampaignProgressionService extends ChangeNotifier {
   bool _loaded = false;
   bool get isLoaded => _loaded;
 
+  /// Uçuş koruması (O17): eşzamanlı `load()` çağrıları aynı yüklemeyi
+  /// paylaşır (DailyChallenge `_loadFuture` deseni); yoksa her çağrı
+  /// haritaları koşulsuz temizleyip iki kez doldurur + iki kez bildirir.
+  Future<void>? _loadFuture;
+
   /// Kalıcı kampanya verilerini `SharedPreferences` ve `ProgressManager.instance` üzerinden yükler.
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     final pm = ProgressManager.instance;
 

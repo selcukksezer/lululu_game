@@ -157,6 +157,10 @@ abstract class AppLocalizations {
 
   /// Görev ödül metni: 'Ödül: +150 COIN' biçimi korunur.
   String rewardCoins(int amount);
+
+  /// Boss ilk geçiş bonusu etiketi (K3b, salt-görünüm): ödeme mantığı
+  /// değil, seviye/boss bilgi etiketidir.
+  String bossFirstClearBonus(int amount);
   String rewardEnergy(int amount);
 
   String get todaysTasks;

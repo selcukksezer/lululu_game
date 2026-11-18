@@ -5,6 +5,7 @@ import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/campaign_progression_service.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
@@ -24,8 +25,23 @@ class CampaignMapScreen extends StatefulWidget {
 
 class _CampaignMapScreenState extends State<CampaignMapScreen> {
   final progress = ProgressManager();
+
+  /// B15 kanonik kilit tanımı: servis (`ProgressManager` vekâleti +
+  /// `isLevelCompleted(prev)` OR-dalı). Sheet ile aynı tanım.
+  final _progression = CampaignProgressionService.instance;
   int _selectedChapter = 1;
   bool _isStartingLevel = false;
+  String? _chestFeedback;
+  bool _chestFeedbackError = false;
+
+  /// Sandık ödülü güçlendirici anahtarlarının büyük harfli görünen adları
+  /// (sheet ile aynı eşleme: Dart `toUpperCase()` 'terlik' → 'TERLIK'
+  /// üretir, doğrusu 'TERLİK').
+  static const Map<String, String> _boosterDisplayNames = {
+    'terlik': 'TERLİK',
+    'raid': 'RAID',
+    'f16': 'F16',
+  };
 
   /// 4 regions × 20 levels = 80. Colors from LululuColors only.
   /// Chapter names are localized (getter, not const: context.l10n is runtime).
@@ -40,11 +56,13 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   void initState() {
     super.initState();
     progress.addListener(_onProgressUpdated);
+    _progression.addListener(_onProgressUpdated);
   }
 
   @override
   void dispose() {
     progress.removeListener(_onProgressUpdated);
+    _progression.removeListener(_onProgressUpdated);
     super.dispose();
   }
 
@@ -115,6 +133,12 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                   _buildModeSwitcherBanner(),
                   const SizedBox(height: 10),
                   _buildChapterSelector(),
+                  const SizedBox(height: 10),
+                  _buildChestBar(),
+                  if (_chestFeedback != null) ...[
+                    const SizedBox(height: 8),
+                    _buildChestFeedbackBanner(),
+                  ],
                   const SizedBox(height: 14),
                   Expanded(
                     child: _buildLevelsGrid(levels),
@@ -347,6 +371,247 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     );
   }
 
+  /// K3a: bölüm yıldız sandıkları. Harita 4 eski bölge (20'şer seviye)
+  /// gösterir; sandıklar 8 temalı bölüme (10'ar seviye) bağlıdır: eski
+  /// bölge N, temalı bölümler [2N-1, 2N]'yi kapsar. Sheet ile aynı servis
+  /// + aynı `canClaimChapterChest` kapısı + aynı null sözleşmesi.
+  List<int> _themedChaptersForLegacy(int legacyChapter) {
+    final first = (legacyChapter * 2) - 1;
+    return [first, first + 1];
+  }
+
+  Future<void> _handleClaimChest(int chapterIndex, int milestoneStars) async {
+    ChapterChestReward? reward;
+    try {
+      reward = await _progression.claimChapterChest(
+        chapterIndex,
+        milestoneStars,
+      );
+    } catch (_) {
+      reward = null;
+    }
+    if (!mounted) return;
+    final claimedReward = reward;
+    if (claimedReward != null) {
+      AudioManager().playWin();
+      setState(() {
+        _chestFeedbackError = false;
+        _chestFeedback = context.l10n.chestUnlockedToast(
+          milestoneStars,
+          claimedReward.coinsGranted,
+          claimedReward.boosterCount,
+          _boosterDisplayNames[claimedReward.boosterKey] ??
+              claimedReward.boosterKey.toUpperCase(),
+        );
+      });
+    } else {
+      // Sandık açılamadı (null/hata): iyimser UI güncellemesi yok,
+      // görünür hata bandı.
+      setState(() {
+        _chestFeedbackError = true;
+        _chestFeedback = context.l10n.chestClaimFailed;
+      });
+    }
+  }
+
+  Widget _buildChestBar() {
+    final themed = _themedChaptersForLegacy(_selectedChapter);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        key: const Key('campaign_map_chest_bar'),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: LululuColors.carbonVoid.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: LululuColors.liquidGold.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Column(
+          children: [
+            for (var i = 0; i < themed.length; i++) ...[
+              if (i > 0) const SizedBox(height: 6),
+              _buildThemedChestRow(themed[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThemedChestRow(int chapterIndex) {
+    final chapterStars = _progression.getChapterStars(chapterIndex);
+    return Row(
+      children: [
+        SizedBox(
+          width: 62,
+          child: Text(
+            'B$chapterIndex $chapterStars/30⭐',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: LululuColors.liquidGold,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        for (var i = 0;
+            i < CampaignProgressionService.validChestMilestones.length;
+            i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(
+            child: _buildChestTile(
+              chapterIndex: chapterIndex,
+              milestoneStars:
+                  CampaignProgressionService.validChestMilestones[i],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildChestTile({
+    required int chapterIndex,
+    required int milestoneStars,
+  }) {
+    final claimed = _progression.isChapterChestClaimed(
+      chapterIndex,
+      milestoneStars,
+    );
+    final claimable = _progression.canClaimChapterChest(
+      chapterIndex,
+      milestoneStars,
+    );
+    final reward = _progression.previewChapterChestReward(
+      chapterIndex,
+      milestoneStars,
+    );
+    final Color borderColor = claimed
+        ? LululuColors.toxicNeon
+        : claimable
+            ? LululuColors.liquidGold
+            : LululuColors.mutedTitanium.withValues(alpha: 0.35);
+
+    return Semantics(
+      button: true,
+      enabled: claimable,
+      label: context.l10n.chestClaimLabel(
+        milestoneStars,
+        claimed
+            ? 'claimed'
+            : claimable
+                ? 'claimable'
+                : 'locked',
+      ),
+      child: GestureDetector(
+        key: Key('campaign_map_chest_${chapterIndex}_$milestoneStars'),
+        onTap: claimable
+            ? () => _handleClaimChest(chapterIndex, milestoneStars)
+            : null,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          decoration: BoxDecoration(
+            color: claimable
+                ? LululuColors.liquidGold.withValues(alpha: 0.18)
+                : claimed
+                    ? LululuColors.toxicNeon.withValues(alpha: 0.12)
+                    : LululuColors.darkObsidian.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: borderColor,
+              width: claimable ? 1.6 : 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                claimed
+                    ? '✅'
+                    : claimable
+                        ? '🎁'
+                        : '🔒',
+                style: const TextStyle(fontSize: 13),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      context.l10n.chestStarsLabel(milestoneStars),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: claimable
+                            ? LululuColors.warningSolar
+                            : claimed
+                                ? LululuColors.toxicNeon
+                                : LululuColors.cream,
+                      ),
+                    ),
+                    Text(
+                      claimed
+                          ? context.l10n.claimedPlain
+                          : context.l10n.chestRewardLine(
+                              reward.coinsGranted,
+                              reward.boosterCount,
+                            ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w700,
+                        color: LululuColors.mutedTitanium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChestFeedbackBanner() {
+    final toneColor = _chestFeedbackError
+        ? LululuColors.coralFlare
+        : LululuColors.toxicNeon;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        key: const Key('campaign_map_chest_feedback_banner'),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: toneColor.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: toneColor.withValues(alpha: 0.65)),
+        ),
+        child: Text(
+          _chestFeedback!,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: toneColor,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildChapterSelector() {
     return SizedBox(
       height: 44,
@@ -363,7 +628,14 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
             label: context.l10n.chapterLabel(ch.$1),
             selected: isSelected,
             child: GestureDetector(
-              onTap: () => setState(() => _selectedChapter = ch.$1),
+              onTap: () {
+                AudioManager().playPop();
+                setState(() {
+                  _selectedChapter = ch.$1;
+                  _chestFeedback = null;
+                  _chestFeedbackError = false;
+                });
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -444,7 +716,8 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
       itemCount: levels.length,
       itemBuilder: (context, idx) {
         final level = levels[idx];
-        final isUnlocked = progress.isLevelUnlocked(level.id);
+        // B15: kanonik kilit tanımı servistir (sheet ile aynı).
+        final isUnlocked = _progression.isLevelUnlocked(level.id);
         final stars = progress.getStarCount(level.id);
         final isFrontier = isUnlocked && level.id == progress.unlockedLevel;
 
@@ -467,6 +740,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     if (_isStartingLevel) return;
     _isStartingLevel = true;
     try {
+      AudioManager().playPop();
       final ok = await EnergyService.instance.tryConsume();
       if (!mounted) return;
       if (!ok) {
@@ -504,6 +778,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     if (_isStartingLevel) return;
     _isStartingLevel = true;
     try {
+      AudioManager().playPop();
       final ok = await EnergyService.instance.tryConsume();
       if (!mounted) return;
       if (!ok) {
@@ -530,6 +805,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   }
 
   void _showLevelStartModal(CampaignLevel level) {
+    AudioManager().playPop();
     showModalBottomSheet(
       context: context,
       backgroundColor: LululuColors.carbonVoid.withValues(alpha: 0),
@@ -651,6 +927,26 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                               ? LululuColors.mysticRuby
                               : LululuColors.toxicNeon,
                         ),
+                        // K3b (salt-görünüm): ilk-geçiş ödülleri. Ödeme
+                        // mantığı değişmez; tamamlanmış seviyede ödül
+                        // zaten verildiği için etiket gösterilmez.
+                        if (!_progression.isLevelCompleted(level.id))
+                          _ObjectiveChip(
+                            icon: Icons.monetization_on_outlined,
+                            label: context.l10n.rewardCoins(
+                              level.rewardCoins,
+                            ),
+                            accent: LululuColors.liquidGold,
+                          ),
+                        if (level.isBossLevel &&
+                            !_progression.isBossFirstCleared(level.id))
+                          _ObjectiveChip(
+                            icon: Icons.workspace_premium_rounded,
+                            label: context.l10n.bossFirstClearBonus(
+                              level.firstClearBonusCoins,
+                            ),
+                            accent: LululuColors.cyberFuchsia,
+                          ),
                       ],
                     ),
                   ],
