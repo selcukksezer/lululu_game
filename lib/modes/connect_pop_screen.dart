@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
@@ -10,6 +9,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../screens/result_screen.dart';
@@ -61,7 +61,8 @@ enum _ConnectHint {
   magnet,
 }
 
-class _ConnectPopScreenState extends State<ConnectPopScreen> {
+class _ConnectPopScreenState extends State<ConnectPopScreen>
+    with WidgetsBindingObserver {
   int get rows => (widget.prototypeVisualState || widget.gameplayTestState) ? 6 : 8;
   static const int cols = 6;
   static const int maxKinds = 5;
@@ -93,6 +94,16 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   bool _lost = false;
   bool _resultShown = false;
   bool _paused = false;
+
+  /// Yaşam döngüsü (arka plan) duraklatması bayrağı (Osmantus deseni):
+  /// `resumed` yalnız bu bayrak setliyken devam ettirir; elle
+  /// duraklatma kullanıcının kararıyla sürer.
+  bool _pausedByLifecycle = false;
+
+  /// Yardım sayfası duraklatması bayrağı: sayfa kapanınca yalnız bu
+  /// bayrak setliyken devam ettirilir (önceden elle duraklatıldıysa
+  /// duraklatma sürer).
+  bool _pausedByHowToPlay = false;
 
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk geçerli zincir
   /// (`_commit`, en az `minLen` hücre) veya tur tamamlanması
@@ -175,6 +186,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _fill();
     if (widget.prototypeVisualState) {
@@ -258,6 +270,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _milestoneTimer?.cancel();
     _hintTimer?.cancel();
@@ -267,8 +280,41 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Sıra tabanlı oyun: duvar-saati son tarihi ve kaydırılacak
+        // oyun saati yok; yalnız girişi kilitleyip sürüklenen yolu
+        // temizle. Zaten duraklatıldıysa bayrağı sahiplenme.
+        if (_ended || _resultShown || _paused) return;
+        _pausedByLifecycle = true;
+        setState(() {
+          _paused = true;
+          _clearPath();
+        });
+        break;
+      case AppLifecycleState.resumed:
+        // Yalnız yaşam-döngüsü duraklatmasıysa devam et; elle
+        // duraklatma veya yardım sayfası duraklatması kullanıcıda kalır.
+        if (_pausedByLifecycle) {
+          _pausedByLifecycle = false;
+          setState(() => _paused = false);
+        }
+        break;
+    }
+  }
+
   Future<void> _loadBest() async {
-    await LeaderboardService.instance.ensureLoaded();
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+    } catch (_) {
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _best = LeaderboardService.instance.getBest(
@@ -279,11 +325,20 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
 
   Future<void> _persist() async {
     if (_score <= 0) return;
-    await LeaderboardService.instance.ensureLoaded();
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeConnect,
-      _score,
-    );
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+      await LeaderboardService.instance.submitScore(
+        LeaderboardService.modeConnect,
+        _score,
+      );
+    } catch (error) {
+      // F4: liderlik kaydı fırlatırsa _endCheck'in `unawaited`
+      // çağırıcılarına (şarj/bolt yolu, sürükleme yolu) işlenmemiş hata
+      // yayılmasın; skor finishRun üzerinden de gönderilir, bu çağrı
+      // en-iyi çabadır ve oyun akışını kilitlememelidir.
+      debugPrint('ConnectPopScreen: _persist hatası: $error');
+      return;
+    }
     final best = LeaderboardService.instance.getBest(
       LeaderboardService.modeConnect,
     );
@@ -292,6 +347,16 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
 
   void _newGame() {
     _epoch++;
+    _milestoneTimer?.cancel();
+    _milestoneTimer = null;
+    _hintTimer?.cancel();
+    _hintTimer = null;
+    _flashTimer?.cancel();
+    _flashTimer = null;
+    _popTimer?.cancel();
+    _popTimer = null;
+    _powerFxTimer?.cancel();
+    _powerFxTimer = null;
     _score = 0;
     _lines = startLines;
     _busy = false;
@@ -299,6 +364,8 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     _lost = false;
     _resultShown = false;
     _paused = false;
+    _pausedByLifecycle = false;
+    _pausedByHowToPlay = false;
     _streak = 0;
     _maxStreak = 0;
     _clearTotal = 0;
@@ -310,6 +377,11 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     _hintCells = {};
     _flashCells = {};
     _gridBurst = 1.0;
+    _popText = null;
+    _chainText = null;
+    _popLen = 0;
+    _activePowerFx = null;
+    _lastTouch = null;
     _clearPath();
     _setHint(_ConnectHint.idle);
     _fill();
@@ -429,7 +501,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     _hintTimer = Timer(const Duration(milliseconds: 1400), () {
       if (mounted) setState(() => _hintCells = {});
     });
-    HapticFeedback.selectionClick();
+    unawaited(HapticService.instance.selectionClick());
   }
 
   Point<int>? _cellAt(Offset local, double cell, double gap) {
@@ -493,7 +565,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       if (p == _path.first && _path.length >= 4 && _ortho(p, _path.last)) {
         _loop = true;
         setState(() => _setHint(_ConnectHint.squareReady));
-        HapticFeedback.lightImpact();
+        unawaited(HapticService.instance.lightImpact());
       }
       return;
     }
@@ -587,10 +659,10 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     });
     if (loop) {
       _gridBurst = 1.08;
-      HapticFeedback.heavyImpact();
+      unawaited(HapticService.instance.heavyImpact());
       unawaited(AudioManager().playMerge(tierNumber: tier, comboCount: 3));
     } else {
-      HapticFeedback.mediumImpact();
+      AudioManager().triggerMediumHaptic();
     }
     setState(() {});
     await Future<void>.delayed(Duration(milliseconds: loop ? 200 : 130));
@@ -632,8 +704,38 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     if (_ended || _busy) return;
     setState(() {
       _paused = !_paused;
-      if (_paused) _clearPath();
+      if (_paused) {
+        _clearPath();
+      } else {
+        _pausedByLifecycle = false;
+        _pausedByHowToPlay = false;
+      }
     });
+  }
+
+  /// Yardım sayfası görünürlük kancası (F9): sayfa açılırken oyunu
+  /// duraklat, kapanırken yalnız bu kancayla duraklatıldıysa devam et.
+  void _handleHowToPlayVisibilityChanged(bool visible) {
+    // Kapanış geri çağrısı asenkron gelir (dialog future'ı): sayfa
+    // açıkken rota dispose edildiyse setState çökmesin.
+    if (!mounted) return;
+    if (visible) {
+      if (_ended ||
+          _resultShown ||
+          _paused ||
+          widget.prototypeVisualState) {
+        return;
+      }
+      _pausedByHowToPlay = true;
+      setState(() {
+        _paused = true;
+        _clearPath();
+      });
+    } else {
+      if (!_pausedByHowToPlay) return;
+      _pausedByHowToPlay = false;
+      setState(() => _paused = false);
+    }
   }
 
   void _showPop(int len, int gained, bool loop) {
@@ -688,25 +790,28 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
 
   Future<void> _endCheck(int epoch) async {
     if (!mounted || epoch != _epoch) return;
-    if (_score >= target) {
-      // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
-      _moveMade = true;
-      _won = true;
-      _setHint(_ConnectHint.targetHit);
-      HapticFeedback.heavyImpact();
-      AudioManager().playWin();
-      await _persist();
-    } else if (_lines <= 0) {
-      _moveMade = true;
-      _lost = true;
-      _setHint(_ConnectHint.linesOut);
-      HapticFeedback.heavyImpact();
-      AudioManager().playLose();
-      await _persist();
-    } else {
-      _setHint(_ConnectHint.loseHint, a: target, b: _lines, c: _streak);
+    try {
+      if (_score >= target) {
+        // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
+        _moveMade = true;
+        _won = true;
+        _setHint(_ConnectHint.targetHit);
+        unawaited(HapticService.instance.heavyImpact());
+        AudioManager().playWin();
+        await _persist();
+      } else if (_lines <= 0) {
+        _moveMade = true;
+        _lost = true;
+        _setHint(_ConnectHint.linesOut);
+        unawaited(HapticService.instance.heavyImpact());
+        AudioManager().playLose();
+        await _persist();
+      } else {
+        _setHint(_ConnectHint.loseHint, a: target, b: _lines, c: _streak);
+      }
+    } finally {
+      if (mounted && epoch == _epoch) setState(() => _busy = false);
     }
-    if (mounted && epoch == _epoch) setState(() => _busy = false);
   }
 
   String _statsLine() =>
@@ -748,7 +853,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   /// boşa çıkarırdı.
   bool _useChain() {
     if (_ended || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: 2);
     setState(() {
       _lines += 3;
@@ -773,7 +878,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       }
     }
     if (best.isEmpty) return false;
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: 4);
     final gained = best.length * 28;
     setState(() {
@@ -810,7 +915,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     for (var i = 2; i <= maxKinds; i++) {
       if (counts[i] > counts[tier]) tier = i;
     }
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: tier);
     setState(() {
       for (var i = 0; i < 4 && 1 + i < cols; i++) {
@@ -835,17 +940,26 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     // S1#49: ödeme + liderlik (yalnız skor > 0) + görev kaydı + sonuç
     // ekranı finishRun() üzerinden (tek-ödeme korunur). `won`
     // verilmezse hedefin tutup tutmadığı (_won) başlığı belirler.
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      coins: coins,
-      bestCombo: _maxStreak,
-      merges: _clearTotal,
-      won: won ?? _won,
-      leaderboardMode: LeaderboardService.modeConnect,
-      leaderboardOnlyIfPositiveScore: true,
-    );
+    bool replay;
+    try {
+      replay = await finishRun(
+        context,
+        score: _score,
+        best: _best,
+        coins: coins,
+        bestCombo: _maxStreak,
+        merges: _clearTotal,
+        won: won ?? _won,
+        leaderboardMode: LeaderboardService.modeConnect,
+        leaderboardOnlyIfPositiveScore: true,
+      );
+    } catch (error) {
+      // finishRun fırlatırsa sonuçsuz takılma: bayrağı düşür ki BİTİR
+      // veya bitiş kenarı sonucu yeniden deneyebilsin.
+      debugPrint('ConnectPopScreen: finishRun hatası: $error');
+      _resultShown = false;
+      return;
+    }
     if (!mounted) return;
     if (!replay) {
       if (mounted) Navigator.of(context).maybePop();
@@ -909,19 +1023,12 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       prototypeChrome: true,
       prototypeBaglaChrome: true,
       onRestart: _finishEarly,
-      overlay: (_ended && !_resultShown)
-          ? ArcadeResultOverlay(
-              title: _won ? context.l10n.connectWonTitle : context.l10n.connectLostTitle,
-              message: _statsLine(),
-              score: _score,
-              best: _best,
-              won: _won,
-              modeTitle: context.l10n.shopModeLinkPop,
-              shareLine: _statsLine(),
-              retryLabel: context.l10n.retryShort,
-              onRetry: _newGame,
-            )
-          : _paused
+      onPausePressed: _togglePause,
+      onHowToPlayVisibilityChanged: _handleHowToPlayVisibilityChanged,
+      // F6: ölü sonuç overlay'i kaldırıldı — tek sonuç yolu finishRun
+      // diyaloğudur (build _resultShown'u senkron set ediyordu, dal
+      // hiç çizilmiyordu).
+      overlay: _paused
           ? Positioned.fill(
               child: ColoredBox(
                 color: LululuColors.carbonVoid.withValues(alpha: 0.72),

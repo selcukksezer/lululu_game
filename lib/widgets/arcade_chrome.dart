@@ -25,6 +25,8 @@ class ArcadeScreen extends StatelessWidget {
     this.statValue,
     this.statValueWidget,
     this.onRestart,
+    this.onPausePressed,
+    this.onHowToPlayVisibilityChanged,
     this.overlay,
     this.footer,
     this.backgroundAsset,
@@ -57,6 +59,18 @@ class ArcadeScreen extends StatelessWidget {
   final String? statValue;
   final Widget? statValueWidget;
   final VoidCallback? onRestart;
+
+  /// Duraklat düğmesi kancası: verilirse başlık satırına 48px'lik
+  /// duraklat düğmesi eklenir; verilmezse düğme çizilmez ve mevcut
+  /// çağırıcılar (stack, scream) aynen çalışır.
+  final VoidCallback? onPausePressed;
+
+  /// Yardım sayfası görünürlük kancası: sayfa açılırken `true`,
+  /// kapanırken `false` ile çağrılır. Gerçek-zamanlı modlar açılırken
+  /// oyunu duraklatıp kapanırken yalnız bu kancayla duraklatıldıysa
+  /// devam ettirmelidir.
+  final ValueChanged<bool>? onHowToPlayVisibilityChanged;
+
   final Widget? overlay;
   final Widget? footer;
   final String? backgroundAsset;
@@ -80,7 +94,8 @@ class ArcadeScreen extends StatelessWidget {
   final Widget? evoStrip;
 
   void _showHowToPlaySheet(BuildContext context) {
-    showDialog<void>(
+    onHowToPlayVisibilityChanged?.call(true);
+    final future = showDialog<void>(
       context: context,
       barrierColor: const Color(0xB805070C),
       builder: (dialogContext) => Dialog(
@@ -179,10 +194,12 @@ class ArcadeScreen extends StatelessWidget {
         ),
       ),
     );
+    unawaited(future.then((_) => onHowToPlayVisibilityChanged?.call(false)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final pauseCallback = onPausePressed;
     return Scaffold(
       backgroundColor: LululuColors.carbonVoid,
       body: LayoutBuilder(
@@ -420,8 +437,8 @@ class ArcadeScreen extends StatelessWidget {
                           SizedBox(width: isCompactW ? 6 : 10),
                           _ChromeRound(
                             circular: true,
-                            width: isCompactW ? 40 : 48,
-                            // Dokunma yüksekliği her zaman 48; dar ekranda
+                            width: 48,
+                            // Dokunma kutusu her zaman 48x48; dar ekranda
                             // iç '?' küçülür, düğme küçülmez.
                             height: 48,
                             semanticLabel: context.l10n.helpButtonLabel,
@@ -436,6 +453,21 @@ class ArcadeScreen extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (pauseCallback != null) ...[
+                            SizedBox(width: isCompactW ? 6 : 10),
+                            _ChromeRound(
+                              circular: true,
+                              width: 48,
+                              height: 48,
+                              semanticLabel: context.l10n.pause,
+                              onTap: pauseCallback,
+                              child: Icon(
+                                Icons.pause_rounded,
+                                size: (isCompactW || isCompactH) ? 19 : 22,
+                                color: const Color(0xFFFFB800),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
