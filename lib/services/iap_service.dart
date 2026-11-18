@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'energy_service.dart';
+import 'game_telemetry_service.dart';
 import 'progress_manager.dart';
 
 class StoreCatalogItem {
@@ -139,7 +141,7 @@ class IapService extends ChangeNotifier {
     StoreCatalogItem(
       id: 'wood_chest',
       title: 'Ahşap Sandık',
-      description: 'Rastgele güçlendirici + 250 coin',
+      description: 'Anne Terliği x1 + 250 coin',
       coinCost: 200,
       priceLabel: '₺19,99',
       coinsGrant: 250,
@@ -161,7 +163,7 @@ class IapService extends ChangeNotifier {
     StoreCatalogItem(
       id: 'surprise_box',
       title: 'Sürpriz Kutu',
-      description: 'Rastgele moddan 1 güçlendirici',
+      description: 'Anne Terliği x1 + Raid x1',
       coinCost: 350,
       priceLabel: '₺34,99',
       terlikGrant: 1,
@@ -171,7 +173,7 @@ class IapService extends ChangeNotifier {
     StoreCatalogItem(
       id: 'star_pack',
       title: 'Yıldız Paketi',
-      description: '25 yıldız + 1.000 coin',
+      description: '1.000 coin + F16 x1',
       coinCost: 600,
       priceLabel: '₺149,99',
       coinsGrant: 1000,
@@ -191,7 +193,7 @@ class IapService extends ChangeNotifier {
     StoreCatalogItem(
       id: 'luck_potion',
       title: 'Şans İksiri',
-      description: 'Birleşmede kritik şansı artar',
+      description: '2048 Çiftleştir x1',
       coinCost: 180,
       priceLabel: '₺19,99',
       powerKey: 'pair',
@@ -540,6 +542,81 @@ class IapService extends ChangeNotifier {
   StreamSubscription<List<PurchaseDetails>>? _sub;
   bool _booted = false;
 
+  /// Teslim edilmiş mağaza işlem kimlikleri (K1 tekrar koruması).
+  ///
+  /// Başarıyla teslim edilen her `purchaseID` kalıcı olarak işaretlenir;
+  /// mağaza aynı işlemi yeniden gönderirse ürün ikinci kez verilmez.
+  /// Liste en fazla [_maxDeliveredPurchaseIds] kimlik tutar (en eskiler
+  /// atılır); kimliği boş olan işlemler işaretlenemez ve her zaman
+  /// normal akışla teslim edilir.
+  static const String _deliveredIdsPrefKey = 'lululu_iap_delivered_ids';
+  static const int _maxDeliveredPurchaseIds = 200;
+  final Set<String> _deliveredPurchaseIds = <String>{};
+  Future<void>? _deliveredIdsFuture;
+
+  Future<void> _ensureDeliveredIdsLoaded() =>
+      _deliveredIdsFuture ??= _loadDeliveredIds();
+
+  Future<void> _loadDeliveredIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored =
+          prefs.getStringList(_deliveredIdsPrefKey) ?? const <String>[];
+      _deliveredPurchaseIds
+        ..clear()
+        ..addAll(stored.where((id) => id.trim().isNotEmpty));
+      if (_deliveredPurchaseIds.length > _maxDeliveredPurchaseIds) {
+        final ids = _deliveredPurchaseIds.toList();
+        _deliveredPurchaseIds
+          ..clear()
+          ..addAll(
+            ids.sublist(ids.length - _maxDeliveredPurchaseIds),
+          );
+      }
+    } catch (e) {
+      debugPrint('[lululu] IAP teslim kimlikleri okunamadı: $e');
+    }
+  }
+
+  Future<void> _markPurchaseDelivered(String purchaseId) async {
+    if (purchaseId.isEmpty ||
+        _deliveredPurchaseIds.contains(purchaseId)) {
+      return;
+    }
+    _deliveredPurchaseIds.add(purchaseId);
+    try {
+      var ids = _deliveredPurchaseIds.toList();
+      if (ids.length > _maxDeliveredPurchaseIds) {
+        ids = ids.sublist(ids.length - _maxDeliveredPurchaseIds);
+        _deliveredPurchaseIds
+          ..clear()
+          ..addAll(ids);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_deliveredIdsPrefKey, ids);
+    } catch (e) {
+      // Kalıcı işaret yazılamadı: bu oturumda bellek içi küme korur;
+      // işlem yine de tamamlanır, mağaza yeniden göndermez.
+      debugPrint('[lululu] IAP teslim kimliği yazılamadı: $e');
+    }
+  }
+
+  /// IAP olayını mevcut telemetri kanalına yazar (K1/K7).
+  ///
+  /// Breadcrumb'lar cihaz-içi tanılama tamponundadır; işlem kimliğinin
+  /// kendisi yazılmaz, yalnızca varlığı (`hasPurchaseId`) kaydedilir.
+  void _recordIapBreadcrumb(String action, PurchaseDetails purchase) {
+    GameTelemetryService.instance.recordBreadcrumb(
+      'iap',
+      action,
+      meta: <String, Object?>{
+        'productId': purchase.productID,
+        'status': purchase.status.name,
+        'hasPurchaseId': purchase.purchaseID?.trim().isNotEmpty ?? false,
+      },
+    );
+  }
+
   static StoreCatalogItem? findCatalogItem(String idOrTitle) {
     final key = _normalizeProductKey(idOrTitle);
     for (final item in storeCatalog) {
@@ -670,6 +747,8 @@ class IapService extends ChangeNotifier {
     if (_booted) return;
     _booted = true;
     try {
+      // K1: tekrar koruması, satın alma akışı dinlenmeden önce hazır olur.
+      await _ensureDeliveredIdsLoaded();
       final iap = InAppPurchase.instance;
       // Web'de yanıt gelmeyen kanal çağrısı süresiz asılmasın diye
       // 6 sn zaman aşımı (bulgu #16: satın alma hiç dönmüyordu).
@@ -748,6 +827,10 @@ class IapService extends ChangeNotifier {
         notifyListeners();
         continue;
       }
+      // K1: teslim edilemeyen satın alma tamamlanmaz. Tamamlama kararı
+      // varsayılan olarak bekleyen duruma eşittir; teslimat başarısız
+      // olursa aşağıda iptal edilir ve işlem mağaza kuyruğunda kalır.
+      var shouldComplete = purchase.pendingCompletePurchase;
       if (purchase.status == PurchaseStatus.error) {
         status = 'Satın alma hata · ${purchase.error?.message}';
         notifyListeners();
@@ -761,9 +844,54 @@ class IapService extends ChangeNotifier {
           // işlem yeniden ele alınıp doğrulanarak teslim edilebilir.
           continue;
         }
-        await _deliverProduct(purchase.productID, source: 'Satın alındı');
+        await _ensureDeliveredIdsLoaded();
+        final purchaseId = purchase.purchaseID?.trim() ?? '';
+        if (purchaseId.isNotEmpty &&
+            _deliveredPurchaseIds.contains(purchaseId)) {
+          // K1 tekrar koruması: ürün ikinci kez verilmez. İşlem daha
+          // önce teslim edildiği için tamamlanması güvenlidir; kuyrukta
+          // bırakmak aynı işlemin her açılışta yeniden gelmesine yol açar.
+          status = 'Zaten teslim edildi · tekrar verilmedi';
+          notifyListeners();
+          _recordIapBreadcrumb('duplicate_delivery_blocked', purchase);
+        } else {
+          var delivered = false;
+          var threw = false;
+          try {
+            delivered = await _deliverProduct(
+              purchase.productID,
+              source: 'Satın alındı',
+            );
+          } catch (e) {
+            threw = true;
+            debugPrint('[lululu] IAP teslimat hata: $e');
+          }
+          if (delivered) {
+            if (purchaseId.isNotEmpty) {
+              await _markPurchaseDelivered(purchaseId);
+            }
+            // K7: teslimat anı, durum iletisinin yanında mevcut
+            // telemetri kanalına da yazılır (status'ü okuyan UI Faz 2'de).
+            _recordIapBreadcrumb('delivered', purchase);
+          } else {
+            // K1: ürün verilmedi — işlem tamamlanmaz, kuyrukta kalır.
+            shouldComplete = false;
+            if (threw) {
+              status = 'Teslimat hata · ürün verilmedi, tekrar denenecek';
+              _recordIapBreadcrumb('delivery_failed_error', purchase);
+            } else {
+              status =
+                  'Teslim edilemedi · bilinmeyen ürün (${purchase.productID})';
+              _recordIapBreadcrumb(
+                'delivery_failed_unknown_product',
+                purchase,
+              );
+            }
+            notifyListeners();
+          }
+        }
       }
-      if (purchase.pendingCompletePurchase) {
+      if (shouldComplete) {
         await InAppPurchase.instance.completePurchase(purchase);
       }
     }
@@ -817,9 +945,93 @@ class IapService extends ChangeNotifier {
     }
   }
 
+  /// Katalog grant'i boş mu (hiçbir şey vermiyor mu).
+  ///
+  /// O19 ön doğrulaması: boş grant'e coin harcanmaz. Negatif veya sıfır
+  /// grant alanları [_applyCatalogGrant] tarafından yok sayıldığı için
+  /// burada da grant sayılmaz.
+  bool _catalogGrantIsEmpty(StoreCatalogItem item) {
+    return item.coinsGrant <= 0 &&
+        item.f16Grant <= 0 &&
+        item.raidGrant <= 0 &&
+        item.terlikGrant <= 0 &&
+        !(item.powerKey != null && item.powerGrant > 0) &&
+        item.energyGrant <= 0 &&
+        !item.fullEnergy &&
+        !item.unlockRoyalCape;
+  }
+
+  /// Coin bakiyesini [snapshot] değerine kalıcı şekilde döndürür.
+  ///
+  /// Fark [ProgressManager.addCoins]/[ProgressManager.spendCoins] ile
+  /// kapatılır, böylece bütünlük imzası da güncellenir. Geri alma
+  /// farkları (harcama + grant toplamı) tek seferlik grant üst sınırının
+  /// çok altındadır; kısmi yazma riski yoktur.
+  Future<void> _restoreCoinsToSnapshot(
+    ProgressManager pm,
+    int snapshot,
+  ) async {
+    final delta = snapshot - pm.coins;
+    if (delta > 0) {
+      await pm.addCoins(delta);
+    } else if (delta < 0) {
+      await pm.spendCoins(-delta);
+    }
+  }
+
+  /// Başarısız katalog grant'ini geri alır (O19).
+  ///
+  /// Coin bakiyesi, güçlendirici sayıları, enerji ve pelerin durumu
+  /// anlık görüntüdeki değerlere döndürülür. Geri alma kendisi de
+  /// fırlatırsa yutulur: çağıran zaten hata yolundadır ve geri alma
+  /// hatası satın alma sonucunu değiştirmemelidir.
+  Future<void> _rollbackCatalogGrant({
+    required ProgressManager pm,
+    required StoreCatalogItem item,
+    required int coinsBefore,
+    required int f16Before,
+    required int raidBefore,
+    required int terlikBefore,
+    required int powerBefore,
+    required int energyBefore,
+    required bool hadRoyalCape,
+  }) async {
+    try {
+      // Önce coin: sonraki kalıcı yazmalar geri alınmış bakiyeyi yazar.
+      await _restoreCoinsToSnapshot(pm, coinsBefore);
+      if (pm.f16Count != f16Before) {
+        await pm.setPowerCount('f16', f16Before);
+      }
+      if (pm.raidCount != raidBefore) {
+        await pm.setPowerCount('raid', raidBefore);
+      }
+      if (pm.terlikCount != terlikBefore) {
+        await pm.setPowerCount('terlik', terlikBefore);
+      }
+      if (item.powerKey != null &&
+          pm.powerCount(item.powerKey!) != powerBefore) {
+        await pm.setPowerCount(item.powerKey!, powerBefore);
+      }
+      if (EnergyService.instance.energy != energyBefore) {
+        EnergyService.instance.energy = energyBefore;
+      }
+      if (!hadRoyalCape && pm.hasRoyalCape) {
+        pm.hasRoyalCape = false;
+        pm.ownedCosmetics.remove('royal_cape');
+        await pm.persistBoosters();
+      }
+    } catch (e) {
+      debugPrint('[lululu] IAP geri alma başarısız: $e');
+    }
+  }
+
   /// Uygulama içi satın alma (StoreKit / Play Billing). Mağaza veya ürün
   /// yoksa YALNIZCA debug derlemesinde sandbox bağışı yapılır; sürümde
   /// `false` döner ve ürün verilmez.
+  ///
+  /// Dönen değer satın almanın BAŞLATILDIĞINI gösterir; gerçek teslimat
+  /// asenkron olarak satın alma akışından ([_onPurchases]) gelir. Teslimat
+  /// anı `status` iletisine ve telemetri breadcrumb'ına yazılır (K7).
   Future<bool> purchase(String packId) async {
     await ensureLoaded();
     final key = _normalizeProductKey(packId);
@@ -861,20 +1073,69 @@ class IapService extends ChangeNotifier {
   }
 
   /// Altın (Coin) ile mağaza ürünü satın alma.
+  ///
+  /// Grant önce doğrulanır, harcama sonra yapılır; grant yarıda
+  /// fırlatırsa harcanan altın iade edilir ve kısmi grant geri alınır
+  /// (O19). Bu yöntem fırlatmaz: her hata `false` döner.
   Future<bool> buyWithCoins(String itemIdOrTitle, {int? overrideCost}) async {
     await ensureLoaded();
     final item = findCatalogItem(itemIdOrTitle);
     if (item == null) return false;
     final cost = overrideCost ?? item.coinCost;
+    if (cost < 0) {
+      status = 'Geçersiz fiyat · satın alma yapılmadı';
+      notifyListeners();
+      return false;
+    }
+    if (_catalogGrantIsEmpty(item)) {
+      status = 'Ürün grant\'i boş · satın alma yapılmadı';
+      notifyListeners();
+      return false;
+    }
     final pm = ProgressManager();
     if (pm.coins < cost) {
       status = 'Yetersiz altın (${pm.coins}/$cost)';
       notifyListeners();
       return false;
     }
-    final spent = await pm.spendCoins(cost);
-    if (!spent) return false;
-    await _applyCatalogGrant(item);
+    // Geri alma anlık görüntüsü (O19).
+    final coinsBefore = pm.coins;
+    final f16Before = pm.f16Count;
+    final raidBefore = pm.raidCount;
+    final terlikBefore = pm.terlikCount;
+    final powerBefore =
+        item.powerKey == null ? 0 : pm.powerCount(item.powerKey!);
+    final energyBefore = EnergyService.instance.energy;
+    final hadRoyalCape = pm.hasRoyalCape;
+    try {
+      final spent = await pm.spendCoins(cost);
+      if (!spent) return false;
+      await _applyCatalogGrant(item);
+    } catch (e) {
+      debugPrint('[lululu] IAP coin satın alma hata, geri alınıyor: $e');
+      await _rollbackCatalogGrant(
+        pm: pm,
+        item: item,
+        coinsBefore: coinsBefore,
+        f16Before: f16Before,
+        raidBefore: raidBefore,
+        terlikBefore: terlikBefore,
+        powerBefore: powerBefore,
+        energyBefore: energyBefore,
+        hadRoyalCape: hadRoyalCape,
+      );
+      status = 'Satın alma hata · altın iade edildi';
+      notifyListeners();
+      GameTelemetryService.instance.recordBreadcrumb(
+        'iap',
+        'coin_purchase_rolled_back',
+        meta: <String, Object?>{
+          'productId': item.id,
+          'cost': cost,
+        },
+      );
+      return false;
+    }
     status = 'Altınla alındı · ${item.title} (-$cost coin)';
     notifyListeners();
     return true;
@@ -895,6 +1156,10 @@ class IapService extends ChangeNotifier {
   }
 
   /// Mağazadaki 33 oyun modu güçlendiricisinden birini altınla veya ödüllü reklamla satın alır.
+  ///
+  /// Grant önce doğrulanır, harcama sonra yapılır; grant fırlatırsa
+  /// harcanan altın iade edilir ve kısmi grant geri alınır (O19).
+  /// Bu yöntem fırlatmaz: her hata `false` döner.
   Future<bool> purchaseShopPowerUp(
     String powerKeyOrName, {
     String? modeName,
@@ -907,6 +1172,8 @@ class IapService extends ChangeNotifier {
     final entry = findPowerUpEntry(powerKeyOrName, modeNameOrId: modeName);
     final canonicalKey =
         entry?.key ?? ProgressManager.normalizePowerKey(powerKeyOrName);
+    // Boş anahtar hayalet grant'e (extraPowers['']) coin harcatır; reddet.
+    if (canonicalKey.isEmpty) return false;
     final displayTitle = entry?.title ?? powerKeyOrName;
     final pm = ProgressManager.instance;
 
@@ -924,10 +1191,36 @@ class IapService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
-    final spent = await pm.spendCoins(totalCost);
-    if (!spent) return false;
-
-    await pm.incrementPowerCount(canonicalKey, quantity);
+    // Geri alma anlık görüntüsü (O19).
+    final coinsBefore = pm.coins;
+    final powerBefore = pm.powerCount(canonicalKey);
+    try {
+      final spent = await pm.spendCoins(totalCost);
+      if (!spent) return false;
+      await pm.incrementPowerCount(canonicalKey, quantity);
+    } catch (e) {
+      debugPrint('[lululu] IAP güçlendirici alma hata, geri alınıyor: $e');
+      try {
+        await _restoreCoinsToSnapshot(pm, coinsBefore);
+        if (pm.powerCount(canonicalKey) != powerBefore) {
+          await pm.setPowerCount(canonicalKey, powerBefore);
+        }
+      } catch (rollbackError) {
+        debugPrint('[lululu] IAP geri alma başarısız: $rollbackError');
+      }
+      status = 'Satın alma hata · altın iade edildi';
+      notifyListeners();
+      GameTelemetryService.instance.recordBreadcrumb(
+        'iap',
+        'powerup_purchase_rolled_back',
+        meta: <String, Object?>{
+          'powerKey': canonicalKey,
+          'quantity': quantity,
+          'cost': totalCost,
+        },
+      );
+      return false;
+    }
     status = 'Güçlendirici alındı · $displayTitle (+$quantity)';
     notifyListeners();
     return true;
