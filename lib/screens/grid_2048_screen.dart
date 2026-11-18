@@ -538,7 +538,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
 
     if (!_hasMovesAvailable()) {
       _gameOver = true;
-      AudioManager().playLose();
+      // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
       unawaited(_persistBest());
     }
 

@@ -426,7 +426,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _moveMade = true;
     _alive = false;
     _hint = context.l10n.makaraReelOut;
-    unawaited(AudioManager().playLose());
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
       LeaderboardService.instance.submitScore(
         LeaderboardService.modeMakarayiz,
@@ -522,7 +522,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
   bool _useBeatFreeze() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _freezeUntil = _now + 8000;
       _hint = context.l10n.makaraFreezeHint;
@@ -534,7 +534,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
   bool _useAuto() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _autoUntil = _now + 6000;
       _hint = context.l10n.makaraAutoHint;
@@ -546,7 +546,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
   bool _useX2() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _x2Until = _now + 12000;
       _hint = context.l10n.makaraX2Hint;

@@ -861,7 +861,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _paused = false;
     _setHint(why);
     unawaited(HapticService.instance.heavyImpact());
-    AudioManager().playLose();
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(_persist());
     setState(() {});
   }

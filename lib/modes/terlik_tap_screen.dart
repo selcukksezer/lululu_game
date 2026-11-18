@@ -753,7 +753,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _hasHit = true;
       _applyMiss(context.l10n.terlikSteppedTrap);
       unawaited(HapticService.instance.heavyImpact());
-      unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
+      // D8: tuzak sesi sprey DEĞİL terlik tokadı — tuzağa basmak fiziksel
+      // bir darbedir; sprey sesi güçlendiriciye aittir (F13).
+      unawaited(AudioManager().playSlipper());
       if (_lives <= 0) {
         _die();
         return;
@@ -918,7 +920,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     _hint =
         context.l10n.terlikOutOfSlippers(_smashed, _maxCombo, _coinsEarned);
     unawaited(HapticService.instance.heavyImpact());
-    unawaited(AudioManager().playLose());
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
       LeaderboardService.instance.submitScore(
         LeaderboardService.modeTerlik,
@@ -995,7 +997,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   bool _useDoubleSlip() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _doubleNext = true;
       _hint = context.l10n.terlikDoubleReadyHint;
@@ -1012,7 +1014,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   bool _useGoldSlip() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _goldUntil = DateTime.now().add(const Duration(seconds: 20));
       _hint = context.l10n.terlikGoldHint;
@@ -1038,7 +1040,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       return false;
     }
     unawaited(HapticService.instance.heavyImpact());
-    unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
+    // D8: sprey güçlendirici sesi haptic'li yoldan çalar.
+    unawaited(AudioManager().playSpray());
     setState(() {
       var cleared = 0;
       for (final bug in _bugs) {

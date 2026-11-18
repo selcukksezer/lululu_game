@@ -762,13 +762,13 @@ class _Match3ScreenState extends State<Match3Screen>
         _moveMade = true;
         _won = true;
         unawaited(HapticService.instance.heavyImpact());
-        AudioManager().playWin();
+        // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
         await _persist();
       } else if (_moves <= 0) {
         _moveMade = true;
         _lost = true;
         unawaited(HapticService.instance.heavyImpact());
-        AudioManager().playLose();
+        // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
         await _persist();
       }
     } finally {

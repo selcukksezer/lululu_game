@@ -382,7 +382,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _moveMade = true;
       _alive = false;
       _hint = context.l10n.osmantusDuoWonHint;
-      unawaited(AudioManager().playLose());
+      // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
       unawaited(
         LeaderboardService.instance.submitScore(
           LeaderboardService.modeOsmantus,
@@ -475,7 +475,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   bool _useDikkis() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _boostUntilMs = _nowMs + 12000;
       _showBand(context.l10n.osmantusDikkisBoost, bad: false);
@@ -487,7 +487,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   bool _useRing() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _ringUntilMs = _nowMs + 12000;
       _showBand(context.l10n.osmantusRingActive, bad: false);
@@ -499,7 +499,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   bool _useMic() {
     if (!_alive || _paused || _micShield) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _micShield = true;
       _showBand(context.l10n.osmantusMicShieldCallout, bad: false);

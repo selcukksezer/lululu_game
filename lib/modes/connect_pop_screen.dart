@@ -815,14 +815,14 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
         _won = true;
         _setHint(_ConnectHint.targetHit);
         unawaited(HapticService.instance.heavyImpact());
-        AudioManager().playWin();
+        // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
         await _persist();
       } else if (_lines <= 0) {
         _moveMade = true;
         _lost = true;
         _setHint(_ConnectHint.linesOut);
         unawaited(HapticService.instance.heavyImpact());
-        AudioManager().playLose();
+        // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
         await _persist();
       } else {
         _setHint(_ConnectHint.loseHint, a: target, b: _lines, c: _streak);

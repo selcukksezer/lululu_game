@@ -891,7 +891,9 @@ class _GameScreenState extends State<GameScreen>
       _hisirVisible = true;
       _hisirXFraction = 0.15 + _rng.nextDouble() * 0.7;
     });
-    unawaited(AudioManager().playMezarinaSiktigim());
+    // D4: Hışır belirince kendi sesi çalar. NOT: husur_aday.mp3 kulakla
+    // doğrulanmamış adaydır (transkriptte "huşur"); Selçuk sorusu açık.
+    unawaited(AudioManager().playHusurAday());
     _hisirHideTimer?.cancel();
     _hisirHideTimer = Timer(const Duration(seconds: 7), () {
       if (mounted) setState(() => _hisirVisible = false);
@@ -909,6 +911,9 @@ class _GameScreenState extends State<GameScreen>
       _hisirVisible = false;
       _score += 150;
     });
+    // D4: Hışır dokunuşu (+150) artık sessiz değil — kendi sesi çalar.
+    // NOT: husur_aday.mp3 kulakla doğrulanmamış adaydır; Selçuk sorusu açık.
+    unawaited(AudioManager().playHusurAday());
   }
 
   /// Milestone anına ek viral tek-seferlik ses (mevcut akışa ek, opt-in):
@@ -980,7 +985,8 @@ class _GameScreenState extends State<GameScreen>
     // özetten türetilip ayrı bantta gösterilir (5B: `firstClearExtras`).
     final extraCoins = earnedCoins - starCoins;
 
-    AudioManager().playWin();
+    // D1: zafer sesi tek kaynak — sonuç ekranı çalar. Nakarat korunur:
+    // sonuç ekranı öncesi tek ek katman olarak kalır.
     unawaited(AudioManager().playLululuNakarat());
     unawaited(_submitSuikaScore());
     if (!mounted) return;
@@ -1053,7 +1059,7 @@ class _GameScreenState extends State<GameScreen>
 
     final earnedCoins = ResultScoring.coinsFor(_score);
 
-    AudioManager().playLose();
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(_submitSuikaScore());
     // Yenilgi asla 3 yıldız göstermez: arcade'de rekora oranla (en çok 2),
     // kampanyada eşik yıldızı 2 ile sınırlanır.

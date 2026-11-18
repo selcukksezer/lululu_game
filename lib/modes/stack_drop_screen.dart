@@ -698,7 +698,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     _paused = false;
     _shake = 1.0;
     unawaited(HapticService.instance.heavyImpact());
-    AudioManager().playLose();
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(_persist());
     setState(() {});
   }

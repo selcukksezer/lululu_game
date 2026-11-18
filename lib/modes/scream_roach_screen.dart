@@ -490,7 +490,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         reason ??
         context.l10n.screamCrushedHint(_gatesPassed, _maxScreamStreak);
     unawaited(HapticService.instance.heavyImpact());
-    unawaited(AudioManager().playLose());
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
       LeaderboardService.instance.submitScore(
         LeaderboardService.modeScream,
@@ -550,7 +550,15 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _screamStreak++;
     if (_screamStreak > _maxScreamStreak) _maxScreamStreak = _screamStreak;
     _groundIdle = 0;
+    // D5: çığlık gücü tam dolduğu AN (kenar tetik) sfx_scream_roach ek
+    // katman olarak çalar — güç doluyken her dokunuşta tekrarlanmaz.
+    final wasFull = _power >= 1.0;
     _power = (_power + 0.28).clamp(0.0, 1.0);
+    if (!wasFull && _power >= 1.0) {
+      unawaited(
+        AudioManager().playSfx(GameAudio.sfxScreamRoach, isVoice: false),
+      );
+    }
     _vy = _flapImpulse;
     unawaited(HapticService.instance.selectionClick());
     _hint =
@@ -694,7 +702,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   bool _useJump() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _vy = -520;
       _hop = true;
@@ -707,7 +715,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   bool _useShield() {
     if (!_alive || _paused || _shield) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _shield = true;
       _callout = context.l10n.screamShieldBalloonCallout;
@@ -719,7 +727,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   bool _useNitro() {
     if (!_alive || _paused) return false;
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _nitroUntil = DateTime.now().add(const Duration(seconds: 8));
       _power = 1;

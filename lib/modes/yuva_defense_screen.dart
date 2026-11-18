@@ -475,7 +475,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
             ),
           );
           AudioManager().triggerMediumHaptic();
-          unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+          unawaited(AudioManager().playButtonTap());
           _hint = context.l10n.yuvaShieldSaved;
           _hintIsComboBroken = false;
           continue;
@@ -512,7 +512,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     final endCoins = max(1, _score ~/ 360);
     _coinsEarned += endCoins;
     unawaited(HapticService.instance.heavyImpact());
-    unawaited(AudioManager().playLose());
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
       LeaderboardService.instance.submitScore(
         LeaderboardService.modeYuva,
@@ -727,7 +727,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hintIsComboBroken = false;
     });
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     final nearest = _bugs.where((b) => !b.popping).toList()
       ..sort((a, b) => _bugDistanceToNest(a).compareTo(_bugDistanceToNest(b)));
     if (nearest.isNotEmpty) {
@@ -753,7 +753,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hintIsComboBroken = false;
     });
     AudioManager().triggerMediumHaptic();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     final nearest = _bugs.where((b) => !b.popping).toList()
       ..sort((a, b) => _bugDistanceToNest(a).compareTo(_bugDistanceToNest(b)));
     if (nearest.isNotEmpty) {
@@ -803,7 +803,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hintIsComboBroken = false;
     });
     unawaited(HapticService.instance.heavyImpact());
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
   }
 
   void _tapArena(TapDownDetails details) {
