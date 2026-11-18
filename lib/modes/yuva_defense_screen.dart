@@ -85,6 +85,14 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   bool _paused = false;
   bool _pausedByLifecycle = false;
   DateTime? _pauseStartedAt;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
   DateTime? _lastHit;
   int _nextBugId = 0;
   int _score = 0;
@@ -555,6 +563,92 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     EnergyService.instance.addEnergy(1);
     if (EnergyService.instance.energy > before) {
       GlobalNotify.showSnackBar(_refundNotice);
+    }
+  }
+
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && !_ended && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (`_togglePause` deseni): oyun
+  /// zamanlayıcısı durur, duvar-saati süreleri devamda kaydırılır.
+  void _pauseForExitConfirm() {
+    if (widget.prototypeVisualState || _ended || _resultShown || _paused) {
+      return;
+    }
+    _pausedForExitConfirm = true;
+    _paused = true;
+    _pauseStartedAt ??= DateTime.now();
+    _stopLoop();
+    setState(() {});
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    _paused = false;
+    _shiftPauseDeadlines();
+    _startLoop();
+    setState(() {});
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
     }
   }
 
@@ -1043,10 +1137,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     final hasHostStatusBar = topPad > 0;
     final wideScreen = MediaQuery.sizeOf(context).width >= 400;
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: MediaQuery.removePadding(
         context: context,
         removeTop: true,
@@ -1182,22 +1274,36 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                               borderRadius:
                                                   BorderRadius.circular(10),
                                             ),
-                                            child: Text(
-                                              context.l10n.shopModeNestDefense
-                                                  .toUpperCase(),
-                                              maxLines: 1,
-                                              style: GoogleFonts.baloo2(
-                                                fontSize: 20,
-                                                height: 1.05,
-                                                fontWeight: FontWeight.w800,
-                                                color: Colors.white,
-                                                shadows: const [
-                                                  Shadow(
-                                                    color: Color(0xEB000000),
-                                                    offset: Offset(0, 2),
-                                                    blurRadius: 6,
-                                                  ),
-                                                ],
+                                            child: FittedBox(
+                                              // F-11: `maxLines: 1` +
+                                              // varsayılan softWrap,
+                                              // geniş ekranda ikinci
+                                              // kelimeyi üç nokta
+                                              // olmadan düşürüyordu
+                                              // ("YUVA"). FittedBox
+                                              // (scaleDown) tam başlığı
+                                              // sığdırır.
+                                              fit: BoxFit.scaleDown,
+                                              alignment: Alignment.centerLeft,
+                                              child: Text(
+                                                context.l10n.shopModeNestDefense
+                                                    .toUpperCase(),
+                                                maxLines: 1,
+                                                softWrap: false,
+                                                overflow: TextOverflow.clip,
+                                                style: GoogleFonts.baloo2(
+                                                  fontSize: 20,
+                                                  height: 1.05,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Colors.white,
+                                                  shadows: const [
+                                                    Shadow(
+                                                      color: Color(0xEB000000),
+                                                      offset: Offset(0, 2),
+                                                      blurRadius: 6,
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),

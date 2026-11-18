@@ -112,6 +112,14 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
   /// duraklatma sürer).
   bool _pausedByHowToPlay = false;
 
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
+
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk geçerli zincir
   /// (`_commit`, en az `minLen` hücre) veya tur tamamlanması
   /// (`_endCheck`) ile `true` olur; TEKRAR/yeniden başlatmada
@@ -1010,6 +1018,87 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     }
   }
 
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && !_ended && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım kancası deseni): diyalog
+  /// açıkken oyun durur; yarım kalan zincir çizimi temizlenir.
+  void _pauseForExitConfirm() {
+    if (_ended || _resultShown || _paused) return;
+    _pausedForExitConfirm = true;
+    setState(() {
+      _paused = true;
+      _clearPath();
+    });
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    setState(() => _paused = false);
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
   /// (playtest bulgu #10). Erken bitirmede başlık skora göre
   /// belirlenir (skor 0 ise kayıp başlığı).
@@ -1034,10 +1123,8 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     _refundNotice = context.l10n.energyRefundNotice;
     if (_ended && !_resultShown) _edgeShowResult();
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: ArcadeScreen(
       backgroundAsset: 'assets/design/backgrounds/connect_workshop.webp',
       title: context.l10n.shopModeLinkPop,

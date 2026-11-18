@@ -321,11 +321,13 @@ class ArcadeScreen extends StatelessWidget {
                           Expanded(
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: maxW >= 400 ? 175 : double.infinity,
-                                ),
-                                child: Wrap(
+                              // F-06/F-10/F-07(a)/F-08: başlık artık
+                              // ellipsis ile kesilmiyor — FittedBox
+                              // (scaleDown) tam mod adını ayrılan
+                              // genişliğe sığdırır; 175 px'lik üst sınır
+                              // kaldırıldı (Expanded zaten kalan alanı
+                              // verir, etiket Wrap ile alt satıra iner).
+                              child: Wrap(
                                   spacing: 6,
                                   runSpacing: 3,
                                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -339,17 +341,21 @@ class ArcadeScreen extends StatelessWidget {
                                         color: const Color(0x8C080B12),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
-                                      child: Text(
-                                        title.toUpperCase(),
-                                        maxLines: 1,
-                                        softWrap: false,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.baloo2(
-                                          fontSize: isCompactW ? 16 : 20,
-                                          height: 1.05,
-                                          letterSpacing: 0.2,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          title.toUpperCase(),
+                                          maxLines: 1,
+                                          softWrap: false,
+                                          overflow: TextOverflow.clip,
+                                          style: GoogleFonts.baloo2(
+                                            fontSize: isCompactW ? 16 : 20,
+                                            height: 1.05,
+                                            letterSpacing: 0.2,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -378,7 +384,6 @@ class ArcadeScreen extends StatelessWidget {
                                       ),
                                   ],
                                 ),
-                              ),
                             ),
                           ),
                           SizedBox(width: isCompactW ? 6 : 10),

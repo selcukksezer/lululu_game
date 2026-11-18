@@ -117,6 +117,12 @@ abstract class AppLocalizations {
   String get resume;
   String get restart;
   String get quit;
+
+  /// N7: hamleli + enerjili turda çıkış onayı başlığı.
+  String get exitRoundConfirmTitle;
+
+  /// N7: hamleli + enerjili turda çıkış onayı gövdesi (tur + enerji kaybı).
+  String get exitRoundConfirmBody;
   String get profile;
   String get tasks;
 

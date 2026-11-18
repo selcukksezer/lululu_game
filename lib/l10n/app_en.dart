@@ -90,6 +90,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get quit => 'Exit';
 
   @override
+  String get exitRoundConfirmTitle => 'Leave this round?';
+
+  @override
+  String get exitRoundConfirmBody =>
+      'If you leave, this round and the spent energy will be lost.';
+
+  @override
   String get profile => 'Profile';
 
   @override

@@ -118,6 +118,14 @@ class MakarayizScreenState extends State<MakarayizScreen>
   // F9: yardım diyaloğu açıkken ticker bu bayrakla durdurulur; diyalog
   // kapanınca yalnız bu bayrak set edildiyse devam edilir.
   bool _pausedForHelp = false;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
   String _hint = '';
   bool _hintSeeded = false;
   String? _comboText;
@@ -616,6 +624,90 @@ class MakarayizScreenState extends State<MakarayizScreen>
     }
   }
 
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && _alive && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım deseni: `_pauseForHelpDialog`
+  /// ile aynı — yalnız ticker durur, `_paused` bayrağı konmaz,
+  /// duraklatma kaplaması açılmaz; oyun saati donar).
+  void _pauseForExitConfirm() {
+    if (widget.prototypeVisualState || !_alive || _paused) return;
+    if (_ticker.isActive) {
+      _ticker.stop();
+      _pausedForExitConfirm = true;
+    }
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (widget.prototypeVisualState || !_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    _lastElapsed = null;
+    if (_alive && !_paused && !_pausedByLifecycle && !_ticker.isActive) {
+      _ticker.start();
+    }
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
   /// (playtest bulgu #10). Erken bitirmede başlık skora göre
   /// belirlenir (skor 0 ise kayıp başlığı).
@@ -777,10 +869,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
     final hero = InsectTier.values[proto ? 2 : _bubbleTier];
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: _MakarayizChrome(
         score: _score,
       best: _best,
@@ -1396,27 +1486,34 @@ class _MakarayizChrome extends StatelessWidget {
                         color: const Color(0x8C080B12),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Text(
-                        context.l10n.makarayizTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.baloo2(
-                          fontSize: 20,
-                          height: 1.05,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          shadows: const [
-                            Shadow(
-                              color: Color(0xE6000000),
-                              offset: Offset(0, 2),
-                              blurRadius: 6,
-                            ),
-                            Shadow(
-                              color: Color(0xD9000000),
-                              offset: Offset(0, 1),
-                              blurRadius: 2,
-                            ),
-                          ],
+                      child: FittedBox(
+                        // F-12 deseni: ellipsis yerine scaleDown —
+                        // tam başlık her genişlikte sığar.
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          context.l10n.makarayizTitle,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.clip,
+                          style: GoogleFonts.baloo2(
+                            fontSize: 20,
+                            height: 1.05,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            shadows: const [
+                              Shadow(
+                                color: Color(0xE6000000),
+                                offset: Offset(0, 2),
+                                blurRadius: 6,
+                              ),
+                              Shadow(
+                                color: Color(0xD9000000),
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -1540,27 +1637,35 @@ class _MakarayizChrome extends StatelessWidget {
                       color: const Color(0x66080B12),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      context.l10n.makarayizTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.baloo2(
-                        fontSize: 20,
-                        height: 1.05,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        shadows: const [
-                          Shadow(
-                            color: Color(0xD9000000),
-                            offset: Offset(0, 2),
-                            blurRadius: 6,
-                          ),
-                          Shadow(
-                            color: Color(0xCC000000),
-                            offset: Offset(0, 1),
-                            blurRadius: 2,
-                          ),
-                        ],
+                    child: FittedBox(
+                      // F-12: 360 px'te başlık "MAKA..." diye
+                      // kesiliyordu — FittedBox (scaleDown) tam
+                      // başlığı sığdırır.
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        context.l10n.makarayizTitle,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.clip,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 20,
+                          height: 1.05,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          shadows: const [
+                            Shadow(
+                              color: Color(0xD9000000),
+                              offset: Offset(0, 2),
+                              blurRadius: 6,
+                            ),
+                            Shadow(
+                              color: Color(0xCC000000),
+                              offset: Offset(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

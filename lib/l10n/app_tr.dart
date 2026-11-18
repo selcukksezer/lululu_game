@@ -95,6 +95,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get quit => 'Çık';
 
   @override
+  String get exitRoundConfirmTitle => 'Turdan çıkılsın mı?';
+
+  @override
+  String get exitRoundConfirmBody =>
+      'Çıkarsan bu tur ve harcanan enerji kaybolur.';
+
+  @override
   String get profile => 'Profil';
 
   @override

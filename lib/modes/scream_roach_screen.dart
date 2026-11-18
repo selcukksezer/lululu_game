@@ -117,6 +117,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   bool _paused = false;
   bool _pausedByLifecycle = false;
   DateTime? _pauseStartedAt;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
   bool _layoutReady = false;
   bool _layoutBootstrapping = false;
   double _groundIdle = 0;
@@ -801,6 +809,98 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     }
   }
 
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && _alive && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım deseni: `_showHelpDialog`
+  /// ile aynı — ticker + mikrofon durur, duvar-saati süreleri
+  /// devamda kaydırılır).
+  void _pauseForExitConfirm() {
+    if (!_alive || _paused) return;
+    _pausedForExitConfirm = true;
+    _paused = true;
+    _pauseStartedAt ??= DateTime.now();
+    _pauseNoiseSubscription();
+    _ticker.stop();
+    setState(() {});
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    _paused = false;
+    // Yardım deseni: diyalog açıkken arka plana alındıysa konan
+    // bayrak da temizlenir; yoksa `_onNoiseReading` koruması
+    // mikrofonu kalıcı kilitler.
+    _pausedByLifecycle = false;
+    _shiftPauseDeadlines();
+    _last = Duration.zero;
+    _resumeNoiseSubscription();
+    if (_alive && !_ticker.isActive) _ticker.start();
+    setState(() {});
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
   /// (playtest bulgu #10). Erken bitirmede başlık skora göre
   /// belirlenir (skor 0 ise kayıp başlığı).
@@ -1310,10 +1410,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
     if (!wideScreen) {
       return PopScope(
-        canPop: true,
-        onPopInvokedWithResult: (didPop, _) {
-          if (didPop) _maybeRefundEnergy();
-        },
+        canPop: _exitConfirmed || !_needsExitConfirm,
+        onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
         child: ArcadeScreen(
           backgroundAsset: 'assets/scream_sky.webp',
           title: context.l10n.screamBugTitle,
@@ -1347,10 +1445,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     }
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: MediaQuery.removePadding(
         context: context,
         removeTop: true,
@@ -1643,25 +1739,36 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                       color: const Color(0x8C080B12),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(
-                      context.l10n.screamBugTitle,
-                      style: GoogleFonts.baloo2(
-                        fontSize: 20,
-                        height: 1.05,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        shadows: const [
-                          Shadow(
-                            color: Color(0xD9000000),
-                            offset: Offset(0, 2),
-                            blurRadius: 6,
-                          ),
-                          Shadow(
-                            color: Color(0xCC000000),
-                            offset: Offset(0, 1),
-                            blurRadius: 2,
-                          ),
-                        ],
+                    child: FittedBox(
+                      // F-11: sabit 27 px yükseklik + varsayılan
+                      // softWrap/clip, geniş ekranda ikinci kelimeyi
+                      // üç nokta olmadan düşürüyordu ("ÇIĞLIK").
+                      // FittedBox (scaleDown) tam başlığı sığdırır.
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        context.l10n.screamBugTitle,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.clip,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 20,
+                          height: 1.05,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          shadows: const [
+                            Shadow(
+                              color: Color(0xD9000000),
+                              offset: Offset(0, 2),
+                              blurRadius: 6,
+                            ),
+                            Shadow(
+                              color: Color(0xCC000000),
+                              offset: Offset(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

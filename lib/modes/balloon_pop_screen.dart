@@ -92,6 +92,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   /// kapanınca devam edilir; önceden duraklatılmış oyun sürdürülmez.
   bool _pausedForHelp = false;
 
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
+
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk atış (`_fire`)
   /// veya tur tamamlanması (`_lose`) ile `true` olur; TEKRAR/yeniden
   /// başlatmada SIFIRLANMAZ (Suika `_dropsMade` deseni — oturum ömrü;
@@ -1078,6 +1086,84 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     );
   }
 
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade `didPop` yolunda
+  /// aynen çalışır (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && !_over && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım deseni): diyalog açıkken oyun
+  /// saati donar (`_tick` `_paused` kapısına takılır).
+  void _pauseForExitConfirm() {
+    if (_over || _paused) return;
+    _pausedForExitConfirm = true;
+    setState(() => _paused = true);
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm || !_paused) return;
+    _pausedForExitConfirm = false;
+    setState(() => _paused = false);
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
   /// (playtest bulgu #10). Erken bitirmede başlık skora göre
   /// belirlenir (skor 0 ise kayıp başlığı).
@@ -1195,19 +1281,28 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                                 ),
                                 const SizedBox(width: 8),
                                 Flexible(
-                                  child: Text(
-                                    _paused
-                                        ? context.l10n.pausedStatusCaps
-                                        : '${_hintString(context.l10n)} · ${context.l10n.balloonRowsInShots(until)}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.right,
-                                    style: GoogleFonts.nunito(
-                                      fontSize: 11,
-                                      height: 1.55,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 0.88,
-                                      color: const Color(0xFFFFB3B3),
+                                  // F-05: şerit statik ellipsis ile
+                                  // kesiliyordu (kayan yazı değil) —
+                                  // FittedBox (scaleDown) ipucunun
+                                  // tamamını dar ekranda da gösterir.
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      _paused
+                                          ? context.l10n.pausedStatusCaps
+                                          : '${_hintString(context.l10n)} · ${context.l10n.balloonRowsInShots(until)}',
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.clip,
+                                      textAlign: TextAlign.right,
+                                      style: GoogleFonts.nunito(
+                                        fontSize: 11,
+                                        height: 1.55,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.88,
+                                        color: const Color(0xFFFFB3B3),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1479,10 +1574,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         '${_elapsed ~/ 60}:${(_elapsed.floor() % 60).toString().padLeft(2, '0')}';
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: _buildBalloonPrototypeChrome(
         context: context,
         timeStr: timeStr,

@@ -85,6 +85,14 @@ class _Match3ScreenState extends State<Match3Screen>
   /// elle duraklatılmış oyun kendiliğinden başlamaz.
   bool _pausedByLifecycle = false;
 
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
+
   /// Sonuç sunumu deneme sayacı: `finishRun` kalıcı hata verirse
   /// build kenarının sonsuz yeniden denemesini keser (en fazla 2).
   int _resultAttempts = 0;
@@ -1049,6 +1057,89 @@ class _Match3ScreenState extends State<Match3Screen>
     }
   }
 
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && !_ended && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (`_togglePause` deseni): diyalog
+  /// açıkken girdi kapıları ve boşta ipucu durur.
+  void _pauseForExitConfirm() {
+    if (_ended || _paused) return;
+    _pausedForExitConfirm = true;
+    _hintTimer?.cancel();
+    setState(() {
+      _paused = true;
+      _hintCells = [];
+    });
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    setState(() => _paused = false);
+    _armIdleHint();
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
   /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
   /// (playtest bulgu #10). Erken bitirmede başlık skora göre
   /// belirlenir (skor 0 ise kayıp başlığı).
@@ -1438,10 +1529,8 @@ class _Match3ScreenState extends State<Match3Screen>
     );
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: _buildMatch3PrototypeChrome(
         context: context,
         stageChild: stageChild,

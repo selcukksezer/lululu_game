@@ -113,6 +113,14 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   /// koymaz. Dönüşte (`resumed`) yalnız bu bayrak konmuşsa devam
   /// edilir — elle duraklatma yapışkan kalır.
   bool _pausedByLifecycle = false;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
   bool _showHelpModal = false;
   bool _resultShown = false;
   bool _presentingResultModal = false;
@@ -945,10 +953,95 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     });
   }
 
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed &&
+      _moveMade &&
+      !_gameOver &&
+      !_resultShown &&
+      !_presentingResultModal;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması: sıra tabanlı oyunda girdi kapıları
+  /// (`_paused`) durur; sayaç yoktur.
+  void _pauseForExitConfirm() {
+    if (_gameOver || _paused) return;
+    _pausedForExitConfirm = true;
+    setState(() => _paused = true);
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    setState(() => _paused = false);
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
   void _handleBack() {
     final nav = Navigator.maybeOf(context);
     if (nav != null && nav.canPop()) {
-      nav.pop();
+      // N7: `pop()` yerine `maybePop()` — çıkış onayı (`PopScope`
+      // vetosu) geri düğmesinden de geçer; onay gerekmiyorsa
+      // davranış aynıdır.
+      nav.maybePop();
     } else {
       _togglePause();
     }
@@ -959,10 +1052,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     if (_gameOver && !_resultShown) _edgeShowResult();
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: Focus(
       focusNode: _focusNode,
       autofocus: true,
