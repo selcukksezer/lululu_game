@@ -1300,6 +1300,31 @@ abstract class AppLocalizations {
   String monthShortName(int month);
   String monthFullName(int month);
   String get match3HintIdle;
+  String get match3NoMovesShuffle;
+  String get match3NoMatchCancel;
+  String get match3BombFormed;
+  String get match3HammerGain;
+  String get match3HammerBroke;
+  String get match3HammerStrike;
+  String get match3RocketFx;
+  String get match3SphereCallout;
+  String get osmantusDuoWonHint;
+  String get osmantusMicReady;
+  String get makaraOverTitle;
+  String get bonusLifePlus;
+  String get gotItPlay;
+  String match3StatsLine(int merge, int chain, int made, int fired);
+  String match3RocketBombGain(int gained);
+  String match3RocketHint(int n);
+  String match3HunterGain(int gained);
+  String match3SphereHint(int n);
+  String match3SphereFx(int n);
+  String osmantusLifeStatus(String reason, int lives);
+  String terlikSprayedTargets(int cleared);
+  String scoreMilestone(int m);
+  String balloonBombGain(int gained);
+  String makaraComboBroken(String reason);
+  String osmantusLastError(String reason);
 }
 
 /// [AppLocalizations.of] kısayolu: `context.l10n.play`.

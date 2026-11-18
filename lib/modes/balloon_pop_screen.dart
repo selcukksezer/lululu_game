@@ -371,7 +371,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     for (final m in const [500, 1500, 3000, 6000, 10000]) {
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
-        _showMilestone('SKOR $m!');
+        _showMilestone(context.l10n.scoreMilestone(m));
         break;
       }
     }
@@ -808,7 +808,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _fallTotal += fallen;
       _activePowerFx = 'bombb';
       _powerFxLife = 1.0;
-      _gainText = '+$gained BOMBA!';
+      _gainText = context.l10n.balloonBombGain(gained);
       _setHint(_BalloonHint.fireball, take);
       _checkScoreMilestones();
     });
@@ -1243,7 +1243,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
             won: false,
             modeTitle: context.l10n.shopModeBalloonPop,
             shareLine: _statsLine(),
-            retryLabel: 'TEKRAR',
+            retryLabel: context.l10n.retryShort,
             onRetry: () => setState(_boot),
           )
         : _paused
@@ -1272,7 +1272,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                    ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
                   ],
                 ),
               ),

@@ -2858,4 +2858,29 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get match3HintIdle => 'Komşuyu kaydır. 3 patlar · 4 = bomba.';
+  String get match3NoMovesShuffle => 'Hamle kalmadı. Tahta karıştı.';
+  String get match3NoMatchCancel => 'Eşleşme yok — hamle iptal.';
+  String get match3BombFormed => 'BOMBA oluştu!';
+  String get match3HammerGain => '+48 ÇEKİÇ!';
+  String get match3HammerBroke => 'Çekiç seçili taşı kırdı!';
+  String get match3HammerStrike => 'ÇEKİÇ DARBESİ!';
+  String get match3RocketFx => 'ROKET & 3x3 BOMBA!';
+  String get match3SphereCallout => 'RENK KÜRESİ!';
+  String get osmantusDuoWonHint => 'Bitti. Osman & Tuş seni yendi.';
+  String get osmantusMicReady => 'Mikrofon kalkanı hazır · sıradaki kaçışta can gitmez!';
+  String get makaraOverTitle => 'MAKARA BİTTİ';
+  String get bonusLifePlus => 'CAN +1';
+  String get gotItPlay => 'ANLADIM, OYNA!';
+  String match3StatsLine(int merge, int chain, int made, int fired) => 'Birleşim $merge · Max zincir x$chain · Bomba $made/$fired';
+  String match3RocketBombGain(int gained) => '+$gained ROKET BOMBA!';
+  String match3RocketHint(int n) => 'Satır Roketi & 3x3 Bomba $n taşı uçurdu!';
+  String match3HunterGain(int gained) => '+$gained AVCI!';
+  String match3SphereHint(int n) => 'Renk Küresi / Avcı $n aynı tür böceği temizledi!';
+  String match3SphereFx(int n) => 'RENK KÜRESİ · $n BÖCEK!';
+  String osmantusLifeStatus(String reason, int lives) => lives > 0 ? '$reason · $lives can kaldı' : '$reason · son can gitti';
+  String terlikSprayedTargets(int cleared) => 'İLAÇ SIKILDI · $cleared HEDEF TEMİZLENDİ!';
+  String scoreMilestone(int m) => 'SKOR $m!';
+  String balloonBombGain(int gained) => '+$gained BOMBA!';
+  String makaraComboBroken(String reason) => 'KOMBO KIRILDI · $reason';
+  String osmantusLastError(String reason) => 'Son hata: $reason';
 }

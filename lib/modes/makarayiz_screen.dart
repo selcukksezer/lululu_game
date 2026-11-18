@@ -285,7 +285,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
       for (final n in _notes) {
         if (!n.done && (_now + dt) - n.hitMs > windowMs * 0.85) {
           n.done = true;
-          _showText(combo: 'BEAT ÇİZGİSİNDE BAS!');
+          _showText(combo: context.l10n.makaraBeatLine);
         }
       }
     }
@@ -328,7 +328,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
         n.done = true;
         final loseLife = !lifeLost;
         lifeLost = true;
-        _breakCombo('KAÇIRDIN', loseLife: loseLife);
+        _breakCombo(context.l10n.missedCaps, loseLife: loseLife);
       }
     }
     _notes.removeWhere((n) => n.done && _now - n.hitMs > 400);
@@ -355,8 +355,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
     final had = _combo;
     _combo = 0;
     _misses++;
-    _hint = '$reason — vuruş penceresi: ±${windowMs.round()} ms';
-    _showText(brk: had >= 2 ? 'KOMBO KIRILDI · $reason' : reason);
+    _hint = context.l10n.makaraMissWindow(reason, windowMs.round());
+    _showText(brk: had >= 2 ? context.l10n.makaraComboBroken(reason) : reason);
     HapticFeedback.heavyImpact();
     if (loseLife) {
       _lives -= 1;
@@ -369,7 +369,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     // biten tur da turdur; bayrak oturum ömründe kalır).
     _moveMade = true;
     _alive = false;
-    _hint = 'Makara bitti. Yeniden çek!';
+    _hint = context.l10n.makaraReelOut;
     unawaited(AudioManager().playLose());
     unawaited(
       LeaderboardService.instance.submitScore(
@@ -401,7 +401,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _bubbleTier = n.tier;
     _hint = bug.viralReplik;
     _showText(
-      combo: _combo >= 2 ? 'COMBO X$_combo!' : (perfect ? 'MÜKEMMEL!' : null),
+      combo: _combo >= 2 ? 'COMBO X$_combo!' : (perfect ? context.l10n.perfectCaps : null),
       gain: '+$gain X$_combo',
     );
     unawaited(
@@ -448,9 +448,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
             );
       if (other.isNotEmpty) {
         other.first.done = true;
-        _breakCombo('YANLIŞ ŞERİT', loseLife: true);
+        _breakCombo(context.l10n.makaraWrongLane, loseLife: true);
       } else if (_notes.any((n) => !n.done && n.lane == lane)) {
-        _breakCombo('ERKEN DOKUNDUN', loseLife: false);
+        _breakCombo(context.l10n.makaraEarlyTap, loseLife: false);
       }
     }
     setState(() {});
@@ -694,15 +694,15 @@ class MakarayizScreenState extends State<MakarayizScreen>
       onPausePressed: _togglePause,
       overlay: (!_alive && !_resultShown)
           ? ArcadeResultOverlay(
-              title: 'MAKARA BİTTİ',
+              title: context.l10n.makaraOverTitle,
               message:
-                  'En iyi kombo x$_bestCombo · $_hits vuruş · $_misses kaçan',
+                  context.l10n.makaraResultMessage(_bestCombo, _hits, _misses),
               score: _score,
               best: _best,
               won: false,
               modeTitle: context.l10n.shopModeMakarayiz,
-              shareLine: 'Makarayız abi!',
-              retryLabel: 'YENİDEN',
+              shareLine: context.l10n.makaraShareLine,
+              retryLabel: context.l10n.tryAgainCaps,
               onRetry: _restart,
             )
           : (_paused
@@ -1303,7 +1303,7 @@ class _MakarayizChrome extends StatelessWidget {
                         borderRadius: BorderRadius.circular(99),
                       ),
                       child: Text(
-                        'VİRAL',
+                        context.l10n.viralBadge,
                         style: GoogleFonts.baloo2(
                           fontSize: 10.5,
                           height: 1.1,
@@ -1459,7 +1459,7 @@ class _MakarayizChrome extends StatelessWidget {
                       borderRadius: BorderRadius.circular(99),
                     ),
                     child: Text(
-                      'VİRAL',
+                      context.l10n.viralBadge,
                       style: GoogleFonts.baloo2(
                         fontSize: 10.5,
                         height: 1.1,

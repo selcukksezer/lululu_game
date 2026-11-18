@@ -44,8 +44,8 @@ Future<void> showHowToPlayOverlay(
   String? body,
 }) {
   final effectiveTitle = (modeTitle != null && modeTitle.trim().isNotEmpty)
-      ? '${modeTitle.trim()} — Nasıl Oynanır?'
-      : 'SUİKA ARENA — NASIL OYNANIR?';
+      ? '${modeTitle.trim()} ${context.l10n.howToPlaySuffix}'
+      : '${context.l10n.suikaArenaTitle} ${context.l10n.howToPlaySuffix}';
   final effectiveBody = body ?? context.l10n.howToBody;
   return showItemDetailPopup(
     context,

@@ -2859,4 +2859,29 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get match3HintIdle => 'Slide a neighbour. 3 pops · 4 = bomb.';
+  String get match3NoMovesShuffle => 'No moves left. Board shuffled.';
+  String get match3NoMatchCancel => 'No match — move cancelled.';
+  String get match3BombFormed => 'BOMB formed!';
+  String get match3HammerGain => '+48 HAMMER!';
+  String get match3HammerBroke => 'Hammer broke the selected tile!';
+  String get match3HammerStrike => 'HAMMER STRIKE!';
+  String get match3RocketFx => 'ROCKET & 3x3 BOMB!';
+  String get match3SphereCallout => 'COLOR SPHERE!';
+  String get osmantusDuoWonHint => 'Over. Osman & Tuş beat you.';
+  String get osmantusMicReady => 'Mic shield ready · next escape costs no life!';
+  String get makaraOverTitle => 'REEL OVER';
+  String get bonusLifePlus => 'LIFE +1';
+  String get gotItPlay => 'GOT IT, PLAY!';
+  String match3StatsLine(int merge, int chain, int made, int fired) => 'Merges $merge · Max chain x$chain · Bombs $made/$fired';
+  String match3RocketBombGain(int gained) => '+$gained ROCKET BOMB!';
+  String match3RocketHint(int n) => 'Row Rocket & 3x3 Bomb blasted $n tiles!';
+  String match3HunterGain(int gained) => '+$gained HUNTER!';
+  String match3SphereHint(int n) => 'Color Sphere / Hunter cleared $n bugs of the same kind!';
+  String match3SphereFx(int n) => 'COLOR SPHERE · $n BUGS!';
+  String osmantusLifeStatus(String reason, int lives) => lives > 0 ? '$reason · $lives lives left' : '$reason · last life gone';
+  String terlikSprayedTargets(int cleared) => 'SPRAYED · $cleared TARGETS CLEARED!';
+  String scoreMilestone(int m) => 'SCORE $m!';
+  String balloonBombGain(int gained) => '+$gained BOMB!';
+  String makaraComboBroken(String reason) => 'COMBO BROKEN · $reason';
+  String osmantusLastError(String reason) => 'Last error: $reason';
 }

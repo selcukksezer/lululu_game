@@ -311,7 +311,7 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   void _reshuffle() {
     _deal();
-    _hint = 'Hamle kalmadı. Tahta karıştı.';
+    _hint = context.l10n.match3NoMovesShuffle;
   }
 
   bool _adjacent(Point<int> a, Point<int> b) =>
@@ -467,7 +467,7 @@ class _Match3ScreenState extends State<Match3Screen> {
       HapticFeedback.selectionClick();
       setState(() {
         _busy = false;
-        _hint = 'Eşleşme yok — hamle iptal.';
+        _hint = context.l10n.match3NoMatchCancel;
         _comboMeter = max(0, _comboMeter - 0.2);
       });
       return;
@@ -541,7 +541,7 @@ class _Match3ScreenState extends State<Match3Screen> {
         final base = voiceTier.clamp(1, kinds);
         _grid[bombAt.x][bombAt.y] = base + bombBias;
         _bombsMade++;
-        _hint = 'BOMBA oluştu!';
+        _hint = context.l10n.match3BombFormed;
         _showMilestone(context.l10n.powerBombCaps);
         bombAt = null;
       }
@@ -578,7 +578,7 @@ class _Match3ScreenState extends State<Match3Screen> {
     for (final m in const [500, 1200, 2000, 3500]) {
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
-        _showMilestone('SKOR $m!');
+        _showMilestone(context.l10n.scoreMilestone(m));
         break;
       }
     }
@@ -627,7 +627,7 @@ class _Match3ScreenState extends State<Match3Screen> {
   }
 
   String _statsLine() =>
-      'Birleşim $_mergeTotal · Max zincir x$_maxChain · Bomba $_bombsMade/$_bombsFired';
+      context.l10n.match3StatsLine(_mergeTotal, _maxChain, _bombsMade, _bombsFired);
 
   Point<int>? _cellAt(Offset local, double cell, double gap) {
     final stride = cell + gap;
@@ -732,10 +732,10 @@ class _Match3ScreenState extends State<Match3Screen> {
       _score += 48;
       if (_score > _best) _best = _score;
       _mergeTotal++;
-      _gainText = '+48 ÇEKİÇ!';
-      _hint = 'Çekiç seçili taşı kırdı!';
+      _gainText = context.l10n.match3HammerGain;
+      _hint = context.l10n.match3HammerBroke;
       _collapse();
-      _triggerPowerFx('hammer', 'ÇEKİÇ DARBESİ!');
+      _triggerPowerFx('hammer', context.l10n.match3HammerStrike);
     });
     unawaited(_resolveCascadeAfterPower());
     return true;
@@ -768,10 +768,10 @@ class _Match3ScreenState extends State<Match3Screen> {
       if (_score > _best) _best = _score;
       _mergeTotal += n;
       _bombsFired++;
-      _gainText = '+$gained ROKET BOMBA!';
-      _hint = 'Satır Roketi & 3x3 Bomba $n taşı uçurdu!';
+      _gainText = context.l10n.match3RocketBombGain(gained);
+      _hint = context.l10n.match3RocketHint(n);
       _collapse();
-      _triggerPowerFx('bomb3', 'ROKET & 3x3 BOMBA!');
+      _triggerPowerFx('bomb3', context.l10n.match3RocketFx);
     });
     unawaited(_resolveCascadeAfterPower());
     return true;
@@ -806,11 +806,11 @@ class _Match3ScreenState extends State<Match3Screen> {
       _score += gained;
       if (_score > _best) _best = _score;
       _mergeTotal += n;
-      _comboText = 'RENK KÜRESİ!';
-      _gainText = '+$gained AVCI!';
-      _hint = 'Renk Küresi / Avcı $n aynı tür böceği temizledi!';
+      _comboText = context.l10n.match3SphereCallout;
+      _gainText = context.l10n.match3HunterGain(gained);
+      _hint = context.l10n.match3SphereHint(n);
       _collapse();
-      _triggerPowerFx('hunter', 'RENK KÜRESİ · $n BÖCEK!');
+      _triggerPowerFx('hunter', context.l10n.match3SphereFx(n));
     });
     unawaited(_resolveCascadeAfterPower());
     return true;
@@ -874,7 +874,7 @@ class _Match3ScreenState extends State<Match3Screen> {
             won: _won,
             modeTitle: 'Match 3',
             shareLine: _statsLine(),
-            retryLabel: 'TEKRAR',
+            retryLabel: context.l10n.retryShort,
             onRetry: _newGame,
           )
         : _paused
@@ -903,7 +903,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                    ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
                   ],
                 ),
               ),
@@ -1305,7 +1305,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'MATCH 3 · NASIL OYNANIR?',
+                      '${ctx.l10n.match3Title} ${ctx.l10n.howToPlaySuffix}',
                       style: GoogleFonts.baloo2(
                         fontSize: 18,
                         height: 1.1,
@@ -1349,7 +1349,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                   ),
                   onPressed: () => Navigator.of(ctx).pop(),
                   child: Text(
-                    'ANLADIM, OYNA!',
+                    ctx.l10n.gotItPlay,
                     style: GoogleFonts.baloo2(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,

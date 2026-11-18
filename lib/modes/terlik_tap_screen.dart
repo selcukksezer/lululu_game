@@ -384,7 +384,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
           if (b.isTrap) {
             // Tuzaktan kaçmak ödülsüzdür (madde 40): skor verilmez.
             final center = _holeCenter(b.holeIndex);
-            _pushFx('TUZAK GEÇTİ', center.dx, center.dy, LululuColors.toxicNeon);
+            _pushFx(context.l10n.terlikTrapPassed, center.dx, center.dy, LululuColors.toxicNeon);
           } else if (!countedMissThisTick) {
             countedMissThisTick = true;
             _applyMiss(context.l10n.terlikEscaped);
@@ -536,7 +536,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       out.add((
         kind: _BonusKind.slipper,
         amount: 1,
-        label: 'COMBO x8 TERLİK +1',
+        label: context.l10n.terlikBonusComboSlipper,
         color: LululuColors.cyberFuchsia,
       ));
     } else if (_combo == 10 || (_combo > 10 && _combo % 5 == 0)) {
@@ -587,21 +587,21 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         out.add((
           kind: _BonusKind.scoreBurst,
           amount: 50 + _rng.nextInt(70),
-          label: 'ŞANS PATLAMA',
+          label: context.l10n.terlikLuckBurst,
           color: LululuColors.toxicNeon,
         ));
       } else if (roll < 0.9 && _lives < 3) {
         out.add((
           kind: _BonusKind.life,
           amount: 1,
-          label: 'CAN +1',
+          label: context.l10n.bonusLifePlus,
           color: LululuColors.mysticRuby,
         ));
       } else {
         out.add((
           kind: _BonusKind.slipper,
           amount: 1,
-          label: 'TERLİK +1',
+          label: context.l10n.terlikBonusSlipper,
           color: LululuColors.cyberFuchsia,
         ));
       }
@@ -687,7 +687,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       if (_bugs.any((bug) => bug.holeIndex == index && bug.smashed)) {
         return;
       }
-      _breakComboOnly('BOŞA VURDUN');
+      _breakComboOnly(context.l10n.terlikMissedHit);
       HapticFeedback.selectionClick();
       setState(() {});
       return;
@@ -863,7 +863,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     final endCoins = max(1, _score ~/ 400);
     _coinsEarned += endCoins;
     _hint =
-        'Terlik yetmedi. Ezilen $_smashed · max x$_maxCombo · +$_coinsEarned💰';
+        context.l10n.terlikOutOfSlippers(_smashed, _maxCombo, _coinsEarned);
     HapticFeedback.heavyImpact();
     unawaited(AudioManager().playLose());
     unawaited(
@@ -917,7 +917,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _spawnAcc = 0;
       _shake = 0;
       _hitStop = 0;
-      _hint = 'Uçan böceği terlikle ez!';
+      _hint = context.l10n.terlikHintIdle;
       _last = DateTime.now();
       if (!widget.prototypeVisualState) {
         _spawn();
@@ -1001,9 +1001,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       // hamlesiz-çıkış iadesi hakkı biter.
       if (cleared > 0) _hasHit = true;
       _shake = 0.28;
-      _hint = 'İLAÇ SIKILDI · $cleared HEDEF TEMİZLENDİ!';
+      _hint = context.l10n.terlikSprayedTargets(cleared);
       _pushFx(
-        'İLAÇ TEMİZLİĞİ!',
+        context.l10n.terlikSprayCallout,
         _arena.width / 2,
         _arena.height / 2 - 20,
         LululuColors.toxicNeon,
@@ -1406,7 +1406,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                         const SizedBox(width: 10),
                         Semantics(
                           button: true,
-                          label: 'Nasıl oynanır',
+                          label: context.l10n.helpButtonLabel,
                           child: GestureDetector(
                             onTap: () => showDialog<void>(
                               context: context,
@@ -1918,14 +1918,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
             if (!_alive && !_resultShown)
               Positioned.fill(
                 child: ArcadeResultOverlay(
-                  title: 'TERLİK BİTTİ',
+                  title: context.l10n.terlikOutTitle,
                   message: _stats(),
                   score: _score,
                   best: _best,
                   won: false,
                   modeTitle: context.l10n.slipperTapTitle,
                   shareLine: _stats(),
-                  retryLabel: 'YENİDEN',
+                  retryLabel: context.l10n.tryAgainCaps,
                   onRetry: _restart,
                 ),
               ),
@@ -1966,7 +1966,7 @@ class _TerlikHole extends StatelessWidget {
     final bugBottom = prototypeVisualState ? 13.0 : 19.0;
     return Semantics(
       button: true,
-      label: visibleBug ? 'Böceği ez, delik ${index + 1}' : 'Boş delik',
+      label: visibleBug ? context.l10n.terlikHoleSemantics(index + 1) : context.l10n.terlikEmptyHole,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: prototypeVisualState ? null : (_) => onTap(),

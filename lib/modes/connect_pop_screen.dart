@@ -663,7 +663,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     for (final m in const [400, 1000, 2000, 3500]) {
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
-        _showMilestone('SKOR $m!');
+        _showMilestone(context.l10n.scoreMilestone(m));
         break;
       }
     }
@@ -905,7 +905,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
               won: _won,
               modeTitle: context.l10n.shopModeLinkPop,
               shareLine: _statsLine(),
-              retryLabel: 'TEKRAR',
+              retryLabel: context.l10n.retryShort,
               onRetry: _newGame,
             )
           : _paused

@@ -283,7 +283,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         if (_tutorial && _score == 0 && _combo == 0 && widget.clockForTesting == null) {
           _showBand(context.l10n.osmantusPressGreen, bad: false, ms: 900);
         } else {
-          _miss('KAÇIRDIN');
+          _miss(context.l10n.missedCaps);
           if (!_alive) return;
         }
       }
@@ -319,25 +319,25 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     _face = 0;
     _flashBad = true;
     _flashUntilMs = _nowMs + 320;
-    _showBand(lostCombo >= 2 ? 'KOMBO BOZULDU · $reason' : reason, bad: true);
+    _showBand(lostCombo >= 2 ? context.l10n.osmantusComboBroken(reason) : reason, bad: true);
     if (_micShield) {
       _micShield = false;
-      _hint = 'Mikrofon tuttu, can gitmedi.';
+      _hint = context.l10n.osmantusMicSaved;
       setState(() {});
       return;
     }
     if (costsLife && !_tutorial) {
       _lives -= 1;
-      _hint = '$reason · ${_lives > 0 ? '$_lives can kaldı' : 'son can gitti'}';
+      _hint = context.l10n.osmantusLifeStatus(reason, _lives);
     } else {
-      _hint = '$reason · ısınma turu, can gitmedi';
+      _hint = context.l10n.osmantusWarmupMiss(reason);
     }
     if (_lives <= 0) {
       // Tur tamamlandı: iade hakkı biter (hiç dokunmadan canların
       // tükenmesi de tur sayılır — Stack Drop `_fail` deseni).
       _moveMade = true;
       _alive = false;
-      _hint = 'Bitti. Osman & Tuş seni yendi.';
+      _hint = context.l10n.osmantusDuoWonHint;
       unawaited(AudioManager().playLose());
       unawaited(
         LeaderboardService.instance.submitScore(
@@ -370,11 +370,11 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _face = perfect ? 4 : 2;
       _flashBad = false;
       _flashUntilMs = now + 280;
-      _showBand(perfect ? 'MÜKEMMEL! X$_combo' : 'İYİ! X$_combo', bad: false);
+      _showBand(perfect ? context.l10n.perfectCombo(_combo) : context.l10n.goodCombo(_combo), bad: false);
       _hint = delta < 0
-          ? 'Biraz erken (${-delta}ms)'
-          : 'Biraz geç (+${delta}ms)';
-      if (perfect) _hint = 'Tam zamanında!';
+          ? context.l10n.osmantusEarlyBy(delta)
+          : context.l10n.osmantusLateBy(delta);
+      if (perfect) _hint = context.l10n.osmantusJustInTime;
       AudioManager().triggerHaptic();
       HapticFeedback.mediumImpact();
       unawaited(
@@ -387,9 +387,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       setState(() {});
     } else if (delta < 0 && delta >= -win * 2.2) {
       _hitThisBeat = true;
-      _miss('ERKEN BASTIN');
+      _miss(context.l10n.osmantusEarlyPress);
     } else if (delta < 0) {
-      _hint = 'Bekle, halka yeşile dönsün.';
+      _hint = context.l10n.osmantusWaitGreen;
       setState(() {});
     }
   }
@@ -410,7 +410,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _bandText = '';
       _face = -1;
       _breakReason = null;
-      _hint = 'Halka yeşile dönünce dokun!';
+      _hint = context.l10n.osmantusHintIdle;
       _hitThisBeat = false;
       _boostUntilMs = 0;
       _ringUntilMs = 0;
@@ -425,8 +425,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   String _statsLine() =>
-      'Max combo x$_maxCombo · Günlük streak $_dayStreak'
-      '${_breakReason == null ? '' : ' · Son hata: $_breakReason'}';
+      '${context.l10n.osmantusStatsLine(_maxCombo, _dayStreak)}${_breakReason == null ? '' : ' · ${context.l10n.osmantusLastError(_breakReason!) }'}';
 
   bool _useDikkis() {
     if (!_alive || _paused) return false;
@@ -434,8 +433,8 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _boostUntilMs = _nowMs + 12000;
-      _showBand('DIKKIŞ 2X PUAN!', bad: false);
-      _hint = 'DIKKIŞ aktif · 12 sn 2X sahne puanı ve geniş ritim!';
+      _showBand(context.l10n.osmantusDikkisBoost, bad: false);
+      _hint = context.l10n.osmantusDikkisHint;
     });
     return true;
   }
@@ -447,7 +446,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     setState(() {
       _ringUntilMs = _nowMs + 12000;
       _showBand(context.l10n.osmantusRingActive, bad: false);
-      _hint = 'Halka + aktif · 12 sn geniş zamanlama penceresi!';
+      _hint = context.l10n.osmantusRingHint;
     });
     return true;
   }
@@ -459,7 +458,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     setState(() {
       _micShield = true;
       _showBand(context.l10n.osmantusMicShieldCallout, bad: false);
-      _hint = 'Mikrofon kalkanı hazır · sıradaki kaçışta can gitmez!';
+      _hint = context.l10n.osmantusMicReady;
     });
     return true;
   }
@@ -677,14 +676,14 @@ class _OsmantusScreenState extends State<OsmantusScreen>
               if (!_alive && !_resultShown)
                 Positioned.fill(
                   child: ArcadeResultOverlay(
-                    title: 'İKİLİ YENDİ',
+                    title: context.l10n.osmantusDuoWonTitle,
                     message: _statsLine(),
                     score: _score,
                     best: _best,
                     won: false,
                     modeTitle: context.l10n.shopModeOsmantus,
                     shareLine: _statsLine(),
-                    retryLabel: 'YENİDEN',
+                    retryLabel: context.l10n.tryAgainCaps,
                     onRetry: _restart,
                   ),
                 ),
@@ -821,7 +820,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                           borderRadius: BorderRadius.circular(99),
                         ),
                         child: Text(
-                          'VİRAL',
+                          context.l10n.viralBadge,
                           style: GoogleFonts.baloo2(
                             fontSize: 10.5,
                             height: 1.1,

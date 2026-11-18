@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 735 getter + 158 metot = 893 anahtar,
+// açıkça sayılır (soyut sınıftaki 748 getter + 170 metot = 918 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -777,6 +777,19 @@ void main() {
         'balloonComboBrokenMiss': l10n.balloonComboBrokenMiss,
         'balloonFireballMilestone': l10n.balloonFireballMilestone,
         'match3HintIdle': l10n.match3HintIdle,
+        'match3NoMovesShuffle': l10n.match3NoMovesShuffle,
+        'match3NoMatchCancel': l10n.match3NoMatchCancel,
+        'match3BombFormed': l10n.match3BombFormed,
+        'match3HammerGain': l10n.match3HammerGain,
+        'match3HammerBroke': l10n.match3HammerBroke,
+        'match3HammerStrike': l10n.match3HammerStrike,
+        'match3RocketFx': l10n.match3RocketFx,
+        'match3SphereCallout': l10n.match3SphereCallout,
+        'osmantusDuoWonHint': l10n.osmantusDuoWonHint,
+        'osmantusMicReady': l10n.osmantusMicReady,
+        'makaraOverTitle': l10n.makaraOverTitle,
+        'bonusLifePlus': l10n.bonusLifePlus,
+        'gotItPlay': l10n.gotItPlay,
       };
 
   Map<String, String> trStrings(AppLocalizationsTr l10n) => {
@@ -1530,6 +1543,19 @@ void main() {
         'balloonComboBrokenMiss': l10n.balloonComboBrokenMiss,
         'balloonFireballMilestone': l10n.balloonFireballMilestone,
         'match3HintIdle': l10n.match3HintIdle,
+        'match3NoMovesShuffle': l10n.match3NoMovesShuffle,
+        'match3NoMatchCancel': l10n.match3NoMatchCancel,
+        'match3BombFormed': l10n.match3BombFormed,
+        'match3HammerGain': l10n.match3HammerGain,
+        'match3HammerBroke': l10n.match3HammerBroke,
+        'match3HammerStrike': l10n.match3HammerStrike,
+        'match3RocketFx': l10n.match3RocketFx,
+        'match3SphereCallout': l10n.match3SphereCallout,
+        'osmantusDuoWonHint': l10n.osmantusDuoWonHint,
+        'osmantusMicReady': l10n.osmantusMicReady,
+        'makaraOverTitle': l10n.makaraOverTitle,
+        'bonusLifePlus': l10n.bonusLifePlus,
+        'gotItPlay': l10n.gotItPlay,
       };
 
   // Metot anahtarları: her metot, soyut sınıftaki imzasına uygun
@@ -1703,6 +1729,18 @@ void main() {
         'downloadedDayMonth': l10n.downloadedDayMonth(3, 'X'),
         'monthShortName': l10n.monthShortName(3),
         'monthFullName': l10n.monthFullName(3),
+        'match3StatsLine': l10n.match3StatsLine(3, 3, 3, 3),
+        'match3RocketBombGain': l10n.match3RocketBombGain(3),
+        'match3RocketHint': l10n.match3RocketHint(3),
+        'match3HunterGain': l10n.match3HunterGain(3),
+        'match3SphereHint': l10n.match3SphereHint(3),
+        'match3SphereFx': l10n.match3SphereFx(3),
+        'osmantusLifeStatus': l10n.osmantusLifeStatus('X', 3),
+        'terlikSprayedTargets': l10n.terlikSprayedTargets(3),
+        'scoreMilestone': l10n.scoreMilestone(3),
+        'balloonBombGain': l10n.balloonBombGain(3),
+        'makaraComboBroken': l10n.makaraComboBroken('X'),
+        'osmantusLastError': l10n.osmantusLastError('X'),
         'balloonPoppedStreak': l10n.balloonPoppedStreak(3, 3),
         'balloonPiercingShot': l10n.balloonPiercingShot(3, 3),
         'terlikDropSlipper': l10n.terlikDropSlipper(3),
@@ -1878,6 +1916,18 @@ void main() {
         'downloadedDayMonth': l10n.downloadedDayMonth(3, 'X'),
         'monthShortName': l10n.monthShortName(3),
         'monthFullName': l10n.monthFullName(3),
+        'match3StatsLine': l10n.match3StatsLine(3, 3, 3, 3),
+        'match3RocketBombGain': l10n.match3RocketBombGain(3),
+        'match3RocketHint': l10n.match3RocketHint(3),
+        'match3HunterGain': l10n.match3HunterGain(3),
+        'match3SphereHint': l10n.match3SphereHint(3),
+        'match3SphereFx': l10n.match3SphereFx(3),
+        'osmantusLifeStatus': l10n.osmantusLifeStatus('X', 3),
+        'terlikSprayedTargets': l10n.terlikSprayedTargets(3),
+        'scoreMilestone': l10n.scoreMilestone(3),
+        'balloonBombGain': l10n.balloonBombGain(3),
+        'makaraComboBroken': l10n.makaraComboBroken('X'),
+        'osmantusLastError': l10n.osmantusLastError('X'),
         'balloonPoppedStreak': l10n.balloonPoppedStreak(3, 3),
         'balloonPiercingShot': l10n.balloonPiercingShot(3, 3),
         'terlikDropSlipper': l10n.terlikDropSlipper(3),
@@ -1943,21 +1993,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 893 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 918 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 735);
-    expect(tr.length, 735);
-    expect(enMethods.length, 158);
-    expect(trMethods.length, 158);
+    expect(en.length, 748);
+    expect(tr.length, 748);
+    expect(enMethods.length, 170);
+    expect(trMethods.length, 170);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 893);
+    expect(en.length + enMethods.length, 918);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });
