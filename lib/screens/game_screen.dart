@@ -12,6 +12,7 @@ import '../models/insect_tier.dart';
 import '../physics/physics_engine.dart';
 import '../services/adaptive_quality_scaler.dart';
 import '../services/audio_manager.dart';
+import '../services/campaign_progression_service.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/haptic_service.dart';
@@ -169,6 +170,19 @@ class _GameScreenState extends State<GameScreen>
   /// enerji iadesi, oturum boyunca hiç hamle yapılmamasına bakar.
   int _dropsMade = 0;
 
+  /// Tur başlangıç damgası (Y3): [finishRun] idempotency anahtarının
+  /// tur bileşeni. `initState`'te bir kez yakalanır, her yeniden
+  /// başlatmada / yeni seviyede tazelenir ([_restartLevel]); bitiş
+  /// anında `DateTime.now()` okunmaz. Aynı turun zafer + yenilgi
+  /// yolları aynı anahtarı paylaşır (ikisi birden ödeme yapamaz).
+  int _runStartStamp = 0;
+
+  /// Y3 anahtarı: `'suika:<turBaşlangıçDamgası>'`. Mod kimliği
+  /// liderlik gönderim yoluyla aynıdır ([LeaderboardService.modeSuika]
+  /// / [_submitSuikaScore]'daki `'suika'`).
+  String get _runIdempotencyKey =>
+      '${LeaderboardService.modeSuika}:$_runStartStamp';
+
   static const ColorFilter _aydinlatBwFilter = ColorFilter.matrix(<double>[
     0.2126,
     0.7152,
@@ -216,6 +230,9 @@ class _GameScreenState extends State<GameScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _currentLevel = widget.level;
+    // Y3 damgası: tur başlangıcında bir kez yakalanır (kampanya
+    // seviyesi + arcade turu her biri kendi damgasını alır).
+    _runStartStamp = DateTime.now().microsecondsSinceEpoch;
     _survivalTimeRemaining = _currentLevel.timeLimitSeconds.toDouble();
     _remainingMoves = widget.arcade ? -1 : _currentLevel.allowedMoves;
     AudioManager().initialize();
@@ -365,6 +382,8 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _restartLevel(CampaignLevel level) {
+    // Yeni tur, yeni Y3 anahtarı: eski turun anahtarı tüketilmiş kalır.
+    _runStartStamp = DateTime.now().microsecondsSinceEpoch;
     _dropTimer?.cancel();
     _movesEndTimer?.cancel();
     _bonusPulseTimer?.cancel();
@@ -946,16 +965,18 @@ class _GameScreenState extends State<GameScreen>
     // eşiğinin altındaysa 0 gösterilir (dürüst skor, garanti yok).
     final stars = _calculateStars();
     final earnedCoins = ResultScoring.coinsFor(_score);
-    // recordLevelResult yalnız yıldız ARTIŞI kadar öder (starGain * 50);
-    // önceki yıldız KAYIT ÖNCESİ okunmalıdır (kayıt haritayı günceller).
+    // Kampanya servisinin iç recordLevelResult çağrısı yalnız yıldız
+    // ARTIŞI kadar öder (starGain * 50); önceki yıldız KAYIT ÖNCESİ
+    // okunmalıdır (kayıt haritayı günceller).
     final previousStars =
         widget.arcade ? 0 : progress.getStarCount(_currentLevel.id);
     final starGain = widget.arcade ? 0 : max(0, stars - previousStars);
     final starCoins = starGain * 50;
     final totalCoins =
         widget.arcade ? earnedCoins : max(earnedCoins, starCoins);
-    // Ödenen toplam = starCoins + extraCoins = totalCoins: gösterilen
-    // tutar ile ödenen tutar birebir uyuşur.
+    // Ödenen skor-tabanlı toplam = starCoins + extraCoins = totalCoins.
+    // İlk tamamlamada servis ayrıca rewardCoins + boss bonusu öder
+    // (K3c) — bu ekstralar sonuç ekranındaki tutara dahil değildir.
     final extraCoins = earnedCoins - starCoins;
 
     AudioManager().playWin();
@@ -963,9 +984,9 @@ class _GameScreenState extends State<GameScreen>
     unawaited(_submitSuikaScore());
     if (!mounted) return;
     // S1#49: ödeme + görev kaydı + sonuç ekranı finishRun() üzerinden;
-    // kampanya ödemesi (recordLevelResult + fark coini) settle kapaması
-    // içinde, eski unawaited sırasıyla aynen yapılır. Liderlik gönderimi
-    // _submitSuikaScore'da kalır (ensureLoaded + rekor tazeleme).
+    // kampanya ödemesi (recordLevelCompletion + fark coini) settle
+    // kapaması içinde, eski unawaited sırasıyla aynen yapılır. Liderlik
+    // gönderimi _submitSuikaScore'da kalır (ensureLoaded + rekor tazeleme).
     final replay = await finishRun(
       context,
       score: _score,
@@ -975,6 +996,8 @@ class _GameScreenState extends State<GameScreen>
       bestScore: max(_score, _bestScore),
       bestCombo: max(1, _maxCombo),
       merges: _mergeTotal,
+      modeScoreId: LeaderboardService.modeSuika,
+      idempotencyKey: _runIdempotencyKey,
       awaitSettle: false,
       settle: () async {
         if (widget.arcade) {
@@ -982,11 +1005,16 @@ class _GameScreenState extends State<GameScreen>
             unawaited(ProgressManager.instance.addCoins(earnedCoins));
           }
         } else {
+          // K3c: zafer ödemesi kampanya servisinden geçer — servis
+          // kendi içinde recordLevelResult çağırır (yıldız artışı
+          // ödemesi + kilit açma), ayrıca 0-yıldızlı zaferi tamamlama
+          // sayar ve ilk-geçiş ödüllerini (rewardCoins + boss bonusu)
+          // öder. recordLevelResult ayrıca çağrılmaz (çift ödeme).
           unawaited(
-            progress.recordLevelResult(
-              levelId: _currentLevel.id,
+            CampaignProgressionService.instance.recordLevelCompletion(
+              levelNumber: _currentLevel.id,
               score: _score,
-              stars: stars,
+              explicitStars: stars,
               victory: true,
             ),
           );
@@ -1030,6 +1058,8 @@ class _GameScreenState extends State<GameScreen>
       bestScore: max(_score, _bestScore),
       bestCombo: max(1, _maxCombo),
       merges: _mergeTotal,
+      modeScoreId: LeaderboardService.modeSuika,
+      idempotencyKey: _runIdempotencyKey,
       // Yenilgi başlığı skordan bağımsızdır: pes etme / taşma / hamle
       // bitimi skor > 0 olsa da zafer başlığı göstermez (B1).
       won: false,

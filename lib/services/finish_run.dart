@@ -83,9 +83,9 @@ Future<void> _runSettleStep(
 ///    `evaluateModeScore` çağrılır (mod→başarım eşlemesi servis
 ///    tarafındadır; `grid2048` gibi takma adlar `normalizeModeId` ile
 ///    çözülür) ve skor > 0 ise tur XP'si verilir (kural aşağıda).
-///    Kimlik geçmeyen çağırıcıda (Suika) değerlendirme atlanır; hak
-///    edilen ustalık boot senkronuyla (`syncWithProgressManager`)
-///    kapanır. Ödeme adımından bağımsızdır: `settle` veren çağırıcılar
+///    Kimlik geçmeyen çağırıcıda değerlendirme atlanır (4F sonrası
+///    tüm modlar kimlik geçirir); hak edilen ustalık boot
+///    senkronuyla (`syncWithProgressManager`) kapanır. Ödeme adımından bağımsızdır: `settle` veren çağırıcılar
 ///    da bu adımdan geçer.
 /// 6. Sonuç ekranı: [showGameResult] ile gösterilir; dönüş değeri
 ///    "TEKRAR OYNA" seçildiyse `true`'dur.
