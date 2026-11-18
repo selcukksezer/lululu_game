@@ -60,6 +60,25 @@ abstract final class GameAudio {
   static const voiceOsmanA = 'voice_osman_a.mp3';
   static const voiceOsmanB = 'voice_osman_b.mp3';
 
+  /// Opt-in viral TikTok one-shots. Not used by tier, merge, or slipper routes.
+  static const mezarinaSiktigim = 'mezarina_siktigim.mp3';
+  static const divaSinyal = 'diva_sinyal.mp3';
+  static const divaYasla = 'diva_yasla.mp3';
+  static const lululuNakarat = 'lululu_nakarat.mp3';
+  static const duktur = 'duktur.mp3';
+  static const kanka = 'kanka.mp3';
+  static const husurAday = 'husur_aday.mp3';
+
+  static const viralOneShots = <String>[
+    mezarinaSiktigim,
+    divaSinyal,
+    divaYasla,
+    lululuNakarat,
+    duktur,
+    kanka,
+    husurAday,
+  ];
+
   static const allAssets = [
     sfxAydinlatBeam,
     sfxButtonTap,
@@ -104,6 +123,7 @@ abstract final class GameAudio {
     tier11Ses,
     tier12Ses,
     tier13Ses,
+    ...viralOneShots,
   ];
 
   /// Verified `voice_tierN.mp3` for merge tier 1–13; null if out of range.
@@ -191,7 +211,9 @@ abstract final class GameAudio {
   /// Whether [assetName] is a character voice clip rather than generic SFX.
   static bool isVoiceAsset(String assetName) {
     final base = assetName.split('/').last;
-    return base.startsWith('voice_') || base.endsWith('_ses.mp3');
+    return base.startsWith('voice_') ||
+        base.endsWith('_ses.mp3') ||
+        viralOneShots.contains(base);
   }
 }
 
@@ -757,6 +779,26 @@ class AudioManager {
 
   Future<void> playAydinlatVoice() =>
       playSfx(GameAudio.voiceAydinlat, isVoice: true);
+
+  /// Viral one-shots. Existing merge, tier, and slipper playback does not call these.
+  Future<void> playMezarinaSiktigim() =>
+      playSfx(GameAudio.mezarinaSiktigim, isVoice: true);
+
+  Future<void> playDivaSinyal() =>
+      playSfx(GameAudio.divaSinyal, isVoice: true);
+
+  Future<void> playDivaYasla() =>
+      playSfx(GameAudio.divaYasla, isVoice: true);
+
+  Future<void> playLululuNakarat() =>
+      playSfx(GameAudio.lululuNakarat, isVoice: true);
+
+  Future<void> playDuktur() => playSfx(GameAudio.duktur, isVoice: true);
+
+  Future<void> playKanka() => playSfx(GameAudio.kanka, isVoice: true);
+
+  Future<void> playHusurAday() =>
+      playSfx(GameAudio.husurAday, isVoice: true);
 
   Future<void> playAydinlatBeam() {
     if (vibrationEnabled) {
