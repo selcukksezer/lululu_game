@@ -830,15 +830,19 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     return true;
   }
 
-  Future<void> _presentResult() async {
+  Future<void> _presentResult({bool? won}) async {
     final coins = _score > 0 ? max(1, ResultScoring.coinsFor(_score)) : 0;
     // S1#49: ödeme + liderlik (yalnız skor > 0) + görev kaydı + sonuç
-    // ekranı finishRun() üzerinden (tek-ödeme korunur).
+    // ekranı finishRun() üzerinden (tek-ödeme korunur). `won`
+    // verilmezse hedefin tutup tutmadığı (_won) başlığı belirler.
     final replay = await finishRun(
       context,
       score: _score,
       best: _best,
       coins: coins,
+      bestCombo: _maxStreak,
+      merges: _clearTotal,
+      won: won ?? _won,
       leaderboardMode: LeaderboardService.modeConnect,
       leaderboardOnlyIfPositiveScore: true,
     );
@@ -863,6 +867,15 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     }
     _energyRefunded = true;
     EnergyService.instance.addEnergy(1);
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    await _presentResult(won: _score > 0);
   }
 
   void _edgeShowResult() {
@@ -895,7 +908,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       statValue: '$_lines',
       prototypeChrome: true,
       prototypeBaglaChrome: true,
-      onRestart: _newGame,
+      onRestart: _finishEarly,
       overlay: (_ended && !_resultShown)
           ? ArcadeResultOverlay(
               title: _won ? context.l10n.connectWonTitle : context.l10n.connectLostTitle,

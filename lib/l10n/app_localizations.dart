@@ -403,6 +403,8 @@ abstract class AppLocalizations {
   String shareScoreSnack(int score);
   String get resultSubtitle;
   String get levelCompleteTitle;
+  String get resultGameOverTitle;
+  String get resultGameOverSubtitle;
 
   /// Sonuç ekranındaki 'EN İYİ KOMBO' etiketi; profil ekranındaki
   /// [bestComboLabel] ('EN YÜKSEK KOMBO') etiketinden farklıdır.
@@ -1219,6 +1221,7 @@ abstract class AppLocalizations {
   /// Balon modu: tavan etiketi, ipucu satırları, nişan etiketi.
   String get ceilingLabel;
   String get balloonHintDrift;
+  String get balloonHelpBody;
   String get balloonHintRowDropped;
   String balloonRowsInShots(int shots);
   String get holdAimRelease;

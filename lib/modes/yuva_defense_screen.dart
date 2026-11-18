@@ -486,16 +486,28 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     EnergyService.instance.addEnergy(1);
   }
 
-  Future<void> _presentResult() async {
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    await _presentResult(won: _score > 0);
+  }
+
+  Future<void> _presentResult({bool? won}) async {
     // S1#49: ödeme (birikmiş _coinsEarned) + liderlik + görev kaydı +
     // sonuç ekranı finishRun() üzerinden (tek-ödeme korunur).
     // _endGame'deki liderlik gönderimi ayrıca durur (eski çift-gönderim
-    // davranışı aynen korunur).
+    // davranışı aynen korunur). Doğal bitiş üssün düşmesidir (kayıp);
+    // `won` verilmezse kayıp başlığı gösterilir.
     final replay = await finishRun(
       context,
       score: _score,
       best: _best,
       coins: _coinsEarned,
+      bestCombo: _maxCombo,
+      won: won ?? false,
       leaderboardMode: LeaderboardService.modeYuva,
     );
     if (!mounted) return;
@@ -1220,7 +1232,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                   button: true,
                                   label: _ended ? context.l10n.playAgainButton : context.l10n.finishRoundLabel,
                                   child: GestureDetector(
-                                  onTap: _restart,
+                                  // Tur bitmişse doğrudan yeniden başlat
+                                  // (eski davranış); tur sürüyorsa BİTİR
+                                  // sonuç ekranını açar (bulgu #10).
+                                  onTap: _ended ? _restart : _finishEarly,
                                   child: Container(
                                     width: 58,
                                     height: 48,
@@ -1809,7 +1824,7 @@ class _DefenseArenaPainter extends CustomPainter {
       ellipsis: '…',
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: size.width - 30);
-    _paintAnimatedLabel(canvas, labelPainter, const Offset(12, 10));
+    _paintAnimatedLabel(canvas, labelPainter, const Offset(12, 10), size);
     final hitLabel = TextPainter(
       text: TextSpan(
         text: hitsLabel,
@@ -1864,11 +1879,17 @@ class _DefenseArenaPainter extends CustomPainter {
         canvas,
         missLabel,
         Offset(size.width - missLabel.width - 12, size.height - 52 - 24.5),
+        size,
       );
     }
   }
 
-  void _paintAnimatedLabel(Canvas canvas, TextPainter painter, Offset offset) {
+  void _paintAnimatedLabel(
+    Canvas canvas,
+    TextPainter painter,
+    Offset offset,
+    Size canvasSize,
+  ) {
     double sample(List<(double, double)> keyframes) {
       for (var index = 1; index < keyframes.length; index++) {
         final previous = keyframes[index - 1];
@@ -1914,6 +1935,22 @@ class _DefenseArenaPainter extends CustomPainter {
         180;
     final translateY = sample([(0, 0), (0.8, 0), (1, -6)]);
     final center = offset + Offset(painter.width / 2, painter.height / 2);
+    // Nabız ölçeği etiketi tuval dışına taşırmasın (bulgu #4): 1.3
+    // ölçek, sol kenara yakın pankartın "Y" harfini ekran dışına
+    // itiyordu. Ölçek, merkeze göre ölçeklenmiş etiketin dört kenarı
+    // da tuval içinde kalacak şekilde sınırlandırılır (dönüş payı
+    // için 0.95 katsayı).
+    var clampedScale = scale;
+    final halfW = painter.width / 2;
+    final halfH = painter.height / 2;
+    if (halfW > 0 && halfH > 0) {
+      final maxScaleX =
+          min(center.dx, canvasSize.width - center.dx) / halfW;
+      final maxScaleY =
+          min(center.dy, canvasSize.height - center.dy) / halfH;
+      final maxScale = min(maxScaleX, maxScaleY) * 0.95;
+      if (maxScale < clampedScale) clampedScale = max(0.3, maxScale);
+    }
     final bounds = Rect.fromLTWH(
       offset.dx,
       offset.dy,
@@ -1926,7 +1963,7 @@ class _DefenseArenaPainter extends CustomPainter {
     );
     canvas.translate(center.dx, center.dy + translateY);
     canvas.rotate(rotation);
-    canvas.scale(scale);
+    canvas.scale(clampedScale);
     canvas.translate(-center.dx, -center.dy);
     painter.paint(canvas, offset);
     canvas.restore();

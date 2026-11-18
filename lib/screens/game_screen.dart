@@ -2013,7 +2013,11 @@ class _GameScreenState extends State<GameScreen>
                       ),
                     ),
                     Text(
-                      _currentLevel.title,
+                      // Bölüm alt başlığı dile göre (EN verisi
+                      // CampaignLevel.titleEn'de hazır; bulgu #17).
+                      _currentLevel.titleFor(
+                        Localizations.localeOf(context),
+                      ),
                       style: GoogleFonts.exo2(
                         fontSize: 11,
                         color: LululuColors.mutedTitanium,

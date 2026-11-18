@@ -222,7 +222,7 @@ class LululuGameMode {
       mechanicSummary:
           '4x4 tahtayı 4 yöne kaydır! Eşleşen böcekler bir üst seviyeye evrimleşir.',
       bestScoreKey: 'grid_2048',
-      defaultBestScore: 12480,
+      defaultBestScore: 0,
     ),
     LululuGameMode(
       id: LululuGameModeId.bubblePop,

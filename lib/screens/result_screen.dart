@@ -49,6 +49,7 @@ Future<bool> showGameResult(
   int bestCombo = ResultScoring.defaultBestCombo,
   int merges = ResultScoring.defaultMerges,
   bool coinsAwardedByCaller = true,
+  bool won = true,
 }) async {
   final replay = await Navigator.of(context).push<bool>(
     MaterialPageRoute(
@@ -60,6 +61,7 @@ Future<bool> showGameResult(
         bestCombo: bestCombo,
         merges: merges,
         coinsAwardedByCaller: coinsAwardedByCaller,
+        won: won,
       ),
     ),
   );
@@ -95,6 +97,7 @@ class GameResultScreen extends StatefulWidget {
     this.bestCombo = ResultScoring.defaultBestCombo,
     this.merges = ResultScoring.defaultMerges,
     this.coinsAwardedByCaller = true,
+    this.won = true,
   });
 
   final int score;
@@ -103,6 +106,11 @@ class GameResultScreen extends StatefulWidget {
   final int bestScore;
   final int bestCombo;
   final int merges;
+
+  /// `false` ise kayıp/0-skor başlığı gösterilir ("OYUN BİTTİ!"):
+  /// canlar bitince veya skor 0'ken BİTİR'e basınca "SEVİYE TAMAM!"
+  /// denmez (playtest bulgu #2).
+  final bool won;
 
   /// `true` (varsayılan): [coins] çağırıcı tarafından ödendi, bu ekran
   /// ödemez. `false`: bu ekran [coins] kadar öder (ödemeyen çağırıcı için).
@@ -138,7 +146,11 @@ class _GameResultScreenState extends State<GameResultScreen>
     final isTesting =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
     if (!isTesting) {
-      AudioManager().playWin();
+      if (widget.won) {
+        AudioManager().playWin();
+      } else {
+        AudioManager().playLose();
+      }
     }
   }
 
@@ -212,7 +224,9 @@ class _GameResultScreenState extends State<GameResultScreen>
 
                         // Subtitle (.res-sub)
                         Text(
-                          context.l10n.resultSubtitle,
+                          widget.won
+                              ? context.l10n.resultSubtitle
+                              : context.l10n.resultGameOverSubtitle,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.nunito(
                             fontSize: 13.5,
@@ -409,7 +423,9 @@ class _GameResultScreenState extends State<GameResultScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 7, 24, 9),
               child: Text(
-                context.l10n.levelCompleteTitle,
+                widget.won
+                    ? context.l10n.levelCompleteTitle
+                    : context.l10n.resultGameOverTitle,
                 style: GoogleFonts.bangers(
                   fontSize: 30,
                   letterSpacing: 1.2,

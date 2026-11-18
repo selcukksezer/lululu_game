@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -38,9 +39,17 @@ import 'progress_manager.dart';
 /// davranışı değiştirmez.
 ///
 /// [stars] verilmezse `ResultScoring.starsFor(score: score, best: best)`
-/// kullanılır. [bestScore]/[bestCombo]/[merges] verilmezse
-/// [ResultScoring]'un varsayılanları geçer (tek kaynak:
-/// `result_screen.dart` içindeki `ResultScoring` sabitleri).
+/// kullanılır. [bestScore] verilmezse `max(score, best)` (tura ait
+/// gerçek rekor) kullanılır; [bestCombo]/[merges] verilmezse 0
+/// gösterilir — tohum varsayılanlar (4820/x6/18) oyun-içi sonuç
+/// ekranına sızmaz (playtest bulgu #3). [ResultScoring] sabitleri
+/// yalnız doğrudan açılan `/result` prototip sayfasının varsayılanı
+/// olarak kalır.
+///
+/// [won] verilmezse `score > 0` sayılır: skor 0'ken BİTİR veya
+/// canların bitmesi kayıp başlığını ("OYUN BİTTİ!") gösterir
+/// (playtest bulgu #2). Kazanma/kaybetme ayrımı olan modlar
+/// (Match3/Connect hedefi, can-biten modlar) açık değer geçirir.
 ///
 /// [stillValid] verilirse sonuç ekranı gösterilmeden önce kontrol
 /// edilir; `false` dönerse ekran gösterilmeden `false` dönülür
@@ -55,6 +64,7 @@ Future<bool> finishRun(
   int? bestScore,
   int? bestCombo,
   int? merges,
+  bool? won,
   String? leaderboardMode,
   bool leaderboardOnlyIfPositiveScore = false,
   String? modeScoreId,
@@ -67,6 +77,7 @@ Future<bool> finishRun(
   final effectiveCoins = coins ?? ResultScoring.coinsFor(score);
   final effectiveStars =
       stars ?? ResultScoring.starsFor(score: score, best: best);
+  final effectiveWon = won ?? score > 0;
 
   Future<void> settleStep() async {
     if (settle != null) {
@@ -98,8 +109,9 @@ Future<bool> finishRun(
     score: score,
     coins: effectiveCoins,
     stars: effectiveStars,
-    bestScore: bestScore ?? ResultScoring.defaultBestScore,
-    bestCombo: bestCombo ?? ResultScoring.defaultBestCombo,
-    merges: merges ?? ResultScoring.defaultMerges,
+    bestScore: bestScore ?? max(score, best),
+    bestCombo: bestCombo ?? 0,
+    merges: merges ?? 0,
+    won: effectiveWon,
   );
 }

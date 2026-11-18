@@ -332,10 +332,24 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt == request.time);
     }
 
+    // Misafir->hesap göç eşlemesi: `guest_identity_links/{guestId}`
+    // belgesi göçte yazılır (yalnız ilk yazım kazanır). Hesap silmede,
+    // eski misafir kimliğiyle yazılmış mesajların silinmesine izin
+    // verir (gizlilik metniyle tutarlılık). `get()` öncesi `exists()`
+    // şarttır (olmayan belge okunursa kural hata verir).
+    function isLinkedGuest(authorId) {
+      return authorId is string &&
+             authorId.matches('^guest_[0-9a-f]{8,64}$') &&
+             exists(/databases/$(database)/documents/guest_identity_links/$(authorId)) &&
+             get(/databases/$(database)/documents/guest_identity_links/$(authorId)).data.uid == request.auth.uid;
+    }
+
     function isMessageSender(resData) {
       return isAuthenticated() && (
         (('senderId' in resData) && resData.senderId == request.auth.uid) ||
-        (('authorId' in resData) && resData.authorId == request.auth.uid)
+        (('authorId' in resData) && resData.authorId == request.auth.uid) ||
+        (('authorId' in resData) && isLinkedGuest(resData.authorId)) ||
+        (('senderId' in resData) && isLinkedGuest(resData.senderId))
       );
     }
 
@@ -543,6 +557,27 @@ service cloud.firestore {
       allow read: if false;
       allow create: if isAuthenticated() && isValidChatReport();
       allow update, delete: if false;
+    }
+
+    // 3c. Misafir->hesap göç eşlemeleri (guest_identity_links):
+    // belge kimliği misafir UUID'si, içerik {uid, createdAt}.
+    // Oluşturma: yalnız ilk yazım kazanır, uid == oturum UID'si.
+    // Okuma/silme: yalnız eşlemenin sahibi hesap. Güncelleme kapalı.
+    // Hesap silmede eski misafir mesajlarının silinmesini sağlar
+    // (isLinkedGuest); silinen hesapla birlikte eşleme de silinir.
+    match /guest_identity_links/{guestId} {
+      allow read: if isAuthenticated() &&
+          guestId.matches('^guest_[0-9a-f]{8,64}$') &&
+          resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() &&
+          guestId.matches('^guest_[0-9a-f]{8,64}$') &&
+          !exists(/databases/$(database)/documents/guest_identity_links/$(guestId)) &&
+          hasOnlyAllowedFields(['uid', 'createdAt']) &&
+          hasRequiredFields(['uid', 'createdAt']) &&
+          request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if isAuthenticated() &&
+          resource.data.uid == request.auth.uid;
     }
 
     // 4. Bug Studio Videos & GIFs

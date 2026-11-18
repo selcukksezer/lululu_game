@@ -252,6 +252,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _powerFxLife = 0;
     _missFlash = false;
     _dangerPulse = 0;
+    // Güçlendirme etkileri yeni tura sızmaz: delici atış ve
+    // yavaşlatma BİTİR/yeniden başlatmada sıfırlanır (bulgu #12).
+    _pierce = false;
+    _slowUntil = null;
     for (var attempt = 0; attempt < 16; attempt++) {
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < cols; c++) {
@@ -295,7 +299,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     }
     var dt = (elapsed - _last).inMicroseconds / 1e6;
     _last = elapsed;
-    if (dt <= 0 || dt > 0.05) return;
+    // Yavaş karede saati tamamen durdurmak yerine dt kelepçelenir
+    // (Stack deseni): 50 ms'yi aşan kareler 50 ms sayılır, oyun saati
+    // ve balon hareketi ilerlemeye devam eder (bulgu #14).
+    if (dt <= 0) return;
+    if (dt > 0.05) dt = 0.05;
 
     var dirty = false;
     if (!_paused && !_over) {
@@ -325,7 +333,12 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       }
     }
     if (_paused || !_flying || _over || _fly == null || _hex == null) {
-      if (dirty) setState(() {});
+      // Canlı oyunda boşta da her kare yenilenir: yoksa saat 0:00'da
+      // takılı kalır ve balon sürüklenmesi donar (bulgu #14 — dt
+      // kelepçesi tek başına yetmedi; `dirty` kapısı ekranı
+      // yenilemiyordu). Duraklatma/bitti durumunda yalnız kirliyse
+      // yenilenir.
+      if (dirty || (!_paused && !_over)) setState(() {});
       return;
     }
     _step(dt);
@@ -854,13 +867,17 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
+  Future<void> _presentResult({bool? won}) async {
     // S1#49: ödeme + mod skoru + liderlik + görev kaydı + sonuç ekranı
-    // finishRun() üzerinden (tek-ödeme korunur).
+    // finishRun() üzerinden (tek-ödeme korunur). Doğal bitiş
+    // balonların atıcıya ulaşmasıdır (kayıp); `won` verilmezse kayıp
+    // başlığı gösterilir.
     final replay = await finishRun(
       context,
       score: _score,
       best: _best,
+      bestCombo: _maxStreak,
+      won: won ?? false,
       leaderboardMode: LeaderboardService.modeBalloon,
       modeScoreId: 'balloon_pop',
     );
@@ -885,6 +902,15 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     }
     _energyRefunded = true;
     EnergyService.instance.addEnergy(1);
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    await _presentResult(won: _score > 0);
   }
 
   void _edgeShowResult() {
@@ -1572,23 +1598,42 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         top: 7.1,
                         width: 48,
                         height: 48,
-                        child: CustomPaint(
-                          painter: const _CssBoxPainter(
-                            fillColor: Color(0xDB080B12),
-                            radius: 24,
-                            borderColor: Color(0xB3FFB800),
-                            borderWidth: 2,
-                            shadowColor: Color(0x66000000),
-                            shadowOffset: Offset(0, 3),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '?',
-                              style: GoogleFonts.baloo2(
-                                fontSize: 22,
-                                height: 1.0,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFFFFB800),
+                        child: Semantics(
+                          button: true,
+                          label: context.l10n.helpButtonLabel,
+                          child: GestureDetector(
+                            onTap: () => showDialog<void>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: Text(ctx.l10n.balloonPopTitle),
+                                content: Text(ctx.l10n.balloonHelpBody),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: Text(ctx.l10n.understoodButton),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            child: CustomPaint(
+                              painter: const _CssBoxPainter(
+                                fillColor: Color(0xDB080B12),
+                                radius: 24,
+                                borderColor: Color(0xB3FFB800),
+                                borderWidth: 2,
+                                shadowColor: Color(0x66000000),
+                                shadowOffset: Offset(0, 3),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '?',
+                                  style: GoogleFonts.baloo2(
+                                    fontSize: 22,
+                                    height: 1.0,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFFFFB800),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1644,7 +1689,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                           label: context.l10n.finishRoundLabel,
                           child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () => setState(_boot),
+                          onTap: _finishEarly,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
                               color: const Color(0xFFFFB800),

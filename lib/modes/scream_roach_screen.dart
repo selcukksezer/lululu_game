@@ -650,13 +650,15 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
+  Future<void> _presentResult({bool? won}) async {
     // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
-    // üzerinden (tek-ödeme korunur).
+    // üzerinden (tek-ödeme korunur). Doğal bitiş böceğin düşmesidir
+    // (kayıp); `won` verilmezse kayıp başlığı gösterilir.
     final replay = await finishRun(
       context,
       score: _score,
       best: _best,
+      won: won ?? false,
       leaderboardMode: LeaderboardService.modeScream,
     );
     if (!mounted) return;
@@ -680,6 +682,15 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     }
     _energyRefunded = true;
     EnergyService.instance.addEnergy(1);
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    await _presentResult(won: _score > 0);
   }
 
   void _edgeShowResult() {
@@ -1079,9 +1090,15 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                       height: wideScreen ? 17 : 13,
                       child: Row(
                         children: [
-                          Expanded(
+                          // Sol etiket içerik genişliğinde kalır; sağdaki
+                          // yüzde/ipucu metni kalan genişliği alır, yoksa
+                          // "İLK 15 SN YAVAŞ" kesiliyordu (bulgu #6).
+                          Flexible(
+                            flex: 0,
                             child: Text(
                               context.l10n.screamVoicePower,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.nunito(
                                 fontSize: 11,
                                 height: 1,
@@ -1091,6 +1108,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                               ),
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _voiceInputEnabled || _power >= 0.7
@@ -1176,7 +1194,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         showStatusBar: true,
         prototypeModeChrome: true,
         prototypeTagLayout: true,
-        onRestart: _restart,
+        onRestart: _finishEarly,
         overlay: (!_alive && !_resultShown)
             ? ArcadeResultOverlay(
                 title: context.l10n.screamCrushedTitle,
@@ -1555,7 +1573,13 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                 context: context,
                 builder: (context) => AlertDialog(
                   title: Text(context.l10n.screamBugTitle),
-                  content: Text(context.l10n.screamArcadeHint(_hint)),
+                  // Statik yönerge: canlı _hint (spam/kombo mesajları)
+                  // yardım diyaloğuna sızmaz (bulgu #9).
+                  content: Text(
+                    context.l10n.screamArcadeHint(
+                      context.l10n.screamHintIdle,
+                    ),
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
@@ -1610,7 +1634,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               button: true,
               label: context.l10n.finishRoundLabel,
               child: GestureDetector(
-              onTap: _restart,
+              onTap: _finishEarly,
               child: Container(
                 width: 57.8,
                 height: 48,

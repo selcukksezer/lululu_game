@@ -508,7 +508,11 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   }
 
   void _pushFx(String label, double x, double y, Color color) {
-    _fx.add(_FloatFx(id: _nextFx++, label: label, x: x, y: y, color: color));
+    // Aynı anda yaşayan efekt yazıları üst üste binmesin: her yeni
+    // yazı, o an ekrandaki yazı sayısına göre yukarı kaydırılır
+    // (bulgu #7 — "TIER 12 BONUS" / "KOMBO KIRILDI" çakışması).
+    final stackedY = y - _fx.length * 16.0;
+    _fx.add(_FloatFx(id: _nextFx++, label: label, x: x, y: stackedY, color: color));
   }
 
   /// Combo / rastgele / Osmantuş damlaları: SADECE biriktirilir, vault'a
@@ -769,7 +773,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _pushFx(
         b.label,
         hitCenter.dx,
-        hitCenter.dy - 10 - _fx.length * 14.0,
+        hitCenter.dy - 10,
         b.color,
       );
     }
@@ -918,6 +922,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _shake = 0;
       _hitStop = 0;
       _hint = context.l10n.terlikHintIdle;
+      // Bayat ıska mesajı yeni tura sızmaz (bulgu #15).
+      _missMessage = null;
       _last = DateTime.now();
       if (!widget.prototypeVisualState) {
         _spawn();
@@ -1012,7 +1018,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     return true;
   }
 
-  Future<void> _presentResult(int runId) async {
+  Future<void> _presentResult(int runId, {bool? won}) async {
     // Tur değiştiyse (yeniden başlatma araya girdiyse) eski turun sonucunu
     // gösterme ve yeni turun ödülüne dokunma.
     if (runId != _runId) {
@@ -1033,6 +1039,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       score: _score,
       best: _best,
       coins: earnedCoins,
+      bestCombo: _maxCombo,
+      won: won ?? false,
       leaderboardMode: LeaderboardService.modeTerlik,
       settle: _settleRunEconomy,
       stillValid: () => mounted && runId == _runId,
@@ -1048,6 +1056,16 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       return;
     }
     _restart();
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı). Tur kimliği korunur:
+  /// _restart çağrılmaz (runId değişirse sonuç gösterilmez).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    await _presentResult(_runId, won: _score > 0);
   }
 
   void _edgeShowResult() {
@@ -1412,7 +1430,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                               context: context,
                               builder: (ctx) => AlertDialog(
                                 title: Text(ctx.l10n.slipperTapTitle),
-                                content: Text(_hint),
+                                // Statik yönerge: canlı _hint (ıskalama/
+                                // kombo mesajları) yardım diyaloğuna
+                                // sızmaz (bulgu #9).
+                                content: Text(ctx.l10n.terlikHintIdle),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(ctx),
@@ -1639,7 +1660,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                               button: true,
                               label: context.l10n.finishRoundLabel,
                               child: GestureDetector(
-                              onTap: _restart,
+                              onTap: _finishEarly,
                               child: Container(
                                 width: 57.8,
                                 height: 48,

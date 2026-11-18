@@ -858,6 +858,50 @@ class ChatService extends ChangeNotifier {
     }
   }
 
+  /// Göç eşlemesini buluta yazar (`guest_identity_links/{guestId}`).
+  /// Kurallar ilk yazımı korur (mevcut belge üzerine yazılamaz);
+  /// istemci de önce varlığı kontrol eder. Firebase hazır değilse
+  /// hiçbir şey yapmaz; hatalar yutulur — yerel eşleme
+  /// (LululuGuestIdentityLinksV1) asıl kaynaktır, bulut kopyası
+  /// yalnız hesap silmede eski misafir mesajlarının silinebilmesi
+  /// için kuralların okuduğu kanıttır.
+  Future<void> recordGuestIdentityLinkCloud(
+    String guestId,
+    String uid,
+  ) async {
+    if (!FirebaseBootstrap.isAvailable) return;
+    try {
+      final ref = FirebaseFirestore.instance
+          .collection('guest_identity_links')
+          .doc(guestId);
+      final snap = await ref.get();
+      if (snap.exists) return;
+      await ref.set({
+        'uid': uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('[lululu] göç eşlemesi buluta yazılamadı: $e');
+    }
+  }
+
+  /// Hesap silmede göç eşleme belgelerini buluttan siler (silinen
+  /// hesapla birlikte eşleme de gider). Her belge ayrı denenir;
+  /// hatalar yutulur.
+  Future<void> deleteGuestIdentityLinksCloud(
+    Iterable<String> guestIds,
+  ) async {
+    if (!FirebaseBootstrap.isAvailable) return;
+    final db = FirebaseFirestore.instance;
+    for (final guestId in guestIds) {
+      try {
+        await db.collection('guest_identity_links').doc(guestId).delete();
+      } catch (e) {
+        debugPrint('[lululu] göç eşlemesi buluttan silinemedi: $e');
+      }
+    }
+  }
+
   List<ChatMessage> _defaultFeedFor(ChatChannel channel) {
     final now = DateTime.now().toUtc().millisecondsSinceEpoch;
     switch (channel) {

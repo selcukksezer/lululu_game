@@ -644,6 +644,12 @@ class AuthService extends ChangeNotifier {
     links[guestId] = uid;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(guestIdentityLinksKey, jsonEncode(links));
+    // Bulut kopyası (best-effort, bekletmez): hesap silmede eski
+    // misafir mesajlarının silinebilmesi için kuralların okuduğu
+    // `guest_identity_links/{guestId}` belgesi.
+    unawaited(
+      ChatService.instance.recordGuestIdentityLinkCloud(guestId, uid),
+    );
   }
 
   /// Hesaba bağlı misafir kimliklerinin eşlemelerini siler (hesap
@@ -1688,6 +1694,25 @@ class AuthService extends ChangeNotifier {
     } catch (e) {
       debugPrint(
         '[lululu] deleteAccount: bulut sohbet mesajları silinemedi: $e',
+      );
+    }
+    try {
+      // Göç eşlemesindeki misafir kimlikleriyle yazılmış bulut
+      // mesajları da silinir (gizlilik metniyle tutarlılık); sonra
+      // eşleme belgelerinin kendileri gider. Yerel eşleme kaydı
+      // deleteAccount'ta aşağıda silinir — sıra önemlidir.
+      final links = await guestIdentityLinks();
+      final guestIds = links.entries
+          .where((entry) => entry.value == uid)
+          .map((entry) => entry.key)
+          .toList();
+      for (final guestId in guestIds) {
+        await ChatService.instance.deleteMessagesByAuthor(guestId);
+      }
+      await ChatService.instance.deleteGuestIdentityLinksCloud(guestIds);
+    } catch (e) {
+      debugPrint(
+        '[lululu] deleteAccount: göç eşlemeli mesajlar silinemedi: $e',
       );
     }
     try {

@@ -2291,6 +2291,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
     {
       'title': 'birlesme_rekoru.mp4',
       'size': '84,2 MB',
+      'sizeMb': 84.2,
       'whenKind': 'today',
       'whenTime': '09:12',
       'thumb': 'assets/design/ui/studio_downloads/img_1.png',
@@ -2299,6 +2300,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
     {
       'title': 'kapi7_rehberi.mp4',
       'size': '156,8 MB',
+      'sizeMb': 156.8,
       'whenKind': 'yesterday',
       'whenTime': '21:40',
       'thumb': 'assets/design/ui/studio_downloads/img_2.png',
@@ -2307,6 +2309,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
     {
       'title': 'dans_zamani.gif',
       'size': '6,4 MB',
+      'sizeMb': 6.4,
       'whenKind': 'date',
       'whenDay': 28,
       'whenMonth': 10,
@@ -2316,6 +2319,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
     {
       'title': 'hamam_diva_klip.mp4',
       'size': '42,1 MB',
+      'sizeMb': 42.1,
       'whenKind': 'date',
       'whenDay': 25,
       'whenMonth': 10,
@@ -2335,6 +2339,21 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
       d['whenDay'] as int,
       l10n.monthFullName(d['whenMonth'] as int),
     );
+  }
+
+  /// Özet satırındaki toplam boyut, listedeki dosyaların boyutlarının
+  /// toplamıdır (sabit "1,21 GB" yazısı liste toplamı ~290 MB ile
+  /// çelişiyordu, bulgu #8). Silme sonrası da güncel kalır.
+  String _totalSizeText() {
+    var totalMb = 0.0;
+    for (final d in _downloads) {
+      totalMb += (d['sizeMb'] as num?)?.toDouble() ?? 0.0;
+    }
+    if (totalMb >= 1024) {
+      final gb = (totalMb / 1024).toStringAsFixed(2).replaceAll('.', ',');
+      return '$gb GB';
+    }
+    return '${totalMb.toStringAsFixed(1).replaceAll('.', ',')} MB';
   }
 
   void _delete(int index) {
@@ -2449,7 +2468,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                   ),
                                   children: [
                                     TextSpan(
-                                      text: '1,21 GB',
+                                      text: _totalSizeText(),
                                       style: GoogleFonts.nunito(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w900,

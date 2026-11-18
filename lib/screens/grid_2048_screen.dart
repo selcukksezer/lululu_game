@@ -95,7 +95,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   final List<_BoardSnapshot> _history = <_BoardSnapshot>[];
 
   int _score = 8640;
-  int _best = 12480;
+  int _best = 0;
   int _moveCount = 36;
   int _streak = 4;
   int _maxStreak = 4;
@@ -1102,10 +1102,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         ),
         const SizedBox(width: 8),
 
-        // REKOR (`[124, 97.4, 92.1, 50.5]`)
+        // REKOR (`[124, 97.4, 92.1, 50.5]`): gerçek kayıtlı rekor
+        // gösterilir; kayıt yoksa 0 — sahte 12.480 yedeği kaldırıldı
+        // (playtest bulgu #1).
         _buildScoreBox(
           label: context.l10n.gameBestLabel,
-          value: _formatDotNumber(_best > 0 ? _best : 12480),
+          value: _formatDotNumber(_best),
           width: 92.1,
         ),
 
@@ -1207,18 +1209,26 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            softWrap: false,
-            style: const TextStyle(
-              fontFamily: 'Nunito',
-              fontSize: 11,
-              height: 1.5,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.2,
-              color: Color(0xFFFFB800),
+          // Etiket kutuya sığmazsa küçülür ("HAMLE" → "HAM…" kesikliği
+          // olmasın, bulgu #5); değer satırı zaten aynı deseni kullanır.
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 11,
+                  height: 1.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  color: Color(0xFFFFB800),
+                ),
+              ),
             ),
           ),
           Flexible(

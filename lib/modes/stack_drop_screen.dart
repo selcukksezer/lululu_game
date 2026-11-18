@@ -535,7 +535,11 @@ class _StackDropScreenState extends State<StackDropScreen>
 
     if (_score > _best) _best = _score;
     _checkFloorMilestones();
-    final floor = _floors + 1;
+    // Kat etiketi sayaca eşit olmalı: tohum katlar 6..12 ve sayaç 12'den
+    // başlar; bırakmada _floors++ sonrası yeni kat _floors'tur.
+    // Eski `_floors + 1`, KAT 13'ü atlayıp etiketi sayaçtan 1 fazla
+    // gösteriyordu (playtest S1).
+    final floor = _floors;
     _tier = 1 + _rng.nextInt(5);
     _speed = min(360.0, _speed + 8 + (_floors > 10 ? 2 : 0));
     _phase = _Phase.ready;
@@ -653,15 +657,19 @@ class _StackDropScreenState extends State<StackDropScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
+  Future<void> _presentResult({bool? won}) async {
     final coins = _score > 0 ? max(1, ResultScoring.coinsFor(_score)) : 0;
     // S1#49: ödeme + liderlik (yalnız skor > 0) + görev kaydı + sonuç
-    // ekranı finishRun() üzerinden (tek-ödeme korunur).
+    // ekranı finishRun() üzerinden (tek-ödeme korunur). Doğal bitiş
+    // kulenin devrilmesidir (kayıp); `won` verilmezse kayıp başlığı
+    // gösterilir.
     final replay = await finishRun(
       context,
       score: _score,
       best: _best,
       coins: coins,
+      bestCombo: _maxCombo,
+      won: won ?? false,
       leaderboardMode: LeaderboardService.modeStack,
       leaderboardOnlyIfPositiveScore: true,
     );
@@ -689,6 +697,15 @@ class _StackDropScreenState extends State<StackDropScreen>
     }
     _energyRefunded = true;
     EnergyService.instance.addEnergy(1);
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    await _presentResult(won: _score > 0);
   }
 
   void _edgeShowResult() {
@@ -724,7 +741,7 @@ class _StackDropScreenState extends State<StackDropScreen>
       prototypeModeChrome: true,
       statLabel: context.l10n.stackFloorStat,
       statValue: '$_floors',
-      onRestart: _restart,
+      onRestart: _finishEarly,
       overlay: (_phase == _Phase.failed && !_resultShown)
           ? ArcadeResultOverlay(
               title: context.l10n.stackTowerFellTitle,

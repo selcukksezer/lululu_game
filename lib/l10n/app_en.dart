@@ -732,6 +732,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get levelCompleteTitle => 'LEVEL COMPLETE!';
 
   @override
+  String get resultGameOverTitle => 'GAME OVER!';
+
+  @override
+  String get resultGameOverSubtitle => 'Try again — the next run is yours!';
+
+  @override
   String get bestComboResultLabel => 'BEST COMBO';
 
   @override
@@ -2676,6 +2682,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get balloonHintDrift =>
       'balloons drifting · pop 3 matching balloons';
+
+  @override
+  String get balloonHelpBody =>
+      'Drag to aim, release to fire. Match 3 identical balloons to pop them; clear the board before the balloons reach the shooter!';
 
   @override
   String get balloonHintRowDropped =>

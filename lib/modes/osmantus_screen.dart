@@ -463,13 +463,16 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
+  Future<void> _presentResult({bool? won}) async {
     // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
-    // üzerinden (tek-ödeme korunur).
+    // üzerinden (tek-ödeme korunur). Doğal bitiş canların bitmesidir
+    // (kayıp); `won` verilmezse kayıp başlığı gösterilir.
     final replay = await finishRun(
       context,
       score: _score,
       best: _best,
+      bestCombo: _maxCombo,
+      won: won ?? false,
       leaderboardMode: LeaderboardService.modeOsmantus,
     );
     if (!mounted) return;
@@ -496,6 +499,15 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     }
     _energyRefunded = true;
     EnergyService.instance.addEnergy(1);
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    await _presentResult(won: _score > 0);
   }
 
   void _edgeShowResult() {
@@ -950,7 +962,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   button: true,
                   label: context.l10n.finishRoundLabel,
                   child: GestureDetector(
-                    onTap: _restart,
+                    onTap: _finishEarly,
                     child: Container(
                       width: 57.81,
                       height: 48,

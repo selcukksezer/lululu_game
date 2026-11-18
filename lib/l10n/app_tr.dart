@@ -738,6 +738,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get levelCompleteTitle => 'SEVİYE TAMAM!';
 
   @override
+  String get resultGameOverTitle => 'OYUN BİTTİ!';
+
+  @override
+  String get resultGameOverSubtitle =>
+      'Bir daha dene — bir sonraki tur senin!';
+
+  @override
   String get bestComboResultLabel => 'EN İYİ KOMBO';
 
   @override
@@ -2675,6 +2682,10 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get balloonHintDrift => 'balonlar süzülüyor · 3 aynı balon patlar';
+
+  @override
+  String get balloonHelpBody =>
+      'Sürükleyerek nişan al, bırakarak ateş et. 3 aynı balonu birleştirerek patlat; balonlar atıcıya ulaşmadan tahtayı temizle!';
 
   @override
   String get balloonHintRowDropped =>

@@ -1332,6 +1332,10 @@ class _ShopScreenState extends State<ShopScreen> {
                 label: context.l10n.shopBuyItemLabel(item.title, item.priceText),
                 excludeSemantics: true,
                 child: GestureDetector(
+                  // CustomPaint katmanı üzerinden dokunma
+                  // ulaşmıyordu (canlı prob: düğme ölü); tüm düğme
+                  // yüzeyi dokunulabilir olsun (bulgu #16).
+                  behavior: HitTestBehavior.opaque,
                   onTap: item.onTap,
                   child: CustomPaint(
                   painter: _ShopBtnShadowPainter(

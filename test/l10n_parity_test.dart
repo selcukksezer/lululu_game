@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 777 getter + 170 metot = 947 anahtar,
+// açıkça sayılır (soyut sınıftaki 780 getter + 170 metot = 950 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -229,6 +229,8 @@ void main() {
         'boosterLightLabel': l10n.boosterLightLabel,
         'resultSubtitle': l10n.resultSubtitle,
         'levelCompleteTitle': l10n.levelCompleteTitle,
+        'resultGameOverTitle': l10n.resultGameOverTitle,
+        'resultGameOverSubtitle': l10n.resultGameOverSubtitle,
         'bestComboResultLabel': l10n.bestComboResultLabel,
         'mergesLabel': l10n.mergesLabel,
         'goldEarnedLabel': l10n.goldEarnedLabel,
@@ -740,6 +742,7 @@ void main() {
         'doubleGoldWithAd': l10n.doubleGoldWithAd,
         'ceilingLabel': l10n.ceilingLabel,
         'balloonHintDrift': l10n.balloonHintDrift,
+        'balloonHelpBody': l10n.balloonHelpBody,
         'balloonHintRowDropped': l10n.balloonHintRowDropped,
         'holdAimRelease': l10n.holdAimRelease,
         'laserAimActive': l10n.laserAimActive,
@@ -1024,6 +1027,8 @@ void main() {
         'boosterLightLabel': l10n.boosterLightLabel,
         'resultSubtitle': l10n.resultSubtitle,
         'levelCompleteTitle': l10n.levelCompleteTitle,
+        'resultGameOverTitle': l10n.resultGameOverTitle,
+        'resultGameOverSubtitle': l10n.resultGameOverSubtitle,
         'bestComboResultLabel': l10n.bestComboResultLabel,
         'mergesLabel': l10n.mergesLabel,
         'goldEarnedLabel': l10n.goldEarnedLabel,
@@ -1535,6 +1540,7 @@ void main() {
         'doubleGoldWithAd': l10n.doubleGoldWithAd,
         'ceilingLabel': l10n.ceilingLabel,
         'balloonHintDrift': l10n.balloonHintDrift,
+        'balloonHelpBody': l10n.balloonHelpBody,
         'balloonHintRowDropped': l10n.balloonHintRowDropped,
         'holdAimRelease': l10n.holdAimRelease,
         'laserAimActive': l10n.laserAimActive,
@@ -2058,15 +2064,15 @@ void main() {
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 777);
-    expect(tr.length, 777);
+    expect(en.length, 780);
+    expect(tr.length, 780);
     expect(enMethods.length, 170);
     expect(trMethods.length, 170);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 947);
+    expect(en.length + enMethods.length, 950);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

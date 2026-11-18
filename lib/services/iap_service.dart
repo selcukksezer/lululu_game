@@ -671,7 +671,12 @@ class IapService extends ChangeNotifier {
     _booted = true;
     try {
       final iap = InAppPurchase.instance;
-      storeAvailable = await iap.isAvailable();
+      // Web'de yanıt gelmeyen kanal çağrısı süresiz asılmasın diye
+      // 6 sn zaman aşımı (bulgu #16: satın alma hiç dönmüyordu).
+      // Zaman aşımı aşağıdaki catch'e düşer: mağaza yok sayılır.
+      storeAvailable = await iap
+          .isAvailable()
+          .timeout(const Duration(seconds: 6));
       if (!storeAvailable) {
         status = kDebugMode
             ? 'Store yok · sandbox simülasyon açık (yalnızca debug)'
@@ -686,7 +691,9 @@ class IapService extends ChangeNotifier {
           notifyListeners();
         },
       );
-      final resp = await iap.queryProductDetails(productIds);
+      final resp = await iap
+          .queryProductDetails(productIds)
+          .timeout(const Duration(seconds: 6));
       for (final p in resp.productDetails) {
         _products[p.id] = p;
       }
@@ -825,9 +832,16 @@ class IapService extends ChangeNotifier {
       status = 'Store satın alma…';
       notifyListeners();
       final param = PurchaseParam(productDetails: details);
+      // Başlatma çağrısı da yanıtsız kalırsa kullanıcı kilitlenmesin:
+      // 10 sn'de false döner; akış sonradan tamamlanırsa purchase
+      // stream teslimatı yine işler (bulgu #16).
       final ok = (catalogItem != null && !catalogItem.isConsumable)
-          ? await InAppPurchase.instance.buyNonConsumable(purchaseParam: param)
-          : await InAppPurchase.instance.buyConsumable(purchaseParam: param);
+          ? await InAppPurchase.instance
+              .buyNonConsumable(purchaseParam: param)
+              .timeout(const Duration(seconds: 10), onTimeout: () => false)
+          : await InAppPurchase.instance
+              .buyConsumable(purchaseParam: param)
+              .timeout(const Duration(seconds: 10), onTimeout: () => false);
       if (!ok) {
         status = 'Satın alma başlatılamadı';
         notifyListeners();
