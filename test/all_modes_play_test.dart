@@ -596,7 +596,10 @@ void main() {
     final beforeSpray = pm.powerCount('spraybug');
     await tester.tap(find.text('İLAÇ'));
     await tester.pump(const Duration(milliseconds: 50));
-    expect(pm.powerCount('spraybug'), beforeSpray - 1);
+    // B13: tek hedef ezildikten sonra tahta boştur — İLAÇ boş tahtada
+    // stok tüketmez (iade yolu; hedef üretmek için böcek doğurulmaz).
+    // Canlı hedefte tüketim terlik_play_test.dart'taki sprey testinde.
+    expect(pm.powerCount('spraybug'), beforeSpray);
 
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 2));
