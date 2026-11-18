@@ -833,6 +833,9 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get shareButton => 'PAYLAŞ';
 
+  @override
+  String get shareScoreFailed => 'Skor kartı paylaşılamadı.';
+
   // --- Dalga 20 göçü: Ayarlar (settings_screen) ---
 
   @override

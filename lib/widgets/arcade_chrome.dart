@@ -1178,7 +1178,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
     _showRewardsComingSoon();
   }
 
-  void _handleShare() {
+  Future<void> _handleShare() async {
     final now = DateTime.now();
     final last = ArcadeResultOverlay._lastShareAt;
     if (last != null &&
@@ -1186,16 +1186,27 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
       return;
     }
     ArcadeResultOverlay._lastShareAt = now;
-    setState(() => _shared = true);
-    unawaited(
-      ScoreShareCard.instance.share(
-        l10n: context.l10n,
-        modeTitle: widget.modeTitle ?? widget.title,
-        score: widget.score,
-        best: widget.best,
-        line: widget.shareLine ?? widget.message,
-      ),
+    final shared = await ScoreShareCard.instance.share(
+      l10n: context.l10n,
+      modeTitle: widget.modeTitle ?? widget.title,
+      score: widget.score,
+      best: widget.best,
+      line: widget.shareLine ?? widget.message,
     );
+    if (!mounted) return;
+    if (shared) {
+      setState(() => _shared = true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.l10n.shareScoreFailed,
+            style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
+          ),
+          backgroundColor: LululuColors.carbonVoid,
+        ),
+      );
+    }
   }
 
   @override

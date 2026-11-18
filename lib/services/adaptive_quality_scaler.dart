@@ -287,7 +287,12 @@ class AdaptiveQualityScaler {
     _updateProMotionScaling(tier);
 
     for (final listener in List.of(_listeners)) {
-      listener(_currentTier);
+      try {
+        listener(_currentTier);
+      } catch (e) {
+        // Bir dinleyicinin hatası diğer dinleyicileri engellemesin.
+        debugPrint('[AdaptiveQualityScaler] tier listener failed: $e');
+      }
     }
   }
 

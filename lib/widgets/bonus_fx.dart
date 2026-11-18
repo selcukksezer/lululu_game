@@ -68,9 +68,20 @@ Future<void> playBonusFx(
   final entry = OverlayEntry(
     builder: (_) => _FxHost(origin: origin, child: fx),
   );
-  Overlay.of(context).insert(entry);
-  await Future<void>.delayed(const Duration(milliseconds: 720));
-  entry.remove();
+  var inserted = false;
+  try {
+    Overlay.of(context).insert(entry);
+    inserted = true;
+    await Future<void>.delayed(const Duration(milliseconds: 720));
+  } finally {
+    // Bekleme yarıda kesilse bile overlay kaldırılır; aksi hâlde efekt
+    // ekranda takılı kalır.
+    if (inserted) {
+      try {
+        entry.remove();
+      } catch (_) {}
+    }
+  }
 }
 
 /// Efekti [origin] noktasına ortalar; dokunmayı engellemez.

@@ -436,6 +436,7 @@ abstract class AppLocalizations {
   String get playAgainButton;
   String get sharedButton;
   String get shareButton;
+  String get shareScoreFailed;
 
   // --- Dalga 20 göçü: Ayarlar (settings_screen) ---
 

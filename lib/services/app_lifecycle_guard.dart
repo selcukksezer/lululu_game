@@ -312,13 +312,24 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Aynı durumun tekrar bildirimi gerçek geçiş değildir: yinelenen
+    // çağrılar duraklatma sayacını, ses kesintisini ve senkronu
+    // tekrar tetiklemesin diye önceki durumla karşılaştırılır.
+    if (state == _currentState) return;
     _currentState = state;
     switch (state) {
       case AppLifecycleState.paused:
-      case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
         unawaited(onAppPaused(reason: 'lifecycle_${state.name}'));
+        break;
+      case AppLifecycleState.inactive:
+        // Geçici kesinti (bildirim gölgesi, çağrı arayüzü, odak kaybı):
+        // oyun duraklatılmaz, ses kesilmez; yalnızca durum güncellenir.
+        // Gerçek arka plan geçişinde ardından gelen paused/detached
+        // duraklatmayı tetikler; telefon kesintisi ise
+        // onPhoneCallInterrupted üzerinden ayrıca duraklatır.
+        notifyListeners();
         break;
       case AppLifecycleState.resumed:
         unawaited(onAppResumed());
@@ -388,6 +399,9 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
 
     // 1. Oturum süresini ve arka plan süresini doğrula
     _validateSessionOnResume(now);
+    // Duraklatma zaman damgası tüketildi: sonraki bir resumed (ör. geçici
+    // inactive sonrası) bayat damgayla sahte 'session_expired' üretmesin.
+    _lastPausedAt = null;
 
     // 2. Ses durumunu geri yükle
     final audio = AudioManager.instance;

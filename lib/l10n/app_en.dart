@@ -829,6 +829,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get shareButton => 'SHARE';
 
+  @override
+  String get shareScoreFailed => 'Score card could not be shared.';
+
   // --- Dalga 20 göçü: Ayarlar (settings_screen) ---
 
   @override
