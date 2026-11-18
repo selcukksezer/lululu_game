@@ -2467,6 +2467,10 @@ class AppLocalizationsTr extends AppLocalizations {
   String get continueToHomeAnyway => 'Yine de ana ekrana devam et';
 
   @override
+  String get energyLoadTimeout =>
+      'Enerji durumu okunamadı. Varsayılan enerjiyle devam ediliyor.';
+
+  @override
   String get bugFamilyTitle => 'BÖCEK AİLESİ';
 
   @override

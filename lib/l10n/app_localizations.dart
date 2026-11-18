@@ -1107,6 +1107,9 @@ abstract class AppLocalizations {
   String get welcomeSkipFail;
   String get continueToHomeAnyway;
 
+  // Ş14: main.dart boot enerji zaman aşımı uyarı bandı detayı.
+  String get energyLoadTimeout;
+
   // G12: tiers_screen.dart başlık + alt başlık (258/279).
   String get bugFamilyTitle;
   String get bugFamilySubtitle;

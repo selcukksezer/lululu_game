@@ -2466,6 +2466,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get continueToHomeAnyway => 'Continue to home anyway';
 
   @override
+  String get energyLoadTimeout =>
+      'Energy status could not be read. Continuing with default energy.';
+
+  @override
   String get bugFamilyTitle => 'BUG FAMILY';
 
   @override

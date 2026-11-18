@@ -766,26 +766,34 @@ class CloudSyncService extends ChangeNotifier {
       }
     }
 
+    // O4-cloud: güçlendirici + extraPowers yazımları ile bütünlük imzası,
+    // ProgressManager'ın kalıcı kayıt yolundan geçer
+    // ([ProgressManager.persistBoosters]: birincil güçleri extraPowers ile
+    // eşler, güç anahtarlarını + extraPowers'ı yazar, durum bütünlük
+    // imzasını birleşmiş bellek durumundan yeniden hesaplayıp yazar).
+    // Doğrudan prefs yazımı yalnız PM'de toplu kayıt yolu olmayan
+    // anahtarlar için kalır (coin, seviye, seri, tier'lar, mod skorları);
+    // mod skorları mutlak tavanla birleştirildiği için `recordModeScore`
+    // (mod tavanı, tek-tavan dönemi eski skorları atar) kullanılmaz —
+    // birleştirme semantiği değişmez (Y6 kapsam dışı).
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lululu_coins', pm.coins);
     await prefs.setInt('LululuCoinBalance', pm.coins);
     await prefs.setInt('lululu_unlocked_level', pm.unlockedLevel);
-    await prefs.setInt('lululu_spray', pm.sprayCount);
-    await prefs.setInt('lululu_raid', pm.sprayCount);
-    await prefs.setInt('lululu_slipper', pm.slipperCount);
-    await prefs.setInt('lululu_terlik', pm.slipperCount);
-    await prefs.setInt('lululu_aydinlat', pm.aydinlatCount);
-    await prefs.setInt('lululu_f16', pm.aydinlatCount);
     await prefs.setInt('lululu_daily_streak', pm.streak);
     await prefs.setStringList(
       'lululu_unlocked_tiers',
       pm.unlockedTiers.map((e) => e.toString()).toList(),
     );
-    await prefs.setString('lululu_extra_powers', jsonEncode(pm.extraPowers));
     await prefs.setString(
       'lululu_mode_high_scores',
       jsonEncode(pm.modeHighScores),
     );
+    await pm.persistBoosters();
+    // Birleşmiş durum dinleyicilere bildirilir: enerji setter'ı kendi
+    // bildirimini yapar, ama coin/seviye/tier/skor değişimleri PM
+    // bildirimine muhtaçtır (önceki kod hiç bildirmiyordu).
+    pm.notifyListeners();
     return true;
   }
 
@@ -1377,6 +1385,7 @@ class CloudSyncService extends ChangeNotifier {
   Future<void> _pullRemoteBests(String uid) async {
     if (!FirebaseBootstrap.ready) return;
     try {
+      await LeaderboardService.instance.ensureLoaded();
       final snap = await FirebaseFirestore.instance
           .collection('scores')
           .doc(uid)
@@ -1392,12 +1401,31 @@ class CloudSyncService extends ChangeNotifier {
         if (!isValidScore(rawScore)) continue;
         final safeScore = sanitizeModeScore(rawScore);
         if (safeScore > 0) {
-          await LeaderboardService.instance.submitScore(doc.id, safeScore);
+          await _mergeRemoteBest(doc.id, safeScore);
         }
       }
     } catch (e) {
       debugPrint('[lululu] pull remote bests: $e');
     }
+  }
+
+  /// O5: pull yolunda sessiz birleştirme.
+  ///
+  /// [LeaderboardService.submitScore] her çağrıda (skor değişmese bile)
+  /// `enqueueLeaderboardPush` yapar; korumasız pull her flush'ta kuyruğu
+  /// yeniden doldurur, kuyruk da yeni flush tetikler
+  /// (pull → enqueue → flush döngüsü). Bu dalgada liderlik servisine
+  /// sessiz birleştirme API'si eklenemez (dosya kapsam dışı), bu yüzden
+  /// birleştirme yalnız uzaktaki skor yerel en iyiyi AŞIYORSA
+  /// `submitScore` çağırır: eşit/düşük skorlar sessizce atlanır, kuyruk
+  /// doldurulmaz. Gerçek bir iyileşmede tek kuyruk girişi oluşur; onu
+  /// izleyen flush'ta pull eşitlik görür ve sessiz kalır — döngü en
+  /// fazla bir ek flush'ta sonlanır. Birleştirme semantiği değişmez:
+  /// yalnız yükseltme (max), Y6'ya dokunulmaz.
+  Future<void> _mergeRemoteBest(String modeId, int safeScore) async {
+    final board = LeaderboardService.instance;
+    if (safeScore <= board.getBest(modeId)) return;
+    await board.submitScore(modeId, safeScore);
   }
 
   Future<void> _pullRemoteProfile(String uid) async {

@@ -187,8 +187,11 @@ class _BootAppState extends State<_BootApp> {
   /// `ensureLoaded()` (paylaşımlı; `_boot()`'taki çağrıyla aynı
   /// yükleme), sonra flush. Kuyruk yüklenmeden yapılan flush boş
   /// kuyrukla çalışır ve `ensureLoaded()` ile yarışırdı (R5).
+  /// Y7: flush'tan önce online kapısı açılır; kapı açılmadan yapılan
+  /// flush sessiz no-op'tur (`success(0)`) ve kuyruk hiç boşalmaz.
   Future<void> _flushQueueAfterLoad() async {
     await CloudSyncService.instance.ensureLoaded();
+    await CloudSyncService.instance.enableOnlineWhenSignedIn();
     await CloudSyncService.instance.flushPending();
   }
 
@@ -239,19 +242,41 @@ class _BootAppState extends State<_BootApp> {
       await CampaignProgressionService.instance
           .load()
           .timeout(const Duration(seconds: 3));
-      final firebaseReady = await _ensureFirebaseWithRetry();
+      // Firebase hazırlığı kapı kararını etkilemez: kapı oturum/kimlik
+      // temellidir; hazırlık durumu flush'un iç dallarında ele alınır.
+      await _ensureFirebaseWithRetry();
       await AuthService.instance.load().timeout(const Duration(seconds: 3));
       // Yükleme yarışı (şüphe 1): enerji boot'ta beklenir; bekletilmeyen
       // load() bulut birleştirmenin erken yazısını ezebilirdi.
-      await EnergyService.instance.load();
+      // Ş14: zaman aşımıyla beklenir — kalıcı okuma asılırsa boot
+      // kilitlenmez; zaman aşımında bellek varsayılanlarıyla (5 enerji)
+      // devam edilir, yarım kalan load() arka planda tamamlanıp durumu
+      // düzeltir (paylaşımlı yükleme + notifyListeners) ve ana ekranda
+      // uyarı bandı gösterilir (madde 66 deseni).
+      var energyLoadTimedOut = false;
+      try {
+        await EnergyService.instance.load().timeout(
+          const Duration(seconds: 3),
+        );
+      } on TimeoutException catch (e) {
+        energyLoadTimedOut = true;
+        debugPrint(
+          '[lululu] enerji yükleme zaman aşımı — varsayılanlarla devam: $e',
+        );
+      }
       unawaited(ChatService.instance.ensureLoaded());
       unawaited(LeaderboardService.instance.ensureLoaded());
       unawaited(DailyChallengeService.instance.ensureLoaded());
-      // Kuyruk belleğe yüklendikten sonra, Firebase hazırsa boşalt.
+      // Kuyruk belleğe yüklendikten sonra online kapısını aç: Y7 — boot
+      // kapıyı açmadan flush çağırırsa flush sessiz no-op döner ve
+      // oturumu olan kullanıcının kuyruğu hiç boşalmaz. Kapı, oturum +
+      // Firebase kimlik uyumuna göre `enableOnlineWhenSignedIn` içinde
+      // değerlendirilir; açıksa flush'ı kendisi tetikler. Firebase
+      // henüz hazır değilse flush çevrimdışı dalda kuyruğu korur ve
+      // hazır olunca `_flushQueueAfterLoad` dinleyicisi tekrar dener.
+      // Ateşle-unut: kapı değerlendirmesi boot'u bekletmez.
       await CloudSyncService.instance.ensureLoaded();
-      if (firebaseReady) {
-        unawaited(CloudSyncService.instance.flushPending());
-      }
+      unawaited(CloudSyncService.instance.enableOnlineWhenSignedIn());
       unawaited(IapService.instance.ensureLoaded());
       final bool onboardingDone;
       try {
@@ -271,6 +296,18 @@ class _BootAppState extends State<_BootApp> {
         _home = onboardingDone
             ? const HomeShell()
             : const OnboardingScreen();
+        if (energyLoadTimedOut) {
+          // Ş14 uyarı bandı (madde 66 deseni): `_bootError` doluysa ana
+          // ekran uyarı bandıyla açılır. `_boot`'un BuildContext'i
+          // MaterialApp'in üstünde olduğundan tablo, ErrorWidget
+          // desenindeki gibi doğrudan çözümlenir; kullanıcı dil seçimi
+          // varsa o, yoksa cihaz dili geçerlidir.
+          final bootLocale =
+              LocaleService.instance.overrideNotifier.value ??
+              WidgetsBinding.instance.platformDispatcher.locale;
+          _bootError =
+              AppLocalizations.lookup(bootLocale).energyLoadTimeout;
+        }
       });
     } catch (e, st) {
       debugPrint('[lululu] boot fallback: $e\n$st');
