@@ -1677,7 +1677,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
             const SizedBox(width: 20),
             _buildPowerBtn(
               iconPath: 'assets/icons2/magnet.png',
-              label: context.l10n.shopPowerMergePairName.toUpperCase(),
+              label: context.l10n.shopPowerMergePairNameCaps,
               count: _pairCount,
               onTap: _usePair,
             ),

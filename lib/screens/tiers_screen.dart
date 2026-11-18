@@ -56,110 +56,110 @@ class TiersScreen extends StatefulWidget {
 }
 
 class _TiersScreenState extends State<TiersScreen> {
-  static const List<_BugTierInfo> _tiers = [
+  List<_BugTierInfo> _tiers(AppLocalizations l10n) => [
     _BugTierInfo(
       tier: 1,
-      name: 'Bebek Huni',
+      name: l10n.tierRowName1,
       rarity: 'Sıradan',
       points: '10',
       asset: 'assets/bugs/tier1_hd.png',
-      quote: 'HOP, GELDİM!',
+      quote: l10n.tierRowQuote1,
     ),
     _BugTierInfo(
       tier: 2,
-      name: 'Tencereli Çırak',
+      name: l10n.tierRowName2,
       rarity: 'Seyrek',
       points: '25',
       asset: 'assets/bugs/tier2_hd.png',
-      quote: 'TENCERE KAFADA, HAZIRIZ!',
+      quote: l10n.tierRowQuote2,
     ),
     _BugTierInfo(
       tier: 3,
-      name: 'Makaracı Fan',
+      name: l10n.tierRowName3,
       rarity: 'Nadir',
       points: '50',
       asset: 'assets/bugs/tier3_hd.png',
-      quote: 'MAKARAYIZ ABİ!',
+      quote: l10n.tierRowQuote3,
     ),
     _BugTierInfo(
       tier: 4,
-      name: 'Pijamalı Dansçı',
+      name: l10n.tierRowName4,
       rarity: 'Destansı',
       points: '100',
       asset: 'assets/bugs/tier4_hd.png',
-      quote: 'DANS PİSTİNE!',
+      quote: l10n.tierRowQuote4,
     ),
     _BugTierInfo(
       tier: 5,
-      name: 'Hamam Diva',
+      name: l10n.tierRowName5,
       rarity: 'Efsanevi',
       points: '200',
       asset: 'assets/bugs/tier5_hd.webp',
-      quote: 'DİVA GELDİ!',
+      quote: l10n.tierRowQuote5,
     ),
     _BugTierInfo(
       tier: 6,
-      name: 'Hamam Can',
+      name: l10n.tierRowName6,
       rarity: 'Mitik',
       points: '400',
       asset: 'assets/bugs/tier6_hd.png',
-      quote: 'HERKES HAVUZDAN ÇIKSIN!',
+      quote: l10n.tierRowQuote6,
     ),
     _BugTierInfo(
       tier: 7,
-      name: 'Kongo Lideri',
+      name: l10n.tierRowName7,
       rarity: 'Gizli',
       points: '800',
       asset: 'assets/bugs/tier7_hd.png',
-      quote: 'LİDER KONUŞTU!',
+      quote: l10n.tierRowQuote7,
     ),
     _BugTierInfo(
       tier: 8,
-      name: 'Hasta Bilge',
+      name: l10n.tierRowName8,
       rarity: 'Evrim Kristali',
       points: '1.600',
       asset: 'assets/bugs/tier8_hd.png',
-      quote: 'BİLGE YORGUN AMA EFSANE!',
+      quote: l10n.tierRowQuote8,
     ),
     _BugTierInfo(
       tier: 9,
-      name: 'Millî Formalı',
+      name: l10n.tierRowName9,
       rarity: 'EFSANEVİ',
       points: '3.200',
       asset: 'assets/bugs/tier9_hd.png',
-      quote: 'GOLLL LÜLÜLÜ!',
+      quote: l10n.tierRowQuote9,
     ),
     _BugTierInfo(
       tier: 10,
-      name: 'Pembe Ceketli',
+      name: l10n.tierRowName10,
       rarity: 'DESTANSI',
       points: '6.400',
       asset: 'assets/bugs/tier10_hd.png',
-      quote: 'PEMBE CEKETİM YAKIYOR!',
+      quote: l10n.tierRowQuote10,
     ),
     _BugTierInfo(
       tier: 11,
-      name: 'Beyaz Hayalet',
+      name: l10n.tierRowName11,
       rarity: 'MİTİK',
       points: '12.800',
       asset: 'assets/bugs/tier11_hd.png',
-      quote: 'BUUUUU! KORKTUN MU?',
+      quote: l10n.tierRowQuote11,
     ),
     _BugTierInfo(
       tier: 12,
-      name: 'Gri Tişörtlü',
+      name: l10n.tierRowName12,
       rarity: 'KOZMİK',
       points: '25.600',
       asset: 'assets/bugs/tier12_hd.png',
-      quote: 'SPORCU BÖCEK GELİYOR!',
+      quote: l10n.tierRowQuote12,
     ),
     _BugTierInfo(
       tier: 13,
-      name: 'Pembe Bornozlu',
+      name: l10n.tierRowName13,
       rarity: 'ZİRVE',
       points: '51.200',
       asset: 'assets/bugs/tier13_hd.png',
-      quote: 'BORNOZUMU GİYDİM KEYİFTEYİM!',
+      quote: l10n.tierRowQuote13,
     ),
   ];
 
@@ -193,6 +193,7 @@ class _TiersScreenState extends State<TiersScreen> {
         Scaffold.maybeOf(context)?.widget.extendBody == true;
     final renderDock =
         widget.showBottomNav && !widget.embedded && !parentHasExtendBody;
+    final tiers = _tiers(context.l10n);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
@@ -298,9 +299,9 @@ class _TiersScreenState extends State<TiersScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(14, 10, 14, 134),
                   children: [
-                    for (int i = 0; i < _tiers.length; i++) ...[
-                      _buildEvoRow(_tiers[i]),
-                      if (i < _tiers.length - 1) _buildEvoArrow(),
+                    for (int i = 0; i < tiers.length; i++) ...[
+                      _buildEvoRow(tiers[i]),
+                      if (i < tiers.length - 1) _buildEvoArrow(),
                     ],
                   ],
                 ),
