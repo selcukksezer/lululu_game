@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../screens/result_screen.dart';
@@ -19,15 +22,43 @@ import '../widgets/mode_bonus_bar.dart';
 class ConnectPopScreen extends StatefulWidget {
   const ConnectPopScreen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
     @visibleForTesting this.gameplayTestState = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika `GameScreen` deseni). Doğrudan rota girişlerinde
+  /// `false` kalır.
+  final bool energyConsumed;
 
   final bool prototypeVisualState;
   final bool gameplayTestState;
 
   @override
   State<ConnectPopScreen> createState() => _ConnectPopScreenState();
+}
+
+enum _ConnectHint {
+  idle,
+  refreshed,
+  loopHint,
+  groupHint,
+  selectedOne,
+  selectedCount,
+  squareReady,
+  longChain,
+  minLink,
+  squareHit,
+  viral,
+  bonusDrop,
+  targetHit,
+  linesOut,
+  loseHint,
+  chainExtender,
+  bolt,
+  magnet,
 }
 
 class _ConnectPopScreenState extends State<ConnectPopScreen> {
@@ -62,11 +93,60 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   bool _lost = false;
   bool _resultShown = false;
   bool _paused = false;
+
+  /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk geçerli zincir
+  /// (`_commit`, en az `minLen` hücre) veya tur tamamlanması
+  /// (`_endCheck`) ile `true` olur; TEKRAR/yeniden başlatmada
+  /// SIFIRLANMAZ (Suika `_dropsMade` deseni — oturum ömrü).
+  bool _moveMade = false;
+
+  /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+
   bool _loop = false;
   int _paint = 0;
   final List<Point<int>> _path = [];
   final Set<Point<int>> _pathSet = {};
-  String _hint = 'Aynı böceği çiz. Kare = o türün hepsi.';
+  _ConnectHint _hintKind = _ConnectHint.idle;
+  int _hintA = 0;
+  int _hintB = 0;
+  int _hintC = 0;
+  String _hintText = '';
+
+  void _setHint(
+    _ConnectHint kind, {
+    int a = 0,
+    int b = 0,
+    int c = 0,
+    String text = '',
+  }) {
+    _hintKind = kind;
+    _hintA = a;
+    _hintB = b;
+    _hintC = c;
+    _hintText = text;
+  }
+
+  String _hintString(AppLocalizations l10n) => switch (_hintKind) {
+        _ConnectHint.idle => l10n.connectHintIdle,
+        _ConnectHint.refreshed => l10n.connectBoardRefreshed,
+        _ConnectHint.loopHint => l10n.connectLoopHint,
+        _ConnectHint.groupHint => l10n.connectGroupHint,
+        _ConnectHint.selectedOne => l10n.connectSelectedOne(_hintA),
+        _ConnectHint.selectedCount => l10n.connectSelectedCount(_hintA),
+        _ConnectHint.squareReady => l10n.connectLoopReady,
+        _ConnectHint.longChain => l10n.connectLongChain(_hintA),
+        _ConnectHint.minLink => l10n.connectMinLength(_hintA),
+        _ConnectHint.squareHit => l10n.connectSquareHint(_hintA, _hintB),
+        _ConnectHint.viral => '$_hintText · x$_hintA +$_hintB',
+        _ConnectHint.bonusDrop => l10n.connectBonusDrop(_hintA),
+        _ConnectHint.targetHit => l10n.connectTargetHit,
+        _ConnectHint.linesOut => l10n.connectLinesOut,
+        _ConnectHint.loseHint => l10n.connectLoseHint(_hintA, _hintB, _hintC),
+        _ConnectHint.chainExtender => l10n.connectChainExtenderHint,
+        _ConnectHint.bolt => l10n.connectBoltHint(_hintA),
+        _ConnectHint.magnet => l10n.connectMagnetHint,
+      };
 
   int _streak = 0;
   int _maxStreak = 0;
@@ -107,15 +187,23 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     }
   }
 
+  // Varsayılan stok YALNIZ ilk kurulumda verilir. ProgressManager.load()
+  // 'lululu_power_seed_v1' bayrağıyla 33 gücü bir kez tohumlar; tohumlanan
+  // anahtarlar extraPowers'ta kalıcı olur, takePower() ise anahtarı silmez,
+  // 0'a düşürür. "Hiç tohumlanmadı" bu yüzden anahtar yokluğuyla anlaşılır;
+  // eski "üçü de 0 ise doldur" koşulu her girişte bedava stok veriyordu.
+  // Tohumlama persistBoosters() ile kalıcı kaydedilir.
   void _ensureDefaultPowers() {
     final pm = ProgressManager();
-    if (pm.powerCount('chain') == 0 &&
-        pm.powerCount('bolt') == 0 &&
-        pm.powerCount('magnet') == 0) {
-      pm.extraPowers['chain'] = 3;
-      pm.extraPowers['bolt'] = 1;
-      pm.extraPowers['magnet'] = 1;
+    const defaults = <String, int>{'chain': 3, 'bolt': 1, 'magnet': 1};
+    var seeded = false;
+    for (final entry in defaults.entries) {
+      if (!pm.extraPowers.containsKey(entry.key)) {
+        pm.extraPowers[entry.key] = entry.value;
+        seeded = true;
+      }
     }
+    if (seeded) unawaited(pm.persistBoosters());
   }
 
   void _applyGameplayTestState() {
@@ -223,7 +311,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     _flashCells = {};
     _gridBurst = 1.0;
     _clearPath();
-    _hint = 'Aynı böceği çiz. Kare = o türün hepsi.';
+    _setHint(_ConnectHint.idle);
     _fill();
     setState(() {});
   }
@@ -329,16 +417,14 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     pick = loopPick ?? pick;
     if (pick == null) {
       _fill();
-      setState(() => _hint = 'Tahta yenilendi.');
+      setState(() => _setHint(_ConnectHint.refreshed));
       return;
     }
     final isLoopHint = loopPick != null;
     _hintTimer?.cancel();
     setState(() {
       _hintCells = pick!.toSet();
-      _hint = isLoopHint
-          ? 'İpucu: kare yap, türün hepsi gider.'
-          : 'İpucu: bu grubu bağla.';
+      _setHint(isLoopHint ? _ConnectHint.loopHint : _ConnectHint.groupHint);
     });
     _hintTimer = Timer(const Duration(milliseconds: 1400), () {
       if (mounted) setState(() => _hintCells = {});
@@ -386,7 +472,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     _paint = _grid[p.x][p.y];
     _path.add(p);
     _pathSet.add(p);
-    setState(() => _hint = 'Seçili 1 · en az $minLen');
+    setState(() => _setHint(_ConnectHint.selectedOne, a: minLen));
   }
 
   void _extend(Point<int> p) {
@@ -395,13 +481,18 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       final removed = _path.removeLast();
       _pathSet.remove(removed);
       _loop = false;
-      setState(() => _hint = 'Seçili ${_path.length}');
+      setState(() => _setHint(_ConnectHint.selectedCount, a: _path.length));
       return;
     }
+    // Kare kapandıktan sonra yol kilitlidir: yeni hücre kabul edilmez, kare
+    // bayrağı korunur. Kareyi açmanın tek yolu geri adım atmaktır (yukarıdaki
+    // dal). Eskiden yeni hücre _loop=false yapıp kare temizliğini sessizce
+    // iptal ediyordu.
+    if (_loop) return;
     if (_pathSet.contains(p)) {
       if (p == _path.first && _path.length >= 4 && _ortho(p, _path.last)) {
         _loop = true;
-        setState(() => _hint = 'KARE · bırak, hepsi silinsin');
+        setState(() => _setHint(_ConnectHint.squareReady));
         HapticFeedback.lightImpact();
       }
       return;
@@ -410,13 +501,12 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     if (!_ortho(p, _path.last)) return;
     _path.add(p);
     _pathSet.add(p);
-    _loop = false;
     final len = _path.length;
     setState(() {
       if (len >= 6) {
-        _hint = 'Uzun zincir! $len';
+        _setHint(_ConnectHint.longChain, a: len);
       } else {
-        _hint = 'Seçili $len';
+        _setHint(_ConnectHint.selectedCount, a: len);
       }
     });
   }
@@ -427,12 +517,15 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       _clearPath();
       setState(() {
         _streak = 0;
-        _hint = 'En az $minLen böcek bağla.';
+        _setHint(_ConnectHint.minLink, a: minLen);
         _comboMeter = max(0, _comboMeter - 0.15);
       });
       return;
     }
 
+    // Enerji iadesi sayacı: geçerli zincir bırakma anında sayılır
+    // (en az minLen kontrolü yukarıda geçti; kısa çizgi hamle sayılmaz).
+    _moveMade = true;
     final epoch = _epoch;
 
     final group = List<Point<int>>.from(_path);
@@ -453,7 +546,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
           }
         }
       }
-      _showMilestone('KARE TEMİZLİK');
+      _showMilestone(context.l10n.connectSquareClear);
     } else {
       for (final p in group) {
         if (_grid[p.x][p.y] == 0) continue;
@@ -482,9 +575,11 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     if (pathLen >= 6 && !loop) _lines++;
     _checkScoreMilestones();
     final insect = InsectTier.values[(tier - 1).clamp(0, 7)];
-    _hint = loop
-        ? 'Kare! x$_streak · +$gained'
-        : '${insect.viralReplik} · x$_streak +$gained';
+    if (loop) {
+      _setHint(_ConnectHint.squareHit, a: _streak, b: gained);
+    } else {
+      _setHint(_ConnectHint.viral, a: _streak, b: gained, text: insect.viralReplik);
+    }
     _flashCells = group.toSet();
     _flashTimer?.cancel();
     _flashTimer = Timer(const Duration(milliseconds: 220), () {
@@ -508,7 +603,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       if (leftover > 0) {
         _score += leftover * 30;
         _clearTotal += leftover;
-        _hint = 'Bonus düşüş +${leftover * 30}';
+        _setHint(_ConnectHint.bonusDrop, a: leftover * 30);
       }
     }
     if (!_hasGroup()) _fill();
@@ -545,7 +640,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     _popTimer?.cancel();
     _popLen = len;
     _popText = '+$gained X$_streak';
-    _chainText = loop ? 'KARE · +$gained' : 'ZİNCİR X$_streak · +$gained';
+    _chainText = loop ? context.l10n.connectSquareChain(gained) : context.l10n.connectChainText(_streak, gained);
     _popTimer = Timer(const Duration(milliseconds: 1400), () {
       if (mounted) {
         setState(() {
@@ -568,7 +663,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     for (final m in const [400, 1000, 2000, 3500]) {
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
-        _showMilestone('SKOR $m!');
+        _showMilestone(context.l10n.scoreMilestone(m));
         break;
       }
     }
@@ -594,19 +689,22 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   Future<void> _endCheck(int epoch) async {
     if (!mounted || epoch != _epoch) return;
     if (_score >= target) {
+      // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
+      _moveMade = true;
       _won = true;
-      _hint = 'Hedef tuttu.';
+      _setHint(_ConnectHint.targetHit);
       HapticFeedback.heavyImpact();
       AudioManager().playWin();
       await _persist();
     } else if (_lines <= 0) {
+      _moveMade = true;
       _lost = true;
-      _hint = 'Çizgi hakkın bitti.';
+      _setHint(_ConnectHint.linesOut);
       HapticFeedback.heavyImpact();
       AudioManager().playLose();
       await _persist();
     } else {
-      _hint = 'Hedef $target · $_lines çizgi · streak x$_streak';
+      _setHint(_ConnectHint.loseHint, a: target, b: _lines, c: _streak);
     }
     if (mounted && epoch == _epoch) setState(() => _busy = false);
   }
@@ -645,19 +743,25 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     });
   }
 
+  /// Zincir Uzatıcı skor vermez; etkisi +3 çizgidir. Çizgi bedeli yoktur
+  /// (bedel, kalıcı stoktan harcanan 1 adettir); bedel koymak "+3" metnini
+  /// boşa çıkarırdı.
   bool _useChain() {
     if (_ended || _paused) return false;
     HapticFeedback.mediumImpact();
     AudioManager().playMerge(tierNumber: 2);
     setState(() {
       _lines += 3;
-      _hint = 'Zincir Uzatıcı aktif · +3 çizgi hakkı!';
-      _triggerPowerFx('chain', 'ZİNCİR UZATICI · +3 ÇİZGİ!');
+      _setHint(_ConnectHint.chainExtender);
+      _triggerPowerFx('chain', context.l10n.connectChainExtenderMilestone);
     });
     _showHint();
     return true;
   }
 
+  /// Yıldırım skoru bedava değildir: kalıcı stoktan 1 adet
+  /// (stockBonus/takePower) + 1 çizgi harcar. Çizgi bedeli, güç sonrası
+  /// çalışan _endCheck tarafından görülür.
   bool _useBolt() {
     if (_ended || _paused || _busy) return false;
     var best = <Point<int>>[];
@@ -677,19 +781,23 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
       for (final p in best) {
         _grid[p.x][p.y] = 0;
       }
+      _lines--;
       _score += gained;
       if (_score > _best) _best = _score;
       _clearTotal += best.length;
       _collapse();
       _showPop(best.length, gained, false);
-      _hint = 'Yıldırım / Tür Temizleyici ${best.length} böceği çarptı!';
-      _triggerPowerFx('bolt', 'YILDIRIM · +$gained PUAN!');
+      _setHint(_ConnectHint.bolt, a: best.length);
+      _triggerPowerFx('bolt', context.l10n.connectBoltMilestone(gained));
       _checkScoreMilestones();
     });
     unawaited(_endCheck(_epoch));
     return true;
   }
 
+  /// Mıknatıs skor vermez; yalnızca tahtada kare zinciri kurar. Skor,
+  /// oyuncunun kurulan kareyi çizmesiyle gelir ve o çizgi _commit'te 1 çizgi
+  /// harcar. Bu yüzden ayrıca çizgi bedeli yoktur; bedel stoktan 1 adettir.
   bool _useMagnet() {
     if (_ended || _paused || _busy) return false;
     final counts = List<int>.filled(maxKinds + 1, 0);
@@ -716,31 +824,23 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
         const Point(3, 2),
         const Point(3, 3),
       };
-      _hint = 'Mıknatıs / Bomba Halkası kare zinciri kurdu!';
-      _triggerPowerFx('magnet', 'MIKNATIS HALKASI · KARE HAZIR!');
+      _setHint(_ConnectHint.magnet);
+      _triggerPowerFx('magnet', context.l10n.connectMagnetMilestone);
     });
     return true;
   }
 
   Future<void> _presentResult() async {
     final coins = _score > 0 ? max(1, ResultScoring.coinsFor(_score)) : 0;
-    final stars = ResultScoring.starsFor(score: _score, best: _best);
-    if (coins > 0) {
-      await ProgressManager.instance.addCoins(coins);
-    }
-    if (_score > 0) {
-      await LeaderboardService.instance.submitScore(
-        LeaderboardService.modeConnect,
-        _score,
-      );
-    }
-    await ProgressManager.instance.recordTaskProgress('play');
-    if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + liderlik (yalnız skor > 0) + görev kaydı + sonuç
+    // ekranı finishRun() üzerinden (tek-ödeme korunur).
+    final replay = await finishRun(
       context,
       score: _score,
+      best: _best,
       coins: coins,
-      stars: stars,
+      leaderboardMode: LeaderboardService.modeConnect,
+      leaderboardOnlyIfPositiveScore: true,
     );
     if (!mounted) return;
     if (!replay) {
@@ -749,6 +849,20 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
     }
     _resultShown = false;
     _newGame();
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
+  ///
+  /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
+  /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
+  /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  void _maybeRefundEnergy() {
+    if (_energyRefunded) return;
+    if (!widget.energyConsumed || _moveMade || _ended || _resultShown) {
+      return;
+    }
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   void _edgeShowResult() {
@@ -762,31 +876,36 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
   @override
   Widget build(BuildContext context) {
     if (_ended && !_resultShown) _edgeShowResult();
-    return ArcadeScreen(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _maybeRefundEnergy();
+      },
+      child: ArcadeScreen(
       backgroundAsset: 'assets/design/backgrounds/connect_workshop.webp',
-      title: 'Bağla Patlat',
-      tag: 'ZİNCİR',
+      title: context.l10n.shopModeLinkPop,
+      tag: context.l10n.connectChainTag,
       tagColor: const Color(0xFFFFD700),
       tagTextColor: const Color(0xFF4A2E00),
       showStatusBar: true,
-      hint: _paused ? 'DURAKLATILDI' : _hint,
+      hint: _paused ? context.l10n.pausedStatusCaps : _hintString(context.l10n),
       score: _score,
       best: _best,
-      statLabel: 'ÇİZGİ',
+      statLabel: context.l10n.linesLabel,
       statValue: '$_lines',
       prototypeChrome: true,
       prototypeBaglaChrome: true,
       onRestart: _newGame,
       overlay: (_ended && !_resultShown)
           ? ArcadeResultOverlay(
-              title: _won ? 'BAĞLANDI' : 'HAK BİTTİ',
+              title: _won ? context.l10n.connectWonTitle : context.l10n.connectLostTitle,
               message: _statsLine(),
               score: _score,
               best: _best,
               won: _won,
-              modeTitle: 'Bağla Patlat',
+              modeTitle: context.l10n.shopModeLinkPop,
               shareLine: _statsLine(),
-              retryLabel: 'TEKRAR',
+              retryLabel: context.l10n.retryShort,
               onRetry: _newGame,
             )
           : _paused
@@ -815,7 +934,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                      ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
                     ],
                   ),
                 ),
@@ -824,31 +943,34 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
           : null,
       footer: ModeBonusBar(
         items: [
-          stockBonus(
+          stockBonusWithResult(
             id: 'chain',
-            label: 'ZİNCİR +',
+            label: context.l10n.powerChainPlus,
             asset: 'assets/icons2/flame.png',
             effect: () {
-              _useChain();
+              final applied = _useChain();
               setState(() {});
+              return applied;
             },
           ),
-          stockBonus(
+          stockBonusWithResult(
             id: 'bolt',
-            label: 'YILDIRIM',
+            label: context.l10n.powerLightningCaps,
             asset: 'assets/icons2/bolt.png',
             effect: () {
-              _useBolt();
+              final applied = _useBolt();
               setState(() {});
+              return applied;
             },
           ),
-          stockBonus(
+          stockBonusWithResult(
             id: 'magnet',
-            label: 'MIKNATIS',
+            label: context.l10n.powerMagnetCaps,
             asset: 'assets/icons2/magnet.png',
             effect: () {
-              _useMagnet();
+              final applied = _useMagnet();
               setState(() {});
+              return applied;
             },
           ),
         ],
@@ -961,7 +1083,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'HEDEF 1.600 · EN UZUN ZİNCİR $_longestPath',
+                                context.l10n.connectTargetLine(_longestPath),
                                 style: GoogleFonts.nunito(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w900,
@@ -1076,6 +1198,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
           );
         },
       ),
+      ),
     );
   }
 
@@ -1138,7 +1261,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen> {
                     child: Padding(
                       padding: EdgeInsets.all(_cellInset),
                       child: Image.asset(
-                        'assets/bugs/tier${tier}_hd.webp',
+                        'assets/bugs/tier${tier}_hd${tier == 5 ? '.webp' : '.png'}',
                         fit: BoxFit.contain,
                         filterQuality: FilterQuality.medium,
                         gaplessPlayback: true,

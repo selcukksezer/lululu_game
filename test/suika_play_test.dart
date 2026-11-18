@@ -9,6 +9,8 @@ import 'package:lululu_game/screens/game_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -36,15 +38,14 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: buildLululuTheme(),
-        home: GameScreen(
-          level: CampaignDatabase.kitchenLevel1,
-          arcade: true,
-        ),
+    await pumpWithL10n(
+      tester,
+      GameScreen(
+        level: CampaignDatabase.kitchenLevel1,
+        arcade: true,
       ),
+      debugShowCheckedModeBanner: false,
+      theme: buildLululuTheme(),
     );
     await tester.pump(const Duration(milliseconds: 80));
     expect(find.text('SIRADAKİ'), findsOneWidget);

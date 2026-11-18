@@ -202,7 +202,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
   bool _shouldAutoPauseGame = false;
   bool _isAudioPausedByLifecycle = false;
   bool _wasAudioMutedBeforePause = false;
-  bool _wasMusicEnabledBeforePause = true;
   bool _wasSfxEnabledBeforePause = true;
 
   DateTime _sessionStartedAt = DateTime.now();
@@ -219,6 +218,12 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Güncel uygulama yaşam döngüsü durumu.
   AppLifecycleState get currentState => _currentState;
+
+  /// `WidgetsBinding` gözlemcisinin bağlı olup olmadığı.
+  ///
+  /// Bağlama `main.dart` içinde `initialize()` ile yapılır; bu getter
+  /// bağlamanın gerçekleştiğini okuyarak doğrulamayı sağlar.
+  bool get isAttached => _isAttached;
 
   /// Aktif oyun modunun otomatik duraklatılması gerekip gerekmediği.
   bool get shouldAutoPauseGame => _shouldAutoPauseGame;
@@ -344,7 +349,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
     final audio = AudioManager.instance;
     if (!_isAudioPausedByLifecycle) {
       _wasAudioMutedBeforePause = audio.isMuted;
-      _wasMusicEnabledBeforePause = audio.musicEnabled;
       _wasSfxEnabledBeforePause = audio.sfxEnabled;
       _isAudioPausedByLifecycle = true;
     }
@@ -389,9 +393,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
     final audio = AudioManager.instance;
     if (_isAudioPausedByLifecycle) {
       audio.isMuted = _wasAudioMutedBeforePause;
-      if (_wasMusicEnabledBeforePause != audio.musicEnabled) {
-        audio.musicEnabled = _wasMusicEnabledBeforePause;
-      }
       if (_wasSfxEnabledBeforePause != audio.sfxEnabled) {
         audio.sfxEnabled = _wasSfxEnabledBeforePause;
       }
@@ -528,7 +529,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
     _shouldAutoPauseGame = false;
     _isAudioPausedByLifecycle = false;
     _wasAudioMutedBeforePause = false;
-    _wasMusicEnabledBeforePause = true;
     _wasSfxEnabledBeforePause = true;
     _sessionStartedAt = DateTime.now();
     _lastPausedAt = null;

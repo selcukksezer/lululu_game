@@ -6,11 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
-import '../screens/result_screen.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
@@ -20,8 +22,15 @@ import '../widgets/mode_bonus_bar.dart';
 class Match3Screen extends StatefulWidget {
   const Match3Screen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika `GameScreen` deseni). Doğrudan rota girişlerinde
+  /// `false` kalır.
+  final bool energyConsumed;
 
   @visibleForTesting
   final bool prototypeVisualState;
@@ -61,10 +70,21 @@ class _Match3ScreenState extends State<Match3Screen> {
   bool _lost = false;
   bool _resultShown = false;
   bool _paused = false;
+
+  /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk takas denemesi
+  /// (`_resolve`, eşleşmese de) veya tur tamamlanması (`_endCheck`)
+  /// ile `true` olur; TEKRAR/yeniden başlatmada SIFIRLANMAZ (Suika
+  /// `_dropsMade` deseni — oturum ömrü).
+  bool _moveMade = false;
+
+  /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+
   bool _swiped = false;
   Point<int>? _selected;
   Point<int>? _dragFrom;
-  String _hint = 'Komşuyu kaydır. 3 patlar · 4 = bomba.';
+  String _hint = '';
+  bool _hintSeeded = false;
 
   int _maxChain = 0;
   int _mergeTotal = 0;
@@ -101,6 +121,20 @@ class _Match3ScreenState extends State<Match3Screen> {
           (widget.prototypeVisualState
               ? _prototypeTileColors.length + bombBias
               : kinds + bombBias);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.match3HintIdle;
+    }
+  }
+
+  void _setIdleHint() {
+    // initState yolundan çağrılırsa tohum didChangeDependencies'te atılır.
+    if (_hintSeeded) _hint = context.l10n.match3HintIdle;
+  }
 
   @override
   void initState() {
@@ -141,15 +175,23 @@ class _Match3ScreenState extends State<Match3Screen> {
     });
   }
 
+  // Varsayılan stok YALNIZ ilk kurulumda verilir. ProgressManager.load()
+  // 'lululu_power_seed_v1' bayrağıyla 33 gücü bir kez tohumlar; tohumlanan
+  // anahtarlar extraPowers'ta kalıcı olur, takePower() ise anahtarı silmez,
+  // 0'a düşürür. "Hiç tohumlanmadı" bu yüzden anahtar yokluğuyla anlaşılır;
+  // eski "üçü de 0 ise doldur" koşulu her girişte bedava stok veriyordu.
+  // Tohumlama persistBoosters() ile kalıcı kaydedilir.
   void _ensureDefaultPowers() {
     final pm = ProgressManager();
-    if (pm.powerCount('hammer') == 0 &&
-        pm.powerCount('bomb3') == 0 &&
-        pm.powerCount('hunter') == 0) {
-      pm.extraPowers['hammer'] = 2;
-      pm.extraPowers['bomb3'] = 2;
-      pm.extraPowers['hunter'] = 1;
+    const defaults = <String, int>{'hammer': 2, 'bomb3': 2, 'hunter': 1};
+    var seeded = false;
+    for (final entry in defaults.entries) {
+      if (!pm.extraPowers.containsKey(entry.key)) {
+        pm.extraPowers[entry.key] = entry.value;
+        seeded = true;
+      }
     }
+    if (seeded) unawaited(pm.persistBoosters());
   }
 
   @override
@@ -208,7 +250,7 @@ class _Match3ScreenState extends State<Match3Screen> {
     _comboText = null;
     _gainText = null;
     _hintCells = [];
-    _hint = 'Komşuyu kaydır. 3 patlar · 4 = bomba.';
+    _setIdleHint();
     _deal();
     setState(() {});
   }
@@ -269,7 +311,7 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   void _reshuffle() {
     _deal();
-    _hint = 'Hamle kalmadı. Tahta karıştı.';
+    _hint = context.l10n.match3NoMovesShuffle;
   }
 
   bool _adjacent(Point<int> a, Point<int> b) =>
@@ -409,6 +451,9 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   Future<void> _resolve(int r0, int c0, int r1, int c1) async {
     if (_busy || _ended || _paused) return;
+    // Enerji iadesi sayacı: takas denemesi anında sayılır (eşleşme
+    // olmasa da hamle sayılır — Suika'da ıska atış gibi).
+    _moveMade = true;
     final epoch = _epoch;
     setState(() => _busy = true);
     _swap(r0, c0, r1, c1);
@@ -422,7 +467,7 @@ class _Match3ScreenState extends State<Match3Screen> {
       HapticFeedback.selectionClick();
       setState(() {
         _busy = false;
-        _hint = 'Eşleşme yok — hamle iptal.';
+        _hint = context.l10n.match3NoMatchCancel;
         _comboMeter = max(0, _comboMeter - 0.2);
       });
       return;
@@ -496,8 +541,8 @@ class _Match3ScreenState extends State<Match3Screen> {
         final base = voiceTier.clamp(1, kinds);
         _grid[bombAt.x][bombAt.y] = base + bombBias;
         _bombsMade++;
-        _hint = 'BOMBA oluştu!';
-        _showMilestone('BOMBA');
+        _hint = context.l10n.match3BombFormed;
+        _showMilestone(context.l10n.powerBombCaps);
         bombAt = null;
       }
 
@@ -533,7 +578,7 @@ class _Match3ScreenState extends State<Match3Screen> {
     for (final m in const [500, 1200, 2000, 3500]) {
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
-        _showMilestone('SKOR $m!');
+        _showMilestone(context.l10n.scoreMilestone(m));
         break;
       }
     }
@@ -561,12 +606,15 @@ class _Match3ScreenState extends State<Match3Screen> {
   Future<void> _endCheck(int epoch) async {
     if (!mounted || epoch != _epoch) return;
     if (_score >= target) {
+      // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
+      _moveMade = true;
       _won = true;
       _hint = 'Hedef tuttu.';
       HapticFeedback.heavyImpact();
       AudioManager().playWin();
       await _persist();
     } else if (_moves <= 0) {
+      _moveMade = true;
       _lost = true;
       _hint = 'Hamle bitti.';
       HapticFeedback.heavyImpact();
@@ -579,7 +627,7 @@ class _Match3ScreenState extends State<Match3Screen> {
   }
 
   String _statsLine() =>
-      'Birleşim $_mergeTotal · Max zincir x$_maxChain · Bomba $_bombsMade/$_bombsFired';
+      context.l10n.match3StatsLine(_mergeTotal, _maxChain, _bombsMade, _bombsFired);
 
   Point<int>? _cellAt(Offset local, double cell, double gap) {
     final stride = cell + gap;
@@ -669,6 +717,9 @@ class _Match3ScreenState extends State<Match3Screen> {
     await _endCheck(epoch);
   }
 
+  /// Güçler skor verir ama bedava değildir: kalıcı stoktan 1 adet
+  /// (stockBonus/takePower) + 1 hamle harcar. Hamle bedeli, güç sonrası
+  /// çalışan _resolveCascadeAfterPower → _endCheck tarafından görülür.
   bool _useHammer() {
     if (_ended || _paused || _busy) return false;
     final cell = _selected ?? _firstFilled();
@@ -677,13 +728,14 @@ class _Match3ScreenState extends State<Match3Screen> {
     AudioManager().playMerge(tierNumber: max(1, _base(_grid[cell.x][cell.y])));
     setState(() {
       _grid[cell.x][cell.y] = 0;
+      _moves--;
       _score += 48;
       if (_score > _best) _best = _score;
       _mergeTotal++;
-      _gainText = '+48 ÇEKİÇ!';
-      _hint = 'Çekiç seçili taşı kırdı!';
+      _gainText = context.l10n.match3HammerGain;
+      _hint = context.l10n.match3HammerBroke;
       _collapse();
-      _triggerPowerFx('hammer', 'ÇEKİÇ DARBESİ!');
+      _triggerPowerFx('hammer', context.l10n.match3HammerStrike);
     });
     unawaited(_resolveCascadeAfterPower());
     return true;
@@ -711,14 +763,15 @@ class _Match3ScreenState extends State<Match3Screen> {
         }
       }
       final gained = n * 22;
+      _moves--;
       _score += gained;
       if (_score > _best) _best = _score;
       _mergeTotal += n;
       _bombsFired++;
-      _gainText = '+$gained ROKET BOMBA!';
-      _hint = 'Satır Roketi & 3x3 Bomba $n taşı uçurdu!';
+      _gainText = context.l10n.match3RocketBombGain(gained);
+      _hint = context.l10n.match3RocketHint(n);
       _collapse();
-      _triggerPowerFx('bomb3', 'ROKET & 3x3 BOMBA!');
+      _triggerPowerFx('bomb3', context.l10n.match3RocketFx);
     });
     unawaited(_resolveCascadeAfterPower());
     return true;
@@ -749,14 +802,15 @@ class _Match3ScreenState extends State<Match3Screen> {
         }
       }
       final gained = n * 20;
+      _moves--;
       _score += gained;
       if (_score > _best) _best = _score;
       _mergeTotal += n;
-      _comboText = 'RENK KÜRESİ!';
-      _gainText = '+$gained AVCI!';
-      _hint = 'Renk Küresi / Avcı $n aynı tür böceği temizledi!';
+      _comboText = context.l10n.match3SphereCallout;
+      _gainText = context.l10n.match3HunterGain(gained);
+      _hint = context.l10n.match3SphereHint(n);
       _collapse();
-      _triggerPowerFx('hunter', 'RENK KÜRESİ · $n BÖCEK!');
+      _triggerPowerFx('hunter', context.l10n.match3SphereFx(n));
     });
     unawaited(_resolveCascadeAfterPower());
     return true;
@@ -769,21 +823,14 @@ class _Match3ScreenState extends State<Match3Screen> {
 
   Future<void> _presentResult() async {
     if (_score > _best) _best = _score;
-    final coins = ResultScoring.coinsFor(_score);
-    final stars = ResultScoring.starsFor(score: _score, best: _best);
-    await ProgressManager.instance.addCoins(coins);
-    await ProgressManager.instance.recordTaskProgress('play');
-    await ProgressManager.instance.recordModeScore('match3', _score);
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeMatch3,
-      _score,
-    );
-    if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + mod skoru + liderlik + görev kaydı + sonuç ekranı
+    // finishRun() üzerinden (tek-ödeme korunur).
+    final replay = await finishRun(
       context,
       score: _score,
-      coins: coins,
-      stars: stars,
+      best: _best,
+      leaderboardMode: LeaderboardService.modeMatch3,
+      modeScoreId: 'match3',
     );
     if (!mounted) return;
     if (!replay) {
@@ -791,6 +838,20 @@ class _Match3ScreenState extends State<Match3Screen> {
       return;
     }
     _reset();
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
+  ///
+  /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
+  /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
+  /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  void _maybeRefundEnergy() {
+    if (_energyRefunded) return;
+    if (!widget.energyConsumed || _moveMade || _ended || _resultShown) {
+      return;
+    }
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   void _edgeShowResult() {
@@ -806,14 +867,14 @@ class _Match3ScreenState extends State<Match3Screen> {
     if (_ended && !_resultShown) _edgeShowResult();
     final overlayWidget = (_ended && !_resultShown)
         ? ArcadeResultOverlay(
-            title: _won ? 'HEDEF' : 'HAMLE BİTTİ',
+            title: _won ? context.l10n.targetTitle : context.l10n.movesOutTitle,
             message: _statsLine(),
             score: _score,
             best: _best,
             won: _won,
             modeTitle: 'Match 3',
             shareLine: _statsLine(),
-            retryLabel: 'TEKRAR',
+            retryLabel: context.l10n.retryShort,
             onRetry: _newGame,
           )
         : _paused
@@ -842,7 +903,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                    ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
                   ],
                 ),
               ),
@@ -851,31 +912,34 @@ class _Match3ScreenState extends State<Match3Screen> {
         : null;
 
     final bonusItems = [
-      stockBonus(
+      stockBonusWithResult(
         id: 'hammer',
-        label: 'ÇEKİÇ',
+        label: context.l10n.powerHammerCaps,
         asset: 'assets/icons2/hammer.png',
         effect: () {
-          _useHammer();
+          final applied = _useHammer();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'bomb3',
-        label: 'BOMBA',
+        label: context.l10n.powerBombCaps,
         asset: 'assets/icons2/boom.png',
         effect: () {
-          _useBomb3();
+          final applied = _useBomb3();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'hunter',
-        label: 'AVCI',
+        label: context.l10n.powerHunterCaps,
         asset: 'assets/icons2/gem_blue.png',
         effect: () {
-          _useHunter();
+          final applied = _useHunter();
           setState(() {});
+          return applied;
         },
       ),
     ];
@@ -1008,7 +1072,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'HEDEF 3.000',
+                        context.l10n.targetWithValue('3.000'),
                         style: GoogleFonts.nunito(
                           fontSize: 11,
                           height: 1.55,
@@ -1175,11 +1239,17 @@ class _Match3ScreenState extends State<Match3Screen> {
       },
     );
 
-    return _buildMatch3PrototypeChrome(
-      context: context,
-      stageChild: stageChild,
-      bonusItems: bonusItems,
-      overlayWidget: overlayWidget,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _maybeRefundEnergy();
+      },
+      child: _buildMatch3PrototypeChrome(
+        context: context,
+        stageChild: stageChild,
+        bonusItems: bonusItems,
+        overlayWidget: overlayWidget,
+      ),
     );
   }
 
@@ -1235,7 +1305,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'MATCH 3 · NASIL OYNANIR?',
+                      '${ctx.l10n.match3Title} ${ctx.l10n.howToPlaySuffix}',
                       style: GoogleFonts.baloo2(
                         fontSize: 18,
                         height: 1.1,
@@ -1279,7 +1349,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                   ),
                   onPressed: () => Navigator.of(ctx).pop(),
                   child: Text(
-                    'ANLADIM, OYNA!',
+                    ctx.l10n.gotItPlay,
                     style: GoogleFonts.baloo2(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -1357,9 +1427,9 @@ class _Match3ScreenState extends State<Match3Screen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    ArcadeStat(label: 'SKOR', value: _formatTrInt(_score)),
-                    ArcadeStat(label: 'REKOR', value: _formatTrInt(_best)),
-                    ArcadeStat(label: 'HAMLE', value: '$_moves'),
+                    ArcadeStat(label: context.l10n.gameScoreLabel, value: _formatTrInt(_score)),
+                    ArcadeStat(label: context.l10n.gameBestLabel, value: _formatTrInt(_best)),
+                    ArcadeStat(label: context.l10n.movesLabelCaps, value: '$_moves'),
                   ],
                 ),
               ),
@@ -1413,7 +1483,10 @@ class _Match3ScreenState extends State<Match3Screen> {
                           top: 6,
                           width: 48,
                           height: 48,
-                          child: GestureDetector(
+                          child: Semantics(
+                            button: true,
+                            label: context.l10n.goBackLabel,
+                            child: GestureDetector(
                             onTap: () => Navigator.maybePop(context),
                             behavior: HitTestBehavior.opaque,
                             child: Container(
@@ -1435,6 +1508,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 fit: BoxFit.contain,
                               ),
                             ),
+                          ),
                           ),
                         ),
                         Positioned(
@@ -1526,15 +1600,19 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 Expanded(
                                   child: Transform.translate(
                                     offset: const Offset(0, -1),
-                                    child: Text(
-                                      coinsText,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.visible,
-                                      style: GoogleFonts.nunito(
-                                        fontSize: 13.5,
-                                        height: 1.2,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        coinsText,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.nunito(
+                                          fontSize: 13.5,
+                                          height: 1.2,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1548,7 +1626,10 @@ class _Match3ScreenState extends State<Match3Screen> {
                           top: 6,
                           width: 48,
                           height: 48,
-                          child: GestureDetector(
+                          child: Semantics(
+                            button: true,
+                            label: context.l10n.helpButtonLabel,
+                            child: GestureDetector(
                             onTap: () => _showHelpModal(context),
                             behavior: HitTestBehavior.opaque,
                             child: Container(
@@ -1578,6 +1659,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                               ),
                             ),
                           ),
+                          ),
                         ),
                       ],
                     ),
@@ -1594,7 +1676,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                           width: 104,
                           height: 51,
                           child: _buildHudStatBox(
-                            label: 'SKOR',
+                            label: context.l10n.gameScoreLabel,
                             value: _formatTrInt(_score),
                             valueDx: -1,
                           ),
@@ -1605,7 +1687,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                           width: 84,
                           height: 51,
                           child: _buildHudStatBox(
-                            label: 'REKOR',
+                            label: context.l10n.gameBestLabel,
                             value: _formatTrInt(_best),
                             valueDx: -1,
                           ),
@@ -1616,7 +1698,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                           width: 74,
                           height: 51,
                           child: _buildHudStatBox(
-                            label: 'HAMLE',
+                            label: context.l10n.movesLabelCaps,
                             value: '$_moves',
                           ),
                         ),
@@ -1625,7 +1707,10 @@ class _Match3ScreenState extends State<Match3Screen> {
                           top: 9.2,
                           width: 57.8,
                           height: 48,
-                          child: GestureDetector(
+                          child: Semantics(
+                            button: true,
+                            label: context.l10n.finishRoundLabel,
+                            child: GestureDetector(
                             onTap: _newGame,
                             behavior: HitTestBehavior.opaque,
                             child: Container(
@@ -1641,7 +1726,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 ],
                               ),
                               child: Text(
-                                'BİTİR',
+                                context.l10n.finishCaps,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 12.5,
                                   height: 1.1,
@@ -1651,6 +1736,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 ),
                               ),
                             ),
+                          ),
                           ),
                         ),
                       ],
@@ -1730,7 +1816,7 @@ class _Match3ScreenState extends State<Match3Screen> {
               label,
               maxLines: 1,
               softWrap: false,
-              overflow: TextOverflow.visible,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.nunito(
                 fontSize: 10,
                 height: 1.55,
@@ -1740,18 +1826,24 @@ class _Match3ScreenState extends State<Match3Screen> {
               ),
             ),
           ),
-          Transform.translate(
-            offset: Offset(valueDx, 0),
-            child: Text(
-              value,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.visible,
-              style: GoogleFonts.baloo2(
-                fontSize: 21,
-                height: 1.0,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Transform.translate(
+                offset: Offset(valueDx, 0),
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.baloo2(
+                    fontSize: 21,
+                    height: 1.0,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
           ),

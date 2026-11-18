@@ -73,14 +73,6 @@ class HapticService {
     } catch (_) {}
   }
 
-  /// Orta şiddette dokunuş geri bildirimi.
-  Future<void> mediumImpact() async {
-    if (!_canTrigger()) return;
-    try {
-      await HapticFeedback.mediumImpact();
-    } catch (_) {}
-  }
-
   /// Güçlü darbe geri bildirimi.
   Future<void> heavyImpact() async {
     if (!_canTrigger()) return;
@@ -125,26 +117,6 @@ class HapticService {
     } else {
       await HapticFeedback.lightImpact();
     }
-  }
-
-  /// Zincirleme kombo (`x2`, `x4`, `x8+`) vurgu titreşimi.
-  Future<void> onCombo(int combo) async {
-    if (combo <= 1 || !_canTrigger()) return;
-    try {
-      if (await _supportsCustomVibration()) {
-        final pulses = combo >= 5 ? 3 : 2;
-        for (var i = 0; i < pulses; i++) {
-          if (!isEnabled || _isTestEnvironment) return;
-          await Vibration.vibrate(duration: math.min(90, 26 + combo * 9));
-          if (i + 1 < pulses) {
-            await Future<void>.delayed(const Duration(milliseconds: 45));
-          }
-        }
-        return;
-      }
-    } catch (_) {}
-
-    await HapticFeedback.heavyImpact();
   }
 
   /// Anne Terliği şaplağı (`ŞAK!`) — keskin darbe hissi.

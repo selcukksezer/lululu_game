@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/achievement_pass_service.dart';
 import '../services/progress_manager.dart';
 
@@ -154,9 +155,9 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
                               children: [
                                 Row(
                                   children: [
-                                    const Flexible(
+                                    Flexible(
                                       child: Text(
-                                        'BAŞARIM AÇILDI!',
+                                        context.l10n.achievementUnlockedTitle,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -180,7 +181,7 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
                                               BorderRadius.circular(8),
                                         ),
                                         child: Text(
-                                          '+${item.coinReward} 🪙 · +${item.seasonXpReward} XP',
+                                          context.l10n.achievementRewardLine(item.coinReward, item.seasonXpReward),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
@@ -206,7 +207,7 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
                                 ),
                                 if (item.rewardTitle.isNotEmpty)
                                   Text(
-                                    'Unvan: ${item.rewardTitle}',
+                                    context.l10n.titleRewardLine(item.rewardTitle),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -220,6 +221,7 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
                           ),
                           IconButton(
                             key: const Key('achievement_toast_close_btn'),
+                            tooltip: context.l10n.closeLabel,
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
@@ -345,7 +347,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'USTALIK & LÜLÜLÜ PASS',
+                context.l10n.masteryPassTitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -355,7 +357,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                 ),
               ),
               Text(
-                'Unvan: ${service.selectedTitle} · $unlockedCount/$totalCount Başarım',
+                context.l10n.masteryHeaderLine(service.selectedTitle, unlockedCount, totalCount),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -408,7 +410,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
             children: [
               Expanded(
                 child: Text(
-                  'Sezon Kademesi: $tier / 20  ($xp / $nextXp XP)',
+                  context.l10n.seasonTierLine(tier, xp, nextXp),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -419,34 +421,38 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                 ),
               ),
               const SizedBox(width: 6),
-              GestureDetector(
-                key: const Key('gold_pass_toggle_btn'),
-                onTap: () {
-                  if (!service.hasGoldPass) {
-                    service.activateGoldPass();
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: service.hasGoldPass
-                          ? const [Color(0xFFFFD54F), Color(0xFFFF8F00)]
-                          : const [Color(0xFF4A3B63), Color(0xFF33264A)],
+              Semantics(
+                button: true,
+                label: service.hasGoldPass ? context.l10n.goldPassActive : context.l10n.goldPassOpen,
+                child: GestureDetector(
+                  key: const Key('gold_pass_toggle_btn'),
+                  onTap: () {
+                    if (!service.hasGoldPass) {
+                      service.activateGoldPass();
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
                     ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    service.hasGoldPass ? 'ALTIN BİLET AKTİF' : 'ALTIN BİLET AÇ',
-                    style: TextStyle(
-                      color: service.hasGoldPass
-                          ? const Color(0xFF261600)
-                          : const Color(0xFFFFD54F),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: service.hasGoldPass
+                            ? const [Color(0xFFFFD54F), Color(0xFFFF8F00)]
+                            : const [Color(0xFF4A3B63), Color(0xFF33264A)],
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      service.hasGoldPass ? context.l10n.goldPassActive : context.l10n.goldPassOpen,
+                      style: TextStyle(
+                        color: service.hasGoldPass
+                            ? const Color(0xFF261600)
+                            : const Color(0xFFFFD54F),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                 ),
@@ -480,7 +486,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
           child: _TabButton(
             key: const Key('tab_achievements_btn'),
             label:
-                '30 Başarım (${service.unlockedAchievementIds.length}/30)',
+                context.l10n.achievementsCountLine(service.unlockedAchievementIds.length),
             selected: _tabIndex == 0,
             onTap: () => setState(() => _tabIndex = 0),
           ),
@@ -489,7 +495,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
         Expanded(
           child: _TabButton(
             key: const Key('tab_season_pass_btn'),
-            label: 'Lülülü Pass (${service.currentPassTier}/20)',
+            label: context.l10n.passTierLabel(service.currentPassTier),
             selected: _tabIndex == 1,
             onTap: () => setState(() => _tabIndex = 1),
           ),
@@ -515,7 +521,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
             scrollDirection: Axis.horizontal,
             children: [
               _CategoryChip(
-                label: 'Tümü (30)',
+                label: context.l10n.allAchievementsLabel,
                 selected: _selectedCategory == null,
                 onTap: () => setState(() => _selectedCategory = null),
               ),
@@ -595,7 +601,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                '+${def.coinReward}🪙 +${def.seasonXpReward}XP',
+                                context.l10n.achievementRewardCompact(def.coinReward, def.seasonXpReward),
                                 style: const TextStyle(
                                   color: Color(0xFFFFD54F),
                                   fontSize: 10,
@@ -635,7 +641,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                               const SizedBox(width: 8),
                               Text(
                                 unlocked
-                                    ? 'AÇILDI'
+                                    ? context.l10n.unlockedShort
                                     : '$progress/${def.targetValue}',
                                 style: TextStyle(
                                   color: unlocked
@@ -733,7 +739,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
               Expanded(
                 child: _PassRewardTrackTile(
                   trackKey: Key('pass_free_btn_${tierDef.tier}'),
-                  trackTitle: 'ÜCRETSİZ',
+                  trackTitle: context.l10n.freeTrackTitle,
                   reward: tierDef.freeReward,
                   claimed: freeClaimed,
                   canClaim: canClaimFree,
@@ -748,7 +754,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
               Expanded(
                 child: _PassRewardTrackTile(
                   trackKey: Key('pass_gold_btn_${tierDef.tier}'),
-                  trackTitle: 'ALTIN BİLET',
+                  trackTitle: context.l10n.goldPassTitle,
                   reward: tierDef.goldReward,
                   claimed: goldClaimed,
                   canClaim: canClaimGold,
@@ -781,27 +787,32 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFFFB300) : const Color(0xFF241938),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color:
-                selected ? const Color(0xFFFFE082) : const Color(0xFF473568),
+    return Semantics(
+      button: true,
+      label: label,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFB300) : const Color(0xFF241938),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color:
+                  selected ? const Color(0xFFFFE082) : const Color(0xFF473568),
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: selected ? const Color(0xFF231400) : Colors.white,
-            fontSize: 11.5,
-            fontWeight: FontWeight.w900,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: selected ? const Color(0xFF231400) : Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
       ),
@@ -823,25 +834,30 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFF5E35B1) : const Color(0xFF231934),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color:
-                selected ? const Color(0xFFD1C4E9) : const Color(0xFF453263),
+    return Semantics(
+      button: true,
+      label: label,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF5E35B1) : const Color(0xFF231934),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color:
+                  selected ? const Color(0xFFD1C4E9) : const Color(0xFF453263),
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
       ),
@@ -870,82 +886,87 @@ class _PassRewardTrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      key: trackKey,
-      onTap: canClaim ? onTap : null,
-      child: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: isGold ? const Color(0xFF2E2210) : const Color(0xFF1D152E),
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(
-            color: canClaim
-                ? const Color(0xFF66BB6A)
-                : (isGold
-                    ? const Color(0xFFFFB300)
-                    : const Color(0xFF47366B)),
+    return Semantics(
+      button: true,
+      enabled: canClaim,
+      label: canClaim ? "$trackTitle, ${reward.label}, ${context.l10n.claimReward}" : "$trackTitle, ${reward.label}",
+      child: GestureDetector(
+        key: trackKey,
+        onTap: canClaim ? onTap : null,
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: isGold ? const Color(0xFF2E2210) : const Color(0xFF1D152E),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: canClaim
+                  ? const Color(0xFF66BB6A)
+                  : (isGold
+                      ? const Color(0xFFFFB300)
+                      : const Color(0xFF47366B)),
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Text(reward.iconEmoji, style: const TextStyle(fontSize: 13)),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    trackTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isGold
-                          ? const Color(0xFFFFD54F)
-                          : const Color(0xFFB39DDB),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text(reward.iconEmoji, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      trackTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isGold
+                            ? const Color(0xFFFFD54F)
+                            : const Color(0xFFB39DDB),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              reward.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
+                ],
               ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: claimed
-                    ? const Color(0xFF2E4A31)
-                    : (canClaim
-                        ? const Color(0xFF43A047)
-                        : const Color(0xFF2A203B)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                claimed ? 'ALINDI' : (canClaim ? 'TOPLA' : 'KİLİTLİ'),
+              const SizedBox(height: 2),
+              Text(
+                reward.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: claimed
+                      ? const Color(0xFF2E4A31)
+                      : (canClaim
+                          ? const Color(0xFF43A047)
+                          : const Color(0xFF2A203B)),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  claimed ? context.l10n.claimedShort : (canClaim ? context.l10n.collectButton : context.l10n.lockedLabel),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

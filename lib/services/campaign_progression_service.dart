@@ -176,6 +176,14 @@ class CampaignProgressionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hesap silme için yerel kampanya verisinin tamamını temizler
+  /// (hesap-silme, yerel-temizlik). [resetForTesting] gövdesi yalnız
+  /// bellek-içi temizlik + 5 prefs anahtarının kaldırılması yapar
+  /// (yan etkisi yok), bu yüzden üretimdeki silme aynı mantığı bu
+  /// metot üzerinden çağırır; testler `resetForTesting` adını
+  /// kullanmaya devam eder.
+  Future<void> clearLocalData() => resetForTesting();
+
   /// Seviye için kazanılan yıldız sayısını (`0..3`) döndürür.
   int getStarsForLevel(int levelNumber) {
     final safeId = levelNumber.clamp(1, CampaignDatabase.totalLevels);
@@ -278,11 +286,19 @@ class CampaignProgressionService extends ChangeNotifier {
 
   /// Seviye tamamlandığında yıldız, en yüksek skor ve tamamlanma durumunu
   /// `SharedPreferences` ve `ProgressManager.instance` ile senkronize ederek kaydeder.
+  ///
+  /// Tamamlanma, yıldızdan değil zaferden okunur (S1#23 yan etkisi):
+  /// [victory] `true` ise 0 yıldızlı zafer de tamamlanma sayılır (sonraki
+  /// seviye açılır, ilk geçiş ödülleri verilir, önceki yıldız ezilmez);
+  /// `false` ise yalnız yüksek skor güncellenir, kilit açılmaz ve
+  /// tamamlanma işaretlenmez. [victory] verilmezse (`null`, varsayılan)
+  /// eski davranış korunur: tamamlanma yıldız > 0 ile eşdeğerdir.
   Future<LevelCompletionSummary> recordLevelCompletion({
     required int levelNumber,
     required int score,
     int remainingMoves = 0,
     int? explicitStars,
+    bool? victory,
   }) async {
     final safeId = levelNumber.clamp(1, CampaignDatabase.totalLevels);
     final level = CampaignDatabase.getLevel(safeId);
@@ -301,21 +317,29 @@ class CampaignProgressionService extends ChangeNotifier {
     final nextStars = calculatedStars > prevStars ? calculatedStars : prevStars;
     final nextScore = score > prevScore ? score : prevScore;
 
+    // Zafer bilgisi verilmezse eski kural aynen korunur: tamamlanma = yıldız > 0.
+    final completed = victory ?? (calculatedStars > 0);
+
     _levelHighScores[safeId] = nextScore;
 
     int coinsAwarded = 0;
     int bossBonus = 0;
 
-    if (calculatedStars > 0) {
-      _levelStars[safeId] = nextStars;
+    if (completed) {
+      // Yıldız haritası yalnız yıldız kazanıldığında yazılır: 0 yıldızlı
+      // zafer önceki yıldızı ezmez.
+      if (calculatedStars > 0) {
+        _levelStars[safeId] = nextStars;
+      }
       _completedLevels.add(safeId);
 
-      // ProgressManager.recordLevelResult zaten stars * 50 altın verir ve sonraki seviyeyi açar
+      // ProgressManager.recordLevelResult starGain*50 altin verir ve sonraki seviyeyi acar
       final coinsBefore = ProgressManager.instance.coins;
       await ProgressManager.instance.recordLevelResult(
         levelId: safeId,
         score: nextScore,
         stars: calculatedStars,
+        victory: true,
       );
       coinsAwarded += (ProgressManager.instance.coins - coinsBefore);
 
@@ -334,10 +358,12 @@ class CampaignProgressionService extends ChangeNotifier {
         coinsAwarded += bossBonus;
       }
     } else if (score > prevScore) {
+      // Yenilgi / tamamlanmama: yalnız yüksek skor güncellenir, kilit açılmaz.
       await ProgressManager.instance.recordLevelResult(
         levelId: safeId,
         score: nextScore,
         stars: 0,
+        victory: false,
       );
     }
 
@@ -352,7 +378,7 @@ class CampaignProgressionService extends ChangeNotifier {
       bestScore: nextScore,
       coinsAwarded: coinsAwarded,
       bossFirstClearBonusCoins: bossBonus,
-      isNewCompletion: !wasCompleted && calculatedStars > 0,
+      isNewCompletion: !wasCompleted && completed,
     );
   }
 

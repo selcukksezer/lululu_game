@@ -1,11 +1,13 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
+import '../services/auth_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
-class LeaderboardScreen extends StatelessWidget {
+class LeaderboardScreen extends StatefulWidget {
   final bool embedded;
   final bool showBackButton;
   final VoidCallback? onClose;
@@ -14,10 +16,36 @@ class LeaderboardScreen extends StatelessWidget {
   const LeaderboardScreen({
     super.key,
     this.embedded = false,
-    this.showBackButton = false,
+    // Bağımsız açılışta geri düğmesi varsayılan olarak açıktır. Gömülü
+    // (ana sekme içi) kullanımda geri düğmesi gizlenir; bkz. _handleBack.
+    // Çağrıcılar: game_routes `const LeaderboardScreen()` (bağımsız),
+    // home_shell `LeaderboardScreen(embedded: true)` (gömülü) — ikisi de bozulmaz.
+    this.showBackButton = true,
     this.onClose,
     this.onSelectDockTab,
   });
+
+  @override
+  State<LeaderboardScreen> createState() => _LeaderboardScreenState();
+}
+
+class _LeaderboardScreenState extends State<LeaderboardScreen> {
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _boot();
+  }
+
+  Future<void> _boot() async {
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+    } catch (_) {
+      // Yerel kayıt okunamazsa bile iskelet ekranda takılı kalmasın.
+    }
+    if (mounted) setState(() => _loading = false);
+  }
 
   static String _formatScore(int value) {
     final s = value.toString();
@@ -31,9 +59,22 @@ class LeaderboardScreen extends StatelessWidget {
     return buf.toString();
   }
 
+  void _handleBack() {
+    if (widget.onClose != null) {
+      widget.onClose!();
+      return;
+    }
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+    // Yığında ekran yoksa (bağımsız/ilk açılış): ana sekmeye git.
+    goTo(context, LululuRoutes.hub, replace: true);
+  }
+
   void _handleDockSelect(BuildContext context, LululuDockTab tab) {
-    if (onSelectDockTab != null) {
-      onSelectDockTab!(tab);
+    if (widget.onSelectDockTab != null) {
+      widget.onSelectDockTab!(tab);
       return;
     }
     if (tab == LululuDockTab.scores) return;
@@ -51,6 +92,7 @@ class LeaderboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([
+        AuthService.instance,
         ProgressManager.instance,
         LeaderboardService.instance,
       ]),
@@ -58,11 +100,28 @@ class LeaderboardScreen extends StatelessWidget {
         final int myScoreVal = 7915 + ProgressManager.instance.total11ModesScore;
         final myScoreText = _formatScore(myScoreVal);
 
+        // SEN satırı (W101-2): seviye top_bar.dart:54 +
+        // profile_screen.dart:165'teki formülle aynı
+        // (unlockedLevel > 1 ? 17 + unlockedLevel : 18); ad
+        // AuthService.displayName, giriş yoksa 'LülüSever' yedeği
+        // (leaderboard_service.dart:577-578 ile aynı).
+        final int myLevel = ProgressManager.instance.unlockedLevel > 1
+            ? (17 + ProgressManager.instance.unlockedLevel)
+            : 18;
+        final String myDisplayName = AuthService.instance.isSignedIn
+            ? AuthService.instance.displayName
+            : 'LülüSever';
+
+        // Gerçek kayıtlar (yalnızca gerçek oyuncular): boşsa boş durum bandı
+        // gösterilir. Yükleme bitmeden bu dala düşülmez — _loading iskelet çizer.
+        final isBoardEmpty =
+            LeaderboardService.instance.getOverallTop().isEmpty;
+
         final scoreItems = <_ScoreRowData>[
-          const _ScoreRowData(
+          _ScoreRowData(
             rank: 4,
             name: 'TerlikUstası',
-            level: 'Seviye 24',
+            level: context.l10n.levelWithValue(24),
             score: '8.540',
             avatar: 'assets/design/bugs_hd/tier4_hd.png',
             imgTop: 2.4,
@@ -70,36 +129,36 @@ class LeaderboardScreen extends StatelessWidget {
           ),
           _ScoreRowData(
             rank: 5,
-            name: 'SEN · LülüSever',
-            level: 'Seviye 18',
+            name: context.l10n.youAsName(myDisplayName),
+            level: context.l10n.levelWithValue(myLevel),
             score: myScoreText,
             avatar: 'assets/design/bugs_hd/tier5_hd.png',
             imgTop: 4.3,
             imgHeight: 62.3,
             isMe: true,
           ),
-          const _ScoreRowData(
+          _ScoreRowData(
             rank: 6,
             name: 'MakaraMehmet',
-            level: 'Seviye 21',
+            level: context.l10n.levelWithValue(21),
             score: '7.402',
             avatar: 'assets/design/bugs_hd/tier3_hd.png',
             imgTop: 2.4,
             imgHeight: 35.2,
           ),
-          const _ScoreRowData(
+          _ScoreRowData(
             rank: 7,
             name: 'HuniKafa',
-            level: 'Seviye 15',
+            level: context.l10n.levelWithValue(15),
             score: '6.988',
             avatar: 'assets/design/bugs_hd/tier1_hd.png',
             imgTop: 5.6,
             imgHeight: 82.6,
           ),
-          const _ScoreRowData(
+          _ScoreRowData(
             rank: 8,
             name: 'BilgeDede',
-            level: 'Seviye 27',
+            level: context.l10n.levelWithValue(27),
             score: '6.511',
             avatar: 'assets/design/bugs_hd/tier8_hd.png',
             imgTop: 3.2,
@@ -126,10 +185,14 @@ class LeaderboardScreen extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          if (showBackButton || onClose != null) ...[
-                            GestureDetector(
-                              onTap: onClose ??
-                                  () => Navigator.of(context).maybePop(),
+                          if (!widget.embedded &&
+                              (widget.showBackButton ||
+                                  widget.onClose != null)) ...[
+                            Semantics(
+                              button: true,
+                              label: context.l10n.goBackLabel,
+                              child: GestureDetector(
+                              onTap: _handleBack,
                               child: Container(
                                 width: 35,
                                 height: 35,
@@ -153,6 +216,7 @@ class LeaderboardScreen extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            ),
                             const SizedBox(width: 8),
                           ],
                           Expanded(
@@ -160,8 +224,8 @@ class LeaderboardScreen extends StatelessWidget {
                               padding: const EdgeInsets.only(left: 2),
                               child: Transform.translate(
                                 offset: const Offset(0, -1),
-                                child: const Text(
-                                  'SKOR TABLOSU',
+                                child: Text(
+                                  context.l10n.leaderboardTitle,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   textHeightBehavior: TextHeightBehavior(
@@ -210,8 +274,8 @@ class LeaderboardScreen extends StatelessWidget {
                                   child: Transform.scale(
                                     scaleX: 1.02,
                                     scaleY: 1.0,
-                                    child: const Text(
-                                      'Haftalık',
+                                    child: Text(
+                                      context.l10n.weeklyLabel,
                                       style: TextStyle(
                                         fontFamily: 'Nunito',
                                         fontSize: 13.5,
@@ -231,9 +295,12 @@ class LeaderboardScreen extends StatelessWidget {
 
                     // .scroll
                     Expanded(
-                      child: ListView(
+                      child: _loading
+                          ? _buildLoadingSkeleton()
+                          : ListView(
                         padding: const EdgeInsets.only(bottom: 120),
                         children: [
+                          if (isBoardEmpty) _buildEmptyStateBanner(),
                           // .podium (y=82, h=190, padding: 14px 16px 4px 16px)
                           Container(
                             height: 190,
@@ -327,7 +394,7 @@ class LeaderboardScreen extends StatelessWidget {
                 ),
               ),
 
-              if (!embedded)
+              if (!widget.embedded)
                 Positioned(
                   left: 10,
                   right: 10,
@@ -342,6 +409,138 @@ class LeaderboardScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _skeletonBox({
+    required double width,
+    required double height,
+    bool circle = false,
+  }) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE3E7EF),
+        borderRadius: circle ? null : BorderRadius.circular(12),
+        shape: circle ? BoxShape.circle : BoxShape.rectangle,
+      ),
+    );
+  }
+
+  /// Yükleme iskeleti: gerçek kayıtlar okunurken podyum + satır yer tutucuları.
+  Widget _buildLoadingSkeleton() {
+    return Semantics(
+      label: context.l10n.leaderboardLoadingLabel,
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 120),
+        children: [
+          const LinearProgressIndicator(
+            minHeight: 4,
+            backgroundColor: Color(0xFFE3E7EF),
+            color: Color(0xFFFFB800),
+          ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _skeletonBox(width: 64, height: 110),
+                const SizedBox(width: 10),
+                _skeletonBox(width: 78, height: 140),
+                const SizedBox(width: 10),
+                _skeletonBox(width: 64, height: 100),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          for (var i = 0; i < 5; i++)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Container(
+                height: 61,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    _skeletonBox(width: 40, height: 40, circle: true),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _skeletonBox(width: 140, height: 14),
+                          const SizedBox(height: 6),
+                          _skeletonBox(width: 90, height: 11),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Boş durum bandı: gerçek kayıtlarda hiç skor yokken gösterilir.
+  Widget _buildEmptyStateBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFFB800), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Image.asset(
+              'assets/icons2/trophy.png',
+              width: 28,
+              height: 28,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.l10n.noScoresYet,
+                    style: TextStyle(
+                      fontFamily: 'Baloo 2',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF141B2A),
+                      height: 1.2,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    context.l10n.noScoresHint,
+                    style: TextStyle(
+                      fontFamily: 'Nunito',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF66738A),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -679,21 +878,17 @@ class _MeRowOutlinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final innerRRect = RRect.fromRectAndRadius(
+    final rrect = RRect.fromRectAndRadius(
       Offset.zero & size,
       const Radius.circular(16),
     );
-    final outerRRect = innerRRect.inflate(2.0);
-    final ringPath = Path.combine(
-      PathOperation.difference,
-      Path()..addRRect(outerRRect),
-      Path()..addRRect(innerRRect),
-    );
-    canvas.drawPath(
-      ringPath,
+    // Dış hat kontur olarak çizilir (dolgu + yol farkı değil).
+    canvas.drawRRect(
+      rrect,
       Paint()
         ..color = const Color(0xFFE01E5A)
-        ..style = PaintingStyle.fill,
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
     );
   }
 
@@ -734,12 +929,12 @@ class _ScoresFloatingDock extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'ANA SAYFA',
-        LululuDockTab.modes => 'MODLAR',
-        LululuDockTab.family => 'AİLEM',
-        LululuDockTab.shop => 'MAĞAZA',
-        LululuDockTab.scores => 'SKORLAR',
+  static String _label(AppLocalizations l10n, LululuDockTab tab) => switch (tab) {
+        LululuDockTab.home => l10n.navHome,
+        LululuDockTab.modes => l10n.navModes,
+        LululuDockTab.family => l10n.navFamily,
+        LululuDockTab.shop => l10n.navShop,
+        LululuDockTab.scores => l10n.navScores,
       };
 
   static String _icon(LululuDockTab tab) => switch (tab) {
@@ -925,7 +1120,11 @@ class _ScoresFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(context.l10n, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: SizedBox(
@@ -1037,10 +1236,10 @@ class _ScoresFloatingDock extends StatelessWidget {
                                     height: 16.0,
                                     child: Center(
                                       child: Text(
-                                        _label(tab),
+                                        _label(context.l10n, tab),
                                         maxLines: 1,
                                         softWrap: false,
-                                        overflow: TextOverflow.visible,
+                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontFamily: 'Baloo 2',
                                           fontSize: 10,
@@ -1072,6 +1271,7 @@ class _ScoresFloatingDock extends StatelessWidget {
                                 ],
                               ),
                             ),
+                          ),
                           ),
                         ),
                       ],

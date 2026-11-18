@@ -1,32 +1,16 @@
-import 'dart:io';
-
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-
-/// Aranabilir böcek çıkartması / GIF kataloğu + indirme.
+/// Böcek çıkartması / GIF kataloğu (statik veri; arama/indirme kaldırıldı).
 class StickerGifItem {
   const StickerGifItem({
     required this.id,
     required this.title,
     required this.tags,
     required this.assetPath,
-    this.remoteGifUrl,
   });
 
   final String id;
   final String title;
   final List<String> tags;
   final String assetPath;
-  final String? remoteGifUrl;
-
-  bool matches(String q) {
-    if (q.trim().isEmpty) return true;
-    final s = q.toLowerCase();
-    if (title.toLowerCase().contains(s)) return true;
-    return tags.any((t) => t.toLowerCase().contains(s));
-  }
 }
 
 class StickerGifCatalog {
@@ -99,42 +83,6 @@ class StickerGifCatalog {
       title: 'Koşan Hamamböceği',
       tags: ['koşu', 'gif', 'böcek', 'çığlık'],
       assetPath: 'assets/design/bugs_hd/tier2_hd.png',
-      remoteGifUrl:
-          'https://media.giphy.com/media/3o7aCTPPm4OHfRLSH6/giphy.gif',
     ),
   ];
-
-  List<StickerGifItem> search(String query) =>
-      items.where((e) => e.matches(query)).toList();
-
-  /// PNG asset veya remote GIF → cihaz dosyası + paylaş / kaydet.
-  Future<String> downloadAndShare(StickerGifItem item) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final stickersDir = Directory('${dir.path}/sticker_downloads');
-    if (!await stickersDir.exists()) {
-      await stickersDir.create(recursive: true);
-    }
-
-    late File out;
-    if (item.remoteGifUrl != null) {
-      final res = await http.get(Uri.parse(item.remoteGifUrl!));
-      if (res.statusCode != 200) {
-        throw StateError('GIF indirilemedi (${res.statusCode})');
-      }
-      out = File('${stickersDir.path}/${item.id}.gif');
-      await out.writeAsBytes(res.bodyBytes);
-    } else {
-      final data = await rootBundle.load(item.assetPath);
-      out = File('${stickersDir.path}/${item.id}.png');
-      await out.writeAsBytes(data.buffer.asUint8List());
-    }
-
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(out.path)],
-        text: '${item.title} — Lülülü çıkartması',
-      ),
-    );
-    return out.path;
-  }
 }

@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
-import '../widgets/ad_mock.dart';
 import '../widgets/lululu_press.dart';
 
 Widget _buildExactImage(
@@ -32,14 +32,23 @@ Widget _buildExactImage(
 ///
 /// `true` dönerse "TEKRAR OYNA" seçildi,
 /// `false` dönerse "ANA SAYFA" seçildi.
+///
+/// ÖDEME SÖZLEŞMESİ: coin ödemesini ÇAĞIRICI yapar, bu ekran ödemez.
+/// `coins` yalnızca GÖRÜNTÜLENEN (zaten ödenmiş) tutardır. Yalnızca
+/// [coinsAwardedByCaller] `false` geçilirse bu ekran [coins] kadar öder
+/// (şu an böyle bir çağırıcı yok — 12 çağrı noktasının tamamı ödemeyi
+/// kendisi yapıyor; S1#49'dan beri ödeme `finishRun()` yardımcısında
+/// tek noktada toplanır, parametre gelecekteki çağırıcılar için
+/// güvenlik ağıdır).
 Future<bool> showGameResult(
   BuildContext context, {
   required int score,
   required int coins,
   required int stars,
-  int bestScore = 4820,
-  int bestCombo = 6,
-  int merges = 18,
+  int bestScore = ResultScoring.defaultBestScore,
+  int bestCombo = ResultScoring.defaultBestCombo,
+  int merges = ResultScoring.defaultMerges,
+  bool coinsAwardedByCaller = true,
 }) async {
   final replay = await Navigator.of(context).push<bool>(
     MaterialPageRoute(
@@ -50,6 +59,7 @@ Future<bool> showGameResult(
         bestScore: max(score, bestScore),
         bestCombo: bestCombo,
         merges: merges,
+        coinsAwardedByCaller: coinsAwardedByCaller,
       ),
     ),
   );
@@ -57,6 +67,14 @@ Future<bool> showGameResult(
 }
 
 abstract final class ResultScoring {
+  /// Sonuç ekranı varsayılanları — TEK KAYNAK (W36-2).
+  ///
+  /// [showGameResult], [GameResultScreen] ve `finishRun` aynı
+  /// varsayılanları buradan alır; değer değişirse yalnız burası değişir.
+  static const int defaultBestScore = 4820;
+  static const int defaultBestCombo = 6;
+  static const int defaultMerges = 18;
+
   static int coinsFor(int score) => max(0, score ~/ 100);
 
   static int starsFor({required int score, required int best}) {
@@ -73,9 +91,10 @@ class GameResultScreen extends StatefulWidget {
     this.score = 2346,
     this.coins = 0,
     this.stars = 3,
-    this.bestScore = 4820,
-    this.bestCombo = 6,
-    this.merges = 18,
+    this.bestScore = ResultScoring.defaultBestScore,
+    this.bestCombo = ResultScoring.defaultBestCombo,
+    this.merges = ResultScoring.defaultMerges,
+    this.coinsAwardedByCaller = true,
   });
 
   final int score;
@@ -84,6 +103,10 @@ class GameResultScreen extends StatefulWidget {
   final int bestScore;
   final int bestCombo;
   final int merges;
+
+  /// `true` (varsayılan): [coins] çağırıcı tarafından ödendi, bu ekran
+  /// ödemez. `false`: bu ekran [coins] kadar öder (ödemeyen çağırıcı için).
+  final bool coinsAwardedByCaller;
 
   @override
   State<GameResultScreen> createState() => _GameResultScreenState();
@@ -95,11 +118,7 @@ class _GameResultScreenState extends State<GameResultScreen>
     with SingleTickerProviderStateMixin {
   late int _displayCoins;
   bool _initialCoinsAwarded = false;
-  bool _doubled = false;
   bool _shared = false;
-
-  int get _effectiveBaseCoins =>
-      widget.coins > 0 ? widget.coins : ResultScoring.coinsFor(widget.score);
 
   @override
   void initState() {
@@ -107,10 +126,14 @@ class _GameResultScreenState extends State<GameResultScreen>
     _displayCoins = widget.coins;
     if (!_initialCoinsAwarded) {
       _initialCoinsAwarded = true;
-      if (widget.coins > 0) {
+      // ÖDEME SÖZLEŞMESİ: tek ödeme noktası çağırıcıdır. Bu ekran yalnız
+      // coinsAwardedByCaller == false ise öder (şu an böyle çağırıcı yok).
+      if (!widget.coinsAwardedByCaller && widget.coins > 0) {
         ProgressManager.instance.addCoins(widget.coins);
       }
-      ProgressManager.instance.recordTaskProgress('play', delta: 1);
+      // 'play' görevi burada KAYDEDİLMEZ: her çağırıcı sonuçtan önce
+      // recordTaskProgress('play') çağırıyor (madde 35: giriş kaydı
+      // kaldırıldı, tek kayıt bitirme noktasındadır).
     }
     final isTesting =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
@@ -119,47 +142,20 @@ class _GameResultScreenState extends State<GameResultScreen>
     }
   }
 
-  Future<void> _watchDoubleCoinsAd() async {
-    if (_doubled) return;
-    final ok = await showRewardedAdMock(
-      context,
-      rewardLabel: '2X ALTIN',
-    );
-    if (!mounted) return;
-    if (ok) {
-      final extraCoins = _effectiveBaseCoins;
-      if (extraCoins > 0) {
-        await ProgressManager.instance.addCoins(extraCoins);
-      }
-      await ProgressManager.instance.recordTaskProgress('video', delta: 1);
-      await ProgressManager.instance.recordTaskProgress('watch', delta: 1);
-      if (!mounted) return;
-      setState(() {
-        _doubled = true;
-        _displayCoins = _displayCoins > 0 ? _displayCoins * 2 : extraCoins * 2;
-      });
-      AudioManager().playWin();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Altınlar 2× katlandı: +$_displayCoins altın!',
-            style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
-          ),
-          backgroundColor: LululuColors.carbonVoid,
+  /// Ödüllü reklam SDK'sı kurulu değil: reklam gösterilemez, 2× altın ve
+  /// devam hakkı verilmez. Gerçek SDK eklendiğinde bu düğmeler gerçek
+  /// reklam akışına bağlanmalıdır; sahte (mock) reklamla ödül verilmez
+  /// (madde 4). Düğmeye dokunmak yalnızca bilgi gösterir.
+  void _showRewardsComingSoon() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          context.l10n.rewardedAdsComingSoon,
+          style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
         ),
-      );
-    }
-  }
-
-  Future<void> _watchContinueAd() async {
-    final ok = await showRewardedAdMock(
-      context,
-      rewardLabel: 'DEVAM ET',
+        backgroundColor: LululuColors.carbonVoid,
+      ),
     );
-    if (!mounted) return;
-    if (ok) {
-      Navigator.of(context).pop(true);
-    }
   }
 
   void _shareResult() {
@@ -168,7 +164,7 @@ class _GameResultScreenState extends State<GameResultScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Skorun panoya kopyalandı: ${widget.score} Puan! #LululuGame',
+          context.l10n.shareScoreSnack(widget.score),
           style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
         ),
         backgroundColor: LululuColors.cyberFuchsia,
@@ -216,7 +212,7 @@ class _GameResultScreenState extends State<GameResultScreen>
 
                         // Subtitle (.res-sub)
                         Text(
-                          "Zirveye, Pembe Bornozlu'ya bir adım daha yaklaştın!",
+                          context.l10n.resultSubtitle,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.nunito(
                             fontSize: 13.5,
@@ -250,26 +246,12 @@ class _GameResultScreenState extends State<GameResultScreen>
                   );
                 }
 
-                // Küçük ekran (360x640, 375x667) dikey taşma koruması
-                if (constraints.maxHeight < 760) {
-                  return SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    child: SizedBox(
-                      width: constraints.maxWidth,
-                      height: constraints.maxHeight,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          width: max(constraints.maxWidth, 390.0),
-                          height: 780,
-                          child: buildInnerColumn(),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
+                // Tüm ekran boyutlarında tek yol: içerik doğal boyunda akar,
+                // sığmadığında kaydırılır. Eski sabit 780px yükseklik +
+                // FittedBox scaleDown kaldırıldı: küçük ekranda içeriği
+                // küçültüp bozuyor, büyük ekranda gereksiz dallanma
+                // yaratıyordu. Spacer, ekran boyundan uzun içerikte 0
+                // pay alır; kısa içerikte düğmeleri alta iter.
                 return SingleChildScrollView(
                   physics: const ClampingScrollPhysics(),
                   child: ConstrainedBox(
@@ -427,7 +409,7 @@ class _GameResultScreenState extends State<GameResultScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 7, 24, 9),
               child: Text(
-                'SEVİYE TAMAM!',
+                context.l10n.levelCompleteTitle,
                 style: GoogleFonts.bangers(
                   fontSize: 30,
                   letterSpacing: 1.2,
@@ -494,7 +476,7 @@ class _GameResultScreenState extends State<GameResultScreen>
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                'SKOR',
+                context.l10n.gameScoreLabel,
                 style: GoogleFonts.nunito(
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
@@ -574,7 +556,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                 child: Column(
                   children: [
                     Text(
-                      'REKOR',
+                      context.l10n.gameBestLabel,
                       style: GoogleFonts.nunito(
                         fontSize: 9.5,
                         fontWeight: FontWeight.w900,
@@ -603,7 +585,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                 child: Column(
                   children: [
                     Text(
-                      'EN İYİ KOMBO',
+                      context.l10n.bestComboResultLabel,
                       style: GoogleFonts.nunito(
                         fontSize: 9.5,
                         fontWeight: FontWeight.w900,
@@ -629,7 +611,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                 child: Column(
                   children: [
                     Text(
-                      'BİRLEŞTİRME',
+                      context.l10n.mergesLabel,
                       style: GoogleFonts.nunito(
                         fontSize: 9.5,
                         fontWeight: FontWeight.w900,
@@ -772,7 +754,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                       ),
                   const SizedBox(height: 3),
                   Text(
-                    'KAZANILAN ALTIN',
+                    context.l10n.goldEarnedLabel,
                     style: GoogleFonts.nunito(
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
@@ -835,9 +817,9 @@ class _GameResultScreenState extends State<GameResultScreen>
   Widget _buildActionButtons() {
     return Column(
       children: [
-        // REKLAM İZLE, DEVAM ET
+        // REKLAMLA DEVAM ET · YAKINDA (ödül verilmez, bilgi gösterir)
         LululuPress(
-          onTap: _watchContinueAd,
+          onTap: _showRewardsComingSoon,
           child: Container(
             width: double.infinity,
             constraints: const BoxConstraints(minHeight: 52),
@@ -867,7 +849,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'REKLAM',
+                    context.l10n.comingSoon,
                     style: GoogleFonts.baloo2(
                       fontSize: 9,
                       fontWeight: FontWeight.w900,
@@ -886,7 +868,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      'REKLAM İZLE, DEVAM ET',
+                      context.l10n.continueWithAd,
                       maxLines: 1,
                       style: GoogleFonts.baloo2(
                         fontSize: 14.5,
@@ -903,7 +885,7 @@ class _GameResultScreenState extends State<GameResultScreen>
         ),
         const SizedBox(height: 4),
         Text(
-          'Kaldığın yerden devam: +1 can / ekstra hamle',
+          context.l10n.rewardedAdsComingSoon,
           textAlign: TextAlign.center,
           style: GoogleFonts.nunito(
             fontSize: 11.5,
@@ -920,9 +902,9 @@ class _GameResultScreenState extends State<GameResultScreen>
         ),
         const SizedBox(height: 8),
 
-        // REKLAM İZLE, 2X ALTIN KAZAN
+        // REKLAMLA 2X ALTIN · YAKINDA (ödül verilmez, bilgi gösterir)
         LululuPress(
-          onTap: _watchDoubleCoinsAd,
+          onTap: _showRewardsComingSoon,
           child: Container(
             width: double.infinity,
             constraints: const BoxConstraints(minHeight: 52),
@@ -952,7 +934,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'REKLAM',
+                    context.l10n.comingSoon,
                     style: GoogleFonts.baloo2(
                       fontSize: 9,
                       fontWeight: FontWeight.w800,
@@ -971,9 +953,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      _doubled
-                          ? '2X ALTIN KAZANILDI (AKTİF)'
-                          : 'REKLAM İZLE, 2X ALTIN KAZAN',
+                      context.l10n.doubleGoldWithAd,
                       maxLines: 1,
                       style: GoogleFonts.baloo2(
                         fontSize: 14.5,
@@ -1036,7 +1016,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            'TEKRAR OYNA',
+                            context.l10n.playAgainButton,
                             style: GoogleFonts.baloo2(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
@@ -1095,7 +1075,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            _shared ? 'PAYLAŞILDI!' : 'PAYLAŞ',
+                            _shared ? context.l10n.sharedButton : context.l10n.shareButton,
                             style: GoogleFonts.baloo2(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
@@ -1132,7 +1112,7 @@ class _GameResultScreenState extends State<GameResultScreen>
               ],
             ),
             child: Text(
-              'ANA SAYFA',
+              context.l10n.navHome,
               style: GoogleFonts.baloo2(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
@@ -1292,244 +1272,6 @@ class _ConfettiLayer extends StatelessWidget {
               .fadeOut(delay: (delayMs + 1400).ms, duration: 300.ms),
         );
       }),
-    );
-  }
-}
-
-/// Kompakt Bölüm Sonuç Kartı (`res-card` v3.0 varyantı)
-class ResultCardView extends StatelessWidget {
-  const ResultCardView({
-    super.key,
-    this.badgeText = 'BÖLÜM TAMAMLANDI!',
-    this.title = 'HARİKA BİRLEŞİM!',
-    this.subtitle = 'Seviye 1 · Mutfak Tezgahı tamamlandı',
-    this.score = 2480,
-    this.coins = 120,
-    this.combo = 5,
-    this.stars = 3,
-    this.onWatchAd,
-    this.onRetry,
-    this.onNextLevel,
-  });
-
-  final String badgeText;
-  final String title;
-  final String subtitle;
-  final int score;
-  final int coins;
-  final int combo;
-  final int stars;
-  final VoidCallback? onWatchAd;
-  final VoidCallback? onRetry;
-  final VoidCallback? onNextLevel;
-
-  @override
-  Widget build(BuildContext context) {
-    final formattedScore = score.toString().replaceAllMapped(
-          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (Match m) => '${m[1]}.',
-        );
-    final starString = List.generate(
-      3,
-      (i) => i < stars ? '★' : '☆',
-    ).join(' ');
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-      decoration: BoxDecoration(
-        color: const Color(0xF2121826),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: const Color(0x66FFD34D),
-          width: 2,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x99000000),
-            blurRadius: 24,
-            offset: Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE01E5A),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              badgeText,
-              style: GoogleFonts.baloo2(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: 1.2,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildExactImage(
-            'assets/design/bugs_hd/tier7_hd.png',
-            width: 88,
-            height: 88,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.bangers(
-              fontSize: 30,
-              letterSpacing: 1.2,
-              color: const Color(0xFFFFD34D),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.nunito(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xCCFFFFFF),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            starString,
-            style: GoogleFonts.baloo2(
-              fontSize: 30,
-              fontWeight: FontWeight.w800,
-              color: const Color(0xFFFFB800),
-              letterSpacing: 4,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _buildMetricBox('SKOR', formattedScore),
-              const SizedBox(width: 8),
-              _buildMetricBox('ALTIN', '+$coins'),
-              const SizedBox(width: 8),
-              _buildMetricBox('KOMBO', 'x$combo'),
-            ],
-          ),
-          const SizedBox(height: 14),
-          LululuPress(
-            onTap: onWatchAd ?? () {},
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFFCF3F), Color(0xFFF59E00)],
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                '🎬 REKLAM İZLE → 2X ÖDÜL (+${coins * 2} ALTIN)',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.baloo2(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF2E1A00),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: LululuPress(
-                  onTap: onRetry ?? () => Navigator.of(context).pop(true),
-                  child: Container(
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0x26FFFFFF),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0x4DFFFFFF)),
-                    ),
-                    child: Text(
-                      '🔄 Tekrar',
-                      style: GoogleFonts.baloo2(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: LululuPress(
-                  onTap: onNextLevel ?? () => Navigator.of(context).pop(true),
-                  child: Container(
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF37E08B), Color(0xFF0A9553)],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      'SONRAKİ SEVİYE ▶',
-                      style: GoogleFonts.baloo2(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMetricBox(String label, String value) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-        decoration: BoxDecoration(
-          color: const Color(0x1FFFFFFF),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0x33FFFFFF)),
-        ),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.nunito(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.0,
-                color: const Color(0xB3FFFFFF),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: GoogleFonts.baloo2(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFFFFD34D),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

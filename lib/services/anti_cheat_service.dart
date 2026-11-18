@@ -108,6 +108,17 @@ class CredentialValidationResult {
 ///    Kullanıcı adı, e-posta, sohbet mesajı ve video başlıklarında
 ///    HTML/Script/SQL/NoSQL kontrol karakterlerini temizler, küfür filtreler
 ///    ve şifre güvenliğini denetler.
+///
+/// Sınır: Bu denetimlerin tamamı istemci içindedir. İstemcide saklanan sır
+/// sır değildir: `_deriveDefaultSecretKey` içindeki sabit, uygulamayı
+/// söken herkes tarafından çıkarılabilir ve HMAC imzası yeniden
+/// üretilebilir. Buradaki HMAC yalnızca kazara bozulma / basit dış
+/// müdahale izi sayılır; gerçek hile koruması değildir.
+/// TODO(sunucu doğrulaması, bu gece kapsam dışı): Skor ve durum
+/// kabulleri sunucu tarafında, sunucuda tutulan sırla doğrulanmalıdır.
+/// Sunucu doğrulaması gelene kadar imza hatası skoru/durumu sessizce
+/// kabul ettirmez: [verifyStateSignature] hata durumunda `false` döner
+/// ve başarısızlık kayda geçer; çağıranlar bu sonucu yok saymamalıdır.
 class AntiCheatService {
   AntiCheatService({String? secretKey})
       : _secretKey = secretKey ?? _deriveDefaultSecretKey();
@@ -256,7 +267,35 @@ class AntiCheatService {
   /// hilesine karşı monotonik sınır).
   final Map<String, int> _highestObservedTimestampMs = <String, int>{};
 
+  /// İmza doğrulama başarısızlıkları (yalnızca bellek içi kayıt; kalıcı
+  /// depolama yok). İmza hatası skoru/durumu kabul ettirmez; her ret
+  /// burada sayılır ve son neden saklanır.
+  int _signatureVerificationFailures = 0;
+  String? _lastSignatureFailureReason;
+
+  /// Bu oturumda kaydedilen imza doğrulama başarısızlığı sayısı.
+  int get signatureVerificationFailures => _signatureVerificationFailures;
+
+  /// Son imza doğrulama başarısızlığının nedeni (`null` = başarısızlık yok).
+  String? get lastSignatureFailureReason => _lastSignatureFailureReason;
+
+  void _recordSignatureFailure(String reason) {
+    _signatureVerificationFailures++;
+    _lastSignatureFailureReason = reason;
+    debugPrint('[lululu] AntiCheat: imza doğrulama reddedildi ($reason)');
+  }
+
+  /// İmza başarısızlık kaydını sıfırlar (test / oturum sıfırlama için).
+  void resetSignatureFailureRecord() {
+    _signatureVerificationFailures = 0;
+    _lastSignatureFailureReason = null;
+  }
+
   static String _deriveDefaultSecretKey() {
+    // UYARI: Bu XOR gizleme güvenlik sağlamaz; istemcide saklanan sır sır
+    // değildir ve ikili dosyadan çıkarılabilir. Sabiti "güçlendirmeye"
+    // (daha karmaşık gizleme, ek karıştırma) çalışma: gerçek düzeltme
+    // sunucu tarafı doğrulamadır (bkz. sınıf dokümantasyonundaki TODO).
     // Sabit string yerine parçalı XOR + tuz birleşimiyle çalışma zamanında üretilir.
     const mask = 0x5A;
     const obfuscated = <int>[
@@ -276,6 +315,10 @@ class AntiCheatService {
   /// Oyun durum verisini (`coins`, `energy`, `highScore`, `modeHighScores`,
   /// `unlockedTiers`, `powerCounts` ve diğer alanlar) deterministik olarak
   /// kanonik JSON'a dönüştürür ve HMAC-SHA256 imzasını üretir.
+  ///
+  /// Yalnızca imza ÜRETİR; doğrulama için tek nokta
+  /// [verifyStateSignature]'dır. İmza üretmek bir skoru/durumu kabul
+  /// etmek değildir.
   String computeStateSignature(Map<String, dynamic> payload) {
     final sanitizedPayload = Map<String, dynamic>.from(payload)
       ..remove('signature')
@@ -288,13 +331,32 @@ class AntiCheatService {
 
   /// Verilen durum verisinin (`payload`) HMAC-SHA256 imzasını sabit zamanlı
   /// (constant-time) karşılaştırma ile doğrular.
+  ///
+  /// İmza doğrulamanın TEK noktasıdır: bütün çağıranlar bu metodu
+  /// kullanır, kendi karşılaştırmasını yapmaz. Hata durumunda (biçim
+  /// bozukluğu, eşleşmeme, istisna) `false` döner — skor/durum sessizce
+  /// kabul edilmez — ve ret kayda geçer (bkz.
+  /// [signatureVerificationFailures]). İstisna fırlatmaz.
   bool verifyStateSignature(Map<String, dynamic> payload, String signature) {
-    final trimmedSig = signature.trim().toLowerCase();
-    if (trimmedSig.length != 64 || !RegExp(r'^[0-9a-f]{64}$').hasMatch(trimmedSig)) {
+    try {
+      final trimmedSig = signature.trim().toLowerCase();
+      if (trimmedSig.length != 64 ||
+          !RegExp(r'^[0-9a-f]{64}$').hasMatch(trimmedSig)) {
+        _recordSignatureFailure('invalid_signature_format');
+        return false;
+      }
+      final expected = computeStateSignature(payload).toLowerCase();
+      final matches = _constantTimeEquals(expected, trimmedSig);
+      if (!matches) {
+        _recordSignatureFailure('signature_mismatch');
+      }
+      return matches;
+    } catch (e) {
+      // Fail-closed: doğrulama hesaplanamadıysa kabul etme, reddet ve kaydet.
+      _recordSignatureFailure('signature_verification_error');
+      debugPrint('[lululu] AntiCheat: imza doğrulama hatası: $e');
       return false;
     }
-    final expected = computeStateSignature(payload).toLowerCase();
-    return _constantTimeEquals(expected, trimmedSig);
   }
 
   /// Çekirdek ekonomi/ilerleme alanlarından standart bir durum paketi oluşturur.

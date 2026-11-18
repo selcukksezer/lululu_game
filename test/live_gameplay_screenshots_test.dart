@@ -30,6 +30,7 @@ import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
 import 'pixel_perfect_test.dart' show loadCustomFonts, safePrimeAssets;
+import 'test_helpers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -83,10 +84,8 @@ void main() {
         child: SizedBox(
           width: 430,
           height: 932,
-          child: MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: buildLululuTheme(),
-            home: MediaQuery(
+          child: wrapWithL10n(
+            MediaQuery(
               data: const MediaQueryData(
                 size: Size(430, 932),
                 devicePixelRatio: 1.0,
@@ -95,6 +94,8 @@ void main() {
               ),
               child: widget,
             ),
+            debugShowCheckedModeBanner: false,
+            theme: buildLululuTheme(),
           ),
         ),
       ),
@@ -117,6 +118,15 @@ void main() {
       file.writeAsBytesSync(pngBytes);
       image.dispose();
     });
+    // Madde 99: yazılan yakalama dosyası doğrulanır (varlık + PNG imzası).
+    final writtenFile = File(outputPath);
+    expect(writtenFile.existsSync(), isTrue, reason: outputPath);
+    final writtenBytes = writtenFile.readAsBytesSync();
+    expect(writtenBytes.length, greaterThan(8));
+    expect(
+      writtenBytes.sublist(0, 8),
+      const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 200));

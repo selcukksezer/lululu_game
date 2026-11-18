@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/auth_service.dart';
 import '../services/progress_manager.dart';
@@ -31,6 +32,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _openAuth() {
     Navigator.of(context).pushNamed('/account');
+  }
+
+  /// Misafir çağrısı: giriş yap / kayıt ol düğmesi + kısa açıklama.
+  /// Yalnızca misafir görünümünde, profil başlığının altında gösterilir.
+  Widget _buildGuestSignInCta() {
+    final l10n = context.l10n;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            button: true,
+            label: l10n.signInOrUpLabel,
+            child: GestureDetector(
+              onTap: _openAuth,
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFFFFCF3F),
+                      Color(0xFFFFB800),
+                      Color(0xFFF59E00),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0xFFB97A00),
+                      offset: Offset(0, 4),
+                      blurRadius: 0,
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  l10n.signInOrUpButton,
+                  style: TextStyle(
+                    fontFamily: 'Baloo 2',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            l10n.guestSignInExplanation,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Nunito',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF66738A),
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   static String _formatDotNumber(int n) {
@@ -68,20 +135,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ProgressManager.instance,
       ]),
       builder: (context, _) {
+        final l10n = context.l10n;
         final auth = AuthService.instance;
         final pm = ProgressManager.instance;
         final mqTop = MediaQuery.of(context).padding.top;
         final isNarrow = MediaQuery.sizeOf(context).width < 400;
 
-        final userName = auth.isSignedIn ? auth.displayName : 'Apple Oyuncu';
-        final handleText = (!auth.isSignedIn ||
-                auth.user?.provider == AuthProviderKind.apple ||
-                userName == 'Apple Oyuncu')
-            ? '@apple · Apple ile giriş yapıldı'
-            : '@${userName.toLowerCase().replaceAll(' ', '')} · ${auth.providerLabel}';
+        // Misafir (oturum yok ya da misafir oturumu) asla "Apple Oyuncu" gibi
+        // gösterilmez; Apple etiketi yalnızca gerçekten Apple ile girene aittir.
+        final isGuest = !auth.isSignedIn || auth.isGuest;
+        final userName = auth.isSignedIn ? auth.displayName : l10n.guestName;
+        final handleText = !auth.isSignedIn
+            ? l10n.guestHandleNotSignedIn
+            : auth.provider == AuthProviderKind.apple
+                ? l10n.appleHandle
+                : auth.isGuest
+                    ? l10n.guestSessionHandle
+                    : '@${userName.toLowerCase().replaceAll(' ', '')} · ${auth.providerLabel}';
 
-        final displayCoins =
-            pm.coins == ProgressManager.defaultCoins ? 12450 : pm.coins;
+        final displayCoins = pm.coins;
         final totalBest = pm.total11ModesScore;
         final displayTotalScore = 7915 + totalBest;
         final playProgress = pm.dailyTaskProgress['play'] ?? 0;
@@ -104,22 +176,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         final row1Badges = <_BadgeData>[
           _BadgeData(
-            title: 'KOMBO KRALI',
-            sub: unlockedCombo ? 'Kazanıldı' : '5× kombo yap',
+            title: l10n.badgeComboKing,
+            sub: unlockedCombo ? l10n.badgeEarned : l10n.badgeComboKingReq,
             bg: const Color(0xFFFFF1E6),
             iconAsset: 'assets/icons2/flame.png',
             unlocked: unlockedCombo,
           ),
           _BadgeData(
-            title: 'MARATONCU',
-            sub: unlockedMarathon ? 'Kazanıldı' : '50 oyun oyna',
+            title: l10n.badgeMarathon,
+            sub: unlockedMarathon ? l10n.badgeEarned : l10n.badgeMarathonReq,
             bg: const Color(0xFFE8F8F0),
             iconAsset: 'assets/icons2/stopwatch.png',
             unlocked: unlockedMarathon,
           ),
           _BadgeData(
-            title: 'VİDEO KURDU',
-            sub: unlockedVideo ? 'Kazanıldı' : '1 video izle',
+            title: l10n.badgeVideoBuff,
+            sub: unlockedVideo ? l10n.badgeEarned : l10n.badgeVideoBuffReq,
             bg: const Color(0xFFF0EAFB),
             iconAsset: 'assets/icons/play.png',
             unlocked: unlockedVideo,
@@ -128,24 +200,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         final row2Badges = <_BadgeData>[
           _BadgeData(
-            title: 'ALTIN PARMAK',
-            sub: unlockedGoldFinger ? 'Kazanıldı' : '10.000 toplam skor',
+            title: l10n.badgeGoldenFinger,
+            sub: unlockedGoldFinger
+                ? l10n.badgeEarned
+                : l10n.badgeGoldenFingerReq,
             bg: const Color(0xFFFFF7DB),
             iconAsset: 'assets/icons2/coin_stack.png',
             unlocked: unlockedGoldFinger,
           ),
           _BadgeData(
-            title: 'GÖREV AVCISI',
-            sub: unlockedTaskHunter ? 'Kazanıldı' : 'Tüm görev ödüllerini al',
+            title: l10n.badgeTaskHunter,
+            sub: unlockedTaskHunter
+                ? l10n.badgeEarned
+                : l10n.badgeTaskHunterReq,
             bg: const Color(0xFFFDEAF1),
             iconAsset: 'assets/icons2/target.png',
             unlocked: unlockedTaskHunter,
           ),
           _BadgeData(
-            title: 'EVRİM USTASI',
+            title: l10n.badgeEvolutionMaster,
             sub: unlockedEvolution
-                ? 'Kazanıldı'
-                : "Pembe Bornozlu'ya\nulaş",
+                ? l10n.badgeEarned
+                : l10n.badgeEvolutionMasterReq,
             bg: const Color(0xFFFFF7DB),
             iconAsset: 'assets/icons2/crown.png',
             unlocked: unlockedEvolution,
@@ -174,7 +250,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          GestureDetector(
+                          Semantics(
+                            button: true,
+                            label: context.l10n.goBackLabel,
+                            child: GestureDetector(
                             onTap: widget.onClose ??
                                 () => Navigator.of(context).maybePop(),
                             child: Container(
@@ -201,6 +280,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                           ),
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Transform.translate(
@@ -209,8 +289,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 alignment: Alignment.centerLeft,
                                 scaleX: 0.985,
                                 scaleY: 1.0,
-                                child: const Text(
-                                  'OYUNCU PROFİLİ',
+                                child: Text(
+                                  l10n.playerProfileTitle,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -294,46 +374,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               mainAxisAlignment: MainAxisAlignment.start,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                GestureDetector(
-                                  onTap: _openAuth,
-                                  child: CustomPaint(
-                                    painter: const _ProfileBlurShadowPainter(
-                                      color: Color(0x59FFB800),
-                                      offset: Offset(0, 10),
-                                      blurRadius: 22,
-                                      borderRadius: 999,
-                                    ),
-                                    child: Container(
-                                      width: 118,
-                                      height: 118,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: const Color(0xFFFFB800),
-                                          width: 5,
-                                        ),
+                                Semantics(
+                                  button: true,
+                                  label: l10n.signInOrUpLabel,
+                                  child: GestureDetector(
+                                    onTap: _openAuth,
+                                    child: CustomPaint(
+                                      painter: const _ProfileBlurShadowPainter(
+                                        color: Color(0x59FFB800),
+                                        offset: Offset(0, 10),
+                                        blurRadius: 22,
+                                        borderRadius: 999,
                                       ),
-                                      child: ClipOval(
-                                        child: SizedBox(
-                                          width: 108,
-                                          height: 108,
-                                          child: Stack(
-                                            clipBehavior: Clip.hardEdge,
-                                            children: [
-                                              Positioned(
-                                                left: 5.4,
-                                                top: 9.8,
-                                                width: 97.2,
-                                                height: 176.0,
-                                                child: Image.asset(
-                                                  'assets/design/bugs_hd/tier5_hd.png',
-                                                  fit: BoxFit.contain,
-                                                  filterQuality:
-                                                      FilterQuality.medium,
+                                      child: Container(
+                                        width: 118,
+                                        height: 118,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFFFB800),
+                                            width: 5,
+                                          ),
+                                        ),
+                                        child: ClipOval(
+                                          child: SizedBox(
+                                            width: 108,
+                                            height: 108,
+                                            child: Stack(
+                                              clipBehavior: Clip.hardEdge,
+                                              children: [
+                                                Positioned(
+                                                  left: 5.4,
+                                                  top: 9.8,
+                                                  width: 97.2,
+                                                  height: 176.0,
+                                                  child: Image.asset(
+                                                    'assets/design/bugs_hd/tier5_hd.png',
+                                                    fit: BoxFit.contain,
+                                                    filterQuality:
+                                                        FilterQuality.medium,
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -432,8 +516,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                             alignment: Alignment.centerLeft,
                                             scaleX: 0.96,
                                             scaleY: 1.0,
-                                            child: const Text(
-                                              'SEVİYE',
+                                            child: Text(
+                                              l10n.levelLabel,
                                               maxLines: 1,
                                               softWrap: false,
                                               style: TextStyle(
@@ -566,8 +650,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                     Alignment.centerRight,
                                                 scaleX: 0.956,
                                                 scaleY: 1.0,
-                                                child: const Text(
-                                                  'SONRAKİ SEVİYE',
+                                                child: Text(
+                                                  l10n.nextLevel,
                                                   style: TextStyle(
                                                     fontFamily: 'Nunito',
                                                     fontSize: 12,
@@ -588,6 +672,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ),
 
+                          if (isGuest) _buildGuestSignInCta(),
+
                           // .prof-stats (y=381.0, h=114.0, padding: 16px 12px 2px 12px)
                           Padding(
                             padding:
@@ -598,7 +684,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   child: _buildStatCard(
                                     iconAsset: 'assets/icons2/trophy.png',
                                     value: _formatDotNumber(displayTotalScore),
-                                    label: 'TOPLAM SKOR',
+                                    label: l10n.totalScoreLabel,
                                     isNarrow: isNarrow,
                                   ),
                                 ),
@@ -607,7 +693,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   child: _buildStatCard(
                                     iconAsset: 'assets/icons/play.png',
                                     value: '$displayGamesPlayed',
-                                    label: 'OYNANAN OYUN',
+                                    label: l10n.gamesPlayedLabel,
                                     isNarrow: isNarrow,
                                   ),
                                 ),
@@ -616,7 +702,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   child: _buildStatCard(
                                     iconAsset: 'assets/icons2/flame.png',
                                     value: '×$displayBestCombo',
-                                    label: 'EN YÜKSEK KOMBO',
+                                    label: l10n.bestComboLabel,
                                     isNarrow: isNarrow,
                                   ),
                                 ),
@@ -641,8 +727,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     alignment: Alignment.centerLeft,
                                     scaleX: 0.985,
                                     scaleY: 1.0,
-                                    child: const Text(
-                                      'ROZETLERİM',
+                                    child: Text(
+                                      l10n.myBadges,
                                       style: TextStyle(
                                         fontFamily: 'Baloo 2',
                                         fontSize: 19,
@@ -660,7 +746,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     scaleX: 0.985,
                                     scaleY: 1.0,
                                     child: Text(
-                                      '$unlockedCount/6 KAZANILDI',
+                                      l10n.badgesEarnedCount(unlockedCount),
                                       style: const TextStyle(
                                         fontFamily: 'Nunito',
                                         fontSize: 12.5,
@@ -837,6 +923,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required double cardHeight,
     required bool isNarrow,
   }) {
+    final l10n = context.l10n;
     Widget iconWidget = Image.asset(
       b.iconAsset,
       width: 36,
@@ -972,8 +1059,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 alignment: Alignment.center,
-                child: const Text(
-                  'KİLİTLİ',
+                child: Text(
+                  l10n.lockedLabel,
                   style: TextStyle(
                     fontFamily: 'Nunito',
                     fontSize: 9.5,
@@ -1120,12 +1207,14 @@ class _ProfileFloatingDock extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'ANA SAYFA',
-        LululuDockTab.modes => 'MODLAR',
-        LululuDockTab.family => 'AİLEM',
-        LululuDockTab.shop => 'MAĞAZA',
-        LululuDockTab.scores => 'SKORLAR',
+  // S3#27: dock etiketleri tek kaynaktan (nav* anahtarları).
+  static String _label(AppLocalizations l10n, LululuDockTab tab) =>
+      switch (tab) {
+        LululuDockTab.home => l10n.navHome,
+        LululuDockTab.modes => l10n.navModes,
+        LululuDockTab.family => l10n.navFamily,
+        LululuDockTab.shop => l10n.navShop,
+        LululuDockTab.scores => l10n.navScores,
       };
 
   static String _icon(LululuDockTab tab) => switch (tab) {
@@ -1176,6 +1265,7 @@ class _ProfileFloatingDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return CustomPaint(
       painter: const _ProfileBlurShadowPainter(
         color: Color(0x62080B12),
@@ -1311,7 +1401,11 @@ class _ProfileFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(l10n, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: DecoratedBox(
@@ -1428,7 +1522,7 @@ class _ProfileFloatingDock extends StatelessWidget {
                                       height: 16.0,
                                       child: Center(
                                         child: Text(
-                                          _label(tab),
+                                          _label(l10n, tab),
                                           maxLines: 1,
                                           style: TextStyle(
                                             fontFamily: 'Baloo 2',
@@ -1464,6 +1558,7 @@ class _ProfileFloatingDock extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          ),
                           ),
                         ),
                       ],

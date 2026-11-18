@@ -1,9 +1,13 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 
-String _trUpper(String input) {
+String _trUpper(String input, Locale locale) {
+  if (locale.languageCode != 'tr') {
+    return input.toUpperCase();
+  }
   return input
       .replaceAll('i', 'İ')
       .replaceAll('ı', 'I')
@@ -13,6 +17,31 @@ String _trUpper(String input) {
       .replaceAll('ö', 'Ö')
       .replaceAll('ç', 'Ç')
       .toUpperCase();
+}
+
+/// Nadirlik etiketlerinin EN karşılıkları (TR metin aynen korunur;
+/// bu ekranın kendi veri listesindeki yazımlarla birebir eşleşir).
+const _kRarityEn = <String, String>{
+  'Sıradan': 'Common',
+  'Seyrek': 'Uncommon',
+  'Nadir': 'Rare',
+  'Destansı': 'Epic',
+  'Efsanevi': 'Legendary',
+  'Mitik': 'Mythic',
+  'Gizli': 'Secret',
+  'Evrim Kristali': 'Evolution Crystal',
+  'EFSANEVİ': 'LEGENDARY',
+  'DESTANSI': 'EPIC',
+  'MİTİK': 'MYTHIC',
+  'KOZMİK': 'COSMIC',
+  'ZİRVE': 'SUMMIT',
+};
+
+String _rarityLabel(BuildContext context, String rarity) {
+  if (Localizations.localeOf(context).languageCode == 'en') {
+    return _kRarityEn[rarity] ?? rarity;
+  }
+  return rarity;
 }
 
 class _BugTierInfo {
@@ -52,110 +81,110 @@ class TiersScreen extends StatefulWidget {
 }
 
 class _TiersScreenState extends State<TiersScreen> {
-  static const List<_BugTierInfo> _tiers = [
+  List<_BugTierInfo> _tiers(AppLocalizations l10n) => [
     _BugTierInfo(
       tier: 1,
-      name: 'Bebek Huni',
+      name: l10n.tierRowName1,
       rarity: 'Sıradan',
       points: '10',
-      asset: 'assets/bugs/tier1_hd.webp',
-      quote: 'HOP, GELDİM!',
+      asset: 'assets/bugs/tier1_hd.png',
+      quote: l10n.tierRowQuote1,
     ),
     _BugTierInfo(
       tier: 2,
-      name: 'Tencereli Çırak',
+      name: l10n.tierRowName2,
       rarity: 'Seyrek',
-      points: '30',
-      asset: 'assets/bugs/tier2_hd.webp',
-      quote: 'TENCERE KAFADA, HAZIRIZ!',
+      points: '25',
+      asset: 'assets/bugs/tier2_hd.png',
+      quote: l10n.tierRowQuote2,
     ),
     _BugTierInfo(
       tier: 3,
-      name: 'Makaracı Fan',
+      name: l10n.tierRowName3,
       rarity: 'Nadir',
-      points: '60',
-      asset: 'assets/bugs/tier3_hd.webp',
-      quote: 'MAKARAYIZ ABİ!',
+      points: '50',
+      asset: 'assets/bugs/tier3_hd.png',
+      quote: l10n.tierRowQuote3,
     ),
     _BugTierInfo(
       tier: 4,
-      name: 'Pijamalı Dansçı',
+      name: l10n.tierRowName4,
       rarity: 'Destansı',
       points: '100',
-      asset: 'assets/bugs/tier4_hd.webp',
-      quote: 'DANS PİSTİNE!',
+      asset: 'assets/bugs/tier4_hd.png',
+      quote: l10n.tierRowQuote4,
     ),
     _BugTierInfo(
       tier: 5,
-      name: 'Hamam Diva',
+      name: l10n.tierRowName5,
       rarity: 'Efsanevi',
-      points: '150',
+      points: '200',
       asset: 'assets/bugs/tier5_hd.webp',
-      quote: 'DİVA GELDİ!',
+      quote: l10n.tierRowQuote5,
     ),
     _BugTierInfo(
       tier: 6,
-      name: 'Hamam Can',
+      name: l10n.tierRowName6,
       rarity: 'Mitik',
-      points: '220',
-      asset: 'assets/bugs/tier6_hd.webp',
-      quote: 'HERKES HAVUZDAN ÇIKSIN!',
+      points: '400',
+      asset: 'assets/bugs/tier6_hd.png',
+      quote: l10n.tierRowQuote6,
     ),
     _BugTierInfo(
       tier: 7,
-      name: 'Kongo Lideri',
+      name: l10n.tierRowName7,
       rarity: 'Gizli',
-      points: '300',
-      asset: 'assets/bugs/tier7_hd.webp',
-      quote: 'LİDER KONUŞTU!',
+      points: '800',
+      asset: 'assets/bugs/tier7_hd.png',
+      quote: l10n.tierRowQuote7,
     ),
     _BugTierInfo(
       tier: 8,
-      name: 'Hasta Bilge',
+      name: l10n.tierRowName8,
       rarity: 'Evrim Kristali',
-      points: '400',
-      asset: 'assets/bugs/tier8_hd.webp',
-      quote: 'BİLGE YORGUN AMA EFSANE!',
+      points: '1.600',
+      asset: 'assets/bugs/tier8_hd.png',
+      quote: l10n.tierRowQuote8,
     ),
     _BugTierInfo(
       tier: 9,
-      name: 'Millî Formalı',
+      name: l10n.tierRowName9,
       rarity: 'EFSANEVİ',
       points: '3.200',
-      asset: 'assets/bugs/tier9_hd.webp',
-      quote: 'GOLLL LÜLÜLÜ!',
+      asset: 'assets/bugs/tier9_hd.png',
+      quote: l10n.tierRowQuote9,
     ),
     _BugTierInfo(
       tier: 10,
-      name: 'Pembe Ceketli',
+      name: l10n.tierRowName10,
       rarity: 'DESTANSI',
       points: '6.400',
-      asset: 'assets/bugs/tier10_hd.webp',
-      quote: 'PEMBE CEKETİM YAKIYOR!',
+      asset: 'assets/bugs/tier10_hd.png',
+      quote: l10n.tierRowQuote10,
     ),
     _BugTierInfo(
       tier: 11,
-      name: 'Beyaz Hayalet',
+      name: l10n.tierRowName11,
       rarity: 'MİTİK',
       points: '12.800',
-      asset: 'assets/bugs/tier11_hd.webp',
-      quote: 'BUUUUU! KORKTUN MU?',
+      asset: 'assets/bugs/tier11_hd.png',
+      quote: l10n.tierRowQuote11,
     ),
     _BugTierInfo(
       tier: 12,
-      name: 'Gri Tişörtlü',
+      name: l10n.tierRowName12,
       rarity: 'KOZMİK',
       points: '25.600',
-      asset: 'assets/bugs/tier12_hd.webp',
-      quote: 'SPORCU BÖCEK GELİYOR!',
+      asset: 'assets/bugs/tier12_hd.png',
+      quote: l10n.tierRowQuote12,
     ),
     _BugTierInfo(
       tier: 13,
-      name: 'Pembe Bornozlu',
+      name: l10n.tierRowName13,
       rarity: 'ZİRVE',
       points: '51.200',
-      asset: 'assets/bugs/tier13_hd.webp',
-      quote: 'BORNOZUMU GİYDİM KEYİFTEYİM!',
+      asset: 'assets/bugs/tier13_hd.png',
+      quote: l10n.tierRowQuote13,
     ),
   ];
 
@@ -189,6 +218,7 @@ class _TiersScreenState extends State<TiersScreen> {
         Scaffold.maybeOf(context)?.widget.extendBody == true;
     final renderDock =
         widget.showBottomNav && !widget.embedded && !parentHasExtendBody;
+    final tiers = _tiers(context.l10n);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
@@ -209,7 +239,10 @@ class _TiersScreenState extends State<TiersScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      GestureDetector(
+                      Semantics(
+                        button: true,
+                        label: context.l10n.goBackLabel,
+                        child: GestureDetector(
                         onTap: () {
                           AudioManager().playPop();
                           if (widget.onBack != null) {
@@ -242,12 +275,13 @@ class _TiersScreenState extends State<TiersScreen> {
                           ),
                         ),
                       ),
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Transform.translate(
                           offset: const Offset(0, 1.0),
-                          child: const Text(
-                            'BÖCEK AİLESİ',
+                          child: Text(
+                            context.l10n.bugFamilyTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -265,10 +299,10 @@ class _TiersScreenState extends State<TiersScreen> {
                   ),
                 ),
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(16, 2.8, 16, 0),
                 child: Text(
-                  'İki aynı tier çarpışır, bir üst tier doğar. Zincirin sonu: Pembe Bornozlu. Bir böceğe dokun — sesini duy, repliğini gör.',
+                  context.l10n.bugFamilySubtitle,
                   strutStyle: StrutStyle(
                     fontFamily: 'Nunito',
                     fontSize: 13,
@@ -290,9 +324,9 @@ class _TiersScreenState extends State<TiersScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(14, 10, 14, 134),
                   children: [
-                    for (int i = 0; i < _tiers.length; i++) ...[
-                      _buildEvoRow(_tiers[i]),
-                      if (i < _tiers.length - 1) _buildEvoArrow(),
+                    for (int i = 0; i < tiers.length; i++) ...[
+                      _buildEvoRow(tiers[i]),
+                      if (i < tiers.length - 1) _buildEvoArrow(),
                     ],
                   ],
                 ),
@@ -313,128 +347,132 @@ class _TiersScreenState extends State<TiersScreen> {
   }
 
   Widget _buildEvoRow(_BugTierInfo t) {
-    return GestureDetector(
-      onTap: () => _onTapTier(t),
-      child: Container(
-        height: 72,
-        padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0F141B2A),
-              offset: Offset(0, 4),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // .evo-tno
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8.5, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF080B12),
-                borderRadius: BorderRadius.circular(999),
+    return Semantics(
+      button: true,
+      label: '${context.l10n.tierLabel(t.tier)}, ${_trUpper(t.name, Localizations.localeOf(context))}, ${_rarityLabel(context, t.rarity)}',
+      child: GestureDetector(
+        onTap: () => _onTapTier(t),
+        child: Container(
+          height: 72,
+          padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0F141B2A),
+                offset: Offset(0, 4),
+                blurRadius: 0,
               ),
-              child: Transform.translate(
-                offset: const Offset(0, -1.0),
-                child: Text(
-                  'T${t.tier}',
-                  style: const TextStyle(
-                    fontFamily: 'Baloo 2',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFFFFB800),
-                    letterSpacing: 0.48,
-                    height: 1.55,
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // .evo-tno
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8.5, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF080B12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Transform.translate(
+                  offset: const Offset(0, -1.0),
+                  child: Text(
+                    'T${t.tier}',
+                    style: const TextStyle(
+                      fontFamily: 'Baloo 2',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFFFB800),
+                      letterSpacing: 0.48,
+                      height: 1.55,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            // .evo-bug
-            Image.asset(
-              t.asset,
-              width: 56,
-              height: 56,
-              fit: BoxFit.contain,
-            ),
-            const SizedBox(width: 12),
-            // .evo-tx
-            Expanded(
-              child: Transform.translate(
-                offset: const Offset(0, -1.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _trUpper(t.name),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Baloo 2',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0,
-                        color: Color(0xFF141B2A),
-                        height: 1.1,
+              const SizedBox(width: 12),
+              // .evo-bug
+              Image.asset(
+                t.asset,
+                width: 56,
+                height: 56,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(width: 12),
+              // .evo-tx
+              Expanded(
+                child: Transform.translate(
+                  offset: const Offset(0, -1.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _trUpper(t.name, Localizations.localeOf(context)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                          color: Color(0xFF141B2A),
+                          height: 1.1,
+                        ),
                       ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _rarityLabel(context, t.rarity),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Nunito',
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                          color: Color(0xFF66738A),
+                          height: 1.55,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // .evo-pts
+              Transform.translate(
+                offset: const Offset(0, -1.0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/design/ui/res_star.png',
+                      width: 21,
+                      height: 21,
+                      fit: BoxFit.contain,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      t.rarity,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Nunito',
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0,
-                        color: Color(0xFF66738A),
-                        height: 1.55,
+                    const SizedBox(width: 5),
+                    Transform.translate(
+                      offset: const Offset(0, -1.0),
+                      child: Text(
+                        '+${t.points}',
+                        style: const TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                          color: Color(0xFF8A6D00),
+                          height: 1.55,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            // .evo-pts
-            Transform.translate(
-              offset: const Offset(0, -1.0),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/design/ui/res_star.png',
-                    width: 21,
-                    height: 21,
-                    fit: BoxFit.contain,
-                  ),
-                  const SizedBox(width: 5),
-                  Transform.translate(
-                    offset: const Offset(0, -1.0),
-                    child: Text(
-                      '+${t.points}',
-                      style: const TextStyle(
-                        fontFamily: 'Baloo 2',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0,
-                        color: Color(0xFF8A6D00),
-                        height: 1.55,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -729,12 +767,15 @@ class _TiersFloatingDock extends StatelessWidget {
   final int activeIndex;
   const _TiersFloatingDock({required this.activeIndex});
 
-  static const _tabs = [
-    ('ANA SAYFA', 'assets/icons2/home.png'),
-    ('MODLAR', 'assets/icons2/target.png'),
-    ('AİLEM', 'assets/icons2/paw.png'),
-    ('MAĞAZA', 'assets/icons2/cart.png'),
-    ('SKORLAR', 'assets/icons2/trophy.png'),
+  // S3#27: dock etiketleri tek kaynaktan (nav* anahtarları); bu
+  // dosyadaki tekrar kaldırıldı. İkonlar const kalır, etiketler
+  // build'de l10n'den okunur.
+  static const _tabIcons = [
+    'assets/icons2/home.png',
+    'assets/icons2/target.png',
+    'assets/icons2/paw.png',
+    'assets/icons2/cart.png',
+    'assets/icons2/trophy.png',
   ];
 
   void _onTapTab(BuildContext context, int index) {
@@ -791,6 +832,14 @@ class _TiersFloatingDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final labels = <String>[
+      l10n.navHome,
+      l10n.navModes,
+      l10n.navFamily,
+      l10n.navShop,
+      l10n.navScores,
+    ];
     return Container(
       height: 84,
       decoration: BoxDecoration(
@@ -820,7 +869,7 @@ class _TiersFloatingDock extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final innerW = (constraints.maxWidth - 14.0).clamp(100.0, 410.0);
-            final tabW = innerW / _tabs.length;
+            final tabW = innerW / _tabIcons.length;
             return Stack(
               clipBehavior: Clip.none,
               children: [
@@ -922,10 +971,14 @@ class _TiersFloatingDock extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.all(7),
                   child: Row(
-                    children: List.generate(_tabs.length, (i) {
+                    children: List.generate(_tabIcons.length, (i) {
                       final active = i == activeIndex;
                       return Expanded(
-                        child: GestureDetector(
+                        child: Semantics(
+                          button: true,
+                          label: labels[i],
+                          selected: active,
+                          child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () => _onTapTab(context, i),
                           child: SizedBox(
@@ -974,7 +1027,7 @@ class _TiersFloatingDock extends StatelessWidget {
                                               ),
                                             ),
                                             _buildIconWithDropShadow(
-                                              _tabs[i].$2,
+                                              _tabIcons[i],
                                               35,
                                             ),
                                           ],
@@ -992,7 +1045,7 @@ class _TiersFloatingDock extends StatelessWidget {
                                           const _TiersInactiveDockCirclePainter(),
                                       child: Center(
                                         child: _buildIconWithDropShadow(
-                                          _tabs[i].$2,
+                                          _tabIcons[i],
                                           33,
                                         ),
                                       ),
@@ -1004,9 +1057,9 @@ class _TiersFloatingDock extends StatelessWidget {
                                   top: 46.0,
                                   child: Center(
                                     child: Text(
-                                      _tabs[i].$1,
+                                      labels[i],
                                       maxLines: 1,
-                                      overflow: TextOverflow.visible,
+                                      overflow: TextOverflow.ellipsis,
                                       textHeightBehavior:
                                           const TextHeightBehavior(
                                         applyHeightToFirstAscent: false,
@@ -1043,6 +1096,7 @@ class _TiersFloatingDock extends StatelessWidget {
                               ],
                             ),
                           ),
+                        ),
                         ),
                       );
                     }),

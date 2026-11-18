@@ -5,17 +5,31 @@ import '../theme/lululu_theme.dart';
 
 /// Basınca yaylanan (scale) dokunma kapsayıcısı. Kritik aksiyonlar için
 /// min dokunma alanı [LululuMotion.minTap] ile birlikte kullanılır.
+///
+/// Erişilebilirlik: her [LululuPress] bir düğme olarak duyurulur
+/// ([Semantics] ile `button` + `enabled`); görünür yazısı olmayan
+/// düğmelerde [semanticLabel] verilmelidir.
 class LululuPress extends StatefulWidget {
   const LululuPress({
     super.key,
     required this.onTap,
     required this.child,
     this.behavior = HitTestBehavior.opaque,
+    this.semanticLabel,
+    this.enabled = true,
   });
 
   final VoidCallback onTap;
   final Widget child;
   final HitTestBehavior behavior;
+
+  /// Ekran okuyucunun duyuracağı düğme etiketi. Verilmezse yalnızca
+  /// düğme rolü duyurulur; alt öğedeki yazı ayrıca okunur.
+  final String? semanticLabel;
+
+  /// `false` ise dokunma (ve basma animasyonu) devre dışıdır ve
+  /// düğme erişilebilirlik ağacında devre dışı görünür.
+  final bool enabled;
 
   @override
   State<LululuPress> createState() => _LululuPressState();
@@ -26,17 +40,23 @@ class _LululuPressState extends State<LululuPress> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: widget.behavior,
-      onTapDown: (_) => setState(() => _down = true),
-      onTapUp: (_) => setState(() => _down = false),
-      onTapCancel: () => setState(() => _down = false),
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _down ? LululuMotion.pressScale : 1,
-        duration: LululuMotion.pressDuration,
-        curve: Curves.easeOutCubic,
-        child: widget.child,
+    final enabled = widget.enabled;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: widget.semanticLabel,
+      child: GestureDetector(
+        behavior: widget.behavior,
+        onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+        onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+        onTapCancel: enabled ? () => setState(() => _down = false) : null,
+        onTap: enabled ? widget.onTap : null,
+        child: AnimatedScale(
+          scale: _down ? LululuMotion.pressScale : 1,
+          duration: LululuMotion.pressDuration,
+          curve: Curves.easeOutCubic,
+          child: widget.child,
+        ),
       ),
     );
   }
@@ -78,6 +98,7 @@ class LululuSectionHeader extends StatelessWidget {
             if (actionLabel != null)
               LululuPress(
                 onTap: onAction ?? () {},
+                semanticLabel: actionLabel,
                 child: Container(
                   constraints: const BoxConstraints(minHeight: 48),
                   alignment: Alignment.center,

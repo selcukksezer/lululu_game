@@ -11,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lululu_game/screens/grid_2048_screen.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -24,9 +26,9 @@ void main() {
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,
-        child: MaterialApp(
+        child: wrapWithL10n(
+          const Grid2048Screen(prototypeVisualState: true),
           theme: buildLululuTheme(),
-          home: const Grid2048Screen(prototypeVisualState: true),
         ),
       ),
     );
@@ -37,5 +39,14 @@ void main() {
     final data = await image.toByteData(format: ui.ImageByteFormat.png);
     File('/tmp/lululu-2048-current.png')
         .writeAsBytesSync(Uint8List.sublistView(data!));
+    // Madde 99: yakalama dosyası doğrulanır (varlık + boyut + PNG imzası).
+    final captureFile = File('/tmp/lululu-2048-current.png');
+    expect(captureFile.existsSync(), isTrue);
+    final captureBytes = captureFile.readAsBytesSync();
+    expect(captureBytes.length, greaterThan(8));
+    expect(
+      captureBytes.sublist(0, 8),
+      const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    );
   });
 }

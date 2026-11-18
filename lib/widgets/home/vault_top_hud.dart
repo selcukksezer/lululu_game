@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../services/auth_service.dart';
 import '../../services/progress_manager.dart';
 import '../../theme/lululu_theme.dart';
@@ -68,7 +69,10 @@ class VaultTopHud extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                GestureDetector(
+                Semantics(
+                  button: true,
+                  label: context.l10n.profilePillLabel(name, level),
+                  child: GestureDetector(
                   onTap: onProfileTap,
                   behavior: HitTestBehavior.opaque,
                   child: _Profile(
@@ -77,9 +81,13 @@ class VaultTopHud extends StatelessWidget {
                     signedIn: auth.isSignedIn,
                   ),
                 ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: GestureDetector(
+                  child: Semantics(
+                    button: true,
+                    label: context.l10n.coinPillLabel(_fmt(coins)),
+                    child: GestureDetector(
                     onTap: onShopTap,
                     behavior: HitTestBehavior.opaque,
                     child: _Pill(
@@ -90,6 +98,7 @@ class VaultTopHud extends StatelessWidget {
                       border: LululuColors.cyberFuchsia,
                       trailing: Icons.add_circle_rounded,
                     ),
+                  ),
                   ),
                 ),
               ],

@@ -13,6 +13,8 @@ import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/widgets/campaign_map_sheet.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
@@ -237,8 +239,8 @@ void main() {
       });
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
+        wrapWithL10n(
+          Scaffold(
             body: SizedBox(
               width: size.width,
               height: size.height,
@@ -314,8 +316,8 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
+        wrapWithL10n(
+          Builder(
             builder: (ctx) => Scaffold(
               body: Center(
                 child: ElevatedButton(
@@ -359,10 +361,9 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: ConnectPopScreen(gameplayTestState: true),
-        ),
+      await pumpWithL10n(
+        tester,
+        const ConnectPopScreen(gameplayTestState: true),
       );
       await tester.pump();
       expect(tester.takeException(), isNull);

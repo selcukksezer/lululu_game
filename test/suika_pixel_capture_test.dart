@@ -15,6 +15,8 @@ import 'package:lululu_game/screens/game_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
@@ -38,10 +40,8 @@ void main() {
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: buildLululuTheme(),
-          home: TickerMode(
+        child: wrapWithL10n(
+          TickerMode(
             enabled: false,
             child: GameScreen(
               level: CampaignDatabase.kitchenLevel1,
@@ -49,6 +49,8 @@ void main() {
               prototypeVisualState: true,
             ),
           ),
+          debugShowCheckedModeBanner: false,
+          theme: buildLululuTheme(),
         ),
       ),
     );
@@ -73,5 +75,14 @@ void main() {
       File('suika-proto-current.png')
           .writeAsBytesSync(bytes!.buffer.asUint8List());
     });
+    // Madde 99: yakalama dosyası doğrulanır (varlık + boyut + PNG imzası).
+    final captureFile = File('suika-proto-current.png');
+    expect(captureFile.existsSync(), isTrue);
+    final captureBytes = captureFile.readAsBytesSync();
+    expect(captureBytes.length, greaterThan(8));
+    expect(
+      captureBytes.sublist(0, 8),
+      const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    );
   });
 }

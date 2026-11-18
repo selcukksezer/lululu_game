@@ -696,6 +696,18 @@ class AdaptiveDifficultyService {
     _lossStreakByMode.clear();
   }
 
+  /// Hesap silme için yerel zorluk geçmişinin tamamını temizler
+  /// (hesap-silme, yerel-temizlik): bellek-içi geçmiş/seriler
+  /// [resetAll] ile sıfırlanır, `lululu_adaptive_difficulty_v1`
+  /// anahtarı prefs'ten kaldırılır. [resetAll] bilerek senkron
+  /// bırakıldı — [loadFromJson] içinden çağrılır; prefs silmesi
+  /// yalnız bu metotta yapılır.
+  Future<void> clearLocalData() async {
+    resetAll();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsStorageKey);
+  }
+
   /// Durumu JSON haritasına dönüştürür.
   Map<String, dynamic> toJson() {
     final historyJson = <String, dynamic>{};

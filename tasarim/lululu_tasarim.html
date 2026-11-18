@@ -2822,34 +2822,34 @@ button.notify-btn:active{transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,
 
   /* ---------- data ---------- */
   var TIERS = [
-    {n:"Bebek Huni",       img:"bugs/tier1_hd.webp",     d:"Her şeyin başladığı yer: minik, meraklı, hunili.", c:"#FFE9C9"},
-    {n:"Tencereli Çırak",  img:"bugs/tier2_hd.webp",d:"Kafasında tencere, elinde kepçe — mutfağın yeni gözdesi.", c:"#FFE3D6"},
-    {n:"Makaracı Fan",     img:"bugs/tier3_hd.webp",   d:"Film makarası hiç elinden düşmez, tam bir sinema fanı.", c:"#E4F0FF"},
-    {n:"Pijamalı Dansçı",  img:"bugs/tier4_hd.webp",d:"Pijamasıyla pistlerin yıldızı; ritim onun işi.", c:"#F3E4FF"},
+    {n:"Bebek Huni",       img:"bugs/tier1_hd.png",     d:"Her şeyin başladığı yer: minik, meraklı, hunili.", c:"#FFE9C9"},
+    {n:"Tencereli Çırak",  img:"bugs/tier2_hd.png",d:"Kafasında tencere, elinde kepçe — mutfağın yeni gözdesi.", c:"#FFE3D6"},
+    {n:"Makaracı Fan",     img:"bugs/tier3_hd.png",   d:"Film makarası hiç elinden düşmez, tam bir sinema fanı.", c:"#E4F0FF"},
+    {n:"Pijamalı Dansçı",  img:"bugs/tier4_hd.png",d:"Pijamasıyla pistlerin yıldızı; ritim onun işi.", c:"#F3E4FF"},
     {n:"Hamam Diva",       img:"bugs/tier5_hd.webp",     d:"Havlu türbanı ve diva bakışlarıyla hamamın kraliçesi.", c:"#FFE0EC"},
-    {n:"Hamam Can",        img:"bugs/tier6_hd.webp",      d:"Düdüğü çaldı mı herkes havuzdan çıkar. Cankurtaran böcek.", c:"#DFF7EA"},
-    {n:"Kongo Lideri",     img:"bugs/tier7_hd.webp",   d:"Kabilenin bilge lideri; dansı da sözü de kanun.", c:"#FFF0D6"},
-    {n:"Hasta Bilge",      img:"bugs/tier8_hd.webp",    d:"Battaniyesi ve termometresiyle efsanevi son form.", c:"#E8ECF5"},
-    {n:"Millî Formalı",    img:"bugs/tier9_hd.webp",    d:"Kırmızı-beyaz millî formayla sahada; gol sevinci hiç bitmez.", c:"#FFE1E1"},
-    {n:"Pembe Ceketli",    img:"bugs/tier10_hd.webp",   d:"Pembe ceketi ve ciddi bakışıyla toplantıların en şık böceği.", c:"#FFE0EC"},
-    {n:"Beyaz Hayalet",    img:"bugs/tier11_hd.webp",   d:"Beyaz çarşafın altından kıkırdayan, ürkütücü derecede sevimli hayalet.", c:"#EDF1F8"},
-    {n:"Gri Tişörtlü",     img:"bugs/tier12_hd.webp",   d:"Gri tişörtüyle kalabalığa karışır; görünmezlik onun süper gücü.", c:"#E8ECF5"},
-    {n:"Pembe Bornozlu",   img:"bugs/tier13_hd.webp",   d:"Bornozuyla hamamdan doğruca zirveye — 13 tier'lık zincirin son halkası.", c:"#FFDFF2"}
+    {n:"Hamam Can",        img:"bugs/tier6_hd.png",      d:"Düdüğü çaldı mı herkes havuzdan çıkar. Cankurtaran böcek.", c:"#DFF7EA"},
+    {n:"Kongo Lideri",     img:"bugs/tier7_hd.png",   d:"Kabilenin bilge lideri; dansı da sözü de kanun.", c:"#FFF0D6"},
+    {n:"Hasta Bilge",      img:"bugs/tier8_hd.png",    d:"Battaniyesi ve termometresiyle efsanevi son form.", c:"#E8ECF5"},
+    {n:"Millî Formalı",    img:"bugs/tier9_hd.png",    d:"Kırmızı-beyaz millî formayla sahada; gol sevinci hiç bitmez.", c:"#FFE1E1"},
+    {n:"Pembe Ceketli",    img:"bugs/tier10_hd.png",   d:"Pembe ceketi ve ciddi bakışıyla toplantıların en şık böceği.", c:"#FFE0EC"},
+    {n:"Beyaz Hayalet",    img:"bugs/tier11_hd.png",   d:"Beyaz çarşafın altından kıkırdayan, ürkütücü derecede sevimli hayalet.", c:"#EDF1F8"},
+    {n:"Gri Tişörtlü",     img:"bugs/tier12_hd.png",   d:"Gri tişörtüyle kalabalığa karışır; görünmezlik onun süper gücü.", c:"#E8ECF5"},
+    {n:"Pembe Bornozlu",   img:"bugs/tier13_hd.png",   d:"Bornozuyla hamamdan doğruca zirveye — 13 tier'lık zincirin son halkası.", c:"#FFDFF2"}
   ];
   var RARITY = ["r1.png","r2.png","r3.png","r4.png","r5.png","r6.png","r7.png","crystal.png","r5.png","r4.png","r6.png","crystal.png","crystal.png"];
   var RARITY_N = ["Sıradan","Seyrek","Nadir","Destansı","Efsanevi","Mitik","Gizli","Evrim Kristali","EFSANEVİ","DESTANSI","MİTİK","KOZMİK","ZİRVE"];
   var MODES = [
-    {n:"Suika Arena",   s:"Birleştirme klasiği",          img:"bugs/tier1_hd.webp",      c:"#FFE9C9", best:"4.820",  badge:{t:"HOT",   bg:"#E01E5A", fg:"#fff"}, go:"game",     ic:"icons2/target.png"},
-    {n:"2048 Grid",     s:"Kaydır, birleştir, 2048 yap",  img:"bugs/tier2_hd.webp", c:"#FFF0D6", best:"12.480", badge:{t:"2048",  bg:"#FFB800", fg:"#4A2E00"}, go:"m2048",   ic:"icons/level_up.png"},
-    {n:"Balon Patlat",  s:"Nişan al, 3 aynı balonu patlat", img:"bugs/tier1_hd.webp",    c:"#FFE3D6", best:"3.260",  badge:{t:"BONUS", bg:"#FF6B35", fg:"#fff"}, go:"balon",    ic:"icons2/boom.png"},
+    {n:"Suika Arena",   s:"Birleştirme klasiği",          img:"bugs/tier1_hd.png",      c:"#FFE9C9", best:"4.820",  badge:{t:"HOT",   bg:"#E01E5A", fg:"#fff"}, go:"game",     ic:"icons2/target.png"},
+    {n:"2048 Grid",     s:"Kaydır, birleştir, 2048 yap",  img:"bugs/tier2_hd.png", c:"#FFF0D6", best:"12.480", badge:{t:"2048",  bg:"#FFB800", fg:"#4A2E00"}, go:"m2048",   ic:"icons/level_up.png"},
+    {n:"Balon Patlat",  s:"Nişan al, 3 aynı balonu patlat", img:"bugs/tier1_hd.png",    c:"#FFE3D6", best:"3.260",  badge:{t:"BONUS", bg:"#FF6B35", fg:"#fff"}, go:"balon",    ic:"icons2/boom.png"},
     {n:"Match 3",       s:"Komşuyu kaydır, 3'lü patlat",  img:"bugs/tier5_hd.webp",      c:"#DFF7EA", best:"5.940",  badge:{t:"NEON",  bg:"#00C853", fg:"#04140a"}, go:"match3", ic:"icons2/gem_blue.png"},
-    {n:"Bağla Patlat",  s:"Aynı böceği çiz, zinciri patlat", img:"bugs/tier3_hd.webp",  c:"#FFF6D8", best:"2.870",  badge:{t:"ZİNCİR", bg:"#FFD700", fg:"#4A2E00"}, go:"bagla",  ic:"icons2/magnet.png"},
-    {n:"Stack Drop",    s:"Kuleyi diz, kenarı kesme",     img:"bugs/tier6_hd.webp",       c:"#FFE0E0", best:"1.540",  badge:{t:"KULE",  bg:"#E52E2E", fg:"#fff"}, go:"stack",    ic:"icons2/block.png"},
+    {n:"Bağla Patlat",  s:"Aynı böceği çiz, zinciri patlat", img:"bugs/tier3_hd.png",  c:"#FFF6D8", best:"2.870",  badge:{t:"ZİNCİR", bg:"#FFD700", fg:"#4A2E00"}, go:"bagla",  ic:"icons2/magnet.png"},
+    {n:"Stack Drop",    s:"Kuleyi diz, kenarı kesme",     img:"bugs/tier6_hd.png",       c:"#FFE0E0", best:"1.540",  badge:{t:"KULE",  bg:"#E52E2E", fg:"#fff"}, go:"stack",    ic:"icons2/block.png"},
     {n:"Terlik Tap",    s:"Delikten çıkanı terlikle ez",  img:"powerup_terlik.webp",        c:"#FFE3D6", best:"1.150",  badge:{t:"YENİ",  bg:"#FF6B35", fg:"#fff"}, go:"terlik",   ic:"icons2/boot.png"},
-    {n:"Yuva Savunması", s:"Yuvaya ulaşanı terlikle ez",   img:"bugs/tier2_hd.webp",          c:"#FFE3D6", best:"1.240",  badge:{t:"YENİ",  bg:"#E01E5A", fg:"#fff"}, go:"yuva",     ic:"icons2/target.png"},
-    {n:"Osmantuş",      s:"Yeşil halkada ikili tuş!",     img:"osman/osmantus_kisi_a.webp", c:"#FFF6D8", best:"980",    badge:{t:"VİRAL", bg:"#FFD700", fg:"#4A2E00"}, go:"osmantus", ic:"icons2/crown.png"},
-    {n:"Çığlık Böcek",  s:"Bağır, kapılardan geç, ezilme", img:"bugs/tier7_hd.webp",   c:"#E4F0FF", best:"2.105",  badge:{t:"VİRAL", bg:"#00C853", fg:"#04140a"}, go:"ciglik", ic:"icons2/bolt.png"},
-    {n:"Makarayız",     s:"Beat'te kaydır, makarayı sar", img:"bugs/tier3_hd.webp",    c:"#FFE0EC", best:"1.760",  badge:{t:"VİRAL", bg:"#FF6B35", fg:"#fff"}, go:"makara",   ic:"icons2/wheel.png"}
+    {n:"Yuva Savunması", s:"Yuvaya ulaşanı terlikle ez",   img:"bugs/tier2_hd.png",          c:"#FFE3D6", best:"1.240",  badge:{t:"YENİ",  bg:"#E01E5A", fg:"#fff"}, go:"yuva",     ic:"icons2/target.png"},
+    {n:"Osmantuş",      s:"Yeşil halkada ikili tuş!",     img:"osman/osmantus_kisi_a.png", c:"#FFF6D8", best:"980",    badge:{t:"VİRAL", bg:"#FFD700", fg:"#4A2E00"}, go:"osmantus", ic:"icons2/crown.png"},
+    {n:"Çığlık Böcek",  s:"Bağır, kapılardan geç, ezilme", img:"bugs/tier7_hd.png",   c:"#E4F0FF", best:"2.105",  badge:{t:"VİRAL", bg:"#00C853", fg:"#04140a"}, go:"ciglik", ic:"icons2/bolt.png"},
+    {n:"Makarayız",     s:"Beat'te kaydır, makarayı sar", img:"bugs/tier3_hd.png",    c:"#FFE0EC", best:"1.760",  badge:{t:"VİRAL", bg:"#FF6B35", fg:"#fff"}, go:"makara",   ic:"icons2/wheel.png"}
   ];
   var COLORS = [
     ["carbonVoid","#080B12","Koyu zemin · oyun ekranları"],
@@ -2881,19 +2881,19 @@ button.notify-btn:active{transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,
     ["makarayiz_stage.webp","Makarayız · Neşeli Konser Sahnesi","WEBP · v4 mod arkaplanı",1],
     ["result_wood_bg.webp","Sonuç · Ahşap Cartoon Duvar","WEBP · sonuç ekranı arkaplanı",1],
     ["chest_result.png","Sonuç Kasası · Ahşap Sandık","Şeffaf PNG · uçan coin hedefi",0],
-    ["bugs/tier1_hd.webp","Tier 1 · Bebek Huni","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier2_hd.webp","Tier 2 · Tencereli Çırak","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier3_hd.webp","Tier 3 · Makaracı Fan","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier4_hd.webp","Tier 4 · Pijamalı Dansçı","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier1_hd.png","Tier 1 · Bebek Huni","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier2_hd.png","Tier 2 · Tencereli Çırak","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier3_hd.png","Tier 3 · Makaracı Fan","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier4_hd.png","Tier 4 · Pijamalı Dansçı","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
     ["bugs/tier5_hd.webp","Tier 5 · Hamam Diva","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier6_hd.webp","Tier 6 · Hamam Can","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier7_hd.webp","Tier 7 · Kongo Lideri","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier8_hd.webp","Tier 8 · Hasta Bilge","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier9_hd.webp","Tier 9 · Millî Formalı","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier10_hd.webp","Tier 10 · Pembe Ceketli","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier11_hd.webp","Tier 11 · Beyaz Hayalet","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier12_hd.webp","Tier 12 · Gri Tişörtlü","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
-    ["bugs/tier13_hd.webp","Tier 13 · Pembe Bornozlu","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier6_hd.png","Tier 6 · Hamam Can","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier7_hd.png","Tier 7 · Kongo Lideri","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier8_hd.png","Tier 8 · Hasta Bilge","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier9_hd.png","Tier 9 · Millî Formalı","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier10_hd.png","Tier 10 · Pembe Ceketli","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier11_hd.png","Tier 11 · Beyaz Hayalet","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier12_hd.png","Tier 12 · Gri Tişörtlü","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
+    ["bugs/tier13_hd.png","Tier 13 · Pembe Bornozlu","HD sürüm · şeffaf PNG (tam kalite indirme)",0],
     ["powerup_raid_spreyi.png","Güçlendirici · Raid Spreyi","Şeffaf PNG · ikon",0],
     ["powerup_terlik.png","Güçlendirici · Terlik","Şeffaf PNG · ikon",0],
     ["powerup_aydinlat.png","Güçlendirici · Aydınlat","Şeffaf PNG · ikon",0],
@@ -3900,7 +3900,7 @@ button.notify-btn:active{transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,
 (function(){
   "use strict";
   var $ = function(s, c){ return (c||document).querySelector(s); };
-  var TIMG = ["bugs/tier1_hd.webp","bugs/tier2_hd.webp","bugs/tier3_hd.webp","bugs/tier4_hd.webp","bugs/tier5_hd.webp","bugs/tier6_hd.webp","bugs/tier7_hd.webp","bugs/tier8_hd.webp","bugs/tier9_hd.webp","bugs/tier10_hd.webp","bugs/tier11_hd.webp","bugs/tier12_hd.webp","bugs/tier13_hd.webp"];
+  var TIMG = ["bugs/tier1_hd.png","bugs/tier2_hd.png","bugs/tier3_hd.png","bugs/tier4_hd.png","bugs/tier5_hd.webp","bugs/tier6_hd.png","bugs/tier7_hd.png","bugs/tier8_hd.png","bugs/tier9_hd.png","bugs/tier10_hd.png","bugs/tier11_hd.png","bugs/tier12_hd.png","bugs/tier13_hd.png"];
   var TCOL = ["#FFE9C9","#FFE3D6","#E4F0FF","#F3E4FF","#FFE0EC","#DFF7EA","#FFF0D6","#E8ECF5","#FFE1E1","#FFE0EC","#EDF1F8","#E8ECF5","#FFDFF2"];
   function bug(t){ return "assets/"+TIMG[t-1]; }
 
@@ -4102,7 +4102,7 @@ button.notify-btn:active{transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,
     return h;
   }
   function fYuva(){
-    var h = '<div class="nest-arena"><div class="nlane" style="top:7%"><div class="npath"></div><div class="ntrail" style="left:4%; width:70px"></div><img class="nbug" style="left:10%" src="assets/bugs/tier2_hd.webp" alt="" /></div><div class="nlane" style="top:41%"><div class="npath"></div><div class="ntrail rev" style="right:5%; width:64px"></div><img class="nbug" style="right:11%" src="assets/bugs/tier5_hd.webp" alt="" /><img class="nbug" style="right:35%" src="assets/bugs/tier4_hd.webp" alt="" /><img class="yboom" style="right:32%; top:50%; margin-top:-36px" src="assets/icons2/boom.png" alt="" /><img class="yslip" style="right:27%; top:50%; margin-top:-62px" src="assets/powerup_terlik.webp" alt="Terlik vuruşu" /></div><div class="nlane" style="top:75%"><div class="npath"></div><div class="ntrail" style="left:14%; width:60px"></div><img class="nbug" style="left:19%" src="assets/bugs/tier1_hd.webp" alt="" /><img class="nbug" style="left:37%" src="assets/bugs/tier3_hd.webp" alt="" /><div class="nwarn" style="left:37%; top:50%; margin:-30px 0 0 -6px"></div></div><div class="nest"><div class="nest-ring"></div><div class="nest-hole"></div><span class="nest-label">YUVA</span></div></div><div class="chipfloat" style="left:10px; bottom:52px">VURUŞ 17</div><div class="combo-float danger" style="right:12px; bottom:52px"><span class="combo-txt loop" style="font-size:21px">KAÇAN 2!</span></div><div class="combo-float" style="left:12px; top:10px"><span class="combo-txt loop" style="font-size:23px">COMBO X5!</span></div><div class="stage-hint">Yuvaya ulaşmadan böcekleri terlikle ez! 3 kaçan = can gider.</div>';
+    var h = '<div class="nest-arena"><div class="nlane" style="top:7%"><div class="npath"></div><div class="ntrail" style="left:4%; width:70px"></div><img class="nbug" style="left:10%" src="assets/bugs/tier2_hd.png" alt="" /></div><div class="nlane" style="top:41%"><div class="npath"></div><div class="ntrail rev" style="right:5%; width:64px"></div><img class="nbug" style="right:11%" src="assets/bugs/tier5_hd.webp" alt="" /><img class="nbug" style="right:35%" src="assets/bugs/tier4_hd.png" alt="" /><img class="yboom" style="right:32%; top:50%; margin-top:-36px" src="assets/icons2/boom.png" alt="" /><img class="yslip" style="right:27%; top:50%; margin-top:-62px" src="assets/powerup_terlik.webp" alt="Terlik vuruşu" /></div><div class="nlane" style="top:75%"><div class="npath"></div><div class="ntrail" style="left:14%; width:60px"></div><img class="nbug" style="left:19%" src="assets/bugs/tier1_hd.png" alt="" /><img class="nbug" style="left:37%" src="assets/bugs/tier3_hd.png" alt="" /><div class="nwarn" style="left:37%; top:50%; margin:-30px 0 0 -6px"></div></div><div class="nest"><div class="nest-ring"></div><div class="nest-hole"></div><span class="nest-label">YUVA</span></div></div><div class="chipfloat" style="left:10px; bottom:52px">VURUŞ 17</div><div class="combo-float danger" style="right:12px; bottom:52px"><span class="combo-txt loop" style="font-size:21px">KAÇAN 2!</span></div><div class="combo-float" style="left:12px; top:10px"><span class="combo-txt loop" style="font-size:23px">COMBO X5!</span></div><div class="stage-hint">Yuvaya ulaşmadan böcekleri terlikle ez! 3 kaçan = can gider.</div>';
     return h;
   }
   function fOsmantus(){

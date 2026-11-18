@@ -10,7 +10,7 @@ enum InsectTier {
     soundFile: 'tier1_ses.mp3',
     assetPath: 'assets/design/bugs_hd/tier1_hd.png',
     stickerAsset: 'assets/images/stickers/sticker_tier1_cone.png',
-    hdAsset: 'assets/bugs/tier1_hd.webp',
+    hdAsset: 'assets/bugs/tier1_hd.png',
     radius: 23.0,
     mass: 1.0,
     scoreValue: 10,
@@ -25,7 +25,7 @@ enum InsectTier {
     soundFile: 'tier2_ses.mp3',
     assetPath: 'assets/design/bugs_hd/tier2_hd.png',
     stickerAsset: 'assets/images/stickers/sticker_tier2_helmet.png',
-    hdAsset: 'assets/bugs/tier2_hd.webp',
+    hdAsset: 'assets/bugs/tier2_hd.png',
     radius: 28.0,
     mass: 1.5,
     scoreValue: 25,
@@ -40,7 +40,7 @@ enum InsectTier {
     soundFile: 'tier3_ses.mp3',
     assetPath: 'assets/design/bugs_hd/tier3_hd.png',
     stickerAsset: 'assets/images/stickers/sticker_tier3_fan.png',
-    hdAsset: 'assets/bugs/tier3_hd.webp',
+    hdAsset: 'assets/bugs/tier3_hd.png',
     radius: 33.0,
     mass: 2.2,
     scoreValue: 50,
@@ -55,7 +55,7 @@ enum InsectTier {
     soundFile: 'tier4_ses.mp3',
     assetPath: 'assets/design/bugs_hd/tier4_hd.png',
     stickerAsset: 'assets/images/stickers/sticker_tier4_dancer.png',
-    hdAsset: 'assets/bugs/tier4_hd.webp',
+    hdAsset: 'assets/bugs/tier4_hd.png',
     radius: 39.0,
     mass: 3.2,
     scoreValue: 100,
@@ -85,7 +85,7 @@ enum InsectTier {
     soundFile: 'tier6_ses.mp3',
     assetPath: 'assets/design/bugs_hd/tier6_hd.png',
     stickerAsset: 'assets/images/stickers/sticker_tier6_can.png',
-    hdAsset: 'assets/bugs/tier6_hd.webp',
+    hdAsset: 'assets/bugs/tier6_hd.png',
     radius: 51.0,
     mass: 6.0,
     scoreValue: 400,
@@ -100,7 +100,7 @@ enum InsectTier {
     soundFile: 'tier7_ses.mp3',
     assetPath: 'assets/design/bugs_hd/tier7_hd.png',
     stickerAsset: 'assets/images/stickers/sticker_tier7_kongo.png',
-    hdAsset: 'assets/bugs/tier7_hd.webp',
+    hdAsset: 'assets/bugs/tier7_hd.png',
     radius: 58.0,
     mass: 8.0,
     scoreValue: 800,
@@ -115,7 +115,7 @@ enum InsectTier {
     soundFile: 'tier8_ses.mp3',
     assetPath: 'assets/design/bugs_hd/tier8_hd.png',
     stickerAsset: 'assets/images/stickers/sticker_tier8_bed.png',
-    hdAsset: 'assets/bugs/tier8_hd.webp',
+    hdAsset: 'assets/bugs/tier8_hd.png',
     radius: 65.0,
     mass: 11.0,
     scoreValue: 1600,
@@ -129,8 +129,8 @@ enum InsectTier {
     voiceFile: 'voice_tier9.mp3',
     soundFile: 'tier9_ses.mp3',
     assetPath: 'assets/design/bugs_new/tier9_hd.png',
-    stickerAsset: 'assets/bugs/tier9_hd.webp',
-    hdAsset: 'assets/bugs/tier9_hd.webp',
+    stickerAsset: 'assets/bugs/tier9_hd.png',
+    hdAsset: 'assets/bugs/tier9_hd.png',
     radius: 70.0,
     mass: 13.0,
     scoreValue: 3200,
@@ -144,8 +144,8 @@ enum InsectTier {
     voiceFile: 'voice_tier10.mp3',
     soundFile: 'tier10_ses.mp3',
     assetPath: 'assets/design/bugs_new/tier10_hd.png',
-    stickerAsset: 'assets/bugs/tier10_hd.webp',
-    hdAsset: 'assets/bugs/tier10_hd.webp',
+    stickerAsset: 'assets/bugs/tier10_hd.png',
+    hdAsset: 'assets/bugs/tier10_hd.png',
     radius: 75.0,
     mass: 15.0,
     scoreValue: 6400,
@@ -159,8 +159,8 @@ enum InsectTier {
     voiceFile: 'voice_tier11.mp3',
     soundFile: 'tier11_ses.mp3',
     assetPath: 'assets/design/bugs_new/tier11_hd.png',
-    stickerAsset: 'assets/bugs/tier11_hd.webp',
-    hdAsset: 'assets/bugs/tier11_hd.webp',
+    stickerAsset: 'assets/bugs/tier11_hd.png',
+    hdAsset: 'assets/bugs/tier11_hd.png',
     radius: 80.0,
     mass: 17.5,
     scoreValue: 12800,
@@ -174,8 +174,8 @@ enum InsectTier {
     voiceFile: 'voice_tier12.mp3',
     soundFile: 'tier12_ses.mp3',
     assetPath: 'assets/design/bugs_new/tier12_hd.png',
-    stickerAsset: 'assets/bugs/tier12_hd.webp',
-    hdAsset: 'assets/bugs/tier12_hd.webp',
+    stickerAsset: 'assets/bugs/tier12_hd.png',
+    hdAsset: 'assets/bugs/tier12_hd.png',
     radius: 85.0,
     mass: 20.0,
     scoreValue: 25600,
@@ -189,8 +189,8 @@ enum InsectTier {
     voiceFile: 'voice_tier13.mp3',
     soundFile: 'tier13_ses.mp3',
     assetPath: 'assets/design/bugs_new/tier13_hd.png',
-    stickerAsset: 'assets/bugs/tier13_hd.webp',
-    hdAsset: 'assets/bugs/tier13_hd.webp',
+    stickerAsset: 'assets/bugs/tier13_hd.png',
+    hdAsset: 'assets/bugs/tier13_hd.png',
     radius: 90.0,
     mass: 24.0,
     scoreValue: 51200,
@@ -226,18 +226,6 @@ enum InsectTier {
     required this.scoreValue,
     required this.color,
   });
-
-  /// Prototype design sound filename (`tier1_ses.mp3`..`tier13_ses.mp3`).
-  String get sesFile => soundFile;
-
-  /// Full verified sound asset path under `assets/design/sounds/`.
-  String get soundAssetPath => 'assets/design/sounds/$soundFile';
-
-  /// Merge points alias for UI/HUD consumers.
-  int get mergePoints => scoreValue;
-
-  /// Primary 8 prototype evolution tiers (Bebek Huni .. Hasta Bilge).
-  static List<InsectTier> get coreTiers => values.take(8).toList(growable: false);
 
   /// Safe lookup by 1-based tier number (clamped to 1..13).
   static InsectTier fromTier(int tierNumber) {
@@ -275,6 +263,115 @@ enum InsectTier {
         return 'Zirvedeyim!';
     }
   }
+
+  // --- English (EN) counterparts: pure additions, TR defaults untouched. ---
+  // `viralReplik` deliberately has NO English counterpart: the catchphrases
+  // are character identity and stay Turkish in every locale. `name`/`title`/
+  // `rarity` keep returning Turkish; screens migrate to the `*For(Locale)`
+  // accessors in a later wave. Proper names (Diva, Kongo, Makarayız, Lülülü,
+  // Can) stay identical inside the EN strings. No AppLocalizations import:
+  // these are pure `Locale`-parameterized accessors, so no import cycle.
+  String get nameEn {
+    switch (this) {
+      case InsectTier.cone:
+        return 'Baby Funnel';
+      case InsectTier.helmet:
+        return 'Pot-Wearing Apprentice';
+      case InsectTier.fan:
+        return 'Reel Fan';
+      case InsectTier.dancer:
+        return 'Pajama Dancer';
+      case InsectTier.diva:
+        return 'Bathhouse Diva';
+      case InsectTier.can:
+        return 'Bathhouse Can';
+      case InsectTier.kongo:
+        return 'Kongo Leader';
+      case InsectTier.bed:
+        return 'Ailing Sage';
+      case InsectTier.milli:
+        return 'National Jersey Bug';
+      case InsectTier.pinkJacket:
+        return 'Pink Jacket Bug';
+      case InsectTier.whiteGhost:
+        return 'White Ghost';
+      case InsectTier.greyShirt:
+        return 'Gray T-Shirt Bug';
+      case InsectTier.pinkRobe:
+        return 'Pink Robe Bug';
+    }
+  }
+
+  String nameFor(Locale locale) =>
+      locale.languageCode == 'en' ? nameEn : name;
+
+  String get titleEn {
+    switch (this) {
+      case InsectTier.cone:
+        return 'Lülülü Baby';
+      case InsectTier.helmet:
+        return 'Helmeted Bug';
+      case InsectTier.fan:
+        return 'Makarayız Bro';
+      case InsectTier.dancer:
+        return 'Hoppa, Sweetheart';
+      case InsectTier.diva:
+        return "I'm a Diva, Honey!";
+      case InsectTier.can:
+        return 'Dear Viewers';
+      case InsectTier.kongo:
+        return 'My Dearest One';
+      case InsectTier.bed:
+        return 'Call the Doctor!';
+      case InsectTier.milli:
+        return 'Striker Bug';
+      case InsectTier.pinkJacket:
+        return "You've Got Style!";
+      case InsectTier.whiteGhost:
+        return 'Invisible Knight';
+      case InsectTier.greyShirt:
+        return 'Quiet Strength';
+      case InsectTier.pinkRobe:
+        return 'Pinnacle of Evolution';
+    }
+  }
+
+  String titleFor(Locale locale) =>
+      locale.languageCode == 'en' ? titleEn : title;
+
+  String get rarityEn {
+    switch (this) {
+      case InsectTier.cone:
+        return 'Common';
+      case InsectTier.helmet:
+        return 'Uncommon';
+      case InsectTier.fan:
+        return 'Rare';
+      case InsectTier.dancer:
+        return 'Epic';
+      case InsectTier.diva:
+        return 'Legendary';
+      case InsectTier.can:
+        return 'Mythic';
+      case InsectTier.kongo:
+        return 'Secret';
+      case InsectTier.bed:
+        return 'Evolution Crystal';
+      case InsectTier.milli:
+        return 'Super';
+      case InsectTier.pinkJacket:
+        return 'Ultra';
+      case InsectTier.whiteGhost:
+        return 'Cosmic';
+      case InsectTier.greyShirt:
+        return 'Ancient';
+      case InsectTier.pinkRobe:
+        return 'Absolute';
+    }
+  }
+
+  String rarityFor(Locale locale) =>
+      locale.languageCode == 'en' ? rarityEn : rarity;
 
   InsectTier? get nextTier {
     final nextIdx = index + 1;

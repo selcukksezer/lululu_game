@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lululu_game/modes/connect_pop_screen.dart';
 import 'package:lululu_game/widgets/arcade_chrome.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   testWidgets('Bağla Patlat draws and scores a chain', (tester) async {
     tester.view.physicalSize = const Size(374, 680);
@@ -11,8 +13,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      const MaterialApp(home: ConnectPopScreen(gameplayTestState: true)),
+    await pumpWithL10n(
+      tester,
+      const ConnectPopScreen(gameplayTestState: true),
     );
     await tester.pump();
 

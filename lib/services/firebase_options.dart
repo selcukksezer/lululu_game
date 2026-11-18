@@ -1,6 +1,11 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+    show
+        debugPrint,
+        defaultTargetPlatform,
+        kDebugMode,
+        kIsWeb,
+        TargetPlatform;
 
 /// FlutterFire options. Fill via `--dart-define` or replace placeholders
 /// after `flutterfire configure`.
@@ -49,6 +54,9 @@ class DefaultFirebaseOptions {
   static String get projectId =>
       _projectId.isNotEmpty ? _projectId : 'lululu-offline-local';
 
+  /// Platforma özel seçenekler. macOS, iOS seçeneklerini kullanır
+  /// ([macos]); Windows/Linux/Fuchsia için özel yapılandırma yoktur
+  /// (bkz. aşağıdaki TODO) ve web seçenekleri yedek olarak döner.
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
       return web;
@@ -63,6 +71,17 @@ class DefaultFirebaseOptions {
       case TargetPlatform.windows:
       case TargetPlatform.linux:
       case TargetPlatform.fuchsia:
+        // TODO (S2#16): Masaüstü resmen desteklenmiyor — Windows/Linux/
+        // Fuchsia için `flutterfire configure` ile masaüstüne özel
+        // FirebaseOptions üretilmelidir. O zamana dek web seçenekleri
+        // yedek olarak dönüyor; masaüstünde Firebase başlatma
+        // başarısız veya eksik çalışabilir. Bu yedek sessizce
+        // kullanılmasın diye debug derlemesinde uyarı yazılır.
+        if (kDebugMode) {
+          debugPrint('[lululu] Firebase: $defaultTargetPlatform için özel '
+              'seçenek yok; web seçenekleri yedek kullanılıyor '
+              '(masaüstü desteklenmiyor, bkz. TODO S2#16).');
+        }
         return web;
     }
   }

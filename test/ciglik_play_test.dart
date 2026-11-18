@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lululu_game/modes/scream_roach_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -26,7 +28,7 @@ void main() {
           );
     }
 
-    await tester.pumpWidget(const MaterialApp(home: ScreamRoachScreen()));
+    await tester.pumpWidget(wrapWithL10n(const ScreamRoachScreen()));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 16));
 

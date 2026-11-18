@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lululu_game/modes/makarayiz_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -36,8 +38,8 @@ void main() {
 
     final key = GlobalKey<MakarayizScreenState>();
     await tester.pumpWidget(
-      MaterialApp(
-        home: TickerMode(enabled: false, child: MakarayizScreen(key: key)),
+      wrapWithL10n(
+        TickerMode(enabled: false, child: MakarayizScreen(key: key)),
       ),
     );
     await tester.pump();

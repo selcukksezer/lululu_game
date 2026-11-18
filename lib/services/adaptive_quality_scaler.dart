@@ -114,6 +114,29 @@ class AdaptiveQualityScaler {
     }
   }
 
+  /// Preferred startup entry point: pick the initial tier from total device
+  /// RAM when the caller can supply it.
+  ///
+  /// - `initialize(totalRamMb: 2048)` → starts at [QualityTier.eco] (≤2 GB),
+  ///   `3072` → [QualityTier.low], `4096` → [QualityTier.medium], `8192` →
+  ///   [QualityTier.high], above that → [QualityTier.ultra] (see
+  ///   [detectInitialTier] for the exact thresholds).
+  /// - `initialize()` / `initialize(totalRamMb: null)` → existing behaviour:
+  ///   unknown RAM starts at [QualityTier.medium], exactly like [bootstrap]
+  ///   with no arguments.
+  ///
+  /// The RAM value itself is obtained by the caller (e.g. via
+  /// `device_info_plus` on the platform side); this file performs no platform
+  /// lookup. Wiring in `main.dart` is a Wave 3 step — call example:
+  /// ```dart
+  /// AdaptiveQualityScaler.instance.initialize(totalRamMb: totalRamMb);
+  /// ```
+  /// [bootstrap] remains available for tests and for callers that need
+  /// [QualityTier] forcing or timings control.
+  void initialize({int? totalRamMb}) {
+    bootstrap(systemMemoryMb: totalRamMb);
+  }
+
   bool _isTestBinding() {
     try {
       final typeName = WidgetsBinding.instance.runtimeType.toString();

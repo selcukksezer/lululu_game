@@ -1,12 +1,16 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
 
-String _trUpper(String input) {
+String _trUpper(String input, Locale locale) {
+  if (locale.languageCode != 'tr') {
+    return input.toUpperCase();
+  }
   return input
       .replaceAll('i', 'İ')
       .replaceAll('ı', 'I')
@@ -74,16 +78,20 @@ class _ModesScreenState extends State<ModesScreen> {
     return ListenableBuilder(
       listenable: pm,
       builder: (context, _) {
+        final l10n = context.l10n;
         final rawCoins = pm.coins;
-        final coinsText =
-            (rawCoins == ProgressManager.defaultCoins || rawCoins == 300)
-                ? '12.450'
-                : _formatNumber(rawCoins);
+        final coinsText = _formatNumber(rawCoins);
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F6FA),
-          body: Stack(
-            children: [
+          // Üst pay zaten mqTop / prototip durum çubuğu ile veriliyor
+          // (top: false). Alt çentik payı yalnız bağımsız modda;
+          // gömülü modda alt boşluğu HomeShell merkezi verir.
+          body: SafeArea(
+            top: false,
+            bottom: !widget.embedded,
+            child: Stack(
+              children: [
               Column(
                 children: [
                   if (mqTop > 0)
@@ -98,7 +106,10 @@ class _ModesScreenState extends State<ModesScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          GestureDetector(
+                          Semantics(
+                            button: true,
+                            label: l10n.goBackLabel,
+                            child: GestureDetector(
                             onTap: () {
                               AudioManager().playPop();
                               if (widget.onBack != null) {
@@ -130,15 +141,15 @@ class _ModesScreenState extends State<ModesScreen> {
                                 ),
                               ),
                             ),
-                          ),
+                          )),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Padding(
                               padding: const EdgeInsets.only(left: 2),
                               child: Transform.translate(
                                 offset: const Offset(0, 1.0),
-                                child: const Text(
-                                  'OYUN MODLARI',
+                                child: Text(
+                                  l10n.modesTitle,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -227,13 +238,23 @@ class _ModesScreenState extends State<ModesScreen> {
                 ),
             ],
           ),
+          ),
         );
       },
     );
   }
 
   Widget _buildModeRow(LululuGameMode mode, String bestStr) {
-    return GestureDetector(
+    final l10n = context.l10n;
+    final locale = Localizations.localeOf(context);
+    return Semantics(
+      button: true,
+      label: l10n.modeOpenLabel(
+        _trUpper(mode.titleFor(locale), locale),
+        mode.subtitleFor(locale),
+        bestStr,
+      ),
+      child: GestureDetector(
       onTap: () => _openMode(mode),
       child: Stack(
         clipBehavior: Clip.none,
@@ -304,7 +325,7 @@ class _ModesScreenState extends State<ModesScreen> {
                         padding:
                             const EdgeInsets.only(top: 21.08, bottom: 22.0),
                         child: Text(
-                          _trUpper(mode.title),
+                          _trUpper(mode.titleFor(locale), locale),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -318,8 +339,8 @@ class _ModesScreenState extends State<ModesScreen> {
                         ),
                       ),
                       Text(
-                        '${mode.subtitle} · Rekor $bestStr',
-                        maxLines: 1,
+                        l10n.modeBestLine(mode.subtitleFor(locale), bestStr),
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Nunito',
@@ -382,7 +403,7 @@ class _ModesScreenState extends State<ModesScreen> {
                   ],
                 ),
                 child: Text(
-                  mode.badgeLabel,
+                  mode.badgeLabelFor(locale),
                   textHeightBehavior: const TextHeightBehavior(
                     applyHeightToFirstAscent: true,
                     applyHeightToLastDescent: true,
@@ -401,7 +422,7 @@ class _ModesScreenState extends State<ModesScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 
@@ -652,12 +673,14 @@ class _ModesFloatingDock extends StatelessWidget {
   final int activeIndex;
   const _ModesFloatingDock({required this.activeIndex});
 
-  static const _tabs = [
-    ('ANA SAYFA', 'assets/icons2/home.png'),
-    ('MODLAR', 'assets/icons2/target.png'),
-    ('AİLEM', 'assets/icons2/paw.png'),
-    ('MAĞAZA', 'assets/icons2/cart.png'),
-    ('SKORLAR', 'assets/icons2/trophy.png'),
+  // S3#27: dock etiketleri l10n nav* anahtarlarından gelir (build'de
+  // `labels`); burada yalnız ikon yolları durur.
+  static const _tabIcons = [
+    'assets/icons2/home.png',
+    'assets/icons2/target.png',
+    'assets/icons2/paw.png',
+    'assets/icons2/cart.png',
+    'assets/icons2/trophy.png',
   ];
 
   void _onTapTab(BuildContext context, int index) {
@@ -714,6 +737,14 @@ class _ModesFloatingDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final labels = <String>[
+      l10n.navHome,
+      l10n.navModes,
+      l10n.navFamily,
+      l10n.navShop,
+      l10n.navScores,
+    ];
     return Container(
       height: 84,
       decoration: BoxDecoration(
@@ -743,7 +774,7 @@ class _ModesFloatingDock extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final innerW = (constraints.maxWidth - 14.0).clamp(100.0, 410.0);
-            final tabW = innerW / _tabs.length;
+            final tabW = innerW / _tabIcons.length;
             return Stack(
               clipBehavior: Clip.none,
               children: [
@@ -845,10 +876,14 @@ class _ModesFloatingDock extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.all(7),
                   child: Row(
-                    children: List.generate(_tabs.length, (i) {
+                    children: List.generate(_tabIcons.length, (i) {
                       final active = i == activeIndex;
                       return Expanded(
-                        child: GestureDetector(
+                        child: Semantics(
+                          button: true,
+                          label: labels[i],
+                          selected: active,
+                          child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () => _onTapTab(context, i),
                           child: SizedBox(
@@ -897,7 +932,7 @@ class _ModesFloatingDock extends StatelessWidget {
                                               ),
                                             ),
                                             _buildIconWithDropShadow(
-                                              _tabs[i].$2,
+                                              _tabIcons[i],
                                               35,
                                             ),
                                           ],
@@ -915,7 +950,7 @@ class _ModesFloatingDock extends StatelessWidget {
                                           const _ModesInactiveDockCirclePainter(),
                                       child: Center(
                                         child: _buildIconWithDropShadow(
-                                          _tabs[i].$2,
+                                          _tabIcons[i],
                                           33,
                                         ),
                                       ),
@@ -927,9 +962,9 @@ class _ModesFloatingDock extends StatelessWidget {
                                   top: 46.0,
                                   child: Center(
                                     child: Text(
-                                      _tabs[i].$1,
+                                      labels[i],
                                       maxLines: 1,
-                                      overflow: TextOverflow.visible,
+                                      overflow: TextOverflow.ellipsis,
                                       textHeightBehavior:
                                           const TextHeightBehavior(
                                         applyHeightToFirstAscent: false,
@@ -966,7 +1001,7 @@ class _ModesFloatingDock extends StatelessWidget {
                               ],
                             ),
                           ),
-                        ),
+                        )),
                       );
                     }),
                   ),

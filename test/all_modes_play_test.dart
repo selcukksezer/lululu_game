@@ -29,6 +29,8 @@ import 'package:lululu_game/theme/lululu_theme.dart';
 import 'package:lululu_game/widgets/arcade_chrome.dart';
 import 'package:lululu_game/widgets/sticker_image.dart';
 
+import 'test_helpers.dart';
+
 Future<void> _loadCustomFonts() async {
   final fontMap = <String, List<String>>{
     'Baloo 2': [
@@ -119,7 +121,8 @@ void main() {
   });
 
   Widget wrapPlayable(Widget home) {
-    return MaterialApp(
+    return wrapWithL10n(
+      home,
       debugShowCheckedModeBanner: false,
       theme: buildLululuTheme(),
       builder: (context, child) => MediaQuery(
@@ -130,7 +133,6 @@ void main() {
         ),
         child: child ?? const SizedBox.shrink(),
       ),
-      home: home,
     );
   }
 
@@ -201,24 +203,66 @@ void main() {
       }
     }
 
-    // Tap all 3 booster buttons
+    // Booster miktarları: her booster öncesi skoru oku, artışı delta
+    // olarak ölç (birleşme skoru taban çizgisini kirletmesin).
+    // Formüller (game_screen.dart): Terlik sabit +250 (:1016);
+    // Raid buharlaşan başına +300, en fazla 2 böcek (:1035-1036);
+    // Aydınlat ilk dalga böcek başına +180, en fazla 3 böcek (:966-968),
+    // gecikmeli dalga temizlenen başına +350, tek kullanım tavanı 2000
+    // (:987-993, tavan _aydinlatScoreCap = 2000). Gecikmeli dalga 480 ms
+    // Timer içinde çalışır — 320 ms pompa yetmez, tek 600 ms pompa
+    // gerekir. Her ölçümde tap sonrası yalnız 1 kare (16 ms) pompalanır:
+    // booster skoru tap anında senkron yazılır; fazladan kareler savurma
+    // itkisinin tetikleyebileceği birleşme skorunu delta'ya katar.
+    final scoreBeforeBoosters = readArcadeScore(tester);
+
+    // SARSINTI (Terlik): sabit +250.
     await tester.tap(find.text('SARSINTI'));
-    for (var f = 0; f < 20; f++) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
+    await tester.pump(const Duration(milliseconds: 16));
     expect(pm.slipperCount, lessThan(5));
+    final slipDelta = readArcadeScore(tester) - scoreBeforeBoosters;
+    expect(slipDelta, 250);
 
+    // RAİD SPREYİ: buharlaşan (tier <= 3) başına +300, en fazla 2 böcek.
+    // Düşürme kademeleri rastgele (+ aynı X'te birleşme tahtayı
+    // seyreltebilir) olduğundan buharlaşan sayısı dışarıdan gözlenemez;
+    // miktar kuantum + aralık olarak doğrulanır: {300, 600}.
+    final scoreBeforeSpray = readArcadeScore(tester);
     await tester.tap(find.text('RAİD SPREYİ'));
-    for (var f = 0; f < 20; f++) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
+    await tester.pump(const Duration(milliseconds: 16));
     expect(pm.sprayCount, lessThan(3));
+    final sprayDelta = readArcadeScore(tester) - scoreBeforeSpray;
+    expect(sprayDelta, greaterThanOrEqualTo(300));
+    expect(sprayDelta, lessThanOrEqualTo(600));
+    expect(sprayDelta % 300, 0);
 
+    // AYDINLAT: ilk dalga böcek başına +180 (en fazla 3 böcek).
+    // İlk dalga öncesi tahtada en fazla 5 böcek vardır
+    // (6 düşürme − Terlik 1 − Raid ≤ 2), o yüzden ilk dalga ≤ 540.
+    final scoreBeforeAydinlat = readArcadeScore(tester);
     await tester.tap(find.text('AYDINLAT'));
-    for (var f = 0; f < 20; f++) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
+    await tester.pump(const Duration(milliseconds: 16));
     expect(pm.aydinlatCount, lessThan(2));
+    final initialDelta = readArcadeScore(tester) - scoreBeforeAydinlat;
+    expect(initialDelta, greaterThanOrEqualTo(0));
+    expect(initialDelta, lessThanOrEqualTo(540));
+    expect(initialDelta % 180, 0);
+
+    // Gecikmeli dalga: 480 ms Timer — tek 600 ms pompa ile tetiklenir
+    // (eski 20×16 ms = 320 ms pompa hiç işletmezdi). Tek pompa, fizik
+    // adımını dt kelepçesi (33 ms) sayesinde ~2 sabit adımda tutar.
+    // İlk dalga sonrası tahtada en fazla 2 böcek kalır → gecikmeli
+    // temizlenen ≤ 1 → gecikmeli dalga ≤ 350 ve 2000 tavanı hiç
+    // devreye girmez (2000 − ilk dalga ≥ 1460 > 350).
+    await tester.pump(const Duration(milliseconds: 600));
+    final delayedDelta =
+        readArcadeScore(tester) - scoreBeforeAydinlat - initialDelta;
+    expect(delayedDelta, greaterThanOrEqualTo(0));
+    expect(delayedDelta, lessThanOrEqualTo(350));
+    expect(delayedDelta % 350, 0);
+
+    // Tek kullanım tavanı: ilk + gecikmeli toplam 2000'i aşamaz.
+    expect(initialDelta + delayedDelta, lessThanOrEqualTo(2000));
     expect(readArcadeScore(tester), greaterThan(0));
 
     expect(tester.takeException(), isNull);

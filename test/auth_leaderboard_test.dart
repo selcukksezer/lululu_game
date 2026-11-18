@@ -48,9 +48,9 @@ void main() {
 
   test('duplicate register rejected', () async {
     final auth = AuthService.instance;
-    await auth.register(username: 'kongo', password: 'abcd');
+    await auth.register(username: 'kongo', password: 'abcd12');
     expect(
-      () => auth.register(username: 'Kongo', password: 'efgh'),
+      () => auth.register(username: 'Kongo', password: 'efgh12'),
       throwsA(isA<StateError>()),
     );
   });
@@ -58,7 +58,7 @@ void main() {
   test('leaderboard stores real player scores without fake seeds', () async {
     final auth = AuthService.instance;
     final board = LeaderboardService.instance;
-    await auth.register(username: 'suikaace', password: 'pass1');
+    await auth.register(username: 'suikaace', password: 'pass112');
     await board.onAuthChanged();
 
     final ok = await board.submitScore(LeaderboardService.modeSuika, 1500);
@@ -79,13 +79,13 @@ void main() {
     final auth = AuthService.instance;
     final board = LeaderboardService.instance;
 
-    await auth.register(username: 'player_a', password: 'pass1');
+    await auth.register(username: 'player_a', password: 'pass112');
     await board.onAuthChanged();
     await board.submitScore(LeaderboardService.mode2048, 2000);
     final idA = auth.playerId;
 
     await auth.signOut();
-    await auth.register(username: 'player_b', password: 'pass2');
+    await auth.register(username: 'player_b', password: 'pass212');
     await board.onAuthChanged();
     await board.submitScore(LeaderboardService.mode2048, 500);
 

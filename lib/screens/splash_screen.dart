@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../theme/lululu_theme.dart';
 
@@ -38,18 +40,27 @@ class _SplashScreenState extends State<SplashScreen>
   Timer? _loadTimer;
   Timer? _msgTimer;
   Timer? _soundTimer;
+  Timer? _finishTimer;
   double _progress = 0;
   bool _loading = false;
   bool _done = false;
+  // `_done` yükleme-bitti arayüz durumudur; `onDone` tek-atımlık
+  // koruması ayrı bayraktadır — eskiden `_finish` her iki dalda da
+  // `onDone()` çağırıyor, çift boot'a yol açıyordu (R2).
+  bool _notified = false;
   int _msgIndex = 0;
 
-  static const _loadMessages = [
-    'Hamam ısıtılıyor…',
-    'Böcekler sıraya giriyor…',
-    'Terlikler parlatılıyor…',
-    'Kapılar açılıyor…',
-    'Hazır! Macera başlıyor…',
-  ];
+  // S2#10: web otomatik-oynatma politikası — 650 ms zamanlayıcısının
+  // intro sesi web'de yalnız kullanıcı etkileşiminden sonra çalınır;
+  // etkileşim yoksa çalma denemesi bile yapılmaz. Mobilde davranış
+  // değişmez. Bayrak her kullanıcı hareketinde (kaydırma, GEÇ,
+  // DEVAM dokunuşları) true'ya çevrilir; arayüz durumu değildir.
+  bool _hasInteracted = false;
+
+  // Yükleme döngü mesajı sayısı; metinler AppLocalizations
+  // splashLoadMessage(index) metodundadır (0-4). Sayı ile metot
+  // kasaları birlikte değişmelidir.
+  static const _loadMessageCount = 5;
 
   @override
   void initState() {
@@ -115,6 +126,9 @@ class _SplashScreenState extends State<SplashScreen>
 
       // Ses: 650ms sonra Kongo Lideri sesi (tier 7)
       _soundTimer = Timer(const Duration(milliseconds: 650), () {
+        // Web'de etkileşim yoksa çalma denemesi yapılmaz (tarayıcı
+        // otomatik-oynatma politikası); mobilde eski davranış korunur.
+        if (kIsWeb && !_hasInteracted) return;
         AudioManager().playMerge(tierNumber: 7).catchError((_) {});
       });
     }
@@ -129,10 +143,12 @@ class _SplashScreenState extends State<SplashScreen>
     _loadTimer?.cancel();
     _msgTimer?.cancel();
     _soundTimer?.cancel();
+    _finishTimer?.cancel();
     super.dispose();
   }
 
   void _onPageChanged(int index) {
+    _hasInteracted = true;
     setState(() => _pageIndex = index);
     if (index == 0) {
       AudioManager().playMerge(tierNumber: 7).catchError((_) {});
@@ -144,10 +160,12 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _skipToEnd() {
+    _hasInteracted = true;
     _finish();
   }
 
   void _nextPage() {
+    _hasInteracted = true;
     if (_pageIndex < 2) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 320),
@@ -169,7 +187,7 @@ class _SplashScreenState extends State<SplashScreen>
     _msgTimer = Timer.periodic(const Duration(milliseconds: 550), (_) {
       if (!mounted) return;
       setState(() {
-        _msgIndex = (_msgIndex + 1) % _loadMessages.length;
+        _msgIndex = (_msgIndex + 1) % _loadMessageCount;
       });
     });
 
@@ -184,36 +202,48 @@ class _SplashScreenState extends State<SplashScreen>
         t.cancel();
         _msgTimer?.cancel();
         setState(() => _done = true);
-        Future.delayed(const Duration(milliseconds: 700), _finish);
+        // İptal edilebilir Timer: dispose'da iptal edilir, `mounted`
+        // değilse ateşlenmez; GEÇ ile yarışan gecikmeli `_finish`
+        // `_notified` korumasına takılır.
+        _finishTimer?.cancel();
+        _finishTimer = Timer(const Duration(milliseconds: 700), () {
+          if (!mounted) return;
+          _finish();
+        });
       }
     });
   }
 
   void _finish() {
-    if (_done) {
-      widget.onDone();
-      return;
-    }
+    if (_notified) return;
+    _notified = true;
     _done = true;
     widget.onDone();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: LululuColors.carbonVoid,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Arka plan görseli
+          // Arka plan görseli (WebP ikizi: 277 KB, 3.2 MB PNG ile aynı kare)
           Image.asset(
-            'assets/design/splash/bg_splash.png',
+            'assets/design/splash/bg_splash.webp',
             fit: BoxFit.cover,
-            width: 430,
-            height: 932,
+            width: double.infinity,
+            height: double.infinity,
+            cacheWidth: 860,
+            cacheHeight: 1911,
             errorBuilder: (_, _, _) => Image.asset(
               'assets/design/backgrounds/bg_splash.jpg',
               fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              cacheWidth: 860,
+              cacheHeight: 1911,
               errorBuilder: (_, _, _) =>
                   const ColoredBox(color: LululuColors.carbonVoid),
             ),
@@ -242,29 +272,34 @@ class _SplashScreenState extends State<SplashScreen>
           Positioned(
             top: 44,
             right: 14,
-            child: GestureDetector(
-              onTap: _skipToEnd,
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                width: 86,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xB8080B12), // rgba(8,11,18,.72)
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: const Color(0x73FFFFFF), // rgba(255,255,255,.45)
-                    width: 2,
+            child: Semantics(
+              button: true,
+              label: l10n.splashSkipPlain,
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: _skipToEnd,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  width: 86,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xB8080B12), // rgba(8,11,18,.72)
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: const Color(0x73FFFFFF), // rgba(255,255,255,.45)
+                      width: 2,
+                    ),
                   ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  'GEÇ ›',
-                  style: GoogleFonts.baloo2(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: 1.2,
-                    height: 1.0,
+                  alignment: Alignment.center,
+                  child: Text(
+                    l10n.splashSkip,
+                    style: GoogleFonts.baloo2(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 1.2,
+                      height: 1.0,
+                    ),
                   ),
                 ),
               ),
@@ -308,36 +343,42 @@ class _SplashScreenState extends State<SplashScreen>
                       children: [
                         for (var i = 0; i < 3; i++) ...[
                           if (i > 0) const SizedBox(width: 2),
-                          GestureDetector(
-                            onTap: () {
-                              _pageController.animateToPage(
-                                i,
-                                duration: const Duration(milliseconds: 320),
-                                curve: Curves.easeOutCubic,
-                              );
-                            },
-                            child: Container(
-                              width: 48,
-                              height: 48,
-                              alignment: Alignment.center,
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 250),
-                                width: _pageIndex == i ? 30 : 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  color: _pageIndex == i
-                                      ? const Color(0xFFFFB800)
-                                      : const Color(0x73FFFFFF),
-                                  borderRadius: BorderRadius.circular(999),
-                                  boxShadow: _pageIndex == i
-                                      ? const [
-                                          BoxShadow(
-                                            color: Color(0xB3FFB800),
-                                            blurRadius: 8,
-                                            offset: Offset(0, 2),
-                                          ),
-                                        ]
-                                      : null,
+                          Semantics(
+                            button: true,
+                            selected: _pageIndex == i,
+                            label: l10n.onboardingPageLabel(i + 1),
+                            excludeSemantics: true,
+                            child: GestureDetector(
+                              onTap: () {
+                                _pageController.animateToPage(
+                                  i,
+                                  duration: const Duration(milliseconds: 320),
+                                  curve: Curves.easeOutCubic,
+                                );
+                              },
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                alignment: Alignment.center,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 250),
+                                  width: _pageIndex == i ? 30 : 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: _pageIndex == i
+                                        ? const Color(0xFFFFB800)
+                                        : const Color(0x73FFFFFF),
+                                    borderRadius: BorderRadius.circular(999),
+                                    boxShadow: _pageIndex == i
+                                        ? const [
+                                            BoxShadow(
+                                              color: Color(0xB3FFB800),
+                                              blurRadius: 8,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ]
+                                        : null,
+                                  ),
                                 ),
                               ),
                             ),
@@ -348,53 +389,62 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   const SizedBox(height: 4),
                   // DEVAM › Butonu
-                  GestureDetector(
-                    onTap: _nextPage,
-                    behavior: HitTestBehavior.opaque,
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 200),
-                      opacity: _pageIndex == 2 && _loading ? 0.0 : 1.0,
-                      child: Container(
-                        width: 190,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            stops: [0.0, 0.55, 1.0],
-                            colors: [
-                              Color(0xFFFFCF3F),
-                              Color(0xFFFFB800),
-                              Color(0xFFF59E00),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0xFFB97A00),
-                              offset: Offset(0, 5),
+                  Semantics(
+                    button: true,
+                    label: _pageIndex == 2
+                        ? l10n.splashStartButtonPlain
+                        : l10n.splashContinueButtonPlain,
+                    excludeSemantics: true,
+                    child: GestureDetector(
+                      onTap: _nextPage,
+                      behavior: HitTestBehavior.opaque,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 200),
+                        opacity: _pageIndex == 2 && _loading ? 0.0 : 1.0,
+                        child: Container(
+                          width: 190,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              stops: [0.0, 0.55, 1.0],
+                              colors: [
+                                Color(0xFFFFCF3F),
+                                Color(0xFFFFB800),
+                                Color(0xFFF59E00),
+                              ],
                             ),
-                            BoxShadow(
-                              color: Color(0x47000000), // rgba(0,0,0,.28)
-                              blurRadius: 18,
-                              offset: Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _pageIndex == 2 ? 'BAŞLA ›' : 'DEVAM ›',
-                          style: GoogleFonts.baloo2(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.36,
-                            shadows: const [
-                              Shadow(
-                                color: Color(0x59784000),
-                                offset: Offset(0, 1),
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0xFFB97A00),
+                                offset: Offset(0, 5),
+                              ),
+                              BoxShadow(
+                                color: Color(0x47000000), // rgba(0,0,0,.28)
+                                blurRadius: 18,
+                                offset: Offset(0, 10),
                               ),
                             ],
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            _pageIndex == 2
+                                ? l10n.splashStartButton
+                                : l10n.splashContinueButton,
+                            style: GoogleFonts.baloo2(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.36,
+                              shadows: const [
+                                Shadow(
+                                  color: Color(0x59784000),
+                                  offset: Offset(0, 1),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -406,11 +456,11 @@ class _SplashScreenState extends State<SplashScreen>
           ),
 
           // Version label (v1.0 · Tasarım Prototipi)
-          const Positioned(
+          Positioned(
             right: 18,
             bottom: 14,
             child: Text(
-              'v1.0 · Tasarım Prototipi',
+              l10n.splashVersionLabel,
               style: TextStyle(
                 fontFamily: 'Nunito',
                 fontSize: 11,
@@ -425,18 +475,47 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  /// Küçük ekranlarda (360x640, 375x667) dikey/yatay taşmayı önlerken
-  /// 430x932 referans boyutta 430x810 piksel koordinatlarını birebir korur.
+  /// Sayfa tasarımının referans ölçüleri: 430x932 ekranda üstten 0,
+  /// alttan 122px'lik ayak hariç kalan 430x810'luk görünüm alanı.
+  /// Sayfalar bu ölçüleri yalnızca referans oran olarak alır;
+  /// gerçek boyut her zaman LayoutBuilder constraints'inden gelir.
+  static const double _refPageWidth = 430.0;
+  static const double _refPageHeight = 810.0;
+
+  /// Sayfayı mevcut alana yayar: referans boyutta veya daha büyük ekranda
+  /// sayfa alanı doldurur (double.infinity); daha küçük ekranda
+  /// (360x640, 375x667) referans oranı korunarak küçültülür, taşma olmaz.
   Widget _wrapPageViewport(Widget pageContent) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 425 && constraints.maxHeight >= 800) {
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
           return pageContent;
         }
-        return FittedBox(
-          fit: BoxFit.contain,
+        final availWidth = constraints.maxWidth;
+        final availHeight = constraints.maxHeight;
+        if (availWidth >= _refPageWidth - 5 &&
+            availHeight >= _refPageHeight - 10) {
+          return pageContent;
+        }
+        final scale = math.min(
+          availWidth / _refPageWidth,
+          availHeight / _refPageHeight,
+        );
+        return Align(
           alignment: Alignment.topCenter,
-          child: pageContent,
+          child: SizedBox(
+            width: _refPageWidth * scale,
+            height: _refPageHeight * scale,
+            child: FittedBox(
+              fit: BoxFit.contain,
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: _refPageWidth,
+                height: _refPageHeight,
+                child: pageContent,
+              ),
+            ),
+          ),
         );
       },
     );
@@ -444,9 +523,10 @@ class _SplashScreenState extends State<SplashScreen>
 
   // SAYFA 1: Logo + Maskot Girişi
   Widget _buildPage1() {
+    final l10n = context.l10n;
     return Container(
-      width: 430,
-      height: 810,
+      width: double.infinity,
+      height: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 56.0, 22, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -468,7 +548,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
               child: Text(
-                'YENİ MACERA',
+                l10n.splashKicker1,
                 style: GoogleFonts.baloo2(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
@@ -518,7 +598,7 @@ class _SplashScreenState extends State<SplashScreen>
                             sigmaY: 12.0,
                           ),
                           child: Image.asset(
-                            'assets/design/logo_lululu.webp',
+                            'assets/design/ui/logo_lululu.webp',
                             width: 336.0,
                             height: 112.0,
                             fit: BoxFit.contain,
@@ -528,7 +608,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                       Image.asset(
-                        'assets/design/logo_lululu.webp',
+                        'assets/design/ui/logo_lululu.webp',
                         width: 336.0,
                         height: 112.0,
                         fit: BoxFit.contain,
@@ -545,7 +625,7 @@ class _SplashScreenState extends State<SplashScreen>
           // 3. Title H2 (starts at y=222.6, height=62.6)
           RichText(
             textAlign: TextAlign.center,
-            text: const TextSpan(
+            text: TextSpan(
               style: TextStyle(
                 fontFamily: 'Baloo 2',
                 fontSize: 29,
@@ -565,11 +645,11 @@ class _SplashScreenState extends State<SplashScreen>
               ),
               children: [
                 TextSpan(
-                  text: 'BÖCEKLERİ BİRLEŞTİR,\n',
+                  text: l10n.splashTitle1Line1,
                   style: TextStyle(color: Colors.white),
                 ),
                 TextSpan(
-                  text: 'EFSANEYİ YARAT!',
+                  text: l10n.splashTitle1Line2,
                   style: TextStyle(color: Color(0xFFFFD34D)),
                 ),
               ],
@@ -579,10 +659,10 @@ class _SplashScreenState extends State<SplashScreen>
           const SizedBox(height: 5.0),
 
           // 4. Subtitle (starts at y=293.2, width=290, height=67.4)
-          const SizedBox(
-            width: 292,
+          SizedBox(
+            width: 320,
             child: Text(
-              'Aynı böcekleri çarpıştır, 13 aşamalı evrim\nzincirinde Pembe Bornozlu\'ya kadar\nyüksel.',
+              l10n.splashSubtitle1,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Nunito',
@@ -656,13 +736,18 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                         ],
                       ),
-                      child: Text(
-                        'LİDER KONUŞTU!',
-                        style: GoogleFonts.bangers(
-                          fontSize: 19,
-                          letterSpacing: 0.8,
-                          color: const Color(0xFFB80F42),
-                          height: 1.0,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          l10n.splashBubbleText,
+                          maxLines: 1,
+                          softWrap: false,
+                          style: GoogleFonts.bangers(
+                            fontSize: 19,
+                            letterSpacing: 0.8,
+                            color: const Color(0xFFB80F42),
+                            height: 1.0,
+                          ),
                         ),
                       ),
                     ),
@@ -708,7 +793,8 @@ class _SplashScreenState extends State<SplashScreen>
                   );
                 },
                 child: Image.asset(
-                  'assets/design/splash/splash_mascot.png',
+                  // WebP ikizi (76 KB, PNG ile piksel-birebir aynı; S2#34).
+                  'assets/design/splash/splash_mascot.webp',
                   width: 172,
                   height: 278.8,
                   fit: BoxFit.contain,
@@ -729,14 +815,15 @@ class _SplashScreenState extends State<SplashScreen>
 
   // SAYFA 2: Oyun Modları Geçidi
   Widget _buildPage2() {
+    final l10n = context.l10n;
     return Container(
-      width: 430,
-      height: 810,
+      width: double.infinity,
+      height: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 56, 22, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Kicker (10 OYUN MODU)
+          // Kicker (11 OYUN MODU)
           Transform.rotate(
             angle: -2 * math.pi / 180,
             child: Container(
@@ -753,7 +840,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
               child: Text(
-                '10 OYUN MODU',
+                l10n.splashKicker2,
                 style: GoogleFonts.baloo2(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
@@ -787,13 +874,13 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ],
               ),
-              children: const [
+              children: [
                 TextSpan(
-                  text: 'HER GÜN YENİ\n',
+                  text: l10n.splashTitle2Line1,
                   style: TextStyle(color: Colors.white),
                 ),
                 TextSpan(
-                  text: 'BİR MACERA!',
+                  text: l10n.splashTitle2Line2,
                   style: TextStyle(color: Color(0xFFFFD34D)),
                 ),
               ],
@@ -865,55 +952,55 @@ class _SplashScreenState extends State<SplashScreen>
               crossAxisSpacing: 7,
               childAspectRatio: 185 / 40,
               physics: const NeverScrollableScrollPhysics(),
-              children: const [
+              children: [
                 _ModeChip(
-                  title: 'SUİKA ARENA',
-                  assetPath: 'assets/design/bugs/tier1_hd.webp',
+                  title: l10n.suikaArenaTitle,
+                  assetPath: 'assets/bugs/tier1_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier1_hd.png',
                 ),
                 _ModeChip(
-                  title: '2048 GRİD',
-                  assetPath: 'assets/design/bugs/tier2_hd.webp',
+                  title: l10n.grid2048Title,
+                  assetPath: 'assets/bugs/tier2_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier2_hd.png',
                 ),
                 _ModeChip(
-                  title: 'BALON PATLAT',
-                  assetPath: 'assets/design/bugs/tier1_hd.webp',
+                  title: l10n.balloonPopTitle,
+                  assetPath: 'assets/bugs/tier1_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier1_hd.png',
                 ),
                 _ModeChip(
-                  title: 'MATCH 3',
-                  assetPath: 'assets/design/bugs/tier5_hd.webp',
+                  title: l10n.match3Title,
+                  assetPath: 'assets/bugs/tier5_hd.webp',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier5_hd.png',
                 ),
                 _ModeChip(
-                  title: 'BAĞLA PATLAT',
-                  assetPath: 'assets/design/bugs/tier3_hd.webp',
+                  title: l10n.linkPopTitle,
+                  assetPath: 'assets/bugs/tier3_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier3_hd.png',
                 ),
                 _ModeChip(
-                  title: 'STACK DROP',
-                  assetPath: 'assets/design/bugs/tier6_hd.webp',
+                  title: l10n.stackDropTitle,
+                  assetPath: 'assets/bugs/tier6_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier6_hd.png',
                 ),
                 _ModeChip(
-                  title: 'TERLİK TAP',
-                  assetPath: 'assets/design/powerup_terlik.webp',
-                  fallbackAssetPath: 'assets/design/powerup_terlik.png',
+                  title: l10n.slipperTapTitle,
+                  assetPath: 'assets/design/ui/powerup_terlik.png',
+                  fallbackAssetPath: 'assets/design/ui/powerup_terlik.png',
                 ),
                 _ModeChip(
-                  title: 'OSMANTUŞ',
-                  assetPath: 'assets/design/osman/osmantus_kisi_a.webp',
+                  title: l10n.osmantusTitle,
+                  assetPath: 'assets/osman/osmantus_kisi_a.png',
                   fallbackAssetPath: 'assets/design/osman/osmantus_kisi_a.png',
                 ),
                 _ModeChip(
-                  title: 'ÇIĞLIK BÖCEK',
-                  assetPath: 'assets/design/bugs/tier7_hd.webp',
+                  title: l10n.screamBugTitle,
+                  assetPath: 'assets/bugs/tier7_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier7_hd.png',
                 ),
                 _ModeChip(
-                  title: 'MAKARAYIZ',
-                  assetPath: 'assets/design/bugs/tier3_hd.webp',
+                  title: l10n.makarayizTitle,
+                  assetPath: 'assets/bugs/tier3_hd.png',
                   fallbackAssetPath: 'assets/design/bugs_hd/tier3_hd.png',
                 ),
               ],
@@ -934,9 +1021,10 @@ class _SplashScreenState extends State<SplashScreen>
 
   // SAYFA 3: Başlat + Loading Bar
   Widget _buildPage3() {
+    final l10n = context.l10n;
     return Container(
-      width: 430,
-      height: 810,
+      width: double.infinity,
+      height: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 56, 22, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -958,7 +1046,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
               child: Text(
-                'SON ADIM',
+                l10n.splashKicker3,
                 style: GoogleFonts.baloo2(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
@@ -992,13 +1080,13 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ],
               ),
-              children: const [
+              children: [
                 TextSpan(
-                  text: 'MACERAYA\n',
+                  text: l10n.splashTitle3Line1,
                   style: TextStyle(color: Colors.white),
                 ),
                 TextSpan(
-                  text: 'HAZIR MISIN?',
+                  text: l10n.splashTitle3Line2,
                   style: TextStyle(color: Color(0xFFFFD34D)),
                 ),
               ],
@@ -1041,68 +1129,77 @@ class _SplashScreenState extends State<SplashScreen>
           const SizedBox(height: 16),
 
           // Fuchsia Start Button (#btnStart)
-          GestureDetector(
-            onTap: _startLoading,
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 248),
-              height: 56,
-              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFFFF3377),
-                    Color(0xFFE01E5A),
-                    Color(0xFFB80F42),
+          Semantics(
+            button: true,
+            label: _loading
+                ? (_done
+                    ? l10n.splashStarting
+                    : l10n.splashLoadingPercent(_progress.round()))
+                : l10n.splashStartAdventure,
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: _startLoading,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 248),
+                height: 56,
+                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFFFF3377),
+                      Color(0xFFE01E5A),
+                      Color(0xFFB80F42),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0xFF7A082E),
+                      offset: Offset(0, 5),
+                    ),
+                    BoxShadow(
+                      color: Color(0x47000000),
+                      blurRadius: 18,
+                      offset: Offset(0, 10),
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0xFF7A082E),
-                    offset: Offset(0, 5),
-                  ),
-                  BoxShadow(
-                    color: Color(0x47000000),
-                    blurRadius: 18,
-                    offset: Offset(0, 10),
-                  ),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Image.asset(
-                    'assets/design/icons/play.png',
-                    width: 23,
-                    height: 23,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 23,
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/design/ui/icons/play.png',
+                      width: 23,
+                      height: 23,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 23,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _loading
-                        ? (_done
-                            ? 'BAŞLIYOR!'
-                            : 'YÜKLENİYOR… %${_progress.round()}')
-                        : 'MACERAYA BAŞLA',
-                    style: GoogleFonts.baloo2(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                      height: 1.15,
+                    const SizedBox(width: 8),
+                    Text(
+                      _loading
+                          ? (_done
+                              ? l10n.splashStarting
+                              : l10n.splashLoadingPercent(_progress.round()))
+                          : l10n.splashStartAdventure,
+                      style: GoogleFonts.baloo2(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                        height: 1.15,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1214,8 +1311,8 @@ class _SplashScreenState extends State<SplashScreen>
                     children: [
                       Text(
                         _loading
-                            ? _loadMessages[_msgIndex]
-                            : 'Başlamak için butona bas!',
+                            ? l10n.splashLoadMessage(_msgIndex)
+                            : l10n.splashPressToStart,
                         style: GoogleFonts.nunito(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w800,

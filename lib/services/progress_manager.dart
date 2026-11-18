@@ -12,13 +12,93 @@ class ProgressManager extends ChangeNotifier {
   static ProgressManager get instance => _instance;
   ProgressManager._internal();
 
+  /// Yükleme tamamlandı mı ([ensureLoaded] kapısı).
+  bool _loaded = false;
+
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
+
   static const int defaultCoins = 1240;
   static const int maxCampaignLevels = 80;
   static const int maxSingleCoinGrant = 100000;
   static const int maxTotalCoins = 99999999;
+  /// Tüm modlar için mutlak skor üst sınırı (rules `score 0..500000` ile
+  /// uyumlu). Mod bazlı tavanlar [modeScoreCeilings]'tedir; bilinmeyen
+  /// modda bu değer varsayılan tavan olarak kullanılır.
   static const int maxValidModeScore = 500000;
+
+  /// Mod bazlı skor tavanları — TEK KAYNAK (S1#35).
+  ///
+  /// [recordModeScore] (yerel depo) ile LeaderboardService.submitScore
+  /// (liderlik deposu) AYNI tavanları kullanır: liderlik tarafı bu tabloya
+  /// delege eder, kendi kopyasını tutmaz. Tersine bağlama (bu dosyanın
+  /// liderlik servisini import etmesi) döngüsel import yaratacağı için
+  /// tek kaynak burasıdır; liderlik servisi zaten bu dosyayı import eder.
+  ///
+  /// Tavanlar "ulaşılabilir en yüksek skor" değil, hileye karşı makullük
+  /// sınırıdır. Değişmezler (firestore.rules + CloudSyncService ile
+  /// uyumlu — tavan değiştirirken bu yerler birlikte gözden geçirilir):
+  /// * Her tavan ≤ 500.000 (rules `score 0..500000` ve
+  ///   CloudSyncService.maxValidModeScore). Üstünde bir skor buluta
+  ///   yazılamaz; tavan bu sınırın üstüne çıkarılamaz.
+  /// * Suika tavanı 250.000'dir ve skor formülü tarafına aittir; burada
+  ///   değiştirilmez (formül ajanı ile eşgüdüm gerekir).
+  /// * Tavanlar toplamı 2.500.000 ≤ 5.500.000 (rules `total11ModesScore`
+  ///   sınırı); her modda tavan skor bile toplam sınırını aşamaz.
+  /// * Bilinmeyen modda [maxValidModeScore] (500.000) uygulanır;
+  ///   boş mod [isScoreValidForMode] tarafından reddedilir.
+  static const Map<String, int> modeScoreCeilings = {
+    'suika': 250000,
+    'grid_2048': 500000,
+    'balloon_pop': 150000,
+    'match3': 300000,
+    'connect_pop': 250000,
+    'stack_drop': 150000,
+    'osmantus': 200000,
+    'scream_roach': 150000,
+    'makarayiz': 200000,
+    'terlik_tap': 150000,
+    'yuva_defense': 200000,
+  };
   static const String _integrityPrefKey = 'lululu_state_integrity_sig';
   static const String _integritySalt = 'LululuVaultSig_2026_v4';
+
+  /// [load] tarafından okunan yerel ilerleme anahtarları — "İlerlemeyi
+  /// Sıfırla" (SettingsScreen.resetAll) ile aynı küme; hesap silme
+  /// temizliği ([clearLocalData]) de bu kümeyi kaldırır. Ses/titreşim
+  /// ayar anahtarları (`lululu_sfx_enabled` vb.) bilinçli olarak
+  /// dışarıda bırakılır — sıfırlama ayarları değiştirmez.
+  static const List<String> _localProgressKeys = <String>[
+    'lululu_unlocked_level',
+    'lululu_coins',
+    'LululuCoinBalance',
+    'lululu_spray',
+    'lululu_raid',
+    'lululu_slipper',
+    'lululu_terlik',
+    'lululu_aydinlat',
+    'lululu_f16',
+    'lululu_shop_chest_day',
+    'lululu_limited_drop_day',
+    'lululu_royal_cape',
+    'lululu_owned_cosmetics',
+    'lululu_unlocked_tiers',
+    'lululu_mode_high_scores',
+    'lululu_daily_tasks_day',
+    'lululu_daily_tasks_progress',
+    'lululu_daily_tasks_claimed',
+    'lululu_daily_streak',
+    'lululu_last_streak_claim_day',
+    'lululu_extra_powers',
+    'lululu_level_stars',
+    'lululu_level_scores',
+    'lululu_power_seed_v1',
+    'lululu_daily_free_energy_day',
+    'lululu_daily_free_energy_claims',
+    'lululu_last_free_energy_epoch_ms',
+    'lululu_state_integrity_sig',
+  ];
 
   /// 11 oyun modundaki 33 güçlendiricinin tam anahtar listesi (11 × 3 = 33).
   static const List<String> all33PowerKeys = [
@@ -87,11 +167,15 @@ class ProgressManager extends ChangeNotifier {
 
   int get coins => _coins;
   set coins(int value) {
-    _coins = value < 0 ? 0 : value;
+    _coins = value.clamp(0, maxTotalCoins);
     coinsNotifier.value = _coins;
+    _scheduleCoinPersist();
   }
 
   final ValueNotifier<int> coinsNotifier = ValueNotifier<int>(defaultCoins);
+
+  /// `coins` setter'ının ertelenmiş kalıcı kaydı zamanlandı mı (S1#36).
+  bool _coinPersistScheduled = false;
 
   /// Ana güçlendirici stokları (Slipper / Anne Terliği, Spray / Raid, Aydınlat / F16).
   int sprayCount = 3;
@@ -141,11 +225,9 @@ class ProgressManager extends ChangeNotifier {
   int get dailyStreak => streak;
 
   /// Ses ve titreşim ayarları.
-  bool musicEnabled = true;
   bool sfxEnabled = true;
   bool vibrationEnabled = true;
 
-  final ValueNotifier<bool> musicNotifier = ValueNotifier<bool>(true);
   final ValueNotifier<bool> sfxNotifier = ValueNotifier<bool>(true);
   final ValueNotifier<bool> vibrationNotifier = ValueNotifier<bool>(true);
 
@@ -176,7 +258,6 @@ class ProgressManager extends ChangeNotifier {
   int get energy => EnergyService.instance.energy;
   set energy(int value) => EnergyService.instance.energy = value;
   ValueNotifier<int> get energyNotifier => EnergyService.instance.energyNotifier;
-  Duration get energyTimeToNext => EnergyService.instance.timeToNext;
 
   /// Enerjiyi tamamen doldurur ve dinleyicileri bilgilendirir.
   Future<void> refillFullEnergy({int? target}) async {
@@ -287,6 +368,8 @@ class ProgressManager extends ChangeNotifier {
       case 'scream':
       case 'scream_roach':
         return 'scream_roach';
+      case 'makara':
+        return 'makarayiz';
       case 'terlik':
       case 'terlik_tap':
         return 'terlik_tap';
@@ -296,6 +379,23 @@ class ProgressManager extends ChangeNotifier {
       default:
         return modeId.trim().toLowerCase();
     }
+  }
+
+  /// Verilen mod için geçerli üst skor sınırını döner (her zaman ≤ 500.000,
+  /// rules skor sınırıyla uyumlu). Bilinmeyen modda [maxValidModeScore]
+  /// varsayılan tavan olarak kullanılır.
+  static int ceilingForMode(String modeId) {
+    final canonical = normalizeModeId(modeId);
+    return modeScoreCeilings[canonical] ?? maxValidModeScore;
+  }
+
+  /// Skorun pozitif ve modun anti-cheat tavanı içinde olup olmadığını doğrular.
+  /// Boş mod reddedilir; bilinmeyen modda varsayılan tavan (500.000) uygulanır.
+  static bool isScoreValidForMode(String modeId, int score) {
+    if (score <= 0) return false;
+    final canonical = normalizeModeId(modeId);
+    if (canonical.isEmpty) return false;
+    return score <= ceilingForMode(canonical);
   }
 
   int getModeHighScore(String modeId) {
@@ -335,7 +435,29 @@ class ProgressManager extends ChangeNotifier {
     return midnight.difference(now).inSeconds.clamp(0, 86400);
   }
 
+  /// Yükleme tamamlanmışsa hemen döner; yoksa [load] ile aynı
+  /// paylaşımlı yüklemeyi bekler.
+  Future<void> ensureLoaded() async {
+    if (_loaded) return;
+    await load();
+  }
+
+  /// Kalıcı ilerlemeyi yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     unlockedLevel =
         (prefs.getInt('lululu_unlocked_level') ?? 1).clamp(1, maxCampaignLevels);
@@ -431,10 +553,8 @@ class ProgressManager extends ChangeNotifier {
     lastStreakClaimDay = prefs.getString('lululu_last_streak_claim_day') ?? '';
 
     // Ses ve titreşim ayarları
-    musicEnabled = prefs.getBool('lululu_music_enabled') ?? true;
     sfxEnabled = prefs.getBool('lululu_sfx_enabled') ?? true;
     vibrationEnabled = prefs.getBool('lululu_vibration_enabled') ?? true;
-    musicNotifier.value = musicEnabled;
     sfxNotifier.value = sfxEnabled;
     vibrationNotifier.value = vibrationEnabled;
 
@@ -525,7 +645,20 @@ class ProgressManager extends ChangeNotifier {
       await prefs.setString(_integrityPrefKey, _stateIntegritySig);
     }
 
+    _loaded = true;
     notifyListeners();
+  }
+
+  /// Hesap silme için yerel ilerlemenin tamamını temizler (hesap-silme,
+  /// yerel-temizlik): [_localProgressKeys] kaldırılır, ardından [load]
+  /// varsayılanlarla yeniden yüklenir (güç tohumları dahil). Ses/
+  /// titreşim ayarlarına dokunulmaz.
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in _localProgressKeys) {
+      await prefs.remove(key);
+    }
+    await load();
   }
 
   /// 33 oyun modu güçlendiricisinin anahtarlarını ve Türkçe mağaza adlarını kanonikleştirir.
@@ -820,6 +953,36 @@ class ProgressManager extends ChangeNotifier {
     return true;
   }
 
+  /// Başarısız olan bir güçlendirici etkisinin stoğunu iade eder (S1#30):
+  /// [takePower]'ın senkron tersidir — 1 yük geri verir, dinleyicileri
+  /// bilgilendirir ve kalıcı kaydı ateşle-unut yazar. Stok üst sınırı
+  /// [incrementPowerCount] ile aynıdır (99999).
+  void refundPower(String id) {
+    final canonical = normalizePowerKey(id);
+    switch (canonical) {
+      case 'raid':
+        sprayCount = (sprayCount + 1).clamp(0, 99999);
+        break;
+      case 'terlik':
+        slipperCount = (slipperCount + 1).clamp(0, 99999);
+        break;
+      case 'f16':
+        aydinlatCount = (aydinlatCount + 1).clamp(0, 99999);
+        break;
+      default:
+        final have = extraPowers[canonical] ?? extraPowers[id] ?? 0;
+        final next = (have + 1).clamp(0, 99999);
+        extraPowers[canonical] = next;
+        if (id != canonical) {
+          extraPowers[id] = next;
+        }
+        break;
+    }
+    _syncPrimaryPowersToExtra();
+    notifyListeners();
+    unawaited(_persistEconomy());
+  }
+
   /// Moda özel güçlendirici ekler.
   Future<void> addPower(String id, [int amount = 1]) async {
     if (amount <= 0) return;
@@ -841,10 +1004,14 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// 11 oyun modundan birinin yüksek skorunu kaydeder (anti-cheat tavan kontrollü).
+  ///
+  /// Tavan, [modeScoreCeilings] tablosundan mod bazlı okunur — liderlik
+  /// servisinin `submitScore` yolu aynı tabloyu kullandığı için iki depo
+  /// ayrışamaz (S1#35).
   Future<bool> recordModeScore(String modeId, int score) async {
-    if (score <= 0 || score > maxValidModeScore) return false;
     final key = normalizeModeId(modeId);
     if (key.isEmpty) return false;
+    if (!isScoreValidForMode(key, score)) return false;
     final prev = modeHighScores[key] ?? 0;
     if (score <= prev) return false;
     modeHighScores[key] = score;
@@ -952,14 +1119,6 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// Ses ve titreşim ayarlarını günceller ve kalıcı olarak saklar.
-  Future<void> setMusicEnabled(bool enabled) async {
-    musicEnabled = enabled;
-    musicNotifier.value = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('lululu_music_enabled', enabled);
-    notifyListeners();
-  }
-
   Future<void> setSfxEnabled(bool enabled) async {
     sfxEnabled = enabled;
     sfxNotifier.value = enabled;
@@ -976,23 +1135,47 @@ class ProgressManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Seviye sonucunu kaydeder.
+  ///
+  /// Yıldız coini (yıldız başına 50) YALNIZ kazanılan YENİ yıldız başına
+  /// ödenir: aynı/yüksek olmayan yıldızla tekrar oynamak coin vermez,
+  /// yıldız artışı yalnız fark kadar öder (örn. 1 → 3 yıldız = +100).
+  /// İlk temizleme, önceki yıldız 0 olduğu için tam yıldız kadar öder.
+  /// Önceki yıldız asla ezilmez: yıldız haritası yalnız artışta yazılır.
+  ///
+  /// Kilit açma yıldızdan bağımsızdır (S1#23 yan etkisi): 0 yıldızlı bir
+  /// zafer de (hedef-kademe / hayatta kalma hedefi skor eşiğinin altında
+  /// karşılansa bile) sonraki seviyeyi açar. [victory] üç durumludur:
+  /// * `true` — zafer: yıldız 0 olsa bile sınırdaki seviye açılır.
+  /// * `false` — yenilgi: yıldız olsa bile seviye açılmaz (yıldız/coin/
+  ///   yüksek skor kaydı aynen yapılır, yalnız kilit açılmaz).
+  /// * `null` (varsayılan) — eski davranış: yıldızlı her tamamlama
+  ///   sınırdaki seviyeyi açar, 0 yıldız açmaz. Parametreyi vermeyen
+  ///   eski çağrıcılar aynen çalışmaya devam eder.
   Future<void> recordLevelResult({
     required int levelId,
     required int score,
     required int stars,
+    bool? victory,
   }) async {
-    if (stars > 0) {
-      final currentStars = _levelStars[levelId] ?? 0;
-      if (stars > currentStars) {
-        _levelStars[levelId] = stars;
+    final earnedStars = stars < 0 ? 0 : (stars > 3 ? 3 : stars);
+    if (earnedStars > 0) {
+      final previousStars = _levelStars[levelId] ?? 0;
+      final starGain = earnedStars - previousStars;
+      if (starGain > 0) {
+        _levelStars[levelId] = earnedStars;
+        // Coin ödülü: yalnız YENİ yıldız başına 50 coin (tekrar ödemesi yok).
+        coins += starGain * 50;
       }
+    }
 
+    // Kilit açma zafer bilgisinden okunur, yıldızdan değil. victory
+    // verilmezse eski kural (yıldız > 0) aynen korunur.
+    final shouldUnlock = victory ?? (earnedStars > 0);
+    if (shouldUnlock) {
       if (levelId >= unlockedLevel && unlockedLevel < maxCampaignLevels) {
         unlockedLevel = (levelId + 1).clamp(1, maxCampaignLevels);
       }
-
-      // Coin ödülü (yıldız başına 50 coin)
-      coins += stars * 50;
     }
 
     final currentScore = _levelHighScores[levelId] ?? 0;
@@ -1224,6 +1407,12 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// Mevcut ekonomi/skor durumunun bütünlük imzası ve tavan sınırlarıyla uyumunu doğrular.
+  ///
+  /// Skor kontrolü burada BİLİNÇLİ olarak mutlak sınır ([maxValidModeScore],
+  /// rules `score 0..500000` ile aynı) kullanır: tek-tavan döneminde
+  /// kaydedilmiş eski skorlar mod bazlı tavanın üstünde olabilir; mod bazlı
+  /// tavanlar yazma anında ([recordModeScore] / liderlik `submitScore`)
+  /// zorlanır, bu okuma kontrolü eski veriyi hile saymaz (S1#35).
   bool verifyStateIntegrity() {
     if (coins < 0 || coins > maxTotalCoins) return false;
     if (unlockedLevel < 1 || unlockedLevel > maxCampaignLevels) return false;
@@ -1232,6 +1421,34 @@ class ProgressManager extends ChangeNotifier {
     }
     if (_stateIntegritySig.isEmpty) return true;
     return _stateIntegritySig == _computeStateIntegritySig();
+  }
+
+  /// `coins` setter'ının kalıcı kaydı (S1#36): setter senkron olduğu için
+  /// kayıt olay kuyruğuna ertelenir; aynı senkron bloktaki tekrarlı
+  /// atamalar tek kayıtta birleşir. Erteleme sayesinde kayıt, çağıran
+  /// metodun senkron değişiklikleri (örn. güçlendirici sayıları) bittikten
+  /// sonra okunur; bütünlük imzası ara durumdan hesaplanmaz. Yazan
+  /// anahtarlar [addCoins] ile aynıdır (`lululu_coins`,
+  /// `LululuCoinBalance`, bütünlük imzası).
+  void _scheduleCoinPersist() {
+    if (_coinPersistScheduled) return;
+    _coinPersistScheduled = true;
+    unawaited(
+      Future(() async {
+        _coinPersistScheduled = false;
+        await _persistCoinsOnly();
+      }),
+    );
+  }
+
+  /// Yalnız coin bakiyesi + bütünlük imzası yazar ([addCoins] ile aynı
+  /// kayıt yolu; tam ekonomi kaydı için [_persistEconomy] kullanılır).
+  Future<void> _persistCoinsOnly() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('lululu_coins', coins);
+    await prefs.setInt('LululuCoinBalance', coins);
+    _stateIntegritySig = _computeStateIntegritySig();
+    await prefs.setString(_integrityPrefKey, _stateIntegritySig);
   }
 
   Future<void> _persistEconomy() async {

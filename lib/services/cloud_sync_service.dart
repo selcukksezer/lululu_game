@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,8 +16,70 @@ import 'firebase_bootstrap.dart';
 import 'leaderboard_service.dart';
 import 'progress_manager.dart';
 
+/// Bulut yazımının neden reddedildiğini tipli olarak taşır.
+///
+/// Çağrı noktaları (başka dosyalarda) `CloudSyncService.lastFailure` /
+/// `flushPendingDetailed()` üzerinden okuyup kullanıcıya görünür hata
+/// gösterebilir; `flushPending()` int sözleşmesi bozulmadan korunur.
+enum CloudSyncFailureKind {
+  /// Firestore kuralları yazımı reddetti (`permission-denied`).
+  permissionDenied,
+
+  /// Ağ/Firestore erişilemez durumda.
+  unavailable,
+
+  /// Payload istemci tarafında kural sınırlarına uymuyor; yazım denenmedi.
+  invalidPayload,
+
+  /// Sınıflandırılamayan hata.
+  unknown,
+}
+
+/// Tipli senkron hatası: kullanıcıya gösterilecek Türkçe mesaj + hata türü.
+class CloudSyncFailure {
+  const CloudSyncFailure({
+    required this.kind,
+    required this.message,
+    this.details,
+  });
+
+  final CloudSyncFailureKind kind;
+
+  /// Kullanıcıya gösterilebilir Türkçe mesaj (ham hata metni içermez).
+  final String message;
+
+  /// Tanı amaçlı ham detay (log için; kullanıcı arayüzüne verilmez).
+  final String? details;
+
+  @override
+  String toString() => 'CloudSyncFailure($kind): $message';
+}
+
+/// `flushPendingDetailed()` sonucu: başarıda yazılan paket sayısı, reddedilişte
+/// tipli hata. Kuyruk, reddedilişte korunur (bir sonraki flush tekrar dener).
+class CloudSyncFlushResult {
+  const CloudSyncFlushResult._({
+    required this.success,
+    required this.flushedCount,
+    this.failure,
+  });
+
+  const CloudSyncFlushResult.success(int flushedCount)
+      : this._(success: true, flushedCount: flushedCount);
+
+  const CloudSyncFlushResult.failure(CloudSyncFailure failure)
+      : this._(success: false, flushedCount: 0, failure: failure);
+
+  final bool success;
+  final int flushedCount;
+  final CloudSyncFailure? failure;
+}
+
 /// Online sync — Firestore when Firebase ready; else durable local queue
 /// with HMAC-SHA256 integrity verification and anti-cheat bounds enforcement.
+///
+/// Sınırlar `firestore.rules` ile birebir tutulur: kural değişirse bu
+/// dosyadaki sabitler de değişmelidir (bkz. aşağıdaki sabitlerin yorumları).
 class CloudSyncService extends ChangeNotifier {
   CloudSyncService._();
   static final instance = CloudSyncService._();
@@ -25,20 +88,121 @@ class CloudSyncService extends ChangeNotifier {
   static const _signedQueueKey = 'LululuCloudSignedQueueV1';
   static const _integritySecret = 'lululu_cloud_integrity_v2_hmac_key_2026';
 
-  /// Anti-cheat bounds for cloud & offline sync payloads.
-  static const int maxValidModeScore = 10000000;
-  static const int maxValidCoins = 50000000;
-  static const int maxValidEnergy = 999;
+  /// Anti-cheat bounds — `firestore.rules` ile BİREBİR.
+  ///
+  /// * Skor: rules `score 0..500000` (hem `scores/.../modes` hem profil
+  ///   `bestOverallScore`). [ProgressManager.modeScoreCeilings] tavanları
+  ///   (tek kaynak; [LeaderboardService] delege eder) da bu sınırın
+  ///   altında kalmak zorundadır.
+  /// * Coin: rules `coins 0..10000000` mutlak tavan; İLK yazımda
+  ///   `coins <= 50000`, her güncellemede artış `<= 50000` (ayrı sabitler).
+  /// * Görünen ad: rules `displayName 1..32`.
+  /// * Enerji: rules `energy 0..100` (EnergyService zaten 30'da kelepçeler).
+  ///
+  /// Skor tavanı TEK KAYNAK [ProgressManager.maxValidModeScore] (S1#35):
+  /// bu sabit yalnızca takma addır, kendi `500000` kopyasını tutmaz.
+  /// Mod bazlı tavanlar [modeScoreCeilings] / [ceilingForMode], mod bazlı
+  /// doğrulama [isScoreValidForMode] üzerinden aynı kaynağa delege edilir.
+  /// Bu dosyadaki rules doğrulayıcıları ile eski/uzak veri okuma yolları
+  /// BİLİNÇLİ olarak mutlak sınırı kullanır (bkz. [isValidScore]): rules
+  /// her mod için `0..500000` kabul eder ve tek-tavan döneminde
+  /// kaydedilmiş eski skorlar mod tavanının üstünde olabilir.
+  static const int maxValidModeScore = ProgressManager.maxValidModeScore;
+
+  /// Mod bazlı skor tavanları — TEK KAYNAK
+  /// [ProgressManager.modeScoreCeilings] (S1#35). Bu sınıf tabloyu
+  /// delege eder, kendi kopyasını tutmaz ([LeaderboardService] ile aynı
+  /// kalıp). Tavan değişmezleri tablonun başındaki belgede yazılıdır.
+  static const Map<String, int> modeScoreCeilings =
+      ProgressManager.modeScoreCeilings;
+  static const int maxValidCoins = 10000000;
+
+  /// İlk profil yazımında (create) rules `coins <= 50000` ister.
+  static const int maxCoinsOnCreate = 50000;
+
+  /// Her profil güncellemesinde (update) rules coin artışını `<= 50000`
+  /// ile sınırlar (azalış sınırsız). [flushPendingDetailed] her flush'ta
+  /// uzaktan bakiyeyi ön-okuyup [convergedCoinsForFlush] ile en fazla bu
+  /// kadar artış yazar; kalan fark sonraki flush'larda yakınsar.
+  static const int maxCoinIncreasePerUpdate = 50000;
+
+  /// Rules `displayName 1..32` — bkz. [sanitizeDisplayName].
+  static const int maxDisplayNameLength = 32;
+  static const int maxValidEnergy = 100;
   static const int maxValidBoosterCount = 9999;
   static const int maxValidTier = 20;
   static const int maxValidStreak = 3650;
   static const int maxValidStars = ProgressManager.maxCampaignLevels * 3;
 
+  /// Rules `total11ModesScore 0..5500000`.
+  static const int maxTotal11ModesScore = 5500000;
+
+  /// Rules `extraPowers` en fazla 40 anahtar.
+  static const int maxExtraPowerEntries = 40;
+
+  /// Rules `unlockedTiers` en fazla 16 öğe.
+  static const int maxUnlockedTiersEntries = 16;
+
   bool onlineEnabled = false;
   String status = 'Yerel · bulut kuyruğu hazır';
   final List<String> pending = [];
+
+  /// Kuyruk belleğe yüklendi mi ([ensureLoaded] kapısı).
+  bool _loaded = false;
+
+  /// Devam eden `ensureLoaded()` çağrısı (uçuş koruması): eşzamanlı
+  /// çağrılar aynı yüklemeyi paylaşır, ikinci çağrı kuyruğu silip
+  /// yeniden doldurmaz.
+  Future<void>? _loadFuture;
+
+  /// Devam eden `flushPendingDetailed()` çağrısı (tek-uçuş koruması):
+  /// eşzamanlı flush'lar aynı sonucu paylaşır.
+  Future<CloudSyncFlushResult>? _flushFuture;
+
+  CloudSyncFailure? _lastFailure;
+
+  /// Son senkron reddinin tipli hatası (`null` ise son flush başarılı ya da
+  /// hiç denenmedi). Kullanıcı arayüzü bu alanı okuyup görünür hata gösterir.
+  CloudSyncFailure? get lastFailure => _lastFailure;
+
+  /// Kullanıcıya gösterilebilir son senkron hata mesajı (`null` ise hata yok).
+  String? get lastErrorMessage => _lastFailure?.message;
   bool get firebaseReady => FirebaseBootstrap.ready;
   bool get isAvailable => FirebaseBootstrap.isAvailable;
+
+  /// Y3: Firestore okumaları yalnız `isAuthenticated()` ister
+  /// (`firestore.rules:435-436` joker kural + `:428-432`); sahiplik
+  /// (`uid == playerId`) gerekmez. Bu yüzden salt-okuma kapısı
+  /// [_firebaseIdentityAligned] değil, salt Firebase oturumunun
+  /// varlığıdır. `AuthService.isSignedIn` burada kullanılmaz: yerel /
+  /// sentetik kimliklerde de `true` döner, oysa kural
+  /// `request.auth != null` ister.
+  bool get hasFirebaseSession {
+    if (!FirebaseBootstrap.ready) return false;
+    try {
+      return fb.FirebaseAuth.instance.currentUser != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// K1 (W60-6): Firebase UID ile `playerId` uyumu.
+  ///
+  /// Kural `isOwner` (`request.auth.uid == userId`) gerektirir; `playerId`
+  /// sentetik bir id (`local_*`, `apple_local_*`, ...) ise her bulut
+  /// yazımı deterministik `permission-denied` alır ve kuyruk hiç
+  /// boşalmaz. Bu kapı kapalıyken bulut yazımı hiç denenmez, kuyruk
+  /// korunur. Firebase henüz hazır değilse uyumsuzluk kanıtlanamaz →
+  /// `true` döner; o durumda flush çevrimdışı dalda kuyruğu korur.
+  bool get _firebaseIdentityAligned {
+    if (!FirebaseBootstrap.ready) return true;
+    try {
+      final fbUid = fb.FirebaseAuth.instance.currentUser?.uid;
+      return fbUid != null && fbUid == AuthService.instance.playerId;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Constant-time string comparison for integrity hashes.
   static bool _constantTimeEquals(String a, String b) {
@@ -101,6 +265,15 @@ class CloudSyncService extends ChangeNotifier {
   }
 
   /// Returns true if [score] is within valid anti-cheat bounds.
+  ///
+  /// Rules-level check: absolute ceiling [maxValidModeScore] (single
+  /// source [ProgressManager.maxValidModeScore], `firestore.rules`
+  /// `score 0..500000` for every mode). Deliberately NOT per-mode:
+  /// legacy scores recorded in the single-ceiling era may exceed a
+  /// mode ceiling, and rules accept them; per-mode ceilings are
+  /// enforced at write time ([ProgressManager.recordModeScore] /
+  /// `LeaderboardService.submitScore`). For the stricter per-mode
+  /// check use [isScoreValidForMode] / [isValidScoreForMode].
   static bool isValidScore(num? score) {
     if (score == null || score.isNaN || score.isInfinite) return false;
     final intVal = score.toInt();
@@ -108,9 +281,59 @@ class CloudSyncService extends ChangeNotifier {
   }
 
   /// Validates and clamps a mode score; returns 0 if negative or above [maxValidModeScore].
+  ///
+  /// Absolute-ceiling variant of [sanitizeModeScoreForMode]; see
+  /// [isValidScore] for why the rules-level ceiling applies here.
   static int sanitizeModeScore(num? rawScore) {
     if (!isValidScore(rawScore)) return 0;
     return rawScore!.toInt().clamp(0, maxValidModeScore);
+  }
+
+  /// Verilen mod için geçerli üst skor sınırını döner (her zaman ≤ 500.000,
+  /// rules skor sınırıyla uyumlu). [ProgressManager.ceilingForMode] delege
+  /// edilir; bilinmeyen modda [maxValidModeScore] varsayılan tavandır.
+  static int ceilingForMode(String modeId) =>
+      ProgressManager.ceilingForMode(modeId);
+
+  /// Skorun pozitif ve modun anti-cheat tavanı içinde olup olmadığını doğrular.
+  /// [ProgressManager.isScoreValidForMode] delege edilir. Boş mod reddedilir;
+  /// bilinmeyen modda varsayılan tavan (500.000) uygulanır.
+  ///
+  /// Bu doğrulama, [isValidScore] kontrolünden KATIDIR (mod tavanları
+  /// 150.000–500.000 arasıdır): yeni veri yazımında kullanılır; eski/uzak
+  /// veri okuma ve rules doğrulama yolları mutlak sınırda kalır.
+  static bool isScoreValidForMode(String modeId, int score) =>
+      ProgressManager.isScoreValidForMode(modeId, score);
+
+  /// [isScoreValidForMode] yönteminin `num?` kabul eden karşılığı: `null`,
+  /// NaN ve sonsuz reddedilir, geçerli sayı `int`e çevrilip tek kaynağa
+  /// delege edilir. Mod bilgisi olan yeni doğrulama çağrıları bunu kullanır.
+  static bool isValidScoreForMode(String modeId, num? score) {
+    if (score == null || score.isNaN || score.isInfinite) return false;
+    return ProgressManager.isScoreValidForMode(modeId, score.toInt());
+  }
+
+  /// Mod bazlı tavana göre doğrular ve kelepçeler; geçersizse 0 döner.
+  /// [isValidScoreForMode] üzerinden tek kaynağa bağlıdır.
+  /// [sanitizeModeScore] mutlak tavan varyantıdır; bu yöntem mod bilgisi
+  /// varken daha katıdır.
+  static int sanitizeModeScoreForMode(String modeId, num? rawScore) {
+    if (!isValidScoreForMode(modeId, rawScore)) return 0;
+    return rawScore!.toInt().clamp(0, ceilingForMode(modeId));
+  }
+
+  /// Rules `displayName 1..32` ile uyumlu görünen ad üretir: kontrol
+  /// karakterlerini atar, kırpar, 32 karaktere kelepçeler, boşsa 'Oyuncu'
+  /// döner. Profil ve skor payload'ları ile uzaktan ad gösterimi tek elden
+  /// buradan geçer.
+  static String sanitizeDisplayName(String? rawName) {
+    final safe = (rawName ?? '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    if (safe.isEmpty) return 'Oyuncu';
+    return safe.length > maxDisplayNameLength
+        ? safe.substring(0, maxDisplayNameLength)
+        : safe;
   }
 
   /// Validates and clamps a non-negative integer within `[minVal, maxVal]`.
@@ -138,12 +361,7 @@ class CloudSyncService extends ChangeNotifier {
     final board = LeaderboardService.instance;
     final resolvedUid = uid ?? AuthService.instance.playerId;
     final rawName = displayName ?? AuthService.instance.displayName;
-    final safeName = rawName
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-        .trim();
-    final clampedName = safeName.isEmpty
-        ? 'Oyuncu'
-        : (safeName.length > 40 ? safeName.substring(0, 40) : safeName);
+    final clampedName = sanitizeDisplayName(rawName);
 
     final safeCoins = pm.coins.clamp(0, maxValidCoins);
     final safeEnergy = EnergyService.instance.energy.clamp(0, maxValidEnergy);
@@ -160,10 +378,22 @@ class CloudSyncService extends ChangeNotifier {
         .toSet()
       ..add(1);
     final sortedTiers = safeTiers.toList()..sort();
+    // Rules: unlockedTiers en fazla 16 öğe. Aşılırsa Tier 1 + en yüksek
+    // 15 tier korunur (yerel veri etkilenmez, yalnız payload kısalır).
+    final cappedTiers = sortedTiers.length > maxUnlockedTiersEntries
+        ? (<int>{
+            1,
+            ...sortedTiers.sublist(
+              sortedTiers.length - (maxUnlockedTiersEntries - 1),
+            ),
+          }.toList()
+          ..sort())
+        : sortedTiers;
 
     final safeExtraPowers = <String, int>{};
     final sortedPowerKeys = pm.extraPowers.keys.toList()..sort();
-    for (final k in sortedPowerKeys) {
+    // Rules: extraPowers en fazla 40 anahtar; alfabetik ilk 40 korunur.
+    for (final k in sortedPowerKeys.take(maxExtraPowerEntries)) {
       final v = pm.extraPowers[k] ?? 0;
       if (v > 0) {
         safeExtraPowers[k] = v.clamp(0, maxValidBoosterCount);
@@ -193,14 +423,15 @@ class CloudSyncService extends ChangeNotifier {
       'energy': safeEnergy,
       'unlockedLevel': safeLevel,
       'totalStars': safeStars,
-      'total11ModesScore': computedTotal11,
-      'bestOverallScore': computedBestOverall,
+      'total11ModesScore':
+          computedTotal11.clamp(0, maxTotal11ModesScore),
+      'bestOverallScore': computedBestOverall.clamp(0, maxValidModeScore),
       'f16Count': safeF16,
       'raidCount': safeRaid,
       'terlikCount': safeTerlik,
       'extraPowers': safeExtraPowers,
       'streak': safeStreak,
-      'unlockedTiers': sortedTiers,
+      'unlockedTiers': cappedTiers,
       'modeHighScores': safeModeScores,
     };
     payload['integrityHash'] = computeIntegrityHash(payload);
@@ -220,18 +451,177 @@ class CloudSyncService extends ChangeNotifier {
       return null;
     }
     final safeScore = sanitizeModeScore(score);
-    final safeName = displayName
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-        .trim();
     final payload = <String, dynamic>{
       'uid': uid,
       'modeId': canonicalMode,
       'score': safeScore,
-      'displayName': safeName.isEmpty ? 'Oyuncu' : safeName,
+      'displayName': sanitizeDisplayName(displayName),
       'country': country,
     };
     payload['integrityHash'] = computeIntegrityHash(payload);
     return payload;
+  }
+
+  /// Profil payload'unun `firestore.rules` sınırlarına uyup uymadığını
+  /// denetler; boş liste = uygun. Uzaktan durum gerektiren koşullar (coin
+  /// artış sınırı, ilk-yazım sınırı) burada denetlenemez; onları
+  /// [flushPendingDetailed] ön-okuma + [convergedCoinsForFlush]
+  /// yakınsamasıyla çözer (kural reddi yerine kademeli yazım).
+  static List<String> validateProfilePayloadForRules(
+    Map<String, dynamic> payload,
+  ) {
+    final violations = <String>[];
+
+    void checkInt(String field, int minVal, int maxVal) {
+      final v = payload[field];
+      if (v == null) return;
+      if (v is! int || v < minVal || v > maxVal) {
+        violations.add('$field $minVal..$maxVal aralığında olmalı');
+      }
+    }
+
+    final name = payload['displayName'];
+    if (name is! String || name.isEmpty || name.length > maxDisplayNameLength) {
+      violations.add('displayName 1..$maxDisplayNameLength karakter olmalı');
+    }
+    final coins = payload['coins'];
+    if (coins is! int || coins < 0 || coins > maxValidCoins) {
+      violations.add('coins 0..$maxValidCoins aralığında olmalı');
+    }
+    checkInt('energy', 0, maxValidEnergy);
+    checkInt('unlockedLevel', 1, ProgressManager.maxCampaignLevels);
+    checkInt('totalStars', 0, maxValidStars);
+    checkInt('total11ModesScore', 0, maxTotal11ModesScore);
+    checkInt('bestOverallScore', 0, maxValidModeScore);
+    checkInt('f16Count', 0, maxValidBoosterCount);
+    checkInt('raidCount', 0, maxValidBoosterCount);
+    checkInt('terlikCount', 0, maxValidBoosterCount);
+    checkInt('streak', 0, maxValidStreak);
+    final tiers = payload['unlockedTiers'];
+    if (tiers is List && tiers.length > maxUnlockedTiersEntries) {
+      violations.add('unlockedTiers en fazla $maxUnlockedTiersEntries öğe olmalı');
+    }
+    final powers = payload['extraPowers'];
+    if (powers is Map && powers.length > maxExtraPowerEntries) {
+      violations.add('extraPowers en fazla $maxExtraPowerEntries anahtar olmalı');
+    }
+    final modeScores = payload['modeHighScores'];
+    if (modeScores is Map) {
+      if (modeScores.length > 16) {
+        violations.add('modeHighScores en fazla 16 anahtar olmalı');
+      }
+      for (final entry in modeScores.entries) {
+        final v = entry.value;
+        if (v is! int || v < 0 || v > maxValidModeScore) {
+          violations.add('modeHighScores[${entry.key}] 0..$maxValidModeScore olmalı');
+        }
+      }
+    }
+    final hash = payload['integrityHash'];
+    if (hash != null && (hash is! String || hash.length != 64)) {
+      violations.add('integrityHash 64 karakter olmalı');
+    }
+    final country = payload['country'];
+    if (country != null &&
+        (country is! String || country.length < 2 || country.length > 8)) {
+      violations.add('country 2..8 karakter olmalı');
+    }
+    return violations;
+  }
+
+  /// Mod skoru payload'unun `firestore.rules` sınırlarına uyup uymadığını
+  /// denetler; boş liste = uygun. Skor azalmazlığı (update'te eski skordan
+  /// düşük olamaz) uzaktan durum gerektirir, burada denetlenemez; onu
+  /// [flushPendingDetailed] ön-okuma + [convergedScoreForFlush]
+  /// yakınsamasıyla çözer (K2).
+  static List<String> validateModeScorePayloadForRules(
+    Map<String, dynamic> payload,
+  ) {
+    final violations = <String>[];
+    final modeId = payload['modeId'];
+    // Rules isValidModeId: 11 mod + 'total_11' + 'overall'.
+    final validModeIds = <String>{
+      ...LeaderboardService.allModeIds,
+      'total_11',
+      'overall',
+    };
+    if (modeId is! String || !validModeIds.contains(modeId)) {
+      violations.add('modeId geçerli bir mod olmalı');
+    }
+    final score = payload['score'];
+    if (score is! int || score < 0 || score > maxValidModeScore) {
+      violations.add('score 0..$maxValidModeScore aralığında olmalı');
+    }
+    final name = payload['displayName'];
+    if (name is! String || name.isEmpty || name.length > maxDisplayNameLength) {
+      violations.add('displayName 1..$maxDisplayNameLength karakter olmalı');
+    }
+    final hash = payload['integrityHash'];
+    if (hash != null && (hash is! String || hash.length != 64)) {
+      violations.add('integrityHash 64 karakter olmalı');
+    }
+    return violations;
+  }
+
+  /// Tek flush'ta yazılabilecek coin değerini hesaplar (yakınsama adımı).
+  ///
+  /// `firestore.rules`: ilk yazımda (create) `coins <= 50000`, her
+  /// güncellemede artış `<= 50000` (azalış sınırsız). Yerel bakiye
+  /// uzaktakinden 50000'den fazla fazlaysa tam bakiyenin yazımı her
+  /// seferinde reddedilir ve kuyruk hiç boşalmaz; bu yüzden her flush
+  /// en fazla bir adım yazar, kalan fark sonraki flush'larda yazılır.
+  ///
+  /// * [remoteCoins] `null` ise uzakta profil yok sayılır (create):
+  ///   yazım [maxCoinsOnCreate] ile sınırlanır.
+  /// * Aksi hâlde yazım `remoteCoins + [maxCoinIncreasePerUpdate]` ile
+  ///   sınırlanır; yerel bakiye bu sınırın altındaysa aynen yazılır
+  ///   (azalış ve eşitlik her zaman yazılır).
+  ///
+  /// Dönen değer her zaman `0..[maxValidCoins]` aralığında bir `int`'tir;
+  /// bu yüzden yakınsanmış payload ayrıca doğrulanmaya gerek duymaz
+  /// (diğer alanlar [validateProfilePayloadForRules] ile önceden
+  /// denetlenmiş olur, yeni anahtar eklenmez, imza yeniden hesaplanır).
+  static int convergedCoinsForFlush({
+    required int localCoins,
+    required int? remoteCoins,
+  }) {
+    final safeLocal = localCoins < 0
+        ? 0
+        : (localCoins > maxValidCoins ? maxValidCoins : localCoins);
+    if (remoteCoins == null) {
+      return safeLocal < maxCoinsOnCreate ? safeLocal : maxCoinsOnCreate;
+    }
+    final safeRemote = remoteCoins < 0
+        ? 0
+        : (remoteCoins > maxValidCoins ? maxValidCoins : remoteCoins);
+    final cap = safeRemote + maxCoinIncreasePerUpdate;
+    return safeLocal < cap ? safeLocal : cap;
+  }
+
+  /// Tek flush'ta yazılacak skor değerini hesaplar (yakınsama adımı) —
+  /// coin yakınsamasının ([convergedCoinsForFlush]) skor karşılığı (K2).
+  ///
+  /// `firestore.rules` update'te `score >= eski skor` ister
+  /// (`isValidScoreUpdate`, `firestore.rules:252-256`). Yerel skor
+  /// uzaktakinden düşükse olduğu gibi yazımı, batch atomikliği yüzünden
+  /// profil yazısı dahil TÜM yazımları reddettirir ve her flush aynı
+  /// payload'la kalıcı ret döngüsüne girer; bu yüzden yazımdan önce uzak
+  /// skorlar ön-okunur ve her mod max(yerel, uzak) ile yazılır.
+  ///
+  /// * [remoteScore] `null` ise uzakta belge yok sayılır: yerel aynen yazılır.
+  /// * Aksi hâlde büyük olan yazılır; uzak yüksekse yazım eski skora eşit
+  ///   olur (no-op) ve kural geçer; yerel en iyi, commit sonrası
+  ///   [_pullRemoteBests] ile uzaktaki değere yükseltilir.
+  ///
+  /// Dönen değer her zaman `0..[maxValidModeScore]` aralığında bir `int`'tir.
+  static int convergedScoreForFlush({
+    required int localScore,
+    required int? remoteScore,
+  }) {
+    final safeLocal = localScore.clamp(0, maxValidModeScore);
+    if (remoteScore == null) return safeLocal;
+    final safeRemote = remoteScore.clamp(0, maxValidModeScore);
+    return max(safeLocal, safeRemote);
   }
 
   /// Validates and conflict-free merges a remote/offline profile snapshot into
@@ -412,7 +802,23 @@ class CloudSyncService extends ChangeNotifier {
     return envelope;
   }
 
+  /// Kuyruğu prefs'ten bir kez yükler. Eşzamanlı çağrılar aynı
+  /// yüklemeyi paylaşır; yükleme tamamlanmışsa tekrar okumaz
+  /// (bellekteki kuyruk silinip yeniden doldurulmaz).
   Future<void> ensureLoaded() async {
+    if (_loaded) return;
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_queueKey) ?? const [];
     final signedRaw = prefs.getStringList(_signedQueueKey) ?? const [];
@@ -454,6 +860,22 @@ class CloudSyncService extends ChangeNotifier {
     status = FirebaseBootstrap.ready
         ? 'Online hazır · ${pending.length} bekleyen'
         : FirebaseBootstrap.playerStatus;
+    _loaded = true;
+    notifyListeners();
+  }
+
+  /// Hesap silme için çevrimdışı senkron kuyruğunu temizler
+  /// (hesap-silme, yerel-temizlik): bekleyen paketler + imzalı kuyruk,
+  /// kalıcı anahtarlarıyla birlikte silinir; silinen hesabın verisi
+  /// buluta gönderilmez.
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_queueKey);
+    await prefs.remove(_signedQueueKey);
+    pending.clear();
+    _loaded = false;
+    _lastFailure = null;
+    status = 'Yerel · bulut kuyruğu hazır';
     notifyListeners();
   }
 
@@ -521,13 +943,18 @@ class CloudSyncService extends ChangeNotifier {
   Future<void> enableOnlineWhenSignedIn() async {
     await AuthService.instance.ensureLoaded();
     await FirebaseBootstrap.ensureInitialized();
-    onlineEnabled = AuthService.instance.isSignedIn &&
+    // K1 (W60-6): yalnız oturum + misafir-olmama yetmez; Firebase UID
+    // `playerId` ile aynı olmalı, yoksa bulut yazımı denenmez.
+    final signedInNonGuest = AuthService.instance.isSignedIn &&
         !(AuthService.instance.user?.isGuest ?? true);
+    onlineEnabled = signedInNonGuest && _firebaseIdentityAligned;
     status = onlineEnabled
         ? (FirebaseBootstrap.ready
             ? 'Bağlı · senkron açık'
             : 'Hesap var · Firebase bekleniyor (kuyruk aktif)')
-        : 'Misafir / yerel — online kapalı';
+        : (signedInNonGuest
+            ? 'Kimlik uyumsuzluğu · bulut kapalı, kuyrukta bekliyor'
+            : 'Misafir / yerel — online kapalı');
     notifyListeners();
     if (onlineEnabled) unawaited(flushPending());
   }
@@ -558,19 +985,66 @@ class CloudSyncService extends ChangeNotifier {
   }
 
   /// Push queued leaderboard bests and player progress to Firestore.
-  Future<int> flushPending() async {
-    if (!onlineEnabled) return 0;
+  ///
+  /// Reddedilen yazım tipli sonuç olarak döner: kural ihlali
+  /// ([CloudSyncFailureKind.permissionDenied] / `invalidPayload`) durumunda
+  /// kuyruk korunur, [lastFailure] ve [status] kullanıcıya gösterilebilir
+  /// Türkçe mesajla güncellenir. Çağrı noktaları (başka dosyalarda) bu
+  /// sonucu okuyup görünür hata göstermelidir — bkz. rapor.
+  ///
+  /// Coin yakınsaması: yazımdan önce uzaktan bakiye ön-okunur ve profil
+  /// her flush'ta en fazla +50000 artışla yazılır
+  /// ([convergedCoinsForFlush]); kalan fark varsa kuyruk korunur ve
+  /// [status] kalan coin miktarını söyler, fark sonraki flush'larda
+  /// yazılır. Kural değişikliği yapılmaz.
+  ///
+  /// Skor yakınsaması (K2): yazımdan önce uzak skorlar ön-okunur ve her
+  /// mod max(yerel, uzak) ile yazılır ([convergedScoreForFlush]); uzaktaki
+  /// skor yüksekse tek modun bile batch'i reddetmesi önlenir.
+  ///
+  /// Çevrimdışı flush (Firebase hazır değil): kuyruk KORUNUR ve tipli
+  /// `unavailable` hatası döner (S2#17); [status] "kuyrukta bekliyor"
+  /// der. Eski "Yerel flush" davranışı paketleri hiç yazmadan temizleyip
+  /// başarı izlenimi veriyordu.
+  ///
+  /// Eşzamanlı çağrılar devam eden flush'u paylaşır (tek-uçuş
+  /// koruması); iki flush aynı anda `pending`'i okuyup temizleyemez.
+  Future<CloudSyncFlushResult> flushPendingDetailed() async {
+    final inFlight = _flushFuture;
+    if (inFlight != null) return inFlight;
+    final future = _flushPendingDetailedAsync();
+    _flushFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_flushFuture, future)) _flushFuture = null;
+    }
+  }
+
+  Future<CloudSyncFlushResult> _flushPendingDetailedAsync() async {
+    if (!onlineEnabled) return const CloudSyncFlushResult.success(0);
+    // K1 (W60-6): kapı `enableOnlineWhenSignedIn` çağrılmadan açılmış
+    // bir flush'ta da kimlik uyumsuzken yazım denenmez; kuyruk korunur
+    // (`success(0)` — bekleyen paketler temizlenmez).
+    if (!_firebaseIdentityAligned) {
+      status = 'Kimlik uyumsuzluğu · bulut kapalı, kuyrukta bekliyor';
+      debugPrint('[lululu] CloudSync flush atlandı: Firebase UID != playerId');
+      notifyListeners();
+      return const CloudSyncFlushResult.success(0);
+    }
     await AuthService.instance.ensureLoaded();
     await _reconcileOfflineSignedQueue();
     final uid = AuthService.instance.playerId;
     final name = AuthService.instance.displayName;
     var flushed = 0;
+    // Bu flush'ta yazılamayıp sonraya kalan coin farkı (0 ise tam yazım).
+    var remainingCoinDelta = 0;
 
     if (FirebaseBootstrap.ready) {
       try {
         final db = FirebaseFirestore.instance;
         final bests = LeaderboardService.instance.getAllModeBests();
-        final batch = db.batch();
+        final signedScores = <Map<String, dynamic>>[];
         for (final b in bests) {
           final signedScore = buildSignedModeScorePayload(
             uid: uid,
@@ -579,11 +1053,153 @@ class CloudSyncService extends ChangeNotifier {
             displayName: name,
           );
           if (signedScore == null) continue;
+          signedScores.add(signedScore);
+        }
+        final signedProfile = buildSignedProfilePayload(
+          uid: uid,
+          displayName: name,
+        );
+        // Ön denetim: kural sınırlarına uymayan payload yazımı denenmez.
+        final violations = [
+          ...validateProfilePayloadForRules(signedProfile),
+          for (final s in signedScores) ...validateModeScorePayloadForRules(s),
+        ];
+        if (violations.isNotEmpty) {
+          final failure = CloudSyncFailure(
+            kind: CloudSyncFailureKind.invalidPayload,
+            message: 'Senkron reddedildi: kayıt kurallara uymuyor. '
+                'Kuyruk korundu, tekrar denenecek.',
+            details: violations.join('; '),
+          );
+          _lastFailure = failure;
+          status = 'Sync reddedildi · ${failure.message}';
+          debugPrint('[lululu] CloudSync pre-flight reddi: ${failure.details}');
+          notifyListeners();
+          return CloudSyncFlushResult.failure(failure);
+        }
+        // Coin yakınsaması: uzaktan bakiyeyi ön-oku; bu flush'ta en fazla
+        // +50000 artış yaz (kural: create <= 50000, update artışı
+        // <= 50000). Ön-okuma hatası aşağıdaki catch ile tipli hataya
+        // dönüşür, kuyruk korunur.
+        final profile = db.collection('players').doc(uid);
+        final remoteSnap = await profile.get();
+        final remoteData = remoteSnap.data();
+        int? remoteCoins;
+        if (remoteSnap.exists && remoteData != null) {
+          final rawRemoteCoins = remoteData['coins'];
+          remoteCoins = rawRemoteCoins is int
+              ? rawRemoteCoins
+              : (rawRemoteCoins is num ? rawRemoteCoins.toInt() : 0);
+        }
+        var effectiveProfile = signedProfile;
+        // Ön denetim geçti: coins int'tir.
+        final localCoins = signedProfile['coins'] as int;
+        final convergedCoins = convergedCoinsForFlush(
+          localCoins: localCoins,
+          remoteCoins: remoteCoins,
+        );
+        if (convergedCoins < localCoins) {
+          effectiveProfile = <String, dynamic>{
+            ...signedProfile,
+            'coins': convergedCoins,
+          };
+          // Coin değiştiği için bütünlük imzası yeniden hesaplanır
+          // (computeIntegrityHash eski imzayı yok sayar; yeni anahtar yok).
+          effectiveProfile['integrityHash'] =
+              computeIntegrityHash(effectiveProfile);
+          remainingCoinDelta = localCoins - convergedCoins;
+          debugPrint(
+            '[lululu] CloudSync coin yakınsaması: yerel=$localCoins '
+            'uzak=${remoteCoins ?? 'yok'} yazılan=$convergedCoins '
+            'kalan=$remainingCoinDelta',
+          );
+        }
+        // K2 — skor azalmazlığı ön-okuması: kural update'te
+        // `score >= eski skor` ister (firestore.rules:252-256). Coin
+        // ön-okumasının skor karşılığı: uzak skorları batch'ten önce
+        // oku, her modu max(yerel, uzak) ile yakınsat, sonra yaz.
+        // Uzak skor yüksekse yazım o değere eşit olur (no-op) ve batch
+        // reddedilmez; yerel en iyiler commit sonrası _pullRemoteBests
+        // ile uzaktaki değere yükseltilir. Ön-okuma hatası aşağıdaki
+        // catch ile tipli hataya dönüşür, kuyruk korunur.
+        final remoteScores = <String, int>{};
+        final scoresSnap = await db
+            .collection('scores')
+            .doc(uid)
+            .collection('modes')
+            .get();
+        for (final doc in scoresSnap.docs) {
+          final rawScore = doc.data()['score'];
+          if (rawScore is num) {
+            remoteScores[doc.id] =
+                rawScore.toInt().clamp(0, maxValidModeScore);
+          }
+        }
+        final convergedScores = <Map<String, dynamic>>[];
+        for (final signedScore in signedScores) {
+          final modeId = signedScore['modeId'] as String;
+          final localScore = signedScore['score'] as int;
+          final converged = convergedScoreForFlush(
+            localScore: localScore,
+            remoteScore: remoteScores[modeId],
+          );
+          if (converged == localScore) {
+            convergedScores.add(signedScore);
+            continue;
+          }
+          final adjusted = <String, dynamic>{
+            ...signedScore,
+            'score': converged,
+          };
+          // Skor değiştiği için bütünlük imzası yeniden hesaplanır
+          // (computeIntegrityHash eski imzayı yok sayar; yeni anahtar yok).
+          adjusted['integrityHash'] = computeIntegrityHash(adjusted);
+          convergedScores.add(adjusted);
+          debugPrint(
+            '[lululu] CloudSync skor yakınsaması: $modeId '
+            'yerel=$localScore uzak=${remoteScores[modeId]} '
+            'yazılan=$converged',
+          );
+        }
+        // Profil aynası (modeHighScores/total11/bestOverall) da uzak
+        // skorlarla yakınsatılır: uzaktaki skor yerelden yüksekse profil
+        // o modu düşük yazmasın (kural profil için azalmazlık istemez,
+        // ama skor belgeleriyle tutarlı kalır).
+        final localModeScores =
+            effectiveProfile['modeHighScores'] as Map<String, int>;
+        var profileScoresChanged = false;
+        final mergedModeScores = Map<String, int>.from(localModeScores);
+        for (final entry in mergedModeScores.entries) {
+          final remote = remoteScores[entry.key];
+          if (remote != null && remote > entry.value) {
+            mergedModeScores[entry.key] = remote;
+            profileScoresChanged = true;
+          }
+        }
+        if (profileScoresChanged) {
+          var mergedTotal11 = 0;
+          var mergedBest = 0;
+          for (final v in mergedModeScores.values) {
+            mergedTotal11 += v;
+            if (v > mergedBest) mergedBest = v;
+          }
+          effectiveProfile = <String, dynamic>{
+            ...effectiveProfile,
+            'modeHighScores': mergedModeScores,
+            'total11ModesScore':
+                mergedTotal11.clamp(0, maxTotal11ModesScore),
+            'bestOverallScore': mergedBest.clamp(0, maxValidModeScore),
+          };
+          effectiveProfile['integrityHash'] =
+              computeIntegrityHash(effectiveProfile);
+        }
+        final batch = db.batch();
+        for (final signedScore in convergedScores) {
           final ref = db
               .collection('scores')
               .doc(uid)
               .collection('modes')
-              .doc(b.modeId);
+              .doc(signedScore['modeId'] as String);
           batch.set(
             ref,
             {
@@ -594,15 +1210,48 @@ class CloudSyncService extends ChangeNotifier {
           );
           flushed++;
         }
-        final signedProfile = buildSignedProfilePayload(
-          uid: uid,
-          displayName: name,
-        );
-        final profile = db.collection('players').doc(uid);
+        // Y2: uzak profilde `uid` yoksa (veya uzaktaki `uid` yerelden
+        // farklıysa) merge payload'dan `uid` çıkarılır. Kural
+        // `isValidUserUpdate` değişmez alanların diff'te görünmesini
+        // yasaklar (`firestore.rules:216-220`,
+        // `areImmutableFieldsUnchanged` `:112-114`): uid'siz eski
+        // belgeye merge ile `uid` eklemek diff'e girer ve yazım
+        // reddedilir. `uid` kuralda zorunlu değildir
+        // (`isValidUserDoc`: `!('uid' in data) || data.uid == userId`,
+        // zorunlu alanlar yalnız `displayName` + `coins`); belge
+        // kimliği zaten uid olduğundan uid'siz merge geçerlidir.
+        // Seçilmeyen yol — merge'siz tam set: diff yine `uid`
+        // eklenmesini görür (ret aynı) ve `createdAt`/`role` gibi
+        // payload-dışı alanları silerek değişmezlik denetimine takılır.
+        // Ayrı bir `uid` yazımı da aynı diff denetimine takılır; silme
+        // yasak olduğundan (`firestore.rules:402`) sil+yeniden-oluştur
+        // da mümkün değildir — eski belge uid'siz kalır, bu kurala
+        // uygundur. Uzak belge yoksa create yoludur (`isValidUserCreate`,
+        // değişmezlik denetimi yok) ve `uid` korunur; uzaktaki `uid`
+        // yerelle aynıysa diff'e girmez, yine korunur. Bu denetim için
+        // ek okuma yapılmaz: coin yakınsaması için alınan
+        // `remoteSnap`/`remoteData` yeniden kullanılır.
+        final remoteUid = remoteData?['uid'];
+        final includeUidInProfile =
+            !remoteSnap.exists || remoteUid == uid;
+        var profilePayloadForWrite = effectiveProfile;
+        if (!includeUidInProfile) {
+          profilePayloadForWrite =
+              Map<String, dynamic>.from(effectiveProfile)..remove('uid');
+          // `uid` bütünlük imzasına dahildir (`computeIntegrityHash`
+          // tüm payload'ı kanonikleştirir); çıkarılınca imza yeniden
+          // hesaplanır, yoksa pull'da `verifyIntegrityHash` reddeder.
+          profilePayloadForWrite['integrityHash'] =
+              computeIntegrityHash(profilePayloadForWrite);
+          debugPrint(
+            '[lululu] CloudSync Y2: uzak profilde uid yok/farklı, '
+            'merge payload uid\'siz yazılıyor',
+          );
+        }
         batch.set(
           profile,
           {
-            ...signedProfile,
+            ...profilePayloadForWrite,
             'updatedAt': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
@@ -611,23 +1260,99 @@ class CloudSyncService extends ChangeNotifier {
         await _pullRemoteBests(uid);
         await _pullRemoteProfile(uid);
       } catch (e) {
-        status = 'Sync hata · kuyruk korunuyor ($e)';
+        final failure = _failureFromFlushError(e);
+        _lastFailure = failure;
+        status = 'Sync reddedildi · ${failure.message}';
+        debugPrint('[lululu] CloudSync flush reddi: ${failure.details}');
         notifyListeners();
-        return 0;
+        return CloudSyncFlushResult.failure(failure);
       }
     } else {
-      // Local durable ack — keeps UX honest until Firebase defines land.
-      flushed = pending.length;
+      // Çevrimdışı (S2#17): Firebase hazır değilken flush başarı SAYILMAZ.
+      // Kuyruk korunur; paketler bir sonraki flush'ta tekrar denenir.
+      // Eski davranış ("Yerel flush") kuyruğu temizleyip paketleri hiç
+      // buluta yazmadan kaybediyordu.
+      final queued = pending.length;
+      if (queued == 0) {
+        _lastFailure = null;
+        status = 'Firebase hazır değil · kuyruk boş';
+        notifyListeners();
+        return const CloudSyncFlushResult.success(0);
+      }
+      final failure = CloudSyncFailure(
+        kind: CloudSyncFailureKind.unavailable,
+        message: 'Buluta ulaşılamadı. $queued paket kuyrukta bekliyor, '
+            'tekrar denenecek.',
+        details: 'FirebaseBootstrap.ready=false; offline flush, kuyruk korundu',
+      );
+      _lastFailure = failure;
+      status = 'Çevrimdışı · $queued paket kuyrukta bekliyor';
+      debugPrint('[lululu] CloudSync çevrimdışı flush: kuyruk korundu '
+          '($queued paket)');
+      notifyListeners();
+      return CloudSyncFlushResult.failure(failure);
     }
 
     final n = pending.length;
+    _lastFailure = null;
+    if (remainingCoinDelta > 0) {
+      // Kısmi yazım: bu flush bir yakınsama adımı yazdı; kalan fark
+      // sonraki flush'larda yazılır. Kuyruk korunur (kalan, yerel coin
+      // bakiyesinde durur; her flush payload'u yeniden kurar).
+      status = 'Kısmi senkron · $remainingCoinDelta coin kaldı · '
+          '$n paket kuyrukta (sonraki flush devam edecek)';
+      notifyListeners();
+      return CloudSyncFlushResult.success(n);
+    }
     pending.clear();
     await _persistQueue();
-    status = FirebaseBootstrap.ready
-        ? 'Flush tamam · $flushed skor · $n paket'
-        : 'Yerel flush · $n paket (Firebase yok)';
+    // Buraya yalnız Firebase hazır yolundan gelinir (çevrimdışı yol
+    // yukarıda erken döner); kuyruk gerçekten yazıldıktan sonra temizlenir.
+    status = 'Flush tamam · $flushed skor · $n paket';
     notifyListeners();
-    return n;
+    return CloudSyncFlushResult.success(n);
+  }
+
+  /// [flushPendingDetailed] hatasını tipli [CloudSyncFailure]e çevirir.
+  /// `code` alanı dinamik okunur (FirebaseException tipine bağımlı olmadan).
+  CloudSyncFailure _failureFromFlushError(Object error) {
+    String? code;
+    try {
+      final dynamic errorWithCode = error;
+      final rawCode = errorWithCode.code;
+      if (rawCode is String && rawCode.isNotEmpty) code = rawCode;
+    } catch (_) {}
+    final details = error.toString();
+    switch (code) {
+      case 'permission-denied':
+        return CloudSyncFailure(
+          kind: CloudSyncFailureKind.permissionDenied,
+          message: 'Bulut kaydı reddedildi (yetki/kural). '
+              'Kuyruk korundu, tekrar denenecek.',
+          details: details,
+        );
+      case 'unavailable':
+      case 'deadline-exceeded':
+      case 'cancelled':
+        return CloudSyncFailure(
+          kind: CloudSyncFailureKind.unavailable,
+          message: 'Buluta ulaşılamadı. Kuyruk korundu, tekrar denenecek.',
+          details: details,
+        );
+      default:
+        return CloudSyncFailure(
+          kind: CloudSyncFailureKind.unknown,
+          message: 'Senkron hatası. Kuyruk korundu, tekrar denenecek.',
+          details: details,
+        );
+    }
+  }
+
+  /// Back-compat wrapper: yazılan paket sayısını döner, reddedilişte 0.
+  /// Reddin nedenini görmek için [flushPendingDetailed] / [lastFailure] kullanılır.
+  Future<int> flushPending() async {
+    final result = await flushPendingDetailed();
+    return result.flushedCount;
   }
 
   Future<void> _pullRemoteBests(String uid) async {
@@ -677,6 +1402,11 @@ class CloudSyncService extends ChangeNotifier {
     int limit = 20,
   }) async {
     if (!FirebaseBootstrap.ready) return const [];
+    // Y3: oturum yoksa collectionGroup sorgusu kuralca reddedilir
+    // (`isAuthenticated`, firestore.rules:435-436); reddedilen sorguyu
+    // hiç yapma, [] dön. Kapı salt oturum varlığıdır — global
+    // üst-sıralama başkalarının belgelerini okur, sahiplik gerekmez.
+    if (!hasFirebaseSession) return const [];
     try {
       final safeLimit = limit.clamp(1, 100);
       final q = await FirebaseFirestore.instance
@@ -697,12 +1427,9 @@ class CloudSyncService extends ChangeNotifier {
         // Path: scores/{uid}/modes/{modeId}
         final uid = d.reference.parent.parent?.id ?? '';
         final rawName = (data['displayName'] as String?) ?? 'Oyuncu';
-        final safeName = rawName
-            .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-            .trim();
         results.add((
           playerId: uid,
-          name: safeName.isEmpty ? 'Oyuncu' : safeName,
+          name: sanitizeDisplayName(rawName),
           score: safeScore,
         ));
       }
@@ -713,6 +1440,3 @@ class CloudSyncService extends ChangeNotifier {
     }
   }
 }
-
-/// Back-compat alias while call sites migrate.
-typedef CloudSyncStub = CloudSyncService;

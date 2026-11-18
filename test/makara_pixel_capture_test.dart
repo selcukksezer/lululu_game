@@ -14,6 +14,8 @@ import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 Future<void> _loadCaptureFonts() async {
   const fontFiles = <String, List<String>>{
     'Baloo 2': [
@@ -60,13 +62,13 @@ void main() {
     await tester.pumpWidget(
       RepaintBoundary(
         key: boundaryKey,
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: buildLululuTheme(),
-          home: const TickerMode(
+        child: wrapWithL10n(
+          const TickerMode(
             enabled: false,
             child: MakarayizScreen(prototypeVisualState: true),
           ),
+          debugShowCheckedModeBanner: false,
+          theme: buildLululuTheme(),
         ),
       ),
     );
@@ -88,7 +90,7 @@ void main() {
         'assets/icons2/yuva-slipper-prototype.png',
         'assets/icons2/premium_token.png',
         'assets/icons2/shield.png',
-        'assets/powerup_terlik.webp',
+        'assets/powerup_terlik.png',
       ]) {
         await precacheImage(
           AssetImage(asset),
@@ -118,6 +120,15 @@ void main() {
       ).writeAsBytesSync(Uint8List.sublistView(png));
       image.dispose();
     });
+    // Madde 99: yakalama dosyası doğrulanır (varlık + boyut + PNG imzası).
+    final captureFile = File('makara_pixel_capture_current.png');
+    expect(captureFile.existsSync(), isTrue);
+    final captureBytes = captureFile.readAsBytesSync();
+    expect(captureBytes.length, greaterThan(8));
+    expect(
+      captureBytes.sublist(0, 8),
+      const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 200));
   });

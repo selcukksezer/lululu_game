@@ -55,7 +55,6 @@ class InsectBody {
   double prevY;
   double angle;
   double angularVelocity;
-  bool isStatic;
   bool isMarkedForRemoval;
   double spawnScale;
   double mergeSquash;
@@ -69,7 +68,6 @@ class InsectBody {
     double? prevY,
     this.angle = 0.0,
     this.angularVelocity = 0.0,
-    this.isStatic = false,
     this.isMarkedForRemoval = false,
     this.spawnScale = 0.2,
     this.mergeSquash = 0,
@@ -78,21 +76,6 @@ class InsectBody {
 
   double get radius => tier.radius;
   double get mass => tier.mass;
-
-  InsectBody copy() => InsectBody(
-    id: id,
-    tier: tier,
-    x: x,
-    y: y,
-    prevX: prevX,
-    prevY: prevY,
-    angle: angle,
-    angularVelocity: angularVelocity,
-    isStatic: isStatic,
-    isMarkedForRemoval: isMarkedForRemoval,
-    spawnScale: spawnScale,
-    mergeSquash: mergeSquash,
-  );
 
   void respawn({
     required InsectTier nextTier,
@@ -106,7 +89,6 @@ class InsectBody {
     prevY = ny - 4.5;
     angle = 0;
     angularVelocity = 0;
-    isStatic = false;
     isMarkedForRemoval = false;
     spawnScale = 0.2;
     mergeSquash = 0;
@@ -152,6 +134,34 @@ class CircularPhysicsEngine {
 
   /// Below this Verlet step length, body sleeps (stops micro-jitter).
   static const double _sleepSpeed = 0.55;
+
+  /// Fixed physics step: 120 Hz sub-steps keep behaviour identical across
+  /// 60 Hz / 120 Hz displays (see update()).
+  static const double _fixedStep = 1.0 / 120.0;
+  static const int _maxSubSteps = 3;
+
+  /// Danger line sits this fraction of the arena height below the arena
+  /// top — the same relative threshold for bowl and square arenas.
+  static const double _dangerLineFraction = 0.12;
+
+  /// Arena obstacle radius as a fraction of [arenaRadius], so blocks
+  /// scale with the arena (18 px at the 150 px reference radius).
+  static const double _blockRadiusFraction = 0.12;
+
+  /// Max per-step vertical drift still counted as "resting" above the
+  /// danger line (see isOverflowing). At the 120 Hz fixed step this is
+  /// 120 px/s — well below fall speeds, so fresh drops never trigger it.
+  static const double _overflowStillnessPx = 1.0;
+
+  /// Leftover frame time carried into the next update() call.
+  double _timeAccumulator = 0.0;
+
+  /// Bodies that already merged during the current update() frame.
+  /// A body may merge at most once per frame: without this lock a body
+  /// upgraded mid-pass could merge again in the same j-loop or in a
+  /// later solver iteration / sub-step and skip several tiers at once.
+  /// Locked pairs still get positional separation, just no second merge.
+  final Set<InsectBody> _mergedThisFrame = <InsectBody>{};
 
   CircularPhysicsEngine({
     required this.arenaCenter,
@@ -219,7 +229,7 @@ class CircularPhysicsEngine {
         ArenaBlock(
           arenaCenter.dx + side * arenaRadius * (0.28 + (i % 2) * 0.12),
           arenaCenter.dy + arenaRadius * (0.05 + i * 0.18),
-          18,
+          arenaRadius * _blockRadiusFraction,
         ),
       );
     }
@@ -237,13 +247,24 @@ class CircularPhysicsEngine {
     return true;
   }
 
-  double get dangerY =>
-      squareArena ? arenaBounds.top + 10 : arenaCenter.dy - arenaRadius * 0.72;
+  double get dangerY {
+    if (squareArena) {
+      return arenaBounds.top + arenaHeight * _dangerLineFraction;
+    }
+    return arenaCenter.dy - arenaRadius + arenaRadius * 2 * _dangerLineFraction;
+  }
 
+  /// True when a settled-enough body pokes above the danger line. The
+  /// stillness check is intentionally loose: a pile creeping above the
+  /// line must accumulate overflow instead of escaping via micro-motion.
+  /// Fast drops are still excluded (their per-step fall far exceeds
+  /// [_overflowStillnessPx]) and game_screen's grace timer still gates
+  /// the actual defeat.
   bool get isOverflowing {
     for (final b in bodies) {
       if (!b.isMarkedForRemoval && b.spawnScale >= 0.8) {
-        if (b.y - b.radius < dangerY && (b.y - b.prevY).abs() < 0.5) {
+        if (b.y - b.radius < dangerY &&
+            (b.y - b.prevY).abs() < _overflowStillnessPx) {
           return true;
         }
       }
@@ -263,6 +284,15 @@ class CircularPhysicsEngine {
       if (b.isMarkedForRemoval || b.spawnScale < 0.55) continue;
       if ((b.x - x).abs() > b.radius + radius) continue;
       final sit = b.y - b.radius - radius;
+      if (sit < land) land = sit;
+    }
+    for (final block in blocks) {
+      final reach = block.radius + radius;
+      final bdx = (block.x - x).abs();
+      if (bdx > reach) continue;
+      // Circle-on-circle rest: exact contact height for a circle
+      // landing on a round obstacle.
+      final sit = block.y - sqrt(max(0.0, reach * reach - bdx * bdx));
       if (sit < land) land = sit;
     }
     return land;
@@ -326,13 +356,47 @@ class CircularPhysicsEngine {
 
   /// Step the physics simulation using Verlet Integration
   /// Returns merge events (tier + arena position) for audio/juice triggers.
+  ///
+  /// Fixed-timestep: frame time accumulates and is consumed in 120 Hz
+  /// sub-steps (at most [_maxSubSteps] per call); the remainder carries
+  /// over to the next call instead of being dropped. The signature is
+  /// unchanged for the game_screen caller.
   List<MergeEvent> update(double dt) {
+    // New frame: every body may merge once again (see _mergedThisFrame).
+    _mergedThisFrame.clear();
+    if (dt < 0) dt = 0;
     if (dt > 0.033) dt = 0.033; // clamp dt to avoid explosions
+    _timeAccumulator += dt;
+    // Spiral-of-death guard: never carry more than one frame of steps.
+    final maxAccum = _fixedStep * _maxSubSteps;
+    if (_timeAccumulator > maxAccum) _timeAccumulator = maxAccum;
+
+    final mergeEvents = <MergeEvent>[];
+    var steps = 0;
+    while (_timeAccumulator >= _fixedStep && steps < _maxSubSteps) {
+      mergeEvents.addAll(_stepPhysics(_fixedStep));
+      _timeAccumulator -= _fixedStep;
+      steps++;
+    }
+
+    // Particles tick once per frame with the full frame dt (unchanged).
+    particles.removeWhere((p) => !p.update(dt));
+
+    return mergeEvents;
+  }
+
+  /// One fixed-size Verlet step. Damping factors are dt-scaled so a
+  /// 120 Hz sub-step behaves exactly like half of a 60 Hz frame.
+  List<MergeEvent> _stepPhysics(double dt) {
+    // Damping is defined per 60 Hz frame; scale it to this step's dt so
+    // behaviour is identical at any step rate.
+    final damping = pow(0.972, dt * 60).toDouble();
+    final angularDamping = pow(_angularDamping, dt * 60).toDouble();
+    final restDampingX = pow(0.9, dt * 60).toDouble();
+    final restDampingY = pow(0.94, dt * 60).toDouble();
 
     // 1. Verlet position update
     for (final b in bodies) {
-      if (b.isStatic) continue;
-
       // Mild pop-in — avoid large overshoot (radius flicker = collision jitter).
       if (b.spawnScale < 1.0) {
         b.spawnScale = min(1.06, b.spawnScale + dt * 5.0);
@@ -341,14 +405,14 @@ class CircularPhysicsEngine {
       }
       b.mergeSquash = max(0, b.mergeSquash - dt * 5.5);
 
-      var vx = (b.x - b.prevX) * 0.972;
-      var vy = (b.y - b.prevY) * 0.972 + (gravity * dt * dt);
+      var vx = (b.x - b.prevX) * damping;
+      var vy = (b.y - b.prevY) * damping + (gravity * dt * dt);
 
       // Mild rest damping — keep enough energy to roll off neighbors.
       final spd = sqrt(vx * vx + vy * vy);
       if (spd < 1.4) {
-        vx *= 0.9;
-        vy *= 0.94;
+        vx *= restDampingX;
+        vy *= restDampingY;
       }
 
       b.prevX = b.x;
@@ -358,7 +422,7 @@ class CircularPhysicsEngine {
       b.y += vy;
 
       b.angle += b.angularVelocity * dt;
-      b.angularVelocity *= _angularDamping;
+      b.angularVelocity *= angularDamping;
       if (b.angularVelocity.abs() < 0.18) {
         b.angularVelocity = 0;
       } else {
@@ -380,7 +444,7 @@ class CircularPhysicsEngine {
 
     // Sleep only when truly calm and not perched on another circle.
     for (final b in bodies) {
-      if (b.isStatic || b.isMarkedForRemoval) continue;
+      if (b.isMarkedForRemoval) continue;
       if (b.spawnScale < 0.95) continue;
       if (b.speed >= _sleepSpeed) continue;
       if (_isPerched(b)) continue;
@@ -389,6 +453,16 @@ class CircularPhysicsEngine {
       b.angularVelocity = 0;
     }
 
+    _removeMarkedBodies();
+
+    return mergeEvents;
+  }
+
+  /// Recycle every body flagged for removal back into [_pool].
+  /// Single choke point for all removals (merge cleanup in [_stepPhysics]
+  /// and the booster clears below) so removed bodies are always reused
+  /// instead of dropped.
+  void _removeMarkedBodies() {
     for (var i = bodies.length - 1; i >= 0; i--) {
       final b = bodies[i];
       if (!b.isMarkedForRemoval) continue;
@@ -396,11 +470,6 @@ class CircularPhysicsEngine {
       _pool.add(b);
       bodies.removeAt(i);
     }
-
-    // 4. Update particles
-    particles.removeWhere((p) => !p.update(dt));
-
-    return mergeEvents;
   }
 
   void _resolveBlocks() {
@@ -412,10 +481,16 @@ class CircularPhysicsEngine {
         final dy = b.y - block.y;
         final distSq = dx * dx + dy * dy;
         final minDist = br + block.radius;
-        if (distSq >= minDist * minDist || distSq < 0.0001) continue;
-        final dist = sqrt(distSq);
-        final nx = dx / dist;
-        final ny = dy / dist;
+        // S1#4 (kalan): tam çakışan gövde-engel çifti (distSq ≤ 0.0001)
+        // eskiden bütünüyle yoksayılıyordu: engel merkezine oturan gövde
+        // hiç ayrıştırılmıyor, engelin içinde takılı kalıyordu. Cisim-cisim
+        // çözümündeki gibi 0.01 px etkin mesafe + deterministik +x normali
+        // kullanılır; çakışma dışı çiftlerde davranış birebir aynıdır.
+        final coincident = distSq <= 0.0001;
+        if (distSq >= minDist * minDist) continue;
+        final dist = coincident ? 0.01 : sqrt(distSq);
+        final nx = coincident ? 1.0 : dx / dist;
+        final ny = coincident ? 0.0 : dy / dist;
         b.x = block.x + nx * minDist;
         b.y = block.y + ny * minDist;
         final vx = b.x - b.prevX;
@@ -460,15 +535,15 @@ class CircularPhysicsEngine {
     final bounds = arenaBounds;
     final left = bounds.left;
     final right = bounds.right;
-    final top = bounds.top;
     final floorY = bounds.bottom;
     for (final b in bodies) {
       final r = b.radius * b.spawnScale;
-      final inBin = b.y + r > top;
-      if (inBin && b.x < left + r) {
+      // Wall clamp applies above the rim too: a body overhanging the
+      // ceiling must not drift outside the side walls before it drops in.
+      if (b.x < left + r) {
         b.x = left + r;
         if (b.prevX < b.x) b.prevX = b.x;
-      } else if (inBin && b.x > right - r) {
+      } else if (b.x > right - r) {
         b.x = right - r;
         if (b.prevX > b.x) b.prevX = b.x;
       }
@@ -501,15 +576,29 @@ class CircularPhysicsEngine {
         final targetDist = r1 + r2;
 
         final touch = targetDist + 1.5;
-        if (distSq < touch * touch && distSq > 0.0001) {
-          final dist = sqrt(distSq);
+        // S1#4: tam çakışan çiftler (distSq ≤ 0.0001, yani merkezler
+        // arası ≤ 0.01 px) eskiden bütünüyle yoksayılıyordu: aynı
+        // yerçekimiyle kilit-adım hareket eden çift hiç ayrılmıyor,
+        // aynı kademedeyse hiç birleşmiyordu (uyku bloğu hızları
+        // sıfırlayınca kalıcı takılma). Çakışma durumunda 0.01 px
+        // etkin mesafe + deterministik +x normali kullanılır; birleşme
+        // ve ayrıştırma normal yoldan işler.
+        final coincident = distSq <= 0.0001;
+        if (distSq < touch * touch) {
+          final dist = coincident ? 0.01 : sqrt(distSq);
 
-          if (b1.tier == b2.tier && b1.tier.nextTier != null) {
+          if (b1.tier == b2.tier &&
+              b1.tier.nextTier != null &&
+              !_mergedThisFrame.contains(b1) &&
+              !_mergedThisFrame.contains(b2)) {
             final next = b1.tier.nextTier!;
             final midX = (b1.x + b2.x) / 2;
             final midY = (b1.y + b2.y) / 2;
 
             b1.tier = next;
+            // One merge per body per frame — lock b1 for this frame.
+            // A locked pair falls through to separation below instead.
+            _mergedThisFrame.add(b1);
             b1.x = midX;
             b1.y = midY;
             // Settle in place — no upward launch.
@@ -530,8 +619,10 @@ class CircularPhysicsEngine {
           }
 
           final overlap = targetDist - dist;
-          final nx = dx / dist;
-          final ny = dy / dist;
+          // Çakışmada normal tanımsızdır (dx = dy = 0); deterministik
+          // +x yönü çifti yatayda ayırır.
+          final nx = coincident ? 1.0 : dx / dist;
+          final ny = coincident ? 0.0 : dy / dist;
 
           if (overlap > 0) {
             final totalMass = b1.mass + b2.mass;
@@ -622,7 +713,7 @@ class CircularPhysicsEngine {
   void applyMergeBlast(double ox, double oy, double force, {double? radius}) {
     final blastR = radius ?? arenaRadius * 0.42;
     for (final b in bodies) {
-      if (b.isMarkedForRemoval || b.isStatic) continue;
+      if (b.isMarkedForRemoval) continue;
       final dx = b.x - ox;
       final dy = b.y - oy;
       final distSq = dx * dx + dy * dy;
@@ -632,10 +723,12 @@ class CircularPhysicsEngine {
       final w = falloff * falloff;
       final nx = dx / dist;
       final ny = dy / dist;
-      final ix = nx * force * w * b.mass * 0.28;
-      var iy = (ny * 0.35 - 0.15) * force * w * b.mass * 0.22;
-      final maxUp = force * 0.22 * b.mass * 0.22;
-      final maxDown = force * 0.2 * b.mass * 0.22;
+      // No mass factor here: applyImpulse divides by mass, so this true
+      // impulse leaves heavy tiers moving less (light tiers unchanged).
+      final ix = nx * force * w * 0.28;
+      var iy = (ny * 0.35 - 0.15) * force * w * 0.22;
+      final maxUp = force * 0.22 * 0.22;
+      final maxDown = force * 0.2 * 0.22;
       iy = iy.clamp(-maxUp, maxDown);
       b.applyImpulse(ix, iy);
       b.angularVelocity = (b.angularVelocity * 0.7).clamp(
@@ -648,25 +741,16 @@ class CircularPhysicsEngine {
   /// Tiny contact shove when two insects merge (physics step, no juice).
   void _nudgeNeighborsFromMerge(double ox, double oy, double reach) {
     for (final b in bodies) {
-      if (b.isMarkedForRemoval || b.isStatic) continue;
+      if (b.isMarkedForRemoval) continue;
       final dx = b.x - ox;
       final dy = b.y - oy;
       final distSq = dx * dx + dy * dy;
       if (distSq < 1.0 || distSq > reach * reach) continue;
       final dist = sqrt(distSq);
       final w = 1.0 - dist / reach;
-      b.applyImpulse(
-        dx / dist * 2.2 * w * b.mass,
-        dy / dist * 1.2 * w * b.mass,
-      );
+      // No mass factor: applyImpulse already divides by mass.
+      b.applyImpulse(dx / dist * 2.2 * w, dy / dist * 1.2 * w);
     }
-  }
-
-  @Deprecated(
-    'Use applyMergeBlast — random full-field shake launches insects off-screen',
-  )
-  void applyShakeImpulse(double force) {
-    applyMergeBlast(arenaCenter.dx, arenaCenter.dy, force * 0.35);
   }
 
   /// "Anne Terliği" — hedef böceği ezer ve çevresini sarsar.
@@ -686,7 +770,7 @@ class CircularPhysicsEngine {
     target.isMarkedForRemoval = true;
     spawnParticles(target.x, target.y, LululuColors.warningSolar, count: 22);
     applyMergeBlast(target.x, target.y, 16, radius: arenaRadius * 0.85);
-    bodies.removeWhere((b) => b.isMarkedForRemoval);
+    _removeMarkedBodies();
     return target;
   }
 
@@ -703,22 +787,27 @@ class CircularPhysicsEngine {
       spawnParticles(b.x, b.y, LululuColors.warningSolar, count: 22);
       applyMergeBlast(b.x, b.y, 12, radius: b.radius * 3.5);
     }
-    bodies.removeWhere((b) => b.isMarkedForRemoval);
+    _removeMarkedBodies();
     return blasted;
   }
 
   /// "Şuraları Bir Aydınlat Hele!" Mega Airstrike/Spotlight Bonus
-  /// Clears 50% of the field and explodes with cosmic particles
+  /// Clears a random 50% of the eligible bodies (tier <= 6) and explodes
+  /// with cosmic particles. Higher tiers are untouched.
   int executeAydinlatAirstrike() {
+    final eligible = bodies
+        .where((b) => b.tier.tier <= 6 && !b.isMarkedForRemoval)
+        .toList();
+    // Random half; ceil so a lone eligible body is still cleared.
+    final target = (eligible.length / 2).ceil();
+    eligible.shuffle(Random());
     int cleared = 0;
-    for (final b in bodies) {
-      if (b.tier.tier <= 6 && !b.isMarkedForRemoval) {
-        b.isMarkedForRemoval = true;
-        spawnParticles(b.x, b.y, LululuColors.warningSolar, count: 25);
-        cleared++;
-      }
+    for (final b in eligible.take(target)) {
+      b.isMarkedForRemoval = true;
+      spawnParticles(b.x, b.y, LululuColors.warningSolar, count: 25);
+      cleared++;
     }
-    bodies.removeWhere((b) => b.isMarkedForRemoval);
+    _removeMarkedBodies();
     return cleared;
   }
 
@@ -733,7 +822,7 @@ class CircularPhysicsEngine {
         if (vaporized >= count) break;
       }
     }
-    bodies.removeWhere((b) => b.isMarkedForRemoval);
+    _removeMarkedBodies();
     return vaporized;
   }
 }

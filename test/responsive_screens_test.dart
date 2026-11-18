@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' show max;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -39,6 +38,8 @@ import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 import 'package:lululu_game/widgets/shop_dialog.dart';
+
+import 'test_helpers.dart';
 
 Future<void> _loadCustomFonts() async {
   final fontMap = <String, List<String>>{
@@ -210,37 +211,29 @@ void main() {
             flutterErrors.add(msg);
           };
 
-          final layoutSize = Size(
-            max(size.width, 430.0),
-            max(size.height, 932.0),
-          );
-
+          // Madde 68: GERÇEK boyut + 1.0 yazı ölçeği, FittedBox yok.
+          // Eski harness (max(430,932) + FittedBox scaleDown + 0.85)
+          // küçük ekran taşmalarını maskeliyordu; ekranlar gerçek
+          // viewport'ta, gerçek ölçekte kurulur. Yeni taşma bulunursa
+          // bu test kırmızıya döner — düzeltme lib tarafında yapılır.
           try {
             await tester.pumpWidget(
-              MaterialApp(
-                debugShowCheckedModeBanner: false,
-                theme: buildLululuTheme(),
-                home: MediaQuery(
+              wrapWithL10n(
+                MediaQuery(
                   data: MediaQueryData(
-                    size: layoutSize,
+                    size: size,
                     devicePixelRatio: 1.0,
-                    textScaler: const TextScaler.linear(0.85),
+                    textScaler: const TextScaler.linear(1.0),
                     padding: const EdgeInsets.only(top: 35.4, bottom: 24),
                     viewPadding: const EdgeInsets.only(top: 35.4, bottom: 24),
                   ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topCenter,
-                    child: SizedBox(
-                      width: layoutSize.width,
-                      height: layoutSize.height,
-                      child: TickerMode(
-                        enabled: false,
-                        child: builder(),
-                      ),
-                    ),
+                  child: TickerMode(
+                    enabled: false,
+                    child: builder(),
                   ),
                 ),
+                debugShowCheckedModeBanner: false,
+                theme: buildLululuTheme(),
               ),
             );
             await tester.pump();

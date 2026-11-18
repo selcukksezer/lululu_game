@@ -6,11 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/hisir_character.dart';
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
-import '../screens/result_screen.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arcade_chrome.dart';
@@ -22,9 +25,16 @@ import '../widgets/sticker_image.dart';
 class TerlikTapScreen extends StatefulWidget {
   const TerlikTapScreen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
     @visibleForTesting this.initialTargetForTesting = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç vuruş yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika'daki `energyConsumed` deseni, madde 35). Doğrudan
+  /// rota girişlerinde `false` kalır ve iade yapılmaz.
+  final bool energyConsumed;
 
   @visibleForTesting
   final bool prototypeVisualState;
@@ -104,7 +114,7 @@ class _Bug {
 }
 
 class _TerlikTapScreenState extends State<TerlikTapScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final Random _rng;
   late final AnimationController _pulse;
   final List<_Bug> _bugs = [];
@@ -123,14 +133,38 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   int _sprayEarned = 0;
   double _elapsedSeconds = 0;
   bool _alive = true;
+  // S1#48: ölüm anı — ölüm sonrası ilk 500 ms içindeki dokunuş
+  // yeniden başlatmaz.
+  DateTime? _diedAt;
   bool _resultShown = false;
+  // Tek ödeme sözleşmesi (madde 8): tur ödülü SADECE _settleRunEconomy
+  // içindeki tek grantArcadeDrop çağrısıyla, tur başına en fazla bir kez ödenir.
+  bool _economySettled = false;
+  // Hamlesiz-çıkış enerji iadesi (Suika madde 35 deseni): _hasHit ilk
+  // gerçek vuruşta (böcek ezme veya tuzak) true olur; _runEnded tur
+  // bittiğinde (_die) veya tur yarıda kesilip yeniden başlatıldığında
+  // (_restart, örn. BİTİR) kalıcı olarak true olur. İkisi de _restart'ta
+  // SIFIRLANMAZ: iade kararı oturum düzeyindedir (Suika'nın _dropsMade'i
+  // gibi — ölüp yeniden başlayan oturuma iade yapılmaz).
+  bool _hasHit = false;
+  bool _runEnded = false;
+  // Çift-iade koruması: iade oturum başına en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+  int _runId = 0;
   String? _missMessage;
-  String _hint = 'Uçan böceği terlikle ez!';
+  String _hint = '';
+  bool _hintSeeded = false;
   double _spawnAcc = 0;
   double _shake = 0;
   double _hitStop = 0;
   DateTime _last = DateTime.now();
   Timer? _loop;
+  // Duraklatma (madde 37): Osmantuş deseni — arka planda oyun zamanlayıcısı
+  // durur, elle duraklatmada da aynı zamanlayıcı durdurulur; altın terlik
+  // gibi duvar-saati süreleri duraklatma süresi kadar ötelenir.
+  bool _paused = false;
+  bool _pausedByLifecycle = false;
+  DateTime? _pauseStartedAt;
   Size _arena = const Size(320, 480);
 
   static const _osmanA = (
@@ -148,8 +182,24 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   DateTime? _goldUntil;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.terlikHintIdle;
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // KASITLI günlük tohum (S1#38): aynı takvim gününde aynı böcek
+    // dizisi başlar (günlük meydan okuma tutarlılığı; Çığlık Böcek'teki
+    // aynı desenle paralel). _rng initState'te bir kez kurulur ve tur
+    // içinde ilerler; _restart tohumu yenilemez, sonraki turlar dizinin
+    // devamını kullanır, birebir tekrar etmez. Tohumsuz Random()
+    // bilinçli yapılmadı — değiştirme.
     final day = DateTime.now();
     final seed = day.year * 10000 + day.month * 100 + day.day;
     _rng = Random(seed ^ 0x7E11);
@@ -222,14 +272,79 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _loop?.cancel();
     _pulse.dispose();
     super.dispose();
   }
 
+  void _startLoop() {
+    _last = DateTime.now();
+    _loop ??= Timer.periodic(const Duration(milliseconds: 16), _tick);
+  }
+
+  void _stopLoop() {
+    _loop?.cancel();
+    _loop = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Osmantuş deseni: arka planda oyun saati dursun; _tick dt
+        // kısması da korur ama zamanlayıcıyı durdurmak kesin çözümdür.
+        if (_loop != null) {
+          _stopLoop();
+          _pausedByLifecycle = true;
+          _pauseStartedAt ??= DateTime.now();
+        }
+        break;
+      case AppLifecycleState.resumed:
+        // Elle duraklatılmışsa dönüşte kendiliğinden başlamasın.
+        if (_pausedByLifecycle && !_paused) {
+          _pausedByLifecycle = false;
+          _shiftPauseDeadlines();
+          if (_alive) _startLoop();
+        }
+        break;
+    }
+  }
+
+  /// Duraklatma süresince duvar-saati süreleri (altın terlik) işlemesin.
+  void _shiftPauseDeadlines() {
+    final started = _pauseStartedAt;
+    _pauseStartedAt = null;
+    if (started == null) return;
+    final pausedFor = DateTime.now().difference(started);
+    if (pausedFor <= Duration.zero) return;
+    if (_goldUntil != null) _goldUntil = _goldUntil!.add(pausedFor);
+  }
+
+  /// Elle duraklatma / devam (madde 37): zamanlayıcı durur, böcek süreleri
+  /// ve doğma sayacı donar; tek-ödeme mantığına dokunulmaz.
+  void _togglePause() {
+    if (widget.prototypeVisualState || !_alive) return;
+    if (_paused) {
+      _paused = false;
+      _pausedByLifecycle = false;
+      _shiftPauseDeadlines();
+      _startLoop();
+    } else {
+      _paused = true;
+      _pauseStartedAt ??= DateTime.now();
+      _stopLoop();
+    }
+    setState(() {});
+  }
+
   void _tick(Timer _) {
-    if (!_alive || !mounted) return;
+    if (!_alive || !mounted || _paused) return;
     final now = DateTime.now();
     var dt = now.difference(_last).inMicroseconds / 1e6;
     _last = now;
@@ -255,6 +370,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _spawn();
     }
 
+    // Kare başına en fazla 1 ıska sayılır (madde 41): aynı karede süresi
+    // dolan diğer böcekler ekrandan silinir ama _missed/can hesabına girmez.
+    var countedMissThisTick = false;
     for (final b in _bugs) {
       if (b.smashed) {
         b.life -= dt * 3.5;
@@ -264,11 +382,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
           b.smashed = true;
           b.life = 0;
           if (b.isTrap) {
-            _score += 30;
+            // Tuzaktan kaçmak ödülsüzdür (madde 40): skor verilmez.
             final center = _holeCenter(b.holeIndex);
-            _pushFx('TUZAK GEÇTİ +30', center.dx, center.dy, LululuColors.toxicNeon);
-          } else {
-            _applyMiss('KAÇTI');
+            _pushFx(context.l10n.terlikTrapPassed, center.dx, center.dy, LululuColors.toxicNeon);
+          } else if (!countedMissThisTick) {
+            countedMissThisTick = true;
+            _applyMiss(context.l10n.terlikEscaped);
             if (_lives <= 0) {
               _die();
               return;
@@ -354,6 +473,24 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       return;
     }
 
+    // ~8% Hışır özel hedefi (tier dışı; sesi 'hisir' kimliğiyle husur_aday).
+    if (_rng.nextDouble() < 0.08) {
+      _bugs.add(
+        _Bug(
+          id: _nextId++,
+          characterId: HisirCharacter.id,
+          assetPath: HisirCharacter.assetPath,
+          replik: HisirCharacter.replik,
+          voiceHintTier: null,
+          holeIndex: holeIndex,
+          life: visibleFor,
+          basePoints: 90,
+          isOsman: false,
+        ),
+      );
+      return;
+    }
+
     final tier = InsectTier.values[_rng.nextInt(InsectTier.values.length)];
     _bugs.add(
       _Bug(
@@ -374,7 +511,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     _fx.add(_FloatFx(id: _nextFx++, label: label, x: x, y: y, color: color));
   }
 
-  /// Combo / rastgele / Osmantuş — gerçek vault drop (ProgressManager).
+  /// Combo / rastgele / Osmantuş damlaları: SADECE biriktirilir, vault'a
+  /// yazma tur sonunda tek noktadan yapılır (_settleRunEconomy, madde 8).
   List<({_BonusKind kind, int amount, String label, Color color})> _rollBonuses(
     _Bug hit,
   ) {
@@ -398,7 +536,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       out.add((
         kind: _BonusKind.slipper,
         amount: 1,
-        label: 'COMBO x8 TERLİK +1',
+        label: context.l10n.terlikBonusComboSlipper,
         color: LululuColors.cyberFuchsia,
       ));
     } else if (_combo == 10 || (_combo > 10 && _combo % 5 == 0)) {
@@ -449,21 +587,21 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         out.add((
           kind: _BonusKind.scoreBurst,
           amount: 50 + _rng.nextInt(70),
-          label: 'ŞANS PATLAMA',
+          label: context.l10n.terlikLuckBurst,
           color: LululuColors.toxicNeon,
         ));
       } else if (roll < 0.9 && _lives < 3) {
         out.add((
           kind: _BonusKind.life,
           amount: 1,
-          label: 'CAN +1',
+          label: context.l10n.bonusLifePlus,
           color: LululuColors.mysticRuby,
         ));
       } else {
         out.add((
           kind: _BonusKind.slipper,
           amount: 1,
-          label: 'TERLİK +1',
+          label: context.l10n.terlikBonusSlipper,
           color: LululuColors.cyberFuchsia,
         ));
       }
@@ -472,13 +610,48 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     return out;
   }
 
-  Future<void> _applyEconomyDrops(int coins, int slipper, int spray) async {
+  /// TEK ÖDEME NOKTASI (madde 8): oyun-içi damlalar SADECE biriktirilir
+  /// (_coinsEarned/_slipperEarned/_sprayEarned); vault'a yazma yalnız
+  /// buradaki tek grantArcadeDrop çağrısıyla olur ve tur başına en fazla
+  /// bir kez çalışır (_economySettled koruması). Sonuç ekranı ödeme yapmaz,
+  /// yalnız görüntü için coins alır.
+  Future<void> _settleRunEconomy() async {
+    if (_economySettled) return;
+    _economySettled = true;
+    final coins = _coinsEarned;
+    final slipper = _slipperEarned;
+    final spray = _sprayEarned;
     if (coins <= 0 && slipper <= 0 && spray <= 0) return;
     await ProgressManager().grantArcadeDrop(
       coins: coins,
       slipper: slipper,
       spray: spray,
     );
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (Suika madde 35 deseninin Terlik
+  /// uyarlaması; dispose'da DEĞİL, çıkış yollarında çağrılır).
+  ///
+  /// İade yalnız şu koşulların TÜMÜ sağlanıyorsa, oturum başına en fazla
+  /// bir kez yapılır: giriş enerjisi tüketilmiş (energyConsumed), hiç
+  /// gerçek vuruş yapılmamış (_hasHit false), tur bitmemiş (_runEnded
+  /// false, _alive true) ve tur ekonomisi ödenmemiş (_economySettled
+  /// false). Tur bittikten / sonuç gösterildikten sonra çağrılsa bile
+  /// ödemez: _die _runEnded'i, finishRun içindeki ödeme de
+  /// _economySettled'i çoktan true yapmıştır.
+  void _refundEnergyIfNoHit() {
+    if (!widget.energyConsumed ||
+        _energyRefunded ||
+        _hasHit ||
+        _runEnded ||
+        _economySettled ||
+        !_alive) {
+      return;
+    }
+    // Çift-iade koruması: bayrak eklemeden ÖNCE konur; Geri düğmesi +
+    // PopScope aynı çıkışta iki kez çağırsa bile ikinci çağrı döner.
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   Offset _holeCenter(int index) {
@@ -496,7 +669,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   }
 
   void _tapHole(int index) {
+    if (_paused) return;
     if (!_alive) {
+      // S1#48: ölüm sonrası 500 ms dokunuş yoksayma.
+      if (_diedAt != null &&
+          DateTime.now().difference(_diedAt!) <
+              const Duration(milliseconds: 500)) {
+        return;
+      }
       _restart();
       return;
     }
@@ -507,12 +687,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       if (_bugs.any((bug) => bug.holeIndex == index && bug.smashed)) {
         return;
       }
-      _applyMiss('BOŞA VURDUN');
+      _breakComboOnly(context.l10n.terlikMissedHit);
       HapticFeedback.selectionClick();
-      if (_lives <= 0) {
-        _die();
-        return;
-      }
       setState(() {});
       return;
     }
@@ -520,7 +696,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     if (hit.isTrap) {
       hit.smashed = true;
       hit.life = 0.6;
-      _applyMiss('TUZAĞA BASTIN');
+      // Gerçek vuruş: tuzağa basmak da hamledir, iade hakkı biter.
+      _hasHit = true;
+      _applyMiss(context.l10n.terlikSteppedTrap);
       HapticFeedback.heavyImpact();
       unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
       if (_lives <= 0) {
@@ -533,6 +711,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
     hit.smashed = true;
     hit.life = 0.9;
+    // Enerji iadesi bayrağı (madde 35): vuruş anında konur — Suika'nın
+    // düşürme anında sayan _dropsMade'i gibi, zamanlayıcı beklenmez.
+    _hasHit = true;
     _combo++;
     if (_combo > _maxCombo) _maxCombo = _combo;
     _smashed++;
@@ -605,10 +786,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     );
 
     _hint =
-        'VURUŞ · COMBO X$_combo · +$scoreGain'
+        '${context.l10n.terlikHitHint(_combo, scoreGain)}'
         '${coinDrop > 0 ? ' · +$coinDrop💰' : ''}'
-        '${slipperDrop > 0 ? ' · terlik+$slipperDrop' : ''}'
-        '${sprayDrop > 0 ? ' · sprey+$sprayDrop' : ''}';
+        '${slipperDrop > 0 ? context.l10n.terlikDropSlipper(slipperDrop) : ''}'
+        '${sprayDrop > 0 ? context.l10n.terlikDropSpray(sprayDrop) : ''}';
     _missMessage = null;
 
     // Juice: shake + hit-stop (tier4+ / osman / combo≥4).
@@ -631,7 +812,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         comboCount: _combo,
       ),
     );
-    unawaited(_applyEconomyDrops(coinDrop, slipperDrop, sprayDrop));
+    // Ek: Diva ezilince "yasla" repliği (mevcut terlik sesi aynen durur).
+    if (hit.voiceHintTier == InsectTier.diva) {
+      unawaited(AudioManager().playDivaYasla());
+    }
+    // Damlalar SADECE biriktirilir; ödeme tur sonunda tek noktadan yapılır
+    // (madde 8). Burada grant YOK — aksi hâlde coin iki kez ödenirdi.
     setState(() {});
   }
 
@@ -641,13 +827,27 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     final lifeLost = _missed % 3 == 0;
     if (lifeLost) _lives--;
     _missMessage = lifeLost
-        ? '$reason · -1 CAN · KOMBO KIRILDI'
-        : '$reason · KOMBO KIRILDI · ${3 - (_missed % 3)} KAÇIŞA KADAR CAN';
+        ? context.l10n.missLifeLost(reason)
+        : context.l10n.terlikComboBreakLives(reason, 3 - (_missed % 3));
     _hint = lifeLost
-        ? '$reason · -1 CAN · KOMBO KIRILDI · $_lives CAN KALDI'
-        : '$reason · KOMBO KIRILDI · ${3 - (_missed % 3)} KAÇIŞA KADAR CAN';
+        ? context.l10n.terlikComboBreakLifeLost(reason, _lives)
+        : context.l10n.terlikComboBreakLives(reason, 3 - (_missed % 3));
     _pushFx(
-      'KOMBO KIRILDI',
+      context.l10n.comboBrokenShort,
+      _arena.width / 2,
+      _arena.height / 2,
+      LululuColors.mysticRuby,
+    );
+  }
+
+  /// Boş vuruş cezası (madde 41): YALNIZCA kombo kırılır. _missed sayılmaz,
+  /// can gitmez; ıska sayacı ve can hesabı yalnız kaçan böcek / tuzak içindir.
+  void _breakComboOnly(String reason) {
+    _combo = 0;
+    _missMessage = context.l10n.comboBrokenReason(reason);
+    _hint = context.l10n.comboBrokenReason(reason);
+    _pushFx(
+      context.l10n.comboBrokenShort,
       _arena.width / 2,
       _arena.height / 2,
       LululuColors.mysticRuby,
@@ -656,12 +856,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   void _die() {
     _alive = false;
-    // Run sonu skor→coin (ekonomi uyumlu).
+    _runEnded = true;
+    _diedAt = DateTime.now();
+    // Run sonu skor→coin: SADECE biriktirilir; ödeme _presentResult'taki
+    // tek noktadan yapılır (madde 8). Burada grant YOK.
     final endCoins = max(1, _score ~/ 400);
     _coinsEarned += endCoins;
-    unawaited(ProgressManager().grantArcadeDrop(coins: endCoins));
     _hint =
-        'Terlik yetmedi. Ezilen $_smashed · max x$_maxCombo · +$_coinsEarned💰';
+        context.l10n.terlikOutOfSlippers(_smashed, _maxCombo, _coinsEarned);
     HapticFeedback.heavyImpact();
     unawaited(AudioManager().playLose());
     unawaited(
@@ -681,7 +883,23 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   }
 
   void _restart() {
+    // BİTİR / yeniden başlatma ile tur yarıda kesilirse birikmiş ödül
+    // kaybolmasın: _settleRunEconomy tur başına bir kez ödediği için
+    // _presentResult sonrası çağrılarda ikinci ödeme olmaz. Toplamlar,
+    // async gövdenin ilk await'ine kadar senkron çalıştığı için sıfırlanmadan
+    // önce _settleRunEconomy içinde anlık görüntüye alınır.
+    // Tur sonu (kalıcı, oturum düzeyinde): BİTİR ile yarıda kesilen tur da
+    // "oynanmış" sayılır; _restart sonrası yeni turda Geri'ye basılsa bile
+    // iade yapılmaz. _runEnded burada SIFIRLANMAZ, yalnız kurulur.
+    _runEnded = true;
+    unawaited(_settleRunEconomy());
+    _runId++;
     setState(() {
+      _economySettled = false;
+      _paused = false;
+      _pausedByLifecycle = false;
+      _pauseStartedAt = null;
+      _resultShown = false;
       _bugs.clear();
       _fx.clear();
       _score = 0;
@@ -695,33 +913,40 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _sprayEarned = 0;
       _elapsedSeconds = 0;
       _alive = true;
+      _diedAt = null;
       _spawnAcc = 0;
       _shake = 0;
       _hitStop = 0;
-      _hint = 'Uçan böceği terlikle ez!';
+      _hint = context.l10n.terlikHintIdle;
       _last = DateTime.now();
       if (!widget.prototypeVisualState) {
         _spawn();
         _spawn();
       }
     });
+    // Duraklatılmışken yeniden başlatılırsa zamanlayıcı dursun kalmasın.
+    if (!widget.prototypeVisualState) _startLoop();
   }
 
   String _stats() =>
-      'Ezilen $_smashed · Kaçan $_missed · Max combo x$_maxCombo\n'
-      '+$_coinsEarned coin · terlik +$_slipperEarned · sprey +$_sprayEarned';
+      context.l10n.terlikStatsLine1(_smashed, _missed, _maxCombo) +
+      context.l10n.terlikStatsLine2(
+        _coinsEarned,
+        _slipperEarned,
+        _sprayEarned,
+      );
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useDoubleSlip() {
-    if (!_alive) return false;
+    if (!_alive || _paused) return false;
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _doubleNext = true;
-      _hint = 'ÇİFT TERLİK HAZIR · SONRAKİ VURUŞ ÇİFT BÖCEK EZER!';
+      _hint = context.l10n.terlikDoubleReadyHint;
       _pushFx(
-        'ÇİFT TERLİK!',
+        context.l10n.terlikDoubleCallout,
         _arena.width / 2,
         _arena.height / 2,
         LululuColors.cyberFuchsia,
@@ -731,14 +956,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   }
 
   bool _useGoldSlip() {
-    if (!_alive) return false;
+    if (!_alive || _paused) return false;
     HapticFeedback.mediumImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _goldUntil = DateTime.now().add(const Duration(seconds: 20));
-      _hint = 'ALTIN TERLİK AKTİF · 20 SN BOYUNCA 2X PUAN!';
+      _hint = context.l10n.terlikGoldHint;
       _pushFx(
-        'ALTIN TERLİK 2X!',
+        context.l10n.terlikGoldCallout,
         _arena.width / 2,
         _arena.height / 2,
         LululuColors.liquidGold,
@@ -748,7 +973,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   }
 
   bool _useBugSpray() {
-    if (!_alive) return false;
+    if (!_alive || _paused) return false;
     HapticFeedback.heavyImpact();
     unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
     setState(() {
@@ -772,10 +997,13 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
           _pushFx('+$pts', c.dx, c.dy, LululuColors.toxicNeon);
         }
       }
+      // İlaçla temizlenen her hedef bir vuruştur (_smashed/skor artar):
+      // hamlesiz-çıkış iadesi hakkı biter.
+      if (cleared > 0) _hasHit = true;
       _shake = 0.28;
-      _hint = 'İLAÇ SIKILDI · $cleared HEDEF TEMİZLENDİ!';
+      _hint = context.l10n.terlikSprayedTargets(cleared);
       _pushFx(
-        'İLAÇ TEMİZLİĞİ!',
+        context.l10n.terlikSprayCallout,
         _arena.width / 2,
         _arena.height / 2 - 20,
         LululuColors.toxicNeon,
@@ -784,20 +1012,35 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
-    await ProgressManager.instance.addCoins(_coinsEarned);
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeTerlik,
-      _score,
-    );
-    await ProgressManager.instance.recordTaskProgress('play');
+  Future<void> _presentResult(int runId) async {
+    // Tur değiştiyse (yeniden başlatma araya girdiyse) eski turun sonucunu
+    // gösterme ve yeni turun ödülüne dokunma.
+    if (runId != _runId) {
+      _resultShown = false;
+      return;
+    }
     if (!mounted) return;
-    final replay = await showGameResult(
+    // TEK ÖDEME (madde 8): biriken coin/terlik/sprey toplamı finishRun()
+    // içindeki tek _settleRunEconomy çağrısıyla, bir kez ödenir.
+    // Görüntülenecek tutar ödeme öncesi anlık görüntüden alınır
+    // (_settleRunEconomy toplamları değiştirmez).
+    final earnedCoins = _coinsEarned;
+    // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
+    // üzerinden. Tur değiştiyse sonuç gösterilmez (stillValid koruması,
+    // eski runId kontrolüyle aynı).
+    final replay = await finishRun(
       context,
       score: _score,
-      coins: _coinsEarned,
-      stars: ResultScoring.starsFor(score: _score, best: _best),
+      best: _best,
+      coins: earnedCoins,
+      leaderboardMode: LeaderboardService.modeTerlik,
+      settle: _settleRunEconomy,
+      stillValid: () => mounted && runId == _runId,
     );
+    if (runId != _runId) {
+      _resultShown = false;
+      return;
+    }
     if (!mounted) return;
     _resultShown = false;
     if (!replay) {
@@ -810,14 +1053,85 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   void _edgeShowResult() {
     if (_resultShown) return;
     _resultShown = true;
+    final runId = _runId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _presentResult();
+      if (mounted) _presentResult(runId);
     });
   }
 
   String _formatNumber(int value) {
     final digits = value.toString();
     return digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
+  }
+
+  /// Küçük duraklatma düğmesi (madde 37): başlık satırında '?' düğmesinin
+  /// yanında, HUD düzenini kaydırmadan durur; prototip vitrininde gizlidir.
+  Widget _pauseButton() {
+    return Semantics(
+      button: true,
+      label: context.l10n.pause,
+      child: GestureDetector(
+        onTap: _togglePause,
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xDB080B12),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xB3FFB800), width: 1.5),
+            boxShadow: const [
+              BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+            ],
+          ),
+          child: const Icon(
+            Icons.pause_rounded,
+            size: 20,
+            color: Color(0xFFFFB800),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Görünür "duraklatıldı" durumu (madde 37): tam ekran kaplama dokunuşları
+  /// yutar, DEVAM düğmesi oyunu kaldığı yerden başlatır.
+  Widget _pauseOverlay() {
+    return Positioned.fill(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        child: ColoredBox(
+          color: const Color(0xFF080B12).withValues(alpha: 0.72),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'DURAKLATILDI',
+                  style: GoogleFonts.baloo2(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFFFFB800),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Skor $_score · Ezilen $_smashed',
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -833,38 +1147,48 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     final hasHostStatusBar = topPad > 0;
     final coins = widget.prototypeVisualState
         ? 12450
-        : (ProgressManager().coins > 0 ? ProgressManager().coins : 12450);
+        : ProgressManager().coins;
     final bonusItems = [
-      stockBonus(
+      stockBonusWithResult(
         id: 'dblslip',
-        label: 'ÇİFT TERLİK',
+        label: context.l10n.shopPowerDoubleSlipperNameCaps,
         asset: 'assets/icons2/boot.png',
         effect: () {
-          _useDoubleSlip();
+          final applied = _useDoubleSlip();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'goldslip',
-        label: 'ALTIN TERLİK',
+        label: context.l10n.shopPowerGoldenSlipperNameCaps,
         asset: 'assets/icons2/premium_token.png',
         effect: () {
-          _useGoldSlip();
+          final applied = _useGoldSlip();
           setState(() {});
+          return applied;
         },
       ),
-      stockBonus(
+      stockBonusWithResult(
         id: 'spraybug',
-        label: 'İLAÇ',
+        label: context.l10n.powerMedicineCaps,
         asset: 'assets/icons2/potion_health.png',
         effect: () {
-          _useBugSpray();
+          final applied = _useBugSpray();
           setState(() {});
+          return applied;
         },
       ),
     ];
 
-    return MediaQuery.removePadding(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        // Sistem geri tuşu / kaydırma ile çıkış: Geri düğmesiyle aynı
+        // iade kontrolü; çift-iade koruması _refundEnergyIfNoHit içinde.
+        if (didPop) _refundEnergyIfNoHit();
+      },
+      child: MediaQuery.removePadding(
       context: context,
       removeTop: true,
       removeBottom: true,
@@ -947,9 +1271,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                       children: [
                         Semantics(
                           button: true,
-                          label: 'Geri',
+                          label: context.l10n.goBackLabel,
                           child: GestureDetector(
-                            onTap: () => Navigator.maybePop(context),
+                            onTap: () {
+                              _refundEnergyIfNoHit();
+                              Navigator.maybePop(context);
+                            },
                             child: Container(
                               width: 48,
                               height: 48,
@@ -994,7 +1321,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Text(
-                                      'TERLİK TAP',
+                                      context.l10n.slipperTapTitle,
                                       style: GoogleFonts.baloo2(
                                         fontSize: 20,
                                         height: 1.05,
@@ -1022,7 +1349,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
-                                      'YENİ',
+                                      context.l10n.newBadge,
                                       style: GoogleFonts.baloo2(
                                         fontSize: 10.5,
                                         height: 1.0,
@@ -1072,20 +1399,24 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                             ],
                           ),
                         ),
+                        if (!widget.prototypeVisualState) ...[
+                          const SizedBox(width: 10),
+                          _pauseButton(),
+                        ],
                         const SizedBox(width: 10),
                         Semantics(
                           button: true,
-                          label: 'Nasıl oynanır',
+                          label: context.l10n.helpButtonLabel,
                           child: GestureDetector(
                             onTap: () => showDialog<void>(
                               context: context,
                               builder: (ctx) => AlertDialog(
-                                title: const Text('TERLİK TAP'),
+                                title: Text(ctx.l10n.slipperTapTitle),
                                 content: Text(_hint),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(ctx),
-                                    child: const Text('ANLADIM'),
+                                    child: Text(ctx.l10n.understoodButton),
                                   ),
                                 ],
                               ),
@@ -1155,7 +1486,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                     child: Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        'SKOR',
+                                        context.l10n.gameScoreLabel,
                                         style: GoogleFonts.nunito(
                                           fontSize: 10,
                                           height: 1,
@@ -1213,7 +1544,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                     child: Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        'REKOR',
+                                        context.l10n.gameBestLabel,
                                         style: GoogleFonts.nunito(
                                           fontSize: 10,
                                           height: 1,
@@ -1271,7 +1602,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                     child: Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        'CAN',
+                                        context.l10n.livesLabel,
                                         style: GoogleFonts.nunito(
                                           fontSize: 10,
                                           height: 1,
@@ -1304,7 +1635,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                               ),
                             ),
                             const SizedBox(width: 8),
-                            GestureDetector(
+                            Semantics(
+                              button: true,
+                              label: context.l10n.finishRoundLabel,
+                              child: GestureDetector(
                               onTap: _restart,
                               child: Container(
                                 width: 57.8,
@@ -1321,7 +1655,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                   ],
                                 ),
                                 child: Text(
-                                  'BİTİR',
+                                  context.l10n.finishCaps,
                                   style: GoogleFonts.baloo2(
                                     fontSize: 12.5,
                                     height: 1,
@@ -1330,6 +1664,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                   ),
                                 ),
                               ),
+                            ),
                             ),
                           ],
                         );
@@ -1379,14 +1714,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                     child: Stack(
                                       children: [
                                         if (!widget.prototypeVisualState)
-                                          const Positioned(
+                                          Positioned(
                                             left: 0,
                                             top: 0,
                                             width: 0,
                                             height: 0,
                                             child: Opacity(
                                               opacity: 0,
-                                              child: Text('TERLIK TAP'),
+                                              child: Text(context.l10n.slipperTapTitle),
                                             ),
                                           ),
                                         Center(
@@ -1477,8 +1812,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                                       MainAxisAlignment
                                                           .spaceBetween,
                                                   children: [
-                                                    const Text(
-                                                      'DELİKTEN ÇIKANI ANINDA EZ!',
+                                                    Text(
+                                                      context.l10n.terlikInstruction,
                                                       style: TextStyle(
                                                         fontFamily: 'Nunito',
                                                         fontSize: 10.5,
@@ -1491,7 +1826,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                                       ),
                                                     ),
                                                     Text(
-                                                      'HIZ X${(1 + _elapsedSeconds / 30).clamp(1.0, 2.5).toStringAsFixed(1)}',
+                                                      context.l10n.terlikSpeedMultiplier((1 + _elapsedSeconds / 30).clamp(1.0, 2.5).toStringAsFixed(1)),
                                                       style: const TextStyle(
                                                         fontFamily: 'Nunito',
                                                         fontSize: 10.5,
@@ -1512,14 +1847,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                           left: 10,
                                           bottom: 52,
                                           child: _TerlikChip(
-                                            label: 'VURUŞ $_smashed',
+                                            label: context.l10n.terlikHitsChip(_smashed),
                                           ),
                                         ),
                                         Positioned(
                                           right: 12,
                                           bottom: 54,
                                           child: _TerlikCombo(
-                                            label: 'KAÇAN $_missed!',
+                                            label: context.l10n.terlikMissedChip(_missed),
                                             danger: true,
                                           ),
                                         ),
@@ -1583,19 +1918,22 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
             if (!_alive && !_resultShown)
               Positioned.fill(
                 child: ArcadeResultOverlay(
-                  title: 'TERLİK BİTTİ',
+                  title: context.l10n.terlikOutTitle,
                   message: _stats(),
                   score: _score,
                   best: _best,
                   won: false,
-                  modeTitle: 'TERLİK TAP',
+                  modeTitle: context.l10n.slipperTapTitle,
                   shareLine: _stats(),
-                  retryLabel: 'YENİDEN',
+                  retryLabel: context.l10n.tryAgainCaps,
                   onRetry: _restart,
                 ),
               ),
+            if (_paused && _alive && !widget.prototypeVisualState)
+              _pauseOverlay(),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1628,7 +1966,7 @@ class _TerlikHole extends StatelessWidget {
     final bugBottom = prototypeVisualState ? 13.0 : 19.0;
     return Semantics(
       button: true,
-      label: visibleBug ? 'Böceği ez, delik ${index + 1}' : 'Boş delik',
+      label: visibleBug ? context.l10n.terlikHoleSemantics(index + 1) : context.l10n.terlikEmptyHole,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: prototypeVisualState ? null : (_) => onTap(),
@@ -1853,7 +2191,7 @@ class _TerlikBonusButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '${item.label}. ${item.count} adet',
+      label: context.l10n.boosterCountLabel(item.label, item.count),
       child: GestureDetector(
         onTap: enabled ? item.onTap : null,
         behavior: HitTestBehavior.opaque,

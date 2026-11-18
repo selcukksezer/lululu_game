@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 import '../widgets/shop_dialog.dart';
@@ -13,8 +14,12 @@ import 'tiers_screen.dart';
 /// Root shell: 5 sekme — ANA SAYFA / MODLAR / AİLEM / MAĞAZA / SKORLAR.
 ///
 /// Floating dock, Scaffold'un bottomNavigationBar'ı yerine
-/// `extendBody: true` + Stack ile içeriğin ÜSTÜNE konur; içerik dock'un
-/// altından kayar. ANA SAYFA açık tema (paper), diğer sekmeler koyu.
+/// `extendBody: true` + Stack ile içeriğin üst katmanına konur; ancak
+/// sekme içeriği dock'un altından kaymaz: [HomeShell], içeriğe dock
+/// yüksekliği + pay kadar alt boşluğu tek noktadan verir, sekmeler
+/// kendi alt paylarını ayrıca hesaplamaz. Tüm sekmeler açık tema
+/// ([LululuColors.paperSoft]) zemin kullanır; shell zemini de aynı
+/// renktir ki alt boşluk şeridi içerikle bütünleşsin.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, this.initialTab = LululuDockTab.home});
 
@@ -25,6 +30,14 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
+  /// Dock ölçüsü ([LululuDockBar]: 84 yükseklik + 10 alt pay) + 12
+  /// nefes payı = 106. Sekme içeriğinin alt boşluğu; tek nokta.
+  static const double _dockHeight = 84;
+  static const double _dockBottomMargin = 10;
+  static const double _dockGap = 12;
+  static const double _dockClearance =
+      _dockHeight + _dockBottomMargin + _dockGap;
+
   late LululuDockTab _tab = widget.initialTab;
 
   @override
@@ -34,8 +47,6 @@ class _HomeShellState extends State<HomeShell> {
       _tab = widget.initialTab;
     }
   }
-
-  bool get _lightHome => _tab == LululuDockTab.home;
 
   void _select(LululuDockTab tab) {
     if (tab == _tab) return;
@@ -54,23 +65,31 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Alt çentik / ana ekran göstergesi payı: hem dock'u göstergenin
+    // üstüne kaldırır hem de içerik boşluğuna eklenir. Üst pay
+    // sekmelerin kendisinde (örn. mqTop) hesaplanır, burada
+    // yinelenmez.
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
         extendBody: true,
-        backgroundColor:
-            _lightHome ? LululuColors.paper : LululuColors.carbonVoid,
+        backgroundColor: LululuColors.paperSoft,
         body: Stack(
           children: [
-            // İçerik: dock'un altından kayar.
+            // İçerik: dock'un üstünde biter; alt boşluk merkezi.
             Positioned.fill(
-              child: _buildActiveTab(),
+              child: Padding(
+                padding:
+                    EdgeInsets.only(bottom: _dockClearance + bottomInset),
+                child: _buildActiveTab(),
+              ),
             ),
             // Floating dock: içeriğin üstünde (etkileşim katmanı).
             Positioned(
               left: 0,
               right: 0,
-              bottom: 0,
+              bottom: bottomInset,
               child: Opacity(
                 opacity: 0.0,
                 child: LululuDockBar(
@@ -83,7 +102,7 @@ class _HomeShellState extends State<HomeShell> {
             Positioned(
               left: 0,
               right: 0,
-              bottom: 0,
+              bottom: bottomInset,
               child: IgnorePointer(
                 child: _DockVisualOverlay(selected: _tab),
               ),
@@ -95,6 +114,14 @@ class _HomeShellState extends State<HomeShell> {
   }
 }
 
+// Görünür dock kopyası (etkileşim katmanı, Opacity(0.0) ile çizilen
+// LululuDockBar'dır; yerleşim/ölçüler orada tanımlıdır, burada aynen
+// korunur).
+//
+// W14-1: Buraya okunmamış rozeti EKLENMEZ — family sekmesi sohbet
+// değil TiersScreen açar; rozet, sohbete götürmeyen bir sekmede
+// yanıltıcı olur. Görünür rozet, gerçek sohbet girişi olan ana
+// sayfadaki sohbet kartındadır (GameSelectorScreen _buildChatCard).
 class _DockVisualOverlay extends StatelessWidget {
   const _DockVisualOverlay({required this.selected});
 
@@ -102,13 +129,16 @@ class _DockVisualOverlay extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-    LululuDockTab.home => 'ANA SAYFA',
-    LululuDockTab.modes => 'MODLAR',
-    LululuDockTab.family => 'AİLEM',
-    LululuDockTab.shop => 'MAĞAZA',
-    LululuDockTab.scores => 'SKORLAR',
-  };
+  // S3#27: dock etiketleri tek kaynaktan (nav* anahtarları); bu
+  // dosyadaki tekrar kaldırıldı.
+  static String _label(AppLocalizations l10n, LululuDockTab tab) =>
+      switch (tab) {
+        LululuDockTab.home => l10n.navHome,
+        LululuDockTab.modes => l10n.navModes,
+        LululuDockTab.family => l10n.navFamily,
+        LululuDockTab.shop => l10n.navShop,
+        LululuDockTab.scores => l10n.navScores,
+      };
 
   static String _assetIcon(LululuDockTab tab) => switch (tab) {
     LululuDockTab.home => 'assets/design/ui/icons2/home.png',
@@ -183,6 +213,7 @@ class _DockVisualOverlay extends StatelessWidget {
                         padding: const EdgeInsets.all(7),
                         child: LayoutBuilder(
                           builder: (context, constraints) {
+                            final l10n = context.l10n;
                             final usableWidth =
                                 constraints.maxWidth.clamp(100.0, 390.0);
                             final tabWidth = usableWidth / _tabs.length;
@@ -283,6 +314,7 @@ class _DockVisualOverlay extends StatelessWidget {
                                         child: SizedBox(
                                           height: 64,
                                           child: _buildItem(
+                                            l10n: l10n,
                                             tab: tab,
                                             active: tab == selected,
                                           ),
@@ -306,8 +338,12 @@ class _DockVisualOverlay extends StatelessWidget {
     );
   }
 
-  Widget _buildItem({required LululuDockTab tab, required bool active}) {
-    final label = _label(tab);
+  Widget _buildItem({
+    required AppLocalizations l10n,
+    required LululuDockTab tab,
+    required bool active,
+  }) {
+    final label = _label(l10n, tab);
     final iconAsset = _assetIcon(tab);
 
     return DecoratedBox(

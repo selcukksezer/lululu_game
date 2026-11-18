@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
 import 'energy_empty_popup.dart';
@@ -47,7 +49,7 @@ class LululuTopBar extends StatelessWidget {
       listenable: ProgressManager(),
       builder: (context, _) {
         final pm = ProgressManager();
-        final displayCoins = pm.coins == 300 ? 12450 : pm.coins;
+        final displayCoins = pm.coins;
         final displayStars = pm.totalStars > 0 ? pm.totalStars : 86;
         final level = pm.unlockedLevel > 1 ? (17 + pm.unlockedLevel) : 18;
         final rawXp = 1240 +
@@ -70,8 +72,11 @@ class LululuTopBar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // Avatar + Etrafında Dairesel XP Halkası + Altında LVL Rozeti
-                  GestureDetector(
-                    onTap: onProfileTap,
+                  Semantics(
+                    button: true,
+                    label: context.l10n.profile,
+                    child: GestureDetector(
+                      onTap: onProfileTap,
                     behavior: HitTestBehavior.opaque,
                     child: SizedBox(
                       width: avatarSize,
@@ -122,8 +127,9 @@ class LululuTopBar extends StatelessWidget {
                           Positioned(
                             bottom: -3,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
+                              padding: EdgeInsets.symmetric(
+                                // Dar ekranda rozet taşmasın diye yatay boşluk kısılır.
+                                horizontal: compact ? 4 : 5,
                                 vertical: 1.2,
                               ),
                               decoration: BoxDecoration(
@@ -147,10 +153,14 @@ class LululuTopBar extends StatelessWidget {
                                 ],
                               ),
                               child: Text(
-                                'LVL $level',
+                                // Okunabilirlik: en az 11pt. Dar ekranda
+                                // boşluksuz kısaltma ile rozete sığdırılır.
+                                context.l10n.levelBadge(level, compact),
                                 maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.baloo2(
-                                  fontSize: compact ? 7.5 : 8.5,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w900,
                                   letterSpacing: 0.1,
                                   color: const Color(0xFF141B2A),
@@ -163,13 +173,17 @@ class LululuTopBar extends StatelessWidget {
                       ),
                     ),
                   ),
+                  ),
                   SizedBox(width: gap),
 
               // Coin Pill (.pill: height 34, width 92.9 on 430w, padding 4px 7px 4px 5px)
               Flexible(
                 flex: 0,
-                child: GestureDetector(
-                  onTap: onShopTap,
+                child: Semantics(
+                  button: true,
+                  label: context.l10n.navShop,
+                  child: GestureDetector(
+                    onTap: onShopTap,
                   behavior: HitTestBehavior.opaque,
                   child: SizedBox(
                     width: compact ? null : 92.9,
@@ -184,7 +198,7 @@ class LululuTopBar extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Image.asset(
-                            'assets/design/ui/icon_coin_exact.webp',
+                            'assets/design/ui/icon_coin_exact.png',
                             width: 18,
                             height: 18,
                             errorBuilder: (_, _, _) => Image.asset(
@@ -251,6 +265,7 @@ class LululuTopBar extends StatelessWidget {
                     ),
                   ),
                 ),
+                ),
               ),
               SizedBox(width: gap),
 
@@ -268,7 +283,7 @@ class LululuTopBar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Image.asset(
-                        'assets/design/ui/icon_star_exact.webp',
+                        'assets/design/ui/icon_star_exact.png',
                         width: 18,
                         height: 18,
                         errorBuilder: (_, _, _) => Image.asset(
@@ -302,17 +317,25 @@ class LululuTopBar extends StatelessWidget {
 
               // Energy + Level/XP Pill (#energyBar)
               Expanded(
-                child: GestureDetector(
-                  onTap: () => _showEnergyDialog(context),
-                  behavior: HitTestBehavior.opaque,
-                  child: _EnergyPill(light: light),
+                child: Semantics(
+                  button: true,
+                  label: context.l10n.energyLabel,
+                  child: GestureDetector(
+                    onTap: () => _showEnergyDialog(context),
+                    behavior: HitTestBehavior.opaque,
+                    child: _EnergyPill(light: light),
+                  ),
                 ),
               ),
               SizedBox(width: gap),
 
               // Settings Gear Button (.icon-btn.sm: 44x44, radius 13)
-              GestureDetector(
-                onTap: onSettingsTap,
+              Semantics(
+                button: true,
+                label: context.l10n.settings,
+                excludeSemantics: true,
+                child: GestureDetector(
+                  onTap: onSettingsTap,
                 behavior: HitTestBehavior.opaque,
                 child: Container(
                   width: gearSize,
@@ -330,7 +353,7 @@ class LululuTopBar extends StatelessWidget {
                   ),
                   alignment: Alignment.center,
                   child: Image.asset(
-                    'assets/design/ui/icon_gear_exact.webp',
+                    'assets/design/ui/icon_gear_exact.png',
                     width: 26,
                     height: 26,
                     errorBuilder: (_, _, _) => const Icon(
@@ -340,6 +363,7 @@ class LululuTopBar extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
               ),
             ],
           ),
@@ -398,6 +422,12 @@ class _EnergyPillState extends State<_EnergyPill>
   late final AnimationController _beat;
   late final Animation<double> _scale;
 
+  /// Yerel 1 sn'lik geri sayım ticker'ı (W6-1 takip düzeltmesi):
+  /// [EnergyService] artık her saniye bildirim göndermediği için MM:SS
+  /// metni yalnızca bu ticker'ın `setState` çağrısıyla tazelenir.
+  /// Yalnız geri sayım görünürken (enerji dolu değilken) çalışır.
+  Timer? _countdownTicker;
+
   @override
   void initState() {
     super.initState();
@@ -413,10 +443,40 @@ class _EnergyPillState extends State<_EnergyPill>
     if (!isTesting) {
       _beat.repeat(reverse: true);
     }
+    // Enerji dolu ↔ eksik geçişlerinde ticker'ı başlat/durdur.
+    EnergyService.instance.energyNotifier.addListener(_syncCountdownTicker);
+    _syncCountdownTicker();
+  }
+
+  /// Ticker'ı görünürlük durumuna göre başlatır veya durdurur.
+  /// Test ortamında ticker kurulmaz (periyodik zamanlayıcı
+  /// `pumpAndSettle`'ı kilitler).
+  void _syncCountdownTicker() {
+    final isTesting =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    final showCountdown =
+        EnergyService.instance.energy < EnergyService.maxEnergy;
+    if (!showCountdown || isTesting) {
+      _countdownTicker?.cancel();
+      _countdownTicker = null;
+      return;
+    }
+    if (_countdownTicker != null) return;
+    _countdownTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (EnergyService.instance.energy >= EnergyService.maxEnergy) {
+        _syncCountdownTicker();
+        return;
+      }
+      setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _countdownTicker?.cancel();
+    _countdownTicker = null;
+    EnergyService.instance.energyNotifier.removeListener(_syncCountdownTicker);
     _beat.dispose();
     super.dispose();
   }
@@ -433,6 +493,7 @@ class _EnergyPillState extends State<_EnergyPill>
   @override
   Widget build(BuildContext context) {
     final svc = EnergyService.instance;
+    final l10n = context.l10n;
     return ListenableBuilder(
       listenable: Listenable.merge([
         svc.energyNotifier,
@@ -441,8 +502,9 @@ class _EnergyPillState extends State<_EnergyPill>
       builder: (_, _) {
         final energy = svc.energy;
         final frac = (energy / EnergyService.maxEnergy).clamp(0.0, 1.0);
-        final timerStr =
-            energy >= EnergyService.maxEnergy ? 'DOLU' : _mmss(svc.timeToNext);
+        final timerStr = energy >= EnergyService.maxEnergy
+            ? l10n.energyFull
+            : _mmss(svc.timeToNext);
 
         return Container(
           height: 36,
@@ -471,7 +533,7 @@ class _EnergyPillState extends State<_EnergyPill>
                     ScaleTransition(
                       scale: _scale,
                       child: Image.asset(
-                        'assets/design/ui/icon_heart_exact.webp',
+                        'assets/design/ui/icon_heart_exact.png',
                         width: 16,
                         height: 16,
                         errorBuilder: (_, _, _) =>

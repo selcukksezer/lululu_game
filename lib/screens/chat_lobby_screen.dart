@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
+import '../services/chat_service.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/lululu_press.dart';
 import '../widgets/sticker_image.dart';
@@ -12,6 +14,9 @@ import '../widgets/sticker_image.dart';
 ///
 /// Çevrimiçi oyuncu listesi (avatar + isim + seviye), gelen/giden mesaj
 /// baloncukları, altta 48dp mesaj yazma alanı + gönder butonu.
+/// Üstteki kanal satırı ChatService'e bağlıdır: kanal seçimi
+/// switchChannel üzerinden gider, okunmamış rozetleri S2#19 sayacını
+/// gösterir (mock mesaj listesi kanala göre değişmez).
 class ChatLobbyScreen extends StatefulWidget {
   const ChatLobbyScreen({super.key});
 
@@ -100,6 +105,38 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
   Timer? _replyTimer;
 
   @override
+  void initState() {
+    super.initState();
+    // Kanal görünümü açılırken okundu işaretle (S2#19): yükleme bitince
+    // çağrılır ki önbellekteki mesajlar "görüldü" sayılsın; yoklama
+    // bunları tekrar okunmamış saymaz.
+    unawaited(_markCurrentChannelRead());
+  }
+
+  Future<void> _markCurrentChannelRead() async {
+    try {
+      await ChatService.instance.ensureLoaded();
+    } catch (e) {
+      debugPrint('[lululu] Chat okundu işaretlenemedi: $e');
+      return;
+    }
+    if (!mounted) return;
+    ChatService.instance.markChannelRead(
+      ChatService.instance.currentChannel,
+    );
+  }
+
+  /// Okunmamış rozet etiketi: sayaç yoklama penceresi
+  /// ([ChatService.unreadProbeLimit]) ile sınırlı olduğundan sınırda
+  /// "10+" gösterilir; 10'u aşan kesin sayı iddia edilmez.
+  static String _unreadLabel(int count) {
+    if (count >= ChatService.unreadProbeLimit) {
+      return '${ChatService.unreadProbeLimit}+';
+    }
+    return '$count';
+  }
+
+  @override
   void dispose() {
     _replyTimer?.cancel();
     _ctrl.dispose();
@@ -149,6 +186,108 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
     });
   }
 
+  /// Kanal satırı: 3 kanal çipi + okunmamış rozeti (S2#19). Seçim
+  /// [ChatService.switchChannel] üzerinden gider; geçiş hem ayrılınan
+  /// hem girilen kanalı okundu sayar. Rozetler [ListenableBuilder] ile
+  /// güncellenir; sayı 0 ise rozet gizlidir.
+  Widget _buildChannelRow() {
+    return ListenableBuilder(
+      listenable: ChatService.instance,
+      builder: (context, _) {
+        final channels = ChatChannel.values;
+        final current = ChatService.instance.currentChannel;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+          child: Row(
+            children: [
+              for (var i = 0; i < channels.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: _buildChannelChip(
+                    channel: channels[i],
+                    selected: channels[i] == current,
+                    unreadCount: ChatService.instance.unreadCountFor(
+                      channels[i],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildChannelChip({
+    required ChatChannel channel,
+    required bool selected,
+    required int unreadCount,
+  }) {
+    return Semantics(
+      button: true,
+      label: context.l10n.channelSelectLabel(channel.displayNameFor(Localizations.localeOf(context))),
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => ChatService.instance.switchChannel(channel),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected ? LululuColors.inkDark : LululuColors.paperSoft,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected
+                  ? LululuColors.inkDark
+                  : LululuColors.mutedTitanium.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  channel.displayNameFor(Localizations.localeOf(context)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.exo2(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color:
+                        selected ? LululuColors.paper : LululuColors.inkDark,
+                  ),
+                ),
+              ),
+              if (unreadCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  height: 18,
+                  constraints: const BoxConstraints(minWidth: 18),
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: LululuColors.mysticRuby,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    _unreadLabel(unreadCount),
+                    style: GoogleFonts.exo2(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      height: 1.0,
+                      color: LululuColors.paper,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -160,7 +299,7 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
         title: Row(
           children: [
             Text(
-              'SOHBET',
+              context.l10n.chatTitle,
               style: GoogleFonts.exo2(
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
@@ -187,7 +326,7 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    '${_players.length} ÇEVRİMİÇİ',
+                    context.l10n.onlinePlayersCount(_players.length),
                     style: GoogleFonts.exo2(
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
@@ -202,9 +341,11 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
       ),
       body: Column(
         children: [
+          // Kanal seçimi + okunmamış rozetleri (S2#19).
+          _buildChannelRow(),
           // Çevrimiçi oyuncular.
           SizedBox(
-            height: 92,
+            height: 98, // 11pt seviye satırı taşmasın diye.
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -243,11 +384,11 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
                       ),
                     ),
                     Text(
-                      'Sv. ${p.level}',
+                      context.l10n.levelShort(p.level),
                       style: GoogleFonts.exo2(
-                        fontSize: 9,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: LululuColors.mutedTitanium,
+                        color: LululuColors.inkDark,
                       ),
                     ),
                   ],
@@ -301,11 +442,11 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
                         decoration: InputDecoration(
-                          hintText: 'Mesaj yaz…',
+                          hintText: context.l10n.messageHint,
                           border: InputBorder.none,
                           hintStyle: GoogleFonts.exo2(
                             fontSize: 14,
-                            color: LululuColors.mutedTitanium,
+                            color: LululuColors.bodyOnLight,
                           ),
                         ),
                         style: GoogleFonts.exo2(

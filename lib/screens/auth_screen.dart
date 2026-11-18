@@ -3,10 +3,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/leaderboard_service.dart';
+import '../widgets/auth_panel.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 /// 1:1 Pixel-Perfect AuthScreen matching HTML prototype `#scr-account`
@@ -175,11 +177,11 @@ class _AuthScreenState extends State<AuthScreen> {
               child: ValueListenableBuilder<AuthUser?>(
                 valueListenable: AuthService.instance.currentUserNotifier,
                 builder: (context, user, _) {
-                  final showSession = !_signedOutExplicitly;
+                  final showSession = !_signedOutExplicitly && user != null && user.isSignedIn;
                   final whoName = (user != null && user.isSignedIn)
                       ? '${user.displayName} · ${user.username}'
                       : 'Apple Oyuncu · apple';
-                  const whoSub = 'Oturum açık';
+                  final whoSub = context.l10n.authSessionOpen;
 
                   return Column(
                     children: [
@@ -234,11 +236,20 @@ class _AuthScreenState extends State<AuthScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          GestureDetector(
-            onTap: _closeOrPop,
-            child: Container(
-              width: 48,
-              height: 48,
+          // 29x29 olan yalnızca iç simgedir; dokunma alanı zaten
+          // 48x48 kaptır. Görsel aynen korunur, etiket eklenir.
+          Semantics(
+            button: true,
+            label: context.l10n.goBackLabel,
+            excludeSemantics: true,
+            child: Tooltip(
+              message: context.l10n.goBackLabel,
+              excludeFromSemantics: true,
+              child: GestureDetector(
+                onTap: _closeOrPop,
+                child: Container(
+                  width: 48,
+                  height: 48,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
@@ -264,14 +275,16 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
             ),
           ),
+          ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                'HESAP',
+                context.l10n.accountTitle,
                 maxLines: 1,
-                overflow: TextOverflow.visible,
+                overflow: TextOverflow.ellipsis,
                 style: _baloo2(
                   fontSize: 23,
                   fontWeight: FontWeight.w800,
@@ -344,10 +357,12 @@ class _AuthScreenState extends State<AuthScreen> {
                   children: [
                     _buildCardHeader(),
                     const SizedBox(height: 7),
-                    SizedBox(
-                      height: 41.0,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 41.0),
                       child: Text(
-                        'Kullanıcı adı + şifre ile gerçek hesap. Skorlar sıralamaya bağlanır.',
+                        context.l10n.authCardSubtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: _nunito(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w700,
@@ -366,15 +381,20 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 13),
                     _buildInputField(
                       controller: _userCtl,
-                      hintText: 'Kullanıcı adı',
+                      hintText: context.l10n.usernameHint,
                       obscureText: false,
                     ),
                     const SizedBox(height: 10),
                     _buildInputField(
                       controller: _passCtl,
-                      hintText: 'Şifre',
+                      hintText: context.l10n.passwordHint,
                       obscureText: _obscurePassword,
-                      suffix: GestureDetector(
+                      suffix: Semantics(
+                        button: true,
+                        label: _obscurePassword
+                            ? context.l10n.showPasswordLabel
+                            : context.l10n.hidePasswordLabel,
+                        child: GestureDetector(
                         onTap: () {
                           setState(() => _obscurePassword = !_obscurePassword);
                         },
@@ -390,6 +410,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             painter: _AuthEyeIconPainter(),
                           ),
                         ),
+                      ),
                       ),
                     ),
                     if (_error != null) ...[
@@ -422,10 +443,19 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 13),
                     _buildOrDivider(),
                     const SizedBox(height: 11),
-                    _buildGuestButton(),
+                    GuestSignInButton(
+                      onTap: _busy
+                          ? null
+                          : () {
+                              AudioManager().playPop();
+                              _run(
+                                () => AuthService.instance.signInAsGuest(),
+                              );
+                            },
+                    ),
                     const SizedBox(height: 9),
                     _buildSocialButton(
-                      label: 'Apple ile devam',
+                      label: context.l10n.continueWithApple,
                       icon: const CustomPaint(
                         size: Size(21, 21),
                         painter: _AppleLogoPainter(),
@@ -439,7 +469,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     const SizedBox(height: 9),
                     _buildSocialButton(
-                      label: 'Google ile devam',
+                      label: context.l10n.continueWithGoogle,
                       icon: const CustomPaint(
                         size: Size(21, 21),
                         painter: _GoogleLogoPainter(),
@@ -492,7 +522,9 @@ class _AuthScreenState extends State<AuthScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 5),
             child: Text(
-              _isRegister ? 'KAYIT' : 'GİRİŞ',
+              _isRegister
+                  ? context.l10n.authHeaderRegister
+                  : context.l10n.authHeaderLogin,
               style: _baloo2(
                 fontSize: 27,
                 fontWeight: FontWeight.w800,
@@ -509,13 +541,20 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
             ),
           ),
-          GestureDetector(
-            onTap: _closeOrPop,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
+          Semantics(
+            button: true,
+            label: context.l10n.closeLabel,
+            excludeSemantics: true,
+            child: Tooltip(
+              message: context.l10n.closeLabel,
+              excludeFromSemantics: true,
+              child: GestureDetector(
+                onTap: _closeOrPop,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
                 color: Colors.white,
                 border: Border.all(
                   color: const Color(0xFFB97A2E),
@@ -535,6 +574,8 @@ class _AuthScreenState extends State<AuthScreen> {
                 painter: _CloseXIconPainter(),
               ),
             ),
+          ),
+          ),
           ),
         ],
       ),
@@ -607,7 +648,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     child: Text(
                       whoName,
                       maxLines: 1,
-                      overflow: TextOverflow.visible,
+                      overflow: TextOverflow.ellipsis,
                       style: _baloo2(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w800,
@@ -623,7 +664,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     child: Text(
                       whoSub,
                       maxLines: 1,
-                      overflow: TextOverflow.visible,
+                      overflow: TextOverflow.ellipsis,
                       style: _nunito(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
@@ -638,39 +679,43 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
           const SizedBox(width: 9),
-          GestureDetector(
-            onTap: _busy
-                ? null
-                : () async {
-                    AudioManager().playPop();
-                    await AuthService.instance.signOut();
-                    await LeaderboardService.instance.onAuthChanged();
-                    if (!mounted) return;
-                    setState(() {
-                      _signedOutExplicitly = true;
-                    });
-                  },
-            child: Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(
-                  color: const Color(0x66E52E2E),
-                  width: 2,
+          Semantics(
+            button: true,
+            label: context.l10n.signOutButton,
+            child: GestureDetector(
+              onTap: _busy
+                  ? null
+                  : () async {
+                      AudioManager().playPop();
+                      await AuthService.instance.signOut();
+                      await LeaderboardService.instance.onAuthChanged();
+                      if (!mounted) return;
+                      setState(() {
+                        _signedOutExplicitly = true;
+                      });
+                    },
+              child: Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: const Color(0x66E52E2E),
+                    width: 2,
+                  ),
                 ),
-              ),
-              alignment: Alignment.center,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  'Çıkış',
-                  style: _baloo2(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFFE52E2E),
-                    height: 1.0,
+                alignment: Alignment.center,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    context.l10n.signOutButton,
+                    style: _baloo2(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFE52E2E),
+                      height: 1.0,
+                    ),
                   ),
                 ),
               ),
@@ -698,7 +743,7 @@ class _AuthScreenState extends State<AuthScreen> {
               children: [
                 Expanded(
                   child: _buildTabItem(
-                    label: 'Giriş',
+                    label: context.l10n.loginTab,
                     active: !_isRegister,
                     onTap: () {
                       AudioManager().playPop();
@@ -712,7 +757,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(width: 5),
                 Expanded(
                   child: _buildTabItem(
-                    label: 'Kayıt',
+                    label: context.l10n.registerTab,
                     active: _isRegister,
                     onTap: () {
                       AudioManager().playPop();
@@ -749,64 +794,69 @@ class _AuthScreenState extends State<AuthScreen> {
     required bool active,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 48,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: active
-              ? const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: [0.0, 0.55, 1.0],
-                  colors: [
-                    Color(0xFFFFCF3F),
-                    Color(0xFFFFB800),
-                    Color(0xFFF59E00),
-                  ],
-                )
-              : null,
-          boxShadow: active
-              ? const [
-                  BoxShadow(
-                    color: Color(0xFFB97A00),
-                    offset: Offset(0, 3),
-                    blurRadius: 0,
-                  ),
-                ]
-              : null,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (active)
-                const Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  height: 2,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Color(0x73FFFFFF),
+    return Semantics(
+      button: true,
+      label: label,
+      selected: active,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 48,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: active
+                ? const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.0, 0.55, 1.0],
+                    colors: [
+                      Color(0xFFFFCF3F),
+                      Color(0xFFFFB800),
+                      Color(0xFFF59E00),
+                    ],
+                  )
+                : null,
+            boxShadow: active
+                ? const [
+                    BoxShadow(
+                      color: Color(0xFFB97A00),
+                      offset: Offset(0, 3),
+                      blurRadius: 0,
+                    ),
+                  ]
+                : null,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (active)
+                  const Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    height: 2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Color(0x73FFFFFF),
+                      ),
                     ),
                   ),
+                Text(
+                  label,
+                  style: _baloo2(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: active
+                        ? const Color(0xFF4A2E00)
+                        : const Color(0xFF8A6A30),
+                    letterSpacing: 0.3,
+                    height: 1.0,
+                  ),
                 ),
-              Text(
-                label,
-                style: _baloo2(
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w800,
-                  color: active
-                      ? const Color(0xFF4A2E00)
-                      : const Color(0xFF8A6A30),
-                  letterSpacing: 0.3,
-                  height: 1.0,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -872,63 +922,69 @@ class _AuthScreenState extends State<AuthScreen> {
 
   /// `#authSubmit.btn.auth-primary` -> height: 56, borderRadius: 17, gold gradient
   Widget _buildSubmitButton() {
-    return GestureDetector(
-      onTap: _busy ? null : _submitLocal,
-      child: CustomPaint(
-        painter: const _AccountBlurredRRectShadowPainter(
-          color: Color(0x47000000),
-          offset: Offset(0, 10),
-          sigma: 9.0,
-          radius: 17.0,
-        ),
-        child: Container(
-          height: 56,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(17),
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              stops: [0.0, 0.55, 1.0],
-              colors: [
-                Color(0xFFFFCF3F),
-                Color(0xFFFFB800),
-                Color(0xFFF59E00),
-              ],
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0xFFB97A00),
-                offset: Offset(0, 5),
-                blurRadius: 0,
-              ),
-            ],
+    return Semantics(
+      button: true,
+      label: _isRegister ? context.l10n.createAccountButton : context.l10n.signInButton,
+      child: GestureDetector(
+        onTap: _busy ? null : _submitLocal,
+        child: CustomPaint(
+          painter: const _AccountBlurredRRectShadowPainter(
+            color: Color(0x47000000),
+            offset: Offset(0, 10),
+            sigma: 9.0,
+            radius: 17.0,
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(17),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(
-                    _isRegister ? 'HESAP OLUŞTUR' : 'GİRİŞ YAP',
-                    style: _baloo2(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: 0.4,
-                      height: 1.0,
-                      shadows: const [
-                        Shadow(
-                          color: Color(0x59000000),
-                          offset: Offset(0, 2),
-                          blurRadius: 0,
-                        ),
-                      ],
-                    ),
-                  ),
+          child: Container(
+            height: 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(17),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0.0, 0.55, 1.0],
+                colors: [
+                  Color(0xFFFFCF3F),
+                  Color(0xFFFFB800),
+                  Color(0xFFF59E00),
+                ],
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0xFFB97A00),
+                  offset: Offset(0, 5),
+                  blurRadius: 0,
                 ),
               ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(17),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      _isRegister
+                          ? context.l10n.createAccountButton
+                          : context.l10n.signInButton,
+                      style: _baloo2(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.4,
+                        height: 1.0,
+                        shadows: const [
+                          Shadow(
+                            color: Color(0x59000000),
+                            offset: Offset(0, 2),
+                            blurRadius: 0,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -952,7 +1008,7 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
             const SizedBox(width: 10),
             Text(
-              'VEYA',
+              context.l10n.orDivider,
               style: _baloo2(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w800,
@@ -974,91 +1030,54 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  /// `#authGuest.auth-guest` -> height: 52, white bg, border: 2px solid #B97A2E
-  Widget _buildGuestButton() {
-    return GestureDetector(
-      onTap: _busy
-          ? null
-          : () {
-              AudioManager().playPop();
-              _run(() => AuthService.instance.signInAsGuest());
-            },
-      child: Container(
-        height: 52,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFB97A2E),
-            width: 2,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0xFFB97A2E),
-              offset: Offset(0, 4),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          'MİSAFİR DEVAM ET',
-          style: _baloo2(
-            fontSize: 16.5,
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF8A5220),
-            letterSpacing: 0.4,
-            height: 1.0,
-          ),
-        ),
-      ),
-    );
-  }
-
   /// `.auth-social` -> height: 52, white bg, border: 2px solid #E3C98F
   Widget _buildSocialButton({
     required String label,
     required Widget icon,
     required VoidCallback? onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 52,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFE3C98F),
-            width: 2,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0xFFE0C184),
-              offset: Offset(0, 4),
-              blurRadius: 0,
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFE3C98F),
+              width: 2,
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            icon,
-            const SizedBox(width: 9),
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                label,
-                style: _baloo2(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF33200A),
-                  letterSpacing: 0.0,
-                  height: 1.0,
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0xFFE0C184),
+                offset: Offset(0, 4),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              icon,
+              const SizedBox(width: 9),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  label,
+                  style: _baloo2(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF33200A),
+                    letterSpacing: 0.0,
+                    height: 1.0,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1351,13 +1370,16 @@ class _AccountFloatingDock extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'ANA SAYFA',
-        LululuDockTab.modes => 'MODLAR',
-        LululuDockTab.family => 'AİLEM',
-        LululuDockTab.shop => 'MAĞAZA',
-        LululuDockTab.scores => 'SKORLAR',
-      };
+  static String _label(BuildContext context, LululuDockTab tab) {
+    final l10n = context.l10n;
+    return switch (tab) {
+      LululuDockTab.home => l10n.navHome,
+      LululuDockTab.modes => l10n.navModes,
+      LululuDockTab.family => l10n.navFamily,
+      LululuDockTab.shop => l10n.navShop,
+      LululuDockTab.scores => l10n.navScores,
+    };
+  }
 
   static String _icon(LululuDockTab tab) => switch (tab) {
         LululuDockTab.home => 'assets/icons2/home.png',
@@ -1542,7 +1564,11 @@ class _AccountFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(context, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: DecoratedBox(
@@ -1660,7 +1686,7 @@ class _AccountFloatingDock extends StatelessWidget {
                                         right: -4,
                                         top: 49.0,
                                         child: Text(
-                                          _label(tab),
+                                          _label(context, tab),
                                           maxLines: 1,
                                           textAlign: TextAlign.center,
                                           style: _AuthScreenState._baloo2(
@@ -1695,6 +1721,7 @@ class _AccountFloatingDock extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                            ),
                             ),
                           ),
                       ],

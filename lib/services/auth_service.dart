@@ -9,7 +9,14 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import 'achievement_pass_service.dart';
+import 'adaptive_difficulty_service.dart';
+import 'bug_video_service.dart';
+import 'campaign_progression_service.dart';
+import 'chat_service.dart';
 import 'cloud_sync_service.dart';
+import 'daily_challenge_service.dart';
+import 'energy_service.dart';
 import 'firebase_bootstrap.dart';
 import 'leaderboard_service.dart';
 import 'progress_manager.dart';
@@ -178,14 +185,29 @@ class AuthService extends ChangeNotifier {
   static final AuthService instance = AuthService._();
 
   static const _sessionKey = 'LululuAuthV1';
+  // TODO(güvenlik, ayrı görev): Yerel hesap kasası (hash + salt) hâlen
+  // SharedPreferences'te şifresiz duruyor. flutter_secure_storage'a taşıma
+  // bu değişikliğin kapsamı dışındadır; bağımlılık eklenmedi.
   static const _localAccountsKey = 'LululuAccountsV1';
   static const _guestIdKey = 'LululuGuestIdV1';
-  static const _minPasswordLen = 4;
+  // Yeni kayıtlar için asgari şifre uzunluğu. Girişte (login) asgari uzunluk
+  // dayatılmaz: eski kısa şifreli hesaplar giriş yapabilmeli ve hash'leri
+  // başarılı girişte yeni biçime yükseltilmelidir.
+  static const _minPasswordLen = 6;
   static const _maxPasswordLen = 128;
   static const _minUsernameLen = 3;
   static const _maxUsernameLen = 20;
-  static const _pbkdf2Iterations = 1000;
+  // K3: kural displayName/authorName 1..32 ister (firestore.rules:301,
+  // profil displayName 1..32). Görünen ad bu sınırı aşamaz.
+  static const _maxDisplayNameLen = 32;
+  // Yeni hash'ler 10000 iterasyonla üretilir. Eski kayıtlar 1000 iterasyonla
+  // üretildi; _legacyPbkdf2Prefix ile tanınır, eski parametreyle doğrulanır
+  // ve başarılı girişte yeni biçime yükseltilir (bkz. _verifyAccountPassword).
+  static const _pbkdf2Iterations = 10000;
+  static const _legacyPbkdf2Iterations = 1000;
   static const _pbkdf2Prefix = 'pbkdf2_sha256\$$_pbkdf2Iterations\$';
+  static const _legacyPbkdf2Prefix =
+      'pbkdf2_sha256\$$_legacyPbkdf2Iterations\$';
   static const int maxFailedLoginAttempts = 5;
   static const int baseLockoutDurationMs = 15000;
   static const int maxLockoutDurationMs = 300000;
@@ -194,6 +216,10 @@ class AuthService extends ChangeNotifier {
 
   AuthUser? _user;
   bool _loaded = false;
+
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
   bool _googleReady = false;
   final Map<String, RegisteredAccount> _accounts = {};
   final Map<String, int> _failedLoginAttempts = {};
@@ -221,19 +247,6 @@ class AuthService extends ChangeNotifier {
     return _failedLoginAttempts[key] ?? 0;
   }
 
-  /// Returns true if [usernameOrEmail] is currently under brute-force cooldown.
-  bool isRateLimited(String usernameOrEmail, {int? nowMs}) {
-    final key = _normalizeUsername(usernameOrEmail);
-    final until = _loginLockoutUntilMs[key];
-    if (until == null) return false;
-    final current = nowMs ?? DateTime.now().toUtc().millisecondsSinceEpoch;
-    if (current >= until) {
-      _loginLockoutUntilMs.remove(key);
-      return false;
-    }
-    return true;
-  }
-
   /// Clears brute-force counters (for testing or administrative reset).
   void resetLoginRateLimit([String? usernameOrEmail]) {
     if (usernameOrEmail == null) {
@@ -247,8 +260,26 @@ class AuthService extends ChangeNotifier {
   }
 
   void _setUser(AuthUser? next) {
-    _user = next;
-    userNotifier.value = next;
+    // K3: görünen ad tek huniden geçer — 32 karakteri aşan ad (kayıtlı
+    // eski oturum, sosyal giriş, Firebase adı) burada sessizce kısalır;
+    // hiçbir yoldan uzun ad buluta çıkamaz (kesme, reddetme yok).
+    final clamped = next == null || next.displayName.length <= _maxDisplayNameLen
+        ? next
+        : next.copyWith(displayName: _clampDisplayName(next.displayName));
+    _user = clamped;
+    userNotifier.value = clamped;
+  }
+
+  /// K3: görünen ad kelepçesi — `firestore.rules` displayName/authorName
+  /// 1..32 ister. Ad nerede belirlenirse belirlensin 32 karaktere sessizce
+  /// kısaltılır (red yok); kontrol karakterleri atılır, kırpılır, boşsa
+  /// 'Oyuncu' döner. [CloudSyncService.sanitizeDisplayName] ile aynı sınır.
+  static String _clampDisplayName(String raw) {
+    final safe = raw.replaceAll(_controlCharsRegex, '').trim();
+    if (safe.isEmpty) return 'Oyuncu';
+    return safe.length > _maxDisplayNameLen
+        ? safe.substring(0, _maxDisplayNameLen)
+        : safe;
   }
 
   Future<void> ensureLoaded() async {
@@ -256,7 +287,22 @@ class AuthService extends ChangeNotifier {
     await load();
   }
 
+  /// Kalıcı oturumu yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     resetLoginRateLimit();
     final prefs = await SharedPreferences.getInstance();
     await _loadAccounts(prefs);
@@ -275,9 +321,11 @@ class AuthService extends ChangeNotifier {
           _setUser(
             AuthUser(
               id: fbUser.uid,
-              displayName: fbUser.displayName?.trim().isNotEmpty == true
-                  ? fbUser.displayName!.trim()
-                  : (isAnon ? 'Misafir' : 'Oyuncu'),
+              displayName: _clampDisplayName(
+                fbUser.displayName?.trim().isNotEmpty == true
+                    ? fbUser.displayName!.trim()
+                    : (isAnon ? 'Misafir' : 'Oyuncu'),
+              ),
               provider: isAnon ? AuthProviderKind.guest : AuthProviderKind.local,
               email: fbUser.email,
               username: fbUser.email?.split('@').first,
@@ -422,7 +470,17 @@ class AuthService extends ChangeNotifier {
   }
 
   /// Iterative PBKDF2-HMAC-SHA256 password derivation with cryptographic salt.
-  String _hashPassword(String password, String salt) {
+  ///
+  /// Yeni hash'ler her zaman güncel iterasyon sayısıyla üretilir ve sonuç
+  /// sürüm etiketli biçimdedir: `pbkdf2_sha256$<iterasyon>$<hex>`.
+  String _hashPassword(String password, String salt) =>
+      _hashPasswordWithIterations(password, salt, _pbkdf2Iterations);
+
+  String _hashPasswordWithIterations(
+    String password,
+    String salt,
+    int iterations,
+  ) {
     final keyBytes = utf8.encode(password);
     final saltBytes = utf8.encode('lululu_vault_v2::$salt');
     final hmac = Hmac(sha256, keyBytes);
@@ -432,7 +490,7 @@ class AuthService extends ChangeNotifier {
     var u = hmac.convert(initialInput).bytes;
     final derived = List<int>.from(u);
 
-    for (var i = 1; i < _pbkdf2Iterations; i++) {
+    for (var i = 1; i < iterations; i++) {
       u = hmac.convert(u).bytes;
       for (var j = 0; j < derived.length; j++) {
         derived[j] ^= u[j];
@@ -440,7 +498,18 @@ class AuthService extends ChangeNotifier {
     }
 
     final hex = derived.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    return '$_pbkdf2Prefix$hex';
+    return 'pbkdf2_sha256\$${iterations}\$$hex';
+  }
+
+  /// Kayıtlı hash'in hangi iterasyon sayısıyla üretildiğini önekten okur.
+  /// Yalnızca bilinen iki sürüm tanınır (güncel + eski); bilinmeyen önek
+  /// `null` döner ve doğrulama eski SHA-256 yollarına düşer (eşleşmez).
+  static int? _pbkdf2IterationsOf(String stored) {
+    if (stored.startsWith(_pbkdf2Prefix)) return _pbkdf2Iterations;
+    if (stored.startsWith(_legacyPbkdf2Prefix)) {
+      return _legacyPbkdf2Iterations;
+    }
+    return null;
   }
 
   /// Legacy v1 single-pass SHA-256 hash for backward compatibility before upgrade.
@@ -464,16 +533,27 @@ class AuthService extends ChangeNotifier {
 
   /// Verifies password against stored account hash (PBKDF2 v2 or legacy v1)
   /// in constant time, and reports whether the stored record should be upgraded.
+  ///
+  /// PBKDF2 hash'ler önekteki sürüm/iterasyon bilgisiyle, üretildikleri
+  /// parametreyle doğrulanır; eski parametreli hash eşleşirse `needsUpgrade`
+  /// true döner ve çağıran (login) başarılı girişte kaydı yeni biçime
+  /// yükseltir. Yeni parametreyle üretilmiş hash için yükseltme gerekmez.
   ({bool matches, bool needsUpgrade}) _verifyAccountPassword(
     String password,
     RegisteredAccount account,
   ) {
     final stored = account.passwordHash;
-    if (stored.startsWith(_pbkdf2Prefix) && account.salt.isNotEmpty) {
-      final candidate = _hashPassword(password, account.salt);
+    final storedIterations = _pbkdf2IterationsOf(stored);
+    if (storedIterations != null && account.salt.isNotEmpty) {
+      final candidate = _hashPasswordWithIterations(
+        password,
+        account.salt,
+        storedIterations,
+      );
+      final matches = _constantTimeEquals(candidate, stored);
       return (
-        matches: _constantTimeEquals(candidate, stored),
-        needsUpgrade: false,
+        matches: matches,
+        needsUpgrade: matches && storedIterations != _pbkdf2Iterations,
       );
     }
 
@@ -776,6 +856,9 @@ class AuthService extends ChangeNotifier {
 
   Future<void> _afterSignIn() async {
     await _persistSession();
+    // K1 (W60-6): girişle kimlik kapısı açılmış olabilir; sohbet bulut
+    // dinlemesini yeniden kur (kanal değişimi beklenmez).
+    ChatService.instance.refreshCloudBinding();
     notifyListeners();
   }
 
@@ -854,9 +937,11 @@ class AuthService extends ChangeNotifier {
     final sanitizedDisplay = displayName != null
         ? _sanitizeInput(displayName, fieldLabel: 'Görünen ad')
         : '';
-    final shown = sanitizedDisplay.isEmpty
-        ? (isEmailInput ? userKey : rawTrimmed)
-        : sanitizedDisplay;
+    final shown = _clampDisplayName(
+      sanitizedDisplay.isEmpty
+          ? (isEmailInput ? userKey : rawTrimmed)
+          : sanitizedDisplay,
+    );
 
     var firebaseUid = id;
     await FirebaseBootstrap.ensureInitialized();
@@ -975,16 +1060,44 @@ class AuthService extends ChangeNotifier {
         await _persistAccounts();
       }
 
+      // K1 uzlaştırması (W60-6): yerel hesap girişi Firebase'de
+      // başarıyla UID verirse kayıtlı hesabın id'si Firebase UID'si
+      // olur; yoksa yerel id aynen kalır ve bulut kapısı
+      // (CloudSync/Chat) yazımı engeller. Aynı UID başka bir kayıtlı
+      // hesabın id'siyse (aynı e-postayla iki yerel hesap) uzlaştırma
+      // yapılmaz — hesaplar birbirine karışmasın.
+      var firebaseUid = resolvedAccount.id;
       await FirebaseBootstrap.ensureInitialized();
       if (FirebaseBootstrap.ready) {
         try {
-          await fb.FirebaseAuth.instance.signInWithEmailAndPassword(
+          final cred = await fb.FirebaseAuth.instance
+              .signInWithEmailAndPassword(
             email: authEmail,
             password: password,
           );
+          final uid = cred.user?.uid;
+          if (uid != null && uid.isNotEmpty) firebaseUid = uid;
         } catch (e) {
           debugPrint('[lululu] Firebase login (local ok): $e');
         }
+      }
+      if (firebaseUid != resolvedAccount.id &&
+          !_accounts.values.any(
+            (a) =>
+                a.id == firebaseUid &&
+                a.username != resolvedAccount.username,
+          )) {
+        resolvedAccount = RegisteredAccount(
+          id: firebaseUid,
+          username: resolvedAccount.username,
+          displayName: resolvedAccount.displayName,
+          salt: resolvedAccount.salt,
+          passwordHash: resolvedAccount.passwordHash,
+          createdAtMs: resolvedAccount.createdAtMs,
+          email: resolvedAccount.email,
+        );
+        _accounts[resolvedAccount.username] = resolvedAccount;
+        await _persistAccounts();
       }
       _setUser(
         AuthUser(
@@ -1008,9 +1121,11 @@ class AuthService extends ChangeNotifier {
           password: password,
         );
         final uid = cred.user?.uid ?? _stableLocalId(userKey);
-        final shown = cred.user?.displayName?.trim().isNotEmpty == true
-            ? cred.user!.displayName!.trim()
-            : (isEmailInput ? userKey : rawTrimmed);
+        final shown = _clampDisplayName(
+          cred.user?.displayName?.trim().isNotEmpty == true
+              ? cred.user!.displayName!.trim()
+              : (isEmailInput ? userKey : rawTrimmed),
+        );
         final salt = _salt();
         final account = RegisteredAccount(
           id: uid,
@@ -1051,17 +1166,6 @@ class AuthService extends ChangeNotifier {
     throw StateError('Kullanıcı bulunamadı — önce kayıt ol');
   }
 
-  /// Back-compat: nickname without password is no longer enough.
-  @Deprecated('Use register/login with password')
-  Future<AuthUser> signInWithNick(String nickname) async {
-    throw StateError(
-        'Takma ad yetmez — kullanıcı adı + şifre ile kayıt/giriş yap');
-  }
-
-  /// Starts or restores a persistent guest player session.
-  Future<AuthUser> continueAsGuest({String? nickname}) =>
-      signInAsGuest(nickname: nickname);
-
   /// Starts or restores a persistent guest player session.
   Future<AuthUser> signInAsGuest({String? nickname}) async {
     await ensureLoaded();
@@ -1088,7 +1192,8 @@ class AuthService extends ChangeNotifier {
     final sanitizedNick = nickname != null
         ? _sanitizeInput(nickname, fieldLabel: 'Takma ad')
         : '';
-    final name = sanitizedNick.isEmpty ? 'Misafir' : sanitizedNick;
+    final name =
+        _clampDisplayName(sanitizedNick.isEmpty ? 'Misafir' : sanitizedNick);
     _setUser(
       AuthUser(
         id: guestId,
@@ -1151,7 +1256,8 @@ class AuthService extends ChangeNotifier {
       if (given != null && given.isNotEmpty) given,
       if (family != null && family.isNotEmpty) family,
     ].join(' ');
-    final display = composed.isEmpty ? 'Apple Oyuncu' : composed;
+    final display =
+        _clampDisplayName(composed.isEmpty ? 'Apple Oyuncu' : composed);
     final idToken = credential.identityToken;
     final stableId = idToken != null && idToken.isNotEmpty
         ? 'apple_${_sha256of(idToken).substring(0, 24)}'
@@ -1168,7 +1274,8 @@ class AuthService extends ChangeNotifier {
         _setUser(
           AuthUser(
             id: cred.user?.uid ?? stableId,
-            displayName: cred.user?.displayName ?? display,
+            displayName:
+                _clampDisplayName(cred.user?.displayName ?? display),
             provider: AuthProviderKind.apple,
             email: cred.user?.email ?? credential.email,
             username: _normalizeUsername(display),
@@ -1217,9 +1324,11 @@ class AuthService extends ChangeNotifier {
           final cred = fb.GoogleAuthProvider.credential(idToken: idToken);
           final userCred =
               await fb.FirebaseAuth.instance.signInWithCredential(cred);
-          final resolvedName = userCred.user?.displayName ??
-              account.displayName ??
-              'Google Oyuncu';
+          final resolvedName = _clampDisplayName(
+            userCred.user?.displayName ??
+                account.displayName ??
+                'Google Oyuncu',
+          );
           _setUser(
             AuthUser(
               id: userCred.user?.uid ?? stableId,
@@ -1237,7 +1346,8 @@ class AuthService extends ChangeNotifier {
         }
       }
 
-      final fallbackName = account.displayName ?? 'Google Oyuncu';
+      final fallbackName =
+          _clampDisplayName(account.displayName ?? 'Google Oyuncu');
       _setUser(
         AuthUser(
           id: stableId,
@@ -1272,10 +1382,13 @@ class AuthService extends ChangeNotifier {
     if (_user == null) return;
     final trimmed = _sanitizeInput(name, fieldLabel: 'Görünen ad');
     if (trimmed.isEmpty) return;
+    // K3: görünen ad 32 karaktere sessizce kısalır (kasa + Firebase +
+    // oturum, üçü de kısaltılmış değeri alır).
+    final clampedName = _clampDisplayName(trimmed);
     final currentUsername = _user!.username;
     _setUser(
       _user!.copyWith(
-        displayName: trimmed,
+        displayName: clampedName,
         username: currentUsername,
       ),
     );
@@ -1284,7 +1397,7 @@ class AuthService extends ChangeNotifier {
       _accounts[currentUsername] = RegisteredAccount(
         id: old.id,
         username: old.username,
-        displayName: trimmed,
+        displayName: clampedName,
         salt: old.salt,
         passwordHash: old.passwordHash,
         createdAtMs: old.createdAtMs,
@@ -1294,7 +1407,8 @@ class AuthService extends ChangeNotifier {
     }
     if (FirebaseBootstrap.ready) {
       try {
-        await fb.FirebaseAuth.instance.currentUser?.updateDisplayName(trimmed);
+        await fb.FirebaseAuth.instance.currentUser
+            ?.updateDisplayName(clampedName);
       } catch (e) {
         debugPrint('[lululu] Firebase updateDisplayName error: $e');
       }
@@ -1303,52 +1417,135 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Updates username and displayName for the signed-in user.
-  Future<void> updateUsername(String newUsername, {String? displayName}) async {
+  /// Oturumu açık hesabın YEREL kaydını siler ve oturumu kapatır.
+  ///
+  /// Cihazda yapılanlar:
+  /// * Hesap, yerel hesap kasasından ([_localAccountsKey]) çıkarılır ve
+  ///   kalan hesaplar kalıcı hâle getirilir — cihazdaki diğer hesaplara
+  ///   dokunulmaz. Sosyal girişlerde (Apple/Google) kasa kaydı olmayabilir;
+  ///   o durumda yalnız oturum silinir.
+  /// * Silinen hesabın başarısız-giriş sayaçları temizlenir.
+  /// * [signOut] ile oturum kapatılır (Firebase + Google oturum sonlandırma
+  ///   ve oturum anahtarının silinmesi).
+  /// * [CloudSyncService.enableOnlineWhenSignedIn] yeniden değerlendirilir:
+  ///   kimse oturumda olmayınca çevrimiçi eşitleme kapanır, bekleyen kuyruk
+  ///   gönderilmez.
+  ///
+  /// Yapılmayanlar — sunucu tarafı silme uç noktası YOK:
+  /// TODO(hesap-silme, sunucu): Firebase Auth kullanıcısı ile Firestore
+  /// `players`/skor/sohbet verilerinin silinmesi için backend uç noktası
+  /// (örn. Cloud Function + yeniden kimlik doğrulama akışı) gerekir. Bu
+  /// sürümde bulut kopyaları silinmez; aynı e-postayla yeniden kayıt,
+  /// Firebase'te `email-already-in-use` ile reddedilebilir.
+  ///
+  /// Yerel temizlik: [ProgressManager.clearLocalData],
+  /// [LeaderboardService.clearLocalData], [ChatService.clearLocalData],
+  /// [CloudSyncService.clearLocalData], [EnergyService.clearLocalData],
+  /// [DailyChallengeService.clearLocalData],
+  /// [CampaignProgressionService.clearLocalData],
+  /// [AchievementPassService.clearLocalData],
+  /// [AdaptiveDifficultyService.clearLocalData] ve
+  /// [BugVideoService.clearLocalData] bu metotta çağrılır; silinen
+  /// hesabın cihazdaki ilerleme / liderlik / sohbet / senkron kuyruğu /
+  /// enerji / günlük görev / kampanya / başarım-sezon / zorluk geçmişi /
+  /// stüdyo kayıtları temizlenir. Ses/titreşim ayarlarına dokunulmaz
+  /// (cihaz tercihi).
+  ///
+  /// Oturum açık değilse veya oturum misafir oturumuysa [StateError] fırlatır
+  /// (misafirlerin silinecek hesap kaydı yoktur).
+  Future<void> deleteAccount() async {
     await ensureLoaded();
-    if (_user == null) return;
-    final rawClean = _sanitizeInput(newUsername, fieldLabel: 'Kullanıcı adı');
-    final normalized = _normalizeUsername(rawClean);
-    _validateUsername(normalized);
-    final oldUsername = _user!.username;
-    if (oldUsername != normalized && _accounts.containsKey(normalized)) {
-      throw StateError('Bu kullanıcı adı zaten kullanımda');
+    final current = _user;
+    if (current == null) {
+      throw StateError('Oturum açık değil — silinecek hesap yok');
     }
-    final sanitizedDisplay = displayName != null
-        ? _sanitizeInput(displayName, fieldLabel: 'Görünen ad')
-        : '';
-    final nextDisplay = sanitizedDisplay.isNotEmpty
-        ? sanitizedDisplay
-        : rawClean;
-
-    if (oldUsername != null && _accounts.containsKey(oldUsername)) {
-      final oldAcc = _accounts.remove(oldUsername)!;
-      _accounts[normalized] = RegisteredAccount(
-        id: oldAcc.id,
-        username: normalized,
-        displayName: nextDisplay,
-        salt: oldAcc.salt,
-        passwordHash: oldAcc.passwordHash,
-        createdAtMs: oldAcc.createdAtMs,
-        email: oldAcc.email,
-      );
+    if (current.isGuest) {
+      throw StateError('Misafir oturumunda silinecek hesap yok');
+    }
+    final usernameKey = current.username;
+    final accountId = current.id;
+    final vaultKeys = _accounts.entries
+        .where(
+          (entry) =>
+              (usernameKey != null && entry.key == usernameKey) ||
+              entry.value.id == accountId,
+        )
+        .map((entry) => entry.key)
+        .toList();
+    for (final key in vaultKeys) {
+      _accounts.remove(key);
+      _clearFailedLoginAttempts(key);
+    }
+    if (vaultKeys.isNotEmpty) {
       await _persistAccounts();
     }
-
-    _setUser(
-      _user!.copyWith(
-        username: normalized,
-        displayName: nextDisplay,
-      ),
-    );
-    if (FirebaseBootstrap.ready) {
+    await signOut();
+    // Yerel temizlik: silinen hesabın cihazdaki ilerleme / liderlik /
+    // sohbet / senkron kuyruğu kayıtları temizlenir.
+    final failedCleanups = <String>[];
+    try {
       try {
-        await fb.FirebaseAuth.instance.currentUser
-            ?.updateDisplayName(nextDisplay);
-      } catch (_) {}
+        await ProgressManager.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('ProgressManager: $e');
+      }
+      try {
+        await LeaderboardService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('LeaderboardService: $e');
+      }
+      try {
+        await ChatService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('ChatService: $e');
+      }
+      try {
+        await CloudSyncService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('CloudSyncService: $e');
+      }
+      try {
+        await EnergyService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('EnergyService: $e');
+      }
+      try {
+        await DailyChallengeService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('DailyChallengeService: $e');
+      }
+      try {
+        await CampaignProgressionService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('CampaignProgressionService: $e');
+      }
+      try {
+        await AchievementPassService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('AchievementPassService: $e');
+      }
+      try {
+        await AdaptiveDifficultyService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('AdaptiveDifficultyService: $e');
+      }
+      try {
+        await BugVideoService.instance.clearLocalData();
+      } catch (e) {
+        failedCleanups.add('BugVideoService: $e');
+      }
+    } finally {
+      try {
+        await CloudSyncService.instance.enableOnlineWhenSignedIn();
+      } catch (e) {
+        failedCleanups.add('CloudSyncService.enableOnlineWhenSignedIn: $e');
+      }
     }
-    await _persistSession();
-    notifyListeners();
+    if (failedCleanups.isNotEmpty) {
+      debugPrint(
+        '[lululu] deleteAccount: yerel temizlikte başarısız olanlar: ${failedCleanups.join('; ')}',
+      );
+    }
   }
 
   Future<void> signOut() async {
@@ -1361,6 +1558,9 @@ class AuthService extends ChangeNotifier {
       }
     } catch (_) {}
     _setUser(null);
+    // K1 (W60-6): çıkışta sohbet bulut dinlemesini kapat (eski kimlikle
+    // reddedilen okuma denemesi yapmasın).
+    ChatService.instance.refreshCloudBinding();
     await _persistSession();
     notifyListeners();
   }

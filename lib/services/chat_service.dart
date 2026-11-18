@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show Locale;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -24,6 +26,25 @@ enum ChatChannel {
     }
     return ChatChannel.lobby;
   }
+
+  // --- English (EN) counterparts: pure additions, TR defaults untouched. ---
+  // `displayName` keeps returning Turkish; screens migrate to
+  // `displayNameFor(Locale)` in a later wave. `id`/`name` keys are
+  // unchanged. No AppLocalizations import: these are pure
+  // `Locale`-parameterized accessors, so no import cycle.
+  String get displayNameEn {
+    switch (this) {
+      case ChatChannel.lobby:
+        return 'General Lobby';
+      case ChatChannel.clan:
+        return 'Team & Clan';
+      case ChatChannel.vsChallenge:
+        return 'VS Challenge';
+    }
+  }
+
+  String displayNameFor(Locale locale) =>
+      locale.languageCode == 'en' ? displayNameEn : displayName;
 }
 
 class ChatMessage {
@@ -58,34 +79,53 @@ class ChatMessage {
   bool get isSticker => stickerTier != null || stickerAsset != null;
   bool get isChallenge => challengeModeId != null;
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'authorId': authorId,
-        'authorName': authorName,
-        'body': body,
-        'utcTicks': utcTicks,
-        'isSystem': isSystem,
-        'channel': channel.id,
-        if (stickerTier != null) 'stickerTier': stickerTier,
-        if (stickerAsset != null) 'stickerAsset': stickerAsset,
-        if (voiceLine != null) 'voiceLine': voiceLine,
-        if (challengeModeId != null) 'challengeModeId': challengeModeId,
-        if (challengeTargetScore != null)
-          'challengeTargetScore': challengeTargetScore,
-      };
+  Map<String, dynamic> toJson() {
+    // voiceLine kural sınırı (1..120): yazılan değer her zaman kırpılır.
+    final safeVoiceLine =
+        voiceLine == null ? null : ChatService.sanitizeVoiceLine(voiceLine!);
+    // K3: authorName kural sınırı (1..32, firestore.rules:301): ham ad
+    // yazılırsa 32 karakteri aşan adla TÜM sohbet yazımları reddedilir.
+    // Ad kesilir, reddedilmez.
+    final safeAuthorName = ChatService.sanitizeAuthorName(authorName);
+    return {
+      'id': id,
+      'authorId': authorId,
+      'authorName': safeAuthorName,
+      'body': body,
+      'utcTicks': utcTicks,
+      'isSystem': isSystem,
+      'channel': channel.id,
+      if (stickerTier != null) 'stickerTier': stickerTier,
+      if (stickerAsset != null) 'stickerAsset': stickerAsset,
+      if (safeVoiceLine != null && safeVoiceLine.isNotEmpty)
+        'voiceLine': safeVoiceLine,
+      if (challengeModeId != null) 'challengeModeId': challengeModeId,
+      if (challengeTargetScore != null)
+        'challengeTargetScore': challengeTargetScore,
+    };
+  }
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    // Gösterim yolu: buluttan/yerelden gelen metinler de sanitize edilir
+    // (küfür filtresi yalnız gönderimde değil, okurken de uygulanır).
+    final safeAuthorName =
+        ChatService.sanitizeText(json['authorName'] as String? ?? '');
+    final rawVoiceLine = json['voiceLine'] as String?;
+    final safeVoiceLine = rawVoiceLine == null
+        ? null
+        : ChatService.sanitizeVoiceLine(rawVoiceLine);
     return ChatMessage(
       id: json['id'] as String? ?? '',
       authorId: json['authorId'] as String? ?? '',
-      authorName: json['authorName'] as String? ?? '?',
-      body: json['body'] as String? ?? '',
+      authorName: safeAuthorName.isEmpty ? '?' : safeAuthorName,
+      body: ChatService.sanitizeText(json['body'] as String? ?? ''),
       utcTicks: (json['utcTicks'] as num?)?.toInt() ?? 0,
       isSystem: json['isSystem'] as bool? ?? false,
       channel: ChatChannel.fromId(json['channel'] as String?),
       stickerTier: (json['stickerTier'] as num?)?.toInt(),
       stickerAsset: json['stickerAsset'] as String?,
-      voiceLine: json['voiceLine'] as String?,
+      voiceLine:
+          safeVoiceLine == null || safeVoiceLine.isEmpty ? null : safeVoiceLine,
       challengeModeId: json['challengeModeId'] as String?,
       challengeTargetScore: (json['challengeTargetScore'] as num?)?.toInt(),
     );
@@ -94,6 +134,8 @@ class ChatMessage {
 
 /// Offline-First + Cloud-Ready Çok Kanallı Sohbet Servisi:
 /// - Genel Lobi, Takım & Klan ve VS Meydan Okuma kanalları
+/// - Okunmamış sayacı: aktif olmayan kanallar hafif yoklamayla dinlenir
+///   (bkz. [ChatService.unreadCounts]); aktif kanal tam dinlenir.
 /// - Böcek çıkartması (Tier 1..13) ve viral replik gönderme
 /// - Küfür ve spam filtresi
 /// - Gerçek zamanlı Stream + Firestore senkronizasyonu
@@ -103,8 +145,22 @@ class ChatService extends ChangeNotifier {
 
   static const _prefsKey = 'LululuChatLobbyV1';
   static const _channelsPrefsKey = 'LululuChatChannelsV2';
+
+  /// Kanal başına görülen en yeni mesaj zamanı (utcTicks) — kalıcı
+  /// (S2#19): [markChannelRead] ve bulut akışı ilerlettikçe yazılır,
+  /// [load] başlangıçta önbellekten türetilen değerle birleştirilir
+  /// (büyük olan kazanır).
+  static const _lastSeenPrefsKey = 'LululuChatLastSeenV1';
   static const maxMessages = 200;
+
+  /// Okunmamış yoklamasının pencere boyutu (S2#19): aktif olmayan her
+  /// kanal yalnız son bu kadar mesajla dinlenir; sayaç bu sayıyla
+  /// sınırlıdır (kesin sayı değil, "yeni mesaj var" işareti).
+  static const int unreadProbeLimit = 10;
   static const int maxMessageLength = 240;
+  static const int maxVoiceLineLength = 120;
+  /// K3: kural `authorName` 1..32 ister (firestore.rules:301).
+  static const int maxAuthorNameLength = 32;
   static const int duplicateRateLimitMs = 1500;
   static const int burstWindowMs = 10000;
   static const int maxMessagesPerBurstWindow = 6;
@@ -154,6 +210,33 @@ class ChatService extends ChangeNotifier {
     ),
   };
 
+  // --- English (EN) sticker names: pure additions, TR catalog untouched. ---
+  // Names mirror `InsectTier.nameEn` (same characters, tiers 1..8).
+  // `line` (viral catchphrases) deliberately has NO English counterpart:
+  // the lines are character identity and stay Turkish in every locale,
+  // same as `InsectTier.viralReplik`. Screens migrate to
+  // `bugStickerNameFor(tier, locale)` in a later wave; `bugStickerCatalog`
+  // keeps returning Turkish names. Tiers 9..13 (not in the catalog) use
+  // the same fallback shape as `sendBugSticker`: 'Tier <n> Böcek' in TR,
+  // 'Tier <n> Bug' in EN. No AppLocalizations import.
+  static const Map<int, String> bugStickerNameEn = {
+    1: 'Baby Funnel',
+    2: 'Pot-Wearing Apprentice',
+    3: 'Reel Fan',
+    4: 'Pajama Dancer',
+    5: 'Bathhouse Diva',
+    6: 'Bathhouse Can',
+    7: 'Kongo Leader',
+    8: 'Ailing Sage',
+  };
+
+  static String bugStickerNameFor(int tier, Locale locale) {
+    if (locale.languageCode == 'en') {
+      return bugStickerNameEn[tier] ?? 'Tier $tier Bug';
+    }
+    return bugStickerCatalog[tier]?.name ?? 'Tier $tier Böcek';
+  }
+
   static const List<String> _blockedWords = [
     'amk',
     'aq',
@@ -197,6 +280,10 @@ class ChatService extends ChangeNotifier {
 
   ChatChannel _currentChannel = ChatChannel.lobby;
   bool _loaded = false;
+
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
   String _lastSentText = '';
   int _lastSentAtMs = 0;
   final List<int> _recentSendTimestampsMs = <int>[];
@@ -207,7 +294,77 @@ class ChatService extends ChangeNotifier {
       StreamController<ChatMessage>.broadcast();
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _cloudSub;
 
+  /// Aktif olmayan kanalların hafif okunmamış yoklamaları (S2#19).
+  final Map<ChatChannel,
+          StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+      _unreadSubs = {};
+  final Map<ChatChannel, int> _unreadCounts = {
+    for (final c in ChatChannel.values) c: 0,
+  };
+
+  /// Kanal başına görülen en yeni mesaj zamanı (utcTicks). Okunmamış
+  /// sayımı, bu zamandan yeni + başkasına ait mesajları sayar. Başlangıç
+  /// değeri yerelde önbellekli mesajlardan alınır ve kalıcı
+  /// [_lastSeenPrefsKey] kaydıyla birleştirilir (büyük olan kazanır),
+  /// böylece yeniden başlatmada önbelleğe girmemiş okunmamışlar
+  /// sıfırlanmaz (S2#19 notu çözüldü).
+  final Map<ChatChannel, int> _lastSeenTicks = {};
+
+  /// Buluta yazımı başarısız olup yalnız yerelde kalan mesaj kimlikleri.
+  final Set<String> _cloudFailedIds = <String>{};
+
   ChatChannel get currentChannel => _currentChannel;
+
+  /// Kanal başına okunmamış mesaj sayısı (yalnız bulut dinlenirken
+  /// güncellenir; aktif kanal her zaman 0'dır). Arayüz bu sayacı
+  /// `ChangeNotifier` dinleyerek okur.
+  Map<ChatChannel, int> get unreadCounts => Map.unmodifiable(_unreadCounts);
+
+  /// Belirli bir kanaldaki okunmamış mesaj sayısı.
+  int unreadCountFor(ChatChannel channel) => _unreadCounts[channel] ?? 0;
+
+  /// Tüm kanallardaki toplam okunmamış mesaj sayısı.
+  int get totalUnreadCount =>
+      _unreadCounts.values.fold(0, (sum, count) => sum + count);
+
+  /// Belirli bir kanalda okunmamış mesaj olup olmadığı.
+  bool hasUnread(ChatChannel channel) => unreadCountFor(channel) > 0;
+
+  /// Kanalı okundu sayar: sayacı sıfırlar, görülen zamanı kanaldaki en
+  /// yeni mesaja ilerletir. Kanal değişiminde otomatik çağrılır.
+  void markChannelRead(ChatChannel channel) {
+    final list = _byChannel[channel] ?? const <ChatMessage>[];
+    var latest = _lastSeenTicks[channel] ?? 0;
+    for (final m in list) {
+      if (m.utcTicks > latest) latest = m.utcTicks;
+    }
+    final hadUnread = (_unreadCounts[channel] ?? 0) > 0;
+    final advanced = latest != (_lastSeenTicks[channel] ?? 0);
+    _lastSeenTicks[channel] = latest;
+    _unreadCounts[channel] = 0;
+    if (advanced) unawaited(_persistLastSeenTicks());
+    if (hadUnread || advanced) notifyListeners();
+  }
+
+  /// Görülen zamanları kalıcı kayda yazar (S2#19).
+  Future<void> _persistLastSeenTicks() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _lastSeenPrefsKey,
+      jsonEncode({
+        for (final entry in _lastSeenTicks.entries) entry.key.id: entry.value,
+      }),
+    );
+  }
+
+  /// Buluta gönderilemeyip yalnız yerelde kalan mesajların kimlikleri.
+  Set<String> get cloudFailedIds => Set.unmodifiable(_cloudFailedIds);
+
+  /// Belirli bir mesajın buluta gönderilemediğini bildirir.
+  bool isCloudFailed(String messageId) => _cloudFailedIds.contains(messageId);
+
+  /// En az bir mesaj buluta gönderilememişse true (yerel-only çalışma).
+  bool get hasCloudFailures => _cloudFailedIds.isNotEmpty;
 
   /// Geriye dönük uyumlu mesaj listesi (`ChatScreen` tarafından okunur).
   List<ChatMessage> get messages => List.unmodifiable(_messages);
@@ -230,7 +387,11 @@ class ChatService extends ChangeNotifier {
 
   void switchChannel(ChatChannel channel) {
     if (_currentChannel == channel) return;
+    // Ayrılınan kanalda görülenler okundu sayılır; yoklama, dönüşte
+    // bunları tekrar saymaz.
+    markChannelRead(_currentChannel);
     _currentChannel = channel;
+    markChannelRead(channel);
     _bindCloudStreamIfReady();
     _streamController.add(messagesForChannel(_currentChannel));
     notifyListeners();
@@ -296,6 +457,29 @@ class ChatService extends ChangeNotifier {
     return cleaned;
   }
 
+  /// Çıkartma ses satırı temizliği: `sanitizeText` + firestore.rules
+  /// `voiceLine` 1..120 sınırına kırpma.
+  static String sanitizeVoiceLine(String raw) {
+    final cleaned = sanitizeText(raw);
+    if (cleaned.length > maxVoiceLineLength) {
+      return cleaned.substring(0, maxVoiceLineLength).trimRight();
+    }
+    return cleaned;
+  }
+
+  /// K3: sohbet `authorName` kelepçesi — `firestore.rules` 1..32 ister.
+  /// [CloudSyncService.sanitizeDisplayName] ile aynı sınır (32): kontrol
+  /// karakterleri atılır, kırpılır, 32 karaktere kesilir, boşsa 'Oyuncu'
+  /// döner. Kesme sessizdir, reddetme yok. `toJson` buradan geçer; metin,
+  /// çıkartma ve meydan okuma dahil tüm yazım yolları korunur.
+  static String sanitizeAuthorName(String raw) {
+    final safe = raw.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
+    if (safe.isEmpty) return 'Oyuncu';
+    return safe.length > maxAuthorNameLength
+        ? safe.substring(0, maxAuthorNameLength)
+        : safe;
+  }
+
   bool _isSpamming(String cleanBody) {
     final now = DateTime.now().millisecondsSinceEpoch;
     _recentSendTimestampsMs.removeWhere((ts) => (now - ts) > burstWindowMs);
@@ -317,7 +501,22 @@ class ChatService extends ChangeNotifier {
     await load();
   }
 
+  /// Kalıcı sohbeti yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKey);
     _messages.clear();
@@ -355,8 +554,68 @@ class ChatService extends ChangeNotifier {
       } catch (_) {}
     }
 
+    // Okunmamış yoklaması başlangıcı: önbellekteki mesajlar okunmuş sayılır.
+    for (final c in ChatChannel.values) {
+      var latest = 0;
+      for (final m in _byChannel[c] ?? const <ChatMessage>[]) {
+        if (m.utcTicks > latest) latest = m.utcTicks;
+      }
+      _lastSeenTicks[c] = latest;
+      _unreadCounts[c] = 0;
+    }
+
+    // Kalıcı görülen zamanlar: önbelleğe girmemiş ama okunmuş sayılan
+    // mesajlar yeniden başlatmada okunmamış sayılmaz (S2#19). Her
+    // kanalda büyük olan kazanır — görülen zaman yalnız ilerler.
+    final lastSeenRaw = prefs.getString(_lastSeenPrefsKey);
+    if (lastSeenRaw != null && lastSeenRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(lastSeenRaw) as Map<String, dynamic>;
+        decoded.forEach((key, value) {
+          if (value is num) {
+            final channel = ChatChannel.fromId(key);
+            final stored = value.toInt();
+            if (stored > (_lastSeenTicks[channel] ?? 0)) {
+              _lastSeenTicks[channel] = stored;
+            }
+          }
+        });
+      } catch (_) {}
+    }
+
     _loaded = true;
     _bindCloudStreamIfReady();
+    _streamController.add(messages);
+    notifyListeners();
+  }
+
+  /// Hesap silme için yerel sohbet verisini temizler (hesap-silme,
+  /// yerel-temizlik): mesajlar, kanal önbellekleri, okunmamış sayaçlar
+  /// ve görülen zamanlar (kalıcı anahtarları dahil) silinir; bulut
+  /// abonelikleri kapatılır. Bulut mesajları silinmez (sunucu tarafı
+  /// silme işi [AuthService.deleteAccount] dokümantasyonundadır).
+  Future<void> clearLocalData() async {
+    await _cloudSub?.cancel();
+    _cloudSub = null;
+    for (final sub in _unreadSubs.values) {
+      sub.cancel();
+    }
+    _unreadSubs.clear();
+    _messages.clear();
+    for (final c in ChatChannel.values) {
+      _byChannel[c] = <ChatMessage>[];
+      _unreadCounts[c] = 0;
+    }
+    _lastSeenTicks.clear();
+    _cloudFailedIds.clear();
+    _lastSentText = '';
+    _lastSentAtMs = 0;
+    _recentSendTimestampsMs.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsKey);
+    await prefs.remove(_channelsPrefsKey);
+    await prefs.remove(_lastSeenPrefsKey);
+    _loaded = false;
     _streamController.add(messages);
     notifyListeners();
   }
@@ -427,10 +686,40 @@ class ChatService extends ChangeNotifier {
     }
   }
 
+  /// K1/K4 (W60-6): sohbet bulut kapısı — Firebase UID ile yazılacak
+  /// `authorId` aynı olmalı. Kural `authorId == request.auth.uid` ister;
+  /// uyumsuzlukta (sentetik `playerId`, oturumsuz misafir, başarısız
+  /// anonim giriş) bulut denemesi hiç yapılmaz, mesaj yerelde kalır ve
+  /// [retryFailedCloudPushes] için başarısız işaretli kalır (çevrimdışı
+  /// kuyruk). Firebase hazır değilse `false` döner — o durumda zaten
+  /// hiçbir bulut yolu çalışmaz. Anonim girişi başarmış misafirde
+  /// `playerId` Firebase UID'si olduğundan kapı açıktır.
+  bool get _cloudIdentityAligned {
+    if (!FirebaseBootstrap.isAvailable) return false;
+    try {
+      final fbUid = fb.FirebaseAuth.instance.currentUser?.uid;
+      if (fbUid == null) return false;
+      final authorId = AuthService.instance.isSignedIn
+          ? AuthService.instance.playerId
+          : 'guest_local';
+      return fbUid == authorId;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Oturum değişiminden sonra bulut dinlemesini kapıya göre yeniden
+  /// kurar (girişte bağlan, çıkışta/uyumsuzlukta kapat). Giriş anında
+  /// kapı açılır ama kanal değiştirilmezse akışın kendiliğinden
+  /// bağlanması için [AuthService] burayı çağırır.
+  void refreshCloudBinding() => _bindCloudStreamIfReady();
+
   void _bindCloudStreamIfReady() {
     _cloudSub?.cancel();
     _cloudSub = null;
-    if (!FirebaseBootstrap.isAvailable) return;
+    // Yoklamalar da sıfırdan kurulur; bulut yoksa yalnız iptal edilir.
+    _bindUnreadProbes();
+    if (!FirebaseBootstrap.isAvailable || !_cloudIdentityAligned) return;
     try {
       _cloudSub = FirebaseFirestore.instance
           .collection('chat_channels')
@@ -455,6 +744,16 @@ class ChatService extends ChangeNotifier {
           }
         }
         if (addedAny) {
+          // Aktif kanalda görülenler okundu sayılır (S2#19): kanaldan
+          // ayrılınınca yoklama bunları tekrar saymaz.
+          _unreadCounts[_currentChannel] = 0;
+          var latest = _lastSeenTicks[_currentChannel] ?? 0;
+          for (final m in list) {
+            if (m.utcTicks > latest) latest = m.utcTicks;
+          }
+          final advanced = latest != (_lastSeenTicks[_currentChannel] ?? 0);
+          _lastSeenTicks[_currentChannel] = latest;
+          if (advanced) unawaited(_persistLastSeenTicks());
           _streamController.add(messages);
           notifyListeners();
         }
@@ -463,6 +762,70 @@ class ChatService extends ChangeNotifier {
       });
     } catch (e) {
       debugPrint('[lululu] Chat cloud stream bind error: $e');
+    }
+  }
+
+  /// Aktif olmayan kanalları hafif dinler (S2#19): yalnız son
+  /// [unreadProbeLimit] mesaj okunur, mesaj listelerine yazılmaz, yalnız
+  /// okunmamış sayacı güncellenir. Sayaç bu pencereyle sınırlıdır.
+  void _bindUnreadProbes() {
+    for (final sub in _unreadSubs.values) {
+      sub.cancel();
+    }
+    _unreadSubs.clear();
+    // K1/K4 (W60-6): kimlik uyumsuzken okunmamış yoklaması da kurulmaz.
+    if (!FirebaseBootstrap.isAvailable || !_cloudIdentityAligned) return;
+    for (final channel in ChatChannel.values) {
+      if (channel == _currentChannel) continue;
+      try {
+        _unreadSubs[channel] = FirebaseFirestore.instance
+            .collection('chat_channels')
+            .doc(channel.id)
+            .collection('messages')
+            .orderBy('utcTicks', descending: false)
+            .limitToLast(unreadProbeLimit)
+            .snapshots()
+            .listen(
+          (snapshot) => _updateUnreadFromProbe(channel, snapshot),
+          onError: (Object e) {
+            debugPrint('[lululu] Chat okunmamış yoklama hatası '
+                '(${channel.id}): $e');
+          },
+        );
+      } catch (e) {
+        debugPrint('[lululu] Chat okunmamış yoklama bağlanamadı '
+            '(${channel.id}): $e');
+      }
+    }
+  }
+
+  /// Yoklama anlık görüntüsünden okunmamış sayısını hesaplar: görülen
+  /// zamandan yeni + başkasına ait + yerelde bilinmeyen mesajlar sayılır.
+  void _updateUnreadFromProbe(
+    ChatChannel channel,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    if (channel == _currentChannel) return;
+    final seen = _lastSeenTicks[channel] ?? 0;
+    final ownId = AuthService.instance.isSignedIn
+        ? AuthService.instance.playerId
+        : 'guest_local';
+    final knownIds = <String>{
+      for (final m in _byChannel[channel] ?? const <ChatMessage>[]) m.id,
+    };
+    var count = 0;
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final id = data['id'] as String? ?? doc.id;
+      final ticks = (data['utcTicks'] as num?)?.toInt() ?? 0;
+      final authorId = data['authorId'] as String? ?? '';
+      if (ticks > seen && authorId != ownId && !knownIds.contains(id)) {
+        count++;
+      }
+    }
+    if ((_unreadCounts[channel] ?? 0) != count) {
+      _unreadCounts[channel] = count;
+      notifyListeners();
     }
   }
 
@@ -523,9 +886,10 @@ class ChatService extends ChangeNotifier {
               ? 'assets/design/bugs_hd/tier${clampedTier}_hd.png'
               : 'assets/design/bugs_new/tier${clampedTier}_hd.png',
         );
+    // Ses satırı firestore.rules voiceLine 1..120 sınırına kırpılır.
     final spoken = (customLine != null && customLine.trim().isNotEmpty)
-        ? sanitizeText(customLine)
-        : info.line;
+        ? sanitizeVoiceLine(customLine)
+        : sanitizeVoiceLine(info.line);
     final targetChannel = channel ?? _currentChannel;
     final bodyText = sanitizeText('🪳 [T$clampedTier ${info.name}] "$spoken"');
     if (_isSpamming(bodyText)) {
@@ -599,7 +963,9 @@ class ChatService extends ChangeNotifier {
     _streamController.add(messages);
     notifyListeners();
 
-    if (FirebaseBootstrap.isAvailable) {
+    // K1/K4 (W60-6): kimlik kapısı kapalıyken bulut yazımı denenmez;
+    // mesaj yerelde kalır ve başarısız işaretli kalır (çevrimdışı kuyruk).
+    if (_cloudIdentityAligned) {
       try {
         await FirebaseFirestore.instance
             .collection('chat_channels')
@@ -607,10 +973,66 @@ class ChatService extends ChangeNotifier {
             .collection('messages')
             .doc(msg.id)
             .set(msg.toJson());
+        _cloudFailedIds.remove(msg.id);
       } catch (e) {
+        // Sessiz yutma yok: başarısızlık işaretlenir, arayüz gösterir.
+        _cloudFailedIds.add(msg.id);
         debugPrint('[lululu] Chat cloud push fallback: $e');
+        notifyListeners();
+      }
+    } else {
+      // Bulut kapalı: mesaj yalnız yerelde — durum görünür olsun.
+      _cloudFailedIds.add(msg.id);
+      notifyListeners();
+    }
+  }
+
+  /// Buluta gönderilemeyen mesajları yeniden göndermeyi dener.
+  /// Tümü yazılırsa true döner; başarısız kalanlar işaretli kalır.
+  Future<bool> retryFailedCloudPushes() async {
+    if (_cloudFailedIds.isEmpty) return true;
+    // K1 (W60-6): kimlik uyumsuzken bulut denemesi yapma; işaretler
+    // kuyrukta kalır, kimlik düzelince tekrar denenir.
+    if (!_cloudIdentityAligned) return false;
+    final byId = <String, ChatMessage>{};
+    for (final m in _messages) {
+      byId[m.id] = m;
+    }
+    for (final list in _byChannel.values) {
+      for (final m in list) {
+        byId[m.id] = m;
       }
     }
+    // Artık bellekte olmayan mesajların işaretini temizle.
+    for (final id in _cloudFailedIds.toList()) {
+      if (!byId.containsKey(id)) _cloudFailedIds.remove(id);
+    }
+    var allOk = true;
+    for (final id in _cloudFailedIds.toList()) {
+      final msg = byId[id]!;
+      try {
+        final ref = FirebaseFirestore.instance
+            .collection('chat_channels')
+            .doc(msg.channel.id)
+            .collection('messages')
+            .doc(msg.id);
+        // Y1 (W60-6): kural `update: false` — ilk yazım sunucuda
+        // tamamlanıp yanıtı kaybolmuşsa belge zaten vardır; yeniden
+        // `.set()` update sayılıp reddedilir. Varsa yazmadan başarılı say.
+        final existing = await ref.get();
+        if (existing.exists) {
+          _cloudFailedIds.remove(msg.id);
+          continue;
+        }
+        await ref.set(msg.toJson());
+        _cloudFailedIds.remove(msg.id);
+      } catch (e) {
+        allOk = false;
+        debugPrint('[lululu] Chat cloud retry fallback: $e');
+      }
+    }
+    notifyListeners();
+    return allOk;
   }
 
   Future<void> _save() async {
@@ -629,6 +1051,10 @@ class ChatService extends ChangeNotifier {
   @override
   void dispose() {
     _cloudSub?.cancel();
+    for (final sub in _unreadSubs.values) {
+      sub.cancel();
+    }
+    _unreadSubs.clear();
     _streamController.close();
     _newMessageController.close();
     super.dispose();

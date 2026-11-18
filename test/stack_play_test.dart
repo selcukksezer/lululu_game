@@ -8,6 +8,8 @@ import 'package:lululu_game/modes/stack_drop_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -42,9 +44,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      MaterialApp(theme: buildLululuTheme(), home: StackDropScreen()),
-    );
+    await pumpWithL10n(tester, StackDropScreen(), theme: buildLululuTheme());
     await pumpFrames(tester, 16);
     await tester.tap(find.text('?'));
     await tester.pump();

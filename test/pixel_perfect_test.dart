@@ -42,6 +42,8 @@ import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
 
+import 'test_helpers.dart';
+
 class SignalIconPainter extends CustomPainter {
   const SignalIconPainter();
   @override
@@ -159,7 +161,7 @@ class MockStatusBarWidget extends StatelessWidget {
 }
 
 const List<String> _kAllPrecacheAssets = [
-  // Dock & Bottom Navigation Icons (LululuDockBar, PrototypeBottomDock, etc.)
+  // Dock & Bottom Navigation Icons (LululuDockBar, etc.)
   'assets/design/ui/icons2/home.png',
   'assets/design/ui/icons2/target.png',
   'assets/design/ui/icons2/paw.png',
@@ -172,11 +174,6 @@ const List<String> _kAllPrecacheAssets = [
   'assets/icons2/paw.png',
   'assets/icons2/cart.png',
   'assets/icons2/trophy.png',
-  'assets/ui/custom/nav_home.webp',
-  'assets/ui/custom/nav_modes.webp',
-  'assets/ui/custom/nav_levels.webp',
-  'assets/ui/custom/nav_shop.webp',
-  'assets/ui/custom/nav_Rank.webp',
 
   // Shop, Mode, Badge, Task, Profile, Leaderboard & Game Icons (icons2)
   'assets/icons2/back-prototype.png',
@@ -269,29 +266,29 @@ const List<String> _kAllPrecacheAssets = [
   // Hub, Online, Result & Core UI Assets
   'assets/design/ui/avatar_hamam_diva.webp',
   'assets/design/ui/back_btn.png',
-  'assets/design/ui/chest_result.webp',
-  'assets/design/ui/hub_12_img.webp',
-  'assets/design/ui/hub_13_img.webp',
-  'assets/design/ui/hub_14_img.webp',
-  'assets/design/ui/hub_15_img.webp',
-  'assets/design/ui/hub_16_img.webp',
-  'assets/design/ui/hub_19_img.webp',
+  'assets/design/ui/chest_result.png',
+  'assets/design/ui/hub_12_img.png',
+  'assets/design/ui/hub_13_img.png',
+  'assets/design/ui/hub_14_img.png',
+  'assets/design/ui/hub_15_img.png',
+  'assets/design/ui/hub_16_img.png',
+  'assets/design/ui/hub_19_img.png',
   'assets/design/ui/hub_6_mascot.webp',
   'assets/design/ui/hub_avatar_exact.webp',
   'assets/design/ui/hub_hero_bg_exact.webp',
   'assets/design/ui/hub_hero_bg.webp',
   'assets/design/ui/hub_hero_mascot_exact.webp',
   'assets/design/ui/hub_hero_mascot.webp',
-  'assets/design/ui/hub_hero_play_exact.webp',
-  'assets/design/ui/hub_hero_play_ic.webp',
-  'assets/design/ui/icon_bell_exact.webp',
-  'assets/design/ui/icon_calendar_exact.webp',
-  'assets/design/ui/icon_coin_exact.webp',
+  'assets/design/ui/hub_hero_play_exact.png',
+  'assets/design/ui/hub_hero_play_ic.png',
+  'assets/design/ui/icon_bell_exact.png',
+  'assets/design/ui/icon_calendar_exact.png',
+  'assets/design/ui/icon_coin_exact.png',
   'assets/design/ui/icon_coin.png',
-  'assets/design/ui/icon_energy_bolt_exact.webp',
-  'assets/design/ui/icon_gear_exact.webp',
-  'assets/design/ui/icon_heart_exact.webp',
-  'assets/design/ui/icon_star_exact.webp',
+  'assets/design/ui/icon_energy_bolt_exact.png',
+  'assets/design/ui/icon_gear_exact.png',
+  'assets/design/ui/icon_heart_exact.png',
+  'assets/design/ui/icon_star_exact.png',
   'assets/design/ui/icon_star.png',
   'assets/design/ui/logo_lululu.webp',
   'assets/design/ui/online_locked_bug_exact.webp',
@@ -356,10 +353,10 @@ const List<String> _kAllPrecacheAssets = [
   'assets/obstacles/obstacle-bush.webp',
   'assets/obstacles/obstacle-pipes.webp',
   'assets/obstacles/obstacle-spikes.webp',
-  'assets/osman/osmantus_kisi_a.webp',
-  'assets/powerup_aydinlat.webp',
-  'assets/powerup_raid_spreyi.webp',
-  'assets/powerup_terlik.webp',
+  'assets/osman/osmantus_kisi_a.png',
+  'assets/powerup_aydinlat.png',
+  'assets/powerup_raid_spreyi.png',
+  'assets/powerup_terlik.png',
   'assets/game/trap_electric.png',
   'assets/icons/health.png',
   'assets/icons/level_up.png',
@@ -369,19 +366,19 @@ const List<String> _kAllPrecacheAssets = [
   'assets/design/icons/extra_icons/All_Icons/target.png',
 
   // Bug Tiers & Stickers
-  'assets/bugs/tier1_hd.webp',
-  'assets/bugs/tier2_hd.webp',
-  'assets/bugs/tier3_hd.webp',
-  'assets/bugs/tier4_hd.webp',
+  'assets/bugs/tier1_hd.png',
+  'assets/bugs/tier2_hd.png',
+  'assets/bugs/tier3_hd.png',
+  'assets/bugs/tier4_hd.png',
   'assets/bugs/tier5_hd.webp',
-  'assets/bugs/tier6_hd.webp',
-  'assets/bugs/tier7_hd.webp',
-  'assets/bugs/tier8_hd.webp',
-  'assets/bugs/tier9_hd.webp',
-  'assets/bugs/tier10_hd.webp',
-  'assets/bugs/tier11_hd.webp',
-  'assets/bugs/tier12_hd.webp',
-  'assets/bugs/tier13_hd.webp',
+  'assets/bugs/tier6_hd.png',
+  'assets/bugs/tier7_hd.png',
+  'assets/bugs/tier8_hd.png',
+  'assets/bugs/tier9_hd.png',
+  'assets/bugs/tier10_hd.png',
+  'assets/bugs/tier11_hd.png',
+  'assets/bugs/tier12_hd.png',
+  'assets/bugs/tier13_hd.png',
   'assets/design/bugs_hd/tier1_hd.png',
   'assets/design/bugs_hd/tier2_hd.png',
   'assets/design/bugs_hd/tier3_hd.png',
@@ -581,10 +578,8 @@ void main() {
           width: 430,
           height: 932,
           color: const Color(0xFFF4F6FA),
-          child: MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: buildLululuTheme(),
-            home: Container(
+          child: wrapWithL10n(
+            Container(
               color: const Color(0xFFF4F6FA),
               child: Stack(
                 children: [
@@ -616,6 +611,8 @@ void main() {
                 ],
               ),
             ),
+            debugShowCheckedModeBanner: false,
+            theme: buildLululuTheme(),
           ),
         ),
       ),
@@ -645,6 +642,21 @@ void main() {
       image.dispose();
       debugPrint('>>> Written $outputPath: ${pngBytes.length} bytes');
     });
+    // Madde 99: yazılan yakalama dosyası doğrulanır (varlık + PNG imzası).
+    // Bu helper'daki tüm Capture testleri bu doğrulamayı paylaşır.
+    final writtenFile = File(outputPath);
+    expect(writtenFile.existsSync(), isTrue, reason: outputPath);
+    final writtenBytes = writtenFile.readAsBytesSync();
+    expect(writtenBytes.length, greaterThan(8));
+    expect(
+      writtenBytes.sublist(0, 8),
+      const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+    );
+    if (extraOutputPath != null) {
+      final extraFile = File(extraOutputPath);
+      expect(extraFile.existsSync(), isTrue, reason: extraOutputPath);
+      expect(extraFile.lengthSync(), greaterThan(8));
+    }
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 200));
   }

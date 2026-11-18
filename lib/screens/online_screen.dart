@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
@@ -91,8 +92,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
           backgroundColor: const Color(0xFF141B2A),
           content: Text(
             _notified
-                ? 'Kaydın alındı! Online mod açılır açılmaz sana haber vereceğiz.'
-                : 'Bildirim tercihi kaldırıldı.',
+                ? context.l10n.onlineNotifySignupSnack
+                : context.l10n.onlineNotifyRemovedSnack,
             style: _nunito(
               fontSize: 13,
               fontWeight: FontWeight.w800,
@@ -161,7 +162,10 @@ class _OnlineScreenState extends State<OnlineScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          GestureDetector(
+          Semantics(
+            button: true,
+            label: context.l10n.goBackLabel,
+            child: GestureDetector(
             onTap: _closeOrPop,
             child: Container(
               width: 48,
@@ -191,14 +195,15 @@ class _OnlineScreenState extends State<OnlineScreen> {
               ),
             ),
           ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                'ONLİNE MOD',
+                context.l10n.onlineModeTitle,
                 maxLines: 1,
-                overflow: TextOverflow.visible,
+                overflow: TextOverflow.ellipsis,
                 style: _baloo2(
                   fontSize: 23,
                   fontWeight: FontWeight.w800,
@@ -226,7 +231,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ],
               ),
               child: Text(
-                'YAKINDA',
+                context.l10n.comingSoon,
                 style: _baloo2(
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
@@ -324,7 +329,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
               SizedBox(
                 height: 25.2,
                 child: Text(
-                  'ÇOK YAKINDA!',
+                  context.l10n.comingVerySoonCaps,
                   textAlign: TextAlign.center,
                   style: _baloo2(
                     fontSize: 24,
@@ -335,69 +340,70 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                height: 39.2,
-                child: Text(
-                  'Arkadaşlarınla çevrimiçi kapış, loncanla aynı arenada buluş. Online mod yapım aşamasında — açıldığı gün ilk sen öğren.',
-                  textAlign: TextAlign.center,
-                  style: _nunito(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF66738A),
-                    letterSpacing: -0.02,
-                    height: 18.6 / 13.5,
-                  ),
+              Text(
+                context.l10n.onlineComingSoonBody,
+                textAlign: TextAlign.center,
+                style: _nunito(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF66738A),
+                  letterSpacing: -0.02,
+                  height: 18.6 / 13.5,
                 ),
               ),
               const SizedBox(height: 16.0),
-              GestureDetector(
-                onTap: _toggleNotify,
-                child: CustomPaint(
-                  painter: const _OnlineBlurredRRectShadowPainter(
-                    color: Color(0x38000000),
-                    offset: Offset(0, 9),
-                    sigma: 6.5,
-                    radius: 14.0,
-                  ),
-                  child: Container(
-                    width: double.infinity,
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
+              Semantics(
+                button: true,
+                label: _notified ? context.l10n.notifyOnLabel : context.l10n.notifyMe,
+                child: GestureDetector(
+                  onTap: _toggleNotify,
+                  child: CustomPaint(
+                    painter: const _OnlineBlurredRRectShadowPainter(
+                      color: Color(0x38000000),
+                      offset: Offset(0, 9),
+                      sigma: 6.5,
+                      radius: 14.0,
                     ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF141B2A),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x8C000000),
-                          offset: Offset(0, 4),
-                          blurRadius: 0,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Image.asset(
-                          'assets/icons2/bell.png',
-                          width: 21,
-                          height: 21,
-                          fit: BoxFit.contain,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _notified ? 'BİLDİRİM AÇIK' : 'HABERDAR ET',
-                          style: _baloo2(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFFFF6B35),
-                            letterSpacing: 0.6,
-                            height: 1.0,
+                    child: Container(
+                      width: double.infinity,
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF141B2A),
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x8C000000),
+                            offset: Offset(0, 4),
+                            blurRadius: 0,
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            'assets/icons2/bell.png',
+                            width: 21,
+                            height: 21,
+                            fit: BoxFit.contain,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _notified ? context.l10n.notifyOnCaps : context.l10n.notifyMe,
+                            style: _baloo2(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFFFF6B35),
+                              letterSpacing: 0.6,
+                              height: 1.0,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -418,22 +424,22 @@ class _OnlineScreenState extends State<OnlineScreen> {
           _buildFeatureCard(
             iconAsset: 'assets/icons2/sword.png',
             gradientColors: const [Color(0xFFF4538B), Color(0xFFE01E5A)],
-            title: '1V1 DÜELLO',
-            subtitle: 'Arkadaşına meydan oku, arenada kapış',
+            title: context.l10n.onlineDuelTitle,
+            subtitle: context.l10n.onlineDuelSubtitle,
           ),
           const SizedBox(height: 10),
           _buildFeatureCard(
             iconAsset: 'assets/icons2/shield.png',
             gradientColors: const [Color(0xFF9B5DE5), Color(0xFF7C3AED)],
-            title: 'LONCA SAVAŞLARI',
-            subtitle: 'Loncanla takım kur, haftalık savaşlara katıl',
+            title: context.l10n.onlineGuildWarsTitle,
+            subtitle: context.l10n.onlineGuildWarsSubtitle,
           ),
           const SizedBox(height: 10),
           _buildFeatureCard(
             iconAsset: 'assets/icons2/trophy.png',
             gradientColors: const [Color(0xFFFFCF3F), Color(0xFFFFB800)],
-            title: 'CANLI TURNUVALAR',
-            subtitle: 'Sezonluk turnuvalarda büyük ödülleri topla',
+            title: context.l10n.onlineTournamentsTitle,
+            subtitle: context.l10n.onlineTournamentsSubtitle,
           ),
         ],
       ),
@@ -496,7 +502,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                     child: Text(
                       title,
                       maxLines: 1,
-                      overflow: TextOverflow.visible,
+                      overflow: TextOverflow.ellipsis,
                       style: _baloo2(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -512,7 +518,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                     child: Text(
                       subtitle,
                       maxLines: 1,
-                      overflow: TextOverflow.visible,
+                      overflow: TextOverflow.ellipsis,
                       style: _nunito(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -619,12 +625,13 @@ class _OnlineFloatingDock extends StatelessWidget {
 
   static const _tabs = LululuDockTab.values;
 
-  static String _label(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'ANA SAYFA',
-        LululuDockTab.modes => 'MODLAR',
-        LululuDockTab.family => 'AİLEM',
-        LululuDockTab.shop => 'MAĞAZA',
-        LululuDockTab.scores => 'SKORLAR',
+  static String _label(AppLocalizations l10n, LululuDockTab tab) =>
+      switch (tab) {
+        LululuDockTab.home => l10n.navHome,
+        LululuDockTab.modes => l10n.navModes,
+        LululuDockTab.family => l10n.navFamily,
+        LululuDockTab.shop => l10n.navShop,
+        LululuDockTab.scores => l10n.navScores,
       };
 
   static String _icon(LululuDockTab tab) => switch (tab) {
@@ -810,7 +817,11 @@ class _OnlineFloatingDock extends StatelessWidget {
                       children: [
                         for (final tab in _tabs)
                           Expanded(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: _label(context.l10n, tab),
+                              selected: tab == activeTab,
+                              child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onSelectTab(tab),
                               child: DecoratedBox(
@@ -928,7 +939,7 @@ class _OnlineFloatingDock extends StatelessWidget {
                                         right: -4,
                                         top: 49.0,
                                         child: Text(
-                                          _label(tab),
+                                          _label(context.l10n, tab),
                                           maxLines: 1,
                                           textAlign: TextAlign.center,
                                           style: _OnlineScreenState._baloo2(
@@ -963,6 +974,7 @@ class _OnlineFloatingDock extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                            ),
                             ),
                           ),
                       ],

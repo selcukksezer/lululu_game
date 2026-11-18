@@ -35,6 +35,10 @@ class DailyChallengeService extends ChangeNotifier {
   static const _prefsKey = 'LululuDailyV1';
 
   bool _loaded = false;
+
+  /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
+  /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
+  Future<void>? _loadFuture;
   String _dayKey = '';
   String modeId = LeaderboardService.modeOsmantus;
   String modeLabel = 'Osmantuş';
@@ -106,7 +110,12 @@ class DailyChallengeService extends ChangeNotifier {
 
   /// Estimated coin reward for today's claim.
   int get nextClaimRewardCoins {
-    final nextStreak = max(1, streak + (canClaimToday ? 1 : 0));
+    if (!canClaimToday) {
+      return 40 + max(1, streak) * 15 + (completedToday ? 80 : 0);
+    }
+    // Seri kuralı: son talep dün değilse seri sıfırlanır
+    // (yeni seri 1'den başlar); aksi hâlde seri bir artar.
+    final nextStreak = lastClaimDay == _dayKeyOffset(-1) ? streak + 1 : 1;
     return 40 + nextStreak * 15 + (completedToday ? 80 : 0);
   }
 
@@ -122,7 +131,22 @@ class DailyChallengeService extends ChangeNotifier {
     await load();
   }
 
+  /// Kalıcı günlük görevi yükler. Eşzamanlı çağrılar aynı yüklemeyi
+  /// paylaşır (uçuş koruması); yükleme bittikten sonra yeniden
+  /// çağrılırsa prefs'ten tekrar okur (yeniden yükleme korunur).
   Future<void> load() async {
+    final inFlight = _loadFuture;
+    if (inFlight != null) return inFlight;
+    final future = _loadAsync();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) _loadFuture = null;
+    }
+  }
+
+  Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
     final today = _todayKey();
     _dayKey = prefs.getString('${_prefsKey}_day') ?? '';
@@ -163,7 +187,11 @@ class DailyChallengeService extends ChangeNotifier {
 
   Future<bool> tryCompleteWithScore(String playedModeId, int score) async {
     await ensureLoaded();
-    await ProgressManager.instance.recordTaskProgress('play', delta: 1);
+    // 'play' görevi burada kaydedilmez: tek kayıt noktası tur-bitirme
+    // yardımcısıdır (finish_run.dart, recordPlayTask varsayılanı true).
+    // Bu metot skor gönderimi başına (hatta Çığlık Böcek'te her çığlıkta)
+    // çağrıldığı için buradaki kayıt '3 Oyun Oyna' görevini tek turda
+    // dolduruyordu.
     if (completedToday) return false;
     final normalizedPlayed = ProgressManager.normalizeModeId(playedModeId);
     final normalizedTarget = ProgressManager.normalizeModeId(modeId);
@@ -179,32 +207,40 @@ class DailyChallengeService extends ChangeNotifier {
     return true;
   }
 
-  /// Günlük ödül + streak. Challenge tamam zorunlu değil; giriş ödülü.
-  Future<int> claimDailyReward() async {
-    await ensureLoaded();
-    final today = _todayKey();
-    if (lastClaimDay == today) return 0;
-
-    final yesterday = _dayKeyOffset(-1);
-    if (lastClaimDay == yesterday) {
-      streak += 1;
-    } else {
-      streak = 1;
-    }
-    lastClaimDay = today;
-
-    var coins = 40 + streak * 15;
-    if (completedToday) coins += 80;
-    await ProgressManager.instance.addCoins(coins);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('${_prefsKey}_streak', streak);
-    await prefs.setString('${_prefsKey}_lastClaim', today);
-    notifyListeners();
-    return coins;
-  }
-
   bool get canClaimToday {
     return lastClaimDay != _todayKey();
+  }
+
+  /// Hesap silme için yerel günlük görev verisinin tamamını temizler
+  /// (hesap-silme, yerel-temizlik): gün / mod / hedef anahtarları,
+  /// `LululuDailyV1_done_*` tamamlandı kayıtları (bugün + önceki
+  /// günlerden kalmış olabilecekler) ve aynı ad alanındaki
+  /// `_streak` / `_lastClaim` okumaları kaldırılır; bellek-içi durum
+  /// varsayılanlara döner. `_streak` / `_lastClaim` kod tabanında
+  /// hiçbir yerde yazılmaz (ölü okuma) ama aynı hesap verisi ad
+  /// alanında oldukları için yine de kaldırılır.
+  Future<void> clearLocalData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('${_prefsKey}_day');
+    await prefs.remove('${_prefsKey}_modeId');
+    await prefs.remove('${_prefsKey}_modeLabel');
+    await prefs.remove('${_prefsKey}_target');
+    await prefs.remove('${_prefsKey}_streak');
+    await prefs.remove('${_prefsKey}_lastClaim');
+    for (final key in prefs
+        .getKeys()
+        .where((k) => k.startsWith('${_prefsKey}_done_'))
+        .toList()) {
+      await prefs.remove(key);
+    }
+    _dayKey = '';
+    modeId = LeaderboardService.modeOsmantus;
+    modeLabel = 'Osmantuş';
+    targetScore = 5000;
+    completedToday = false;
+    streak = 0;
+    lastClaimDay = null;
+    notifyListeners();
   }
 
   String _todayKey() {

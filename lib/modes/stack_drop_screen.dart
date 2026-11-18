@@ -6,8 +6,11 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/energy_service.dart';
+import '../services/finish_run.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../screens/result_screen.dart';
@@ -21,8 +24,15 @@ import '../widgets/mode_bonus_bar.dart';
 class StackDropScreen extends StatefulWidget {
   const StackDropScreen({
     super.key,
+    this.energyConsumed = false,
     @visibleForTesting this.prototypeVisualState = false,
   });
+
+  /// `true` ise bu ekrana giriş `openGameMode` üzerinden 1 enerji
+  /// tüketerek yapıldı; hiç hamle yapılmadan çıkılırsa enerji iade
+  /// edilir (Suika `GameScreen` deseni). Doğrudan rota girişlerinde
+  /// `false` kalır.
+  final bool energyConsumed;
 
   @visibleForTesting
   final bool prototypeVisualState;
@@ -75,6 +85,10 @@ class _StackDropScreenState extends State<StackDropScreen>
     with SingleTickerProviderStateMixin {
   static const double slabH = 36;
   static const double _stageHintHeight = 0;
+  // İsabet bantları ÇAKIŞMAZ (S1#47): perfect = offset ≤ perfectPx,
+  // near = perfectPx < offset ≤ nearPx, diğer = offset > nearPx.
+  // nearPx her zaman perfectPx'ten büyük tutulmalıdır; bant tanımı
+  // _settle() içinde açık aralık olarak yazılır.
   static const double perfectPx = 7;
   static const double nearPx = 16;
   static const _slabColors = <Color>[
@@ -93,7 +107,21 @@ class _StackDropScreenState extends State<StackDropScreen>
   double _powerFxLife = 0;
 
   _Phase _phase = _Phase.ready;
+  // S1#48: başarısızlık anı — ölüm sonrası ilk 500 ms içindeki dokunuş
+  // yeniden başlatmaz (sonuç ekranı zaten yolda; yanlışlıkla dokunuş
+  // yeni turu bozmasın).
+  DateTime? _failedAt;
   bool _resultShown = false;
+
+  /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk dilim bırakma
+  /// (`_drop`) veya tur tamamlanması (`_fail`) ile `true` olur;
+  /// TEKRAR/yeniden başlatmada SIFIRLANMAZ (Suika `_dropsMade`
+  /// deseni — oturum ömrü).
+  bool _moveMade = false;
+
+  /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
+  bool _energyRefunded = false;
+
   bool _laidOut = false;
   bool _paused = false;
   double _arenaW = 320;
@@ -150,15 +178,23 @@ class _StackDropScreenState extends State<StackDropScreen>
     _ticker = createTicker(_tick)..start();
   }
 
+  // Varsayılan stok YALNIZ ilk kurulumda verilir. ProgressManager.load()
+  // 'lululu_power_seed_v1' bayrağıyla 33 gücü bir kez tohumlar; tohumlanan
+  // anahtarlar extraPowers'ta kalıcı olur, takePower() ise anahtarı silmez,
+  // 0'a düşürür. "Hiç tohumlanmadı" bu yüzden anahtar yokluğuyla anlaşılır;
+  // eski "üçü de 0 ise doldur" koşulu her girişte bedava stok veriyordu.
+  // Tohumlama persistBoosters() ile kalıcı kaydedilir.
   void _ensureDefaultPowers() {
     final pm = ProgressManager();
-    if (pm.powerCount('freeze') == 0 &&
-        pm.powerCount('widen') == 0 &&
-        pm.powerCount('slows') == 0) {
-      pm.extraPowers['freeze'] = 2;
-      pm.extraPowers['widen'] = 3;
-      pm.extraPowers['slows'] = 1;
+    const defaults = <String, int>{'freeze': 2, 'widen': 3, 'slows': 1};
+    var seeded = false;
+    for (final entry in defaults.entries) {
+      if (!pm.extraPowers.containsKey(entry.key)) {
+        pm.extraPowers[entry.key] = entry.value;
+        seeded = true;
+      }
     }
+    if (seeded) unawaited(pm.persistBoosters());
   }
 
   @override
@@ -240,7 +276,8 @@ class _StackDropScreenState extends State<StackDropScreen>
     _cameraY = 0;
     _resultShown = false;
     _phase = _Phase.ready;
-    _hint = 'Dokun. Tam ortala = combo. Kenar kesilir.';
+    _failedAt = null;
+    _hint = context.l10n.stackHintIdle;
   }
 
   void _ensure(double w, double h) {
@@ -281,7 +318,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     _perfects = 3;
     _comboMeter = 0.62;
     _elapsedSeconds = 20;
-    _feedback = 'MÜKEMMEL İSABET! X3';
+    _feedback = context.l10n.stackPerfectPrototype;
   }
 
   void _restart() {
@@ -384,11 +421,19 @@ class _StackDropScreenState extends State<StackDropScreen>
   void _drop() {
     if (!_laidOut || _paused) return;
     if (_phase == _Phase.failed) {
+      // S1#48: ölüm sonrası 500 ms dokunuş yoksayma.
+      if (_failedAt != null &&
+          DateTime.now().difference(_failedAt!) <
+              const Duration(milliseconds: 500)) {
+        return;
+      }
       _restart();
       return;
     }
     if (_phase != _Phase.ready) return;
 
+    // Enerji iadesi sayacı: bırakma anında sayılır (Suika deseni).
+    _moveMade = true;
     _phase = _Phase.falling;
     _fallY = 16;
     AudioManager().playDrop();
@@ -408,17 +453,20 @@ class _StackDropScreenState extends State<StackDropScreen>
     final offset = (_moverX - top.center).abs();
 
     if (overlap <= 2) {
-      _fail('Kaçırdın. Kule yıkıldı.');
+      _fail(context.l10n.stackMissedFall);
       return;
     }
 
+    // Bantlar ayrık aralıklar: perfect [0, 7], near (7, 16], diğer (16, ∞).
+    // Eski `!perfect && ...` yazımı da ayrık sonuç veriyordu; açık aralık
+    // yazımı perfect tanımı değişse bile çakışmayı imkânsız kılar.
     final perfect = offset <= perfectPx;
-    final near = !perfect && offset <= nearPx;
+    final near = offset > perfectPx && offset <= nearPx;
     final width = perfect ? top.width : overlap;
     final center = perfect ? top.center : (overlapL + overlapR) / 2;
     final placedTier = _tier;
     if (width < 14) {
-      _fail('Dilim çok inceldi.');
+      _fail(context.l10n.stackSliceThin);
       return;
     }
 
@@ -457,8 +505,8 @@ class _StackDropScreenState extends State<StackDropScreen>
       final heat = 1.0 + min(1.0, (_combo - 1) * 0.15);
       final gain = ((28 + _combo * 8 + _floors) * heat).round();
       _score += gain;
-      _hint = 'TAM İSABET x$_combo · +$gain';
-      _showFeedback('MÜKEMMEL İSABET! X$_combo');
+      _hint = context.l10n.stackDirectHit(_combo, gain);
+      _showFeedback(context.l10n.stackPerfectHit(_combo));
       AudioManager().playMerge(tierNumber: _tier, comboCount: _combo);
       HapticFeedback.mediumImpact();
       if (_combo == 3 || _combo == 5 || _combo == 8) {
@@ -470,8 +518,8 @@ class _StackDropScreenState extends State<StackDropScreen>
       _comboMeter = min(1.0, 0.25 + _combo * 0.08);
       final gain = 16 + _floors + _combo * 2;
       _score += gain;
-      _hint = 'Neredeyse · +$gain · kat $_floors';
-      _showFeedback('YAKIN! +$gain');
+      _hint = context.l10n.stackNearHint(gain, _floors);
+      _showFeedback(context.l10n.stackNearCallout(gain));
       AudioManager().playMerge(tierNumber: _tier);
       HapticFeedback.lightImpact();
     } else {
@@ -479,8 +527,8 @@ class _StackDropScreenState extends State<StackDropScreen>
       _comboMeter = max(0, _comboMeter - 0.25);
       final gain = 10 + _floors;
       _score += gain;
-      _hint = 'Kenar kesildi. +$gain · kat $_floors';
-      _showFeedback('KENAR KESİLDİ · +$gain');
+      _hint = context.l10n.stackEdgeCutHint(gain, _floors);
+      _showFeedback(context.l10n.stackEdgeCutCallout(gain));
       AudioManager().playMerge(tierNumber: _tier);
       HapticFeedback.selectionClick();
     }
@@ -505,7 +553,11 @@ class _StackDropScreenState extends State<StackDropScreen>
   }
 
   void _fail(String why) {
+    // Tur tamamlandı: iade hakkı biter (tekrar oynayıp hamlesiz
+    // çıkmak da iade vermez — bayrak oturum ömründe kalır).
+    _moveMade = true;
     _phase = _Phase.failed;
+    _failedAt = DateTime.now();
     _hint = why;
     _paused = false;
     _shake = 1.0;
@@ -540,14 +592,14 @@ class _StackDropScreenState extends State<StackDropScreen>
     for (final m in const [5, 10, 15, 20, 30]) {
       if (_floors >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
-        _showMilestone('$m KAT!');
+        _showMilestone(context.l10n.stackMilestoneFloors(m));
         break;
       }
     }
   }
 
   String _statsLine() =>
-      'Kat $_floors · Perfect $_perfects · Near $_nears · Max combo x$_maxCombo';
+      context.l10n.stackStatsLine(_floors, _perfects, _nears, _maxCombo);
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
@@ -562,9 +614,9 @@ class _StackDropScreenState extends State<StackDropScreen>
       _freezeUntil = DateTime.now().add(const Duration(seconds: 4));
       _activePowerFx = 'freeze';
       _powerFxLife = 1.0;
-      _hint = 'Mıknatıs Hizalama & Dondur (4 sn) aktif!';
+      _hint = context.l10n.stackMagnetHint;
     });
-    _showMilestone('MIKNATIS HİZALAMA & DONDUR!');
+    _showMilestone(context.l10n.stackMagnetMilestone);
     return true;
   }
 
@@ -580,9 +632,9 @@ class _StackDropScreenState extends State<StackDropScreen>
       }
       _activePowerFx = 'widen';
       _powerFxLife = 1.0;
-      _hint = 'Geniş Blok aktif · Kule tabanı genişledi!';
+      _hint = context.l10n.stackWidenHint;
     });
-    _showMilestone('GENİŞ BLOK AKTİF!');
+    _showMilestone(context.l10n.stackWidenMilestone);
     return true;
   }
 
@@ -595,31 +647,23 @@ class _StackDropScreenState extends State<StackDropScreen>
       _perfectSlowUntil = DateTime.now().add(const Duration(seconds: 8));
       _activePowerFx = 'slows';
       _powerFxLife = 1.0;
-      _hint = 'Yavaşlatıcı aktif (8 sn)!';
+      _hint = context.l10n.stackSlowHint;
     });
-    _showMilestone('YAVAŞLATICI AKTİF (8 SN)!');
+    _showMilestone(context.l10n.stackSlowMilestone);
     return true;
   }
 
   Future<void> _presentResult() async {
     final coins = _score > 0 ? max(1, ResultScoring.coinsFor(_score)) : 0;
-    final stars = ResultScoring.starsFor(score: _score, best: _best);
-    if (coins > 0) {
-      await ProgressManager.instance.addCoins(coins);
-    }
-    if (_score > 0) {
-      await LeaderboardService.instance.submitScore(
-        LeaderboardService.modeStack,
-        _score,
-      );
-    }
-    await ProgressManager.instance.recordTaskProgress('play');
-    if (!mounted) return;
-    final replay = await showGameResult(
+    // S1#49: ödeme + liderlik (yalnız skor > 0) + görev kaydı + sonuç
+    // ekranı finishRun() üzerinden (tek-ödeme korunur).
+    final replay = await finishRun(
       context,
       score: _score,
+      best: _best,
       coins: coins,
-      stars: stars,
+      leaderboardMode: LeaderboardService.modeStack,
+      leaderboardOnlyIfPositiveScore: true,
     );
     if (!mounted) return;
     if (!replay) {
@@ -628,6 +672,23 @@ class _StackDropScreenState extends State<StackDropScreen>
     }
     _resultShown = false;
     _restart();
+  }
+
+  /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
+  ///
+  /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
+  /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
+  /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  void _maybeRefundEnergy() {
+    if (_energyRefunded) return;
+    if (!widget.energyConsumed ||
+        _moveMade ||
+        _phase == _Phase.failed ||
+        _resultShown) {
+      return;
+    }
+    _energyRefunded = true;
+    EnergyService.instance.addEnergy(1);
   }
 
   void _edgeShowResult() {
@@ -641,34 +702,39 @@ class _StackDropScreenState extends State<StackDropScreen>
   @override
   Widget build(BuildContext context) {
     if (_phase == _Phase.failed && !_resultShown) _edgeShowResult();
-    return ArcadeScreen(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _maybeRefundEnergy();
+      },
+      child: ArcadeScreen(
       backgroundAsset: 'assets/design/backgrounds/stack_nightcity.webp',
-      title: 'Stack Drop',
+      title: context.l10n.shopModeStackDrop,
       hint: _paused
-          ? 'DURAKLATILDI'
+          ? context.l10n.pausedStatusCaps
           : _elapsedSeconds < 15 && !widget.prototypeVisualState
-          ? 'İlk 15 saniye öğretici tempoda. $_hint'
+          ? context.l10n.stackTutorialHint(_hint)
           : _hint,
       score: _score,
       best: _best,
-      tag: 'KULE',
+      tag: context.l10n.stackTowerTag,
       tagColor: const Color(0xFFE52E2E),
       prototypeChrome: true,
       showStatusBar: true,
       prototypeModeChrome: true,
-      statLabel: 'KAT',
+      statLabel: context.l10n.stackFloorStat,
       statValue: '$_floors',
       onRestart: _restart,
       overlay: (_phase == _Phase.failed && !_resultShown)
           ? ArcadeResultOverlay(
-              title: 'KULE DÜŞTÜ',
+              title: context.l10n.stackTowerFellTitle,
               message: _statsLine(),
               score: _score,
               best: _best,
               won: false,
-              modeTitle: 'Stack Drop',
+              modeTitle: context.l10n.shopModeStackDrop,
               shareLine: _statsLine(),
-              retryLabel: 'TEKRAR',
+              retryLabel: context.l10n.retryShort,
               onRetry: _restart,
             )
           : _paused
@@ -680,7 +746,7 @@ class _StackDropScreenState extends State<StackDropScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'DURAKLATILDI',
+                        context.l10n.pausedStatusCaps,
                         style: GoogleFonts.exo2(
                           fontSize: 24,
                           fontWeight: FontWeight.w900,
@@ -697,7 +763,7 @@ class _StackDropScreenState extends State<StackDropScreen>
                         ),
                       ),
                       const SizedBox(height: 16),
-                      ArcadeButton(label: 'DEVAM', onPressed: _togglePause),
+                      ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
                     ],
                   ),
                 ),
@@ -712,31 +778,34 @@ class _StackDropScreenState extends State<StackDropScreen>
               width: 260,
               child: _StackBonusDock(
                 items: [
-                  stockBonus(
+                  stockBonusWithResult(
                     id: 'freeze',
-                    label: 'DONDUR',
+                    label: context.l10n.shopPowerFreezeNameCaps,
                     asset: 'assets/icons2/crystal.png',
                     effect: () {
-                      _useFreeze();
+                      final applied = _useFreeze();
                       setState(() {});
+                      return applied;
                     },
                   ),
-                  stockBonus(
+                  stockBonusWithResult(
                     id: 'widen',
-                    label: 'GENİŞLET',
+                    label: context.l10n.shopPowerWidenNameCaps,
                     asset: 'assets/icons2/block.png',
                     effect: () {
-                      _useWiden();
+                      final applied = _useWiden();
                       setState(() {});
+                      return applied;
                     },
                   ),
-                  stockBonus(
+                  stockBonusWithResult(
                     id: 'slows',
-                    label: 'YAVAŞLAT',
+                    label: context.l10n.shopPowerSlowNameCaps,
                     asset: 'assets/icons2/clock.png',
                     effect: () {
-                      _useSlowDrop();
+                      final applied = _useSlowDrop();
                       setState(() {});
+                      return applied;
                     },
                   ),
                 ],
@@ -921,6 +990,7 @@ class _StackDropScreenState extends State<StackDropScreen>
           );
         },
       ),
+      ),
     );
   }
 
@@ -1017,7 +1087,7 @@ class _StackDropScreenState extends State<StackDropScreen>
                     SizedBox(
                       height: moving ? 36 : 31,
                       child: Image.asset(
-                        'assets/bugs/tier${tier.clamp(1, 13)}_hd.webp',
+                        'assets/bugs/tier${tier.clamp(1, 13)}_hd${tier.clamp(1, 13) == 5 ? '.webp' : '.png'}',
                         fit: BoxFit.contain,
                         errorBuilder: (_, _, _) =>
                             StickerImage(assetPath: insect.assetPath),
@@ -1026,7 +1096,7 @@ class _StackDropScreenState extends State<StackDropScreen>
                     if (!moving && floor != null) ...[
                       const SizedBox(width: 8),
                       Text(
-                        'KAT $floor',
+                        context.l10n.stackFloorLabel(floor),
                         style: GoogleFonts.baloo2(
                           fontSize: 12,
                           height: 1,
@@ -1084,7 +1154,7 @@ class _StackBonusButton extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     button: true,
     enabled: item.onTap != null,
-    label: '${item.label}. ${item.count} adet',
+    label: context.l10n.boosterCountLabel(item.label, item.count),
     child: GestureDetector(
       onTap: item.onTap,
       behavior: HitTestBehavior.opaque,

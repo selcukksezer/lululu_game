@@ -397,13 +397,15 @@ class _FloatingScoreBadge extends StatelessWidget {
                       width: 1.2,
                     ),
                   ),
-                  child: Text(
-                    'KRİTİK VURUŞ!',
-                    style: GoogleFonts.baloo2(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w900,
-                      height: 1.1,
-                      color: Colors.white,
+                  child: ExcludeSemantics(
+                    child: Text(
+                      'KRİTİK VURUŞ!',
+                      style: GoogleFonts.baloo2(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w900,
+                        height: 1.1,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
@@ -423,13 +425,15 @@ class _FloatingScoreBadge extends StatelessWidget {
                       width: 1.2,
                     ),
                   ),
-                  child: Text(
-                    multiplierBadge,
-                    style: GoogleFonts.baloo2(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w900,
-                      height: 1.1,
-                      color: LululuColors.liquidGold,
+                  child: ExcludeSemantics(
+                    child: Text(
+                      multiplierBadge,
+                      style: GoogleFonts.baloo2(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w900,
+                        height: 1.1,
+                        color: LululuColors.liquidGold,
+                      ),
                     ),
                   ),
                 ),
@@ -440,8 +444,12 @@ class _FloatingScoreBadge extends StatelessWidget {
         Stack(
           alignment: Alignment.center,
           children: <Widget>[
-            Text(text, textAlign: TextAlign.center, style: strokeStyle),
-            Text(text, textAlign: TextAlign.center, style: fillStyle),
+            ExcludeSemantics(
+              child: Text(text, textAlign: TextAlign.center, style: strokeStyle),
+            ),
+            ExcludeSemantics(
+              child: Text(text, textAlign: TextAlign.center, style: fillStyle),
+            ),
           ],
         ),
         if (subtitle != null && subtitle!.trim().isNotEmpty) ...<Widget>[
@@ -456,13 +464,15 @@ class _FloatingScoreBadge extends StatelessWidget {
                 width: 1.2,
               ),
             ),
-            child: Text(
-              subtitle!,
-              style: GoogleFonts.baloo2(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-                height: 1.1,
-                color: Colors.white,
+            child: ExcludeSemantics(
+              child: Text(
+                subtitle!,
+                style: GoogleFonts.baloo2(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),

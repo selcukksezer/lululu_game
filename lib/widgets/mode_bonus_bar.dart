@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
 
@@ -91,7 +92,7 @@ class _BonusButtonState extends State<_BonusButton> {
     return Semantics(
       button: true,
       enabled: enabled,
-      label: '${item.label}. ${item.count} adet',
+      label: context.l10n.boosterCountLabel(item.label, item.count),
       child: GestureDetector(
         onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
         onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
@@ -216,11 +217,12 @@ class _BonusButtonState extends State<_BonusButton> {
   }
 }
 
-/// `assets/design/icons/extra_icons/All_Icons/` kısayolu.
-String bonusIcon(String fileName) =>
-    'assets/design/icons/extra_icons/All_Icons/$fileName';
-
 /// Kasadan 1 yük harcar, sonra [effect] çalıştırır; stok 0 ise dokunulmaz.
+///
+/// [canApply] verilirse önce o kontrol edilir: `false` dönerse stok
+/// tüketilmez ve [effect] çalışmaz (S1#30 önkoşul yolu). Etkinin başarı
+/// durumunu döndüğü durumlarda [stockBonusWithResult] kullanılmalıdır —
+/// orada `false` dönen etki stoğu iade eder.
 ModeBonus stockBonus({
   required String id,
   required String label,
@@ -228,6 +230,7 @@ ModeBonus stockBonus({
   required VoidCallback effect,
   String? description,
   int? price,
+  bool Function()? canApply,
 }) {
   final pm = ProgressManager();
   final count = pm.powerCount(id);
@@ -240,8 +243,49 @@ ModeBonus stockBonus({
     onTap: count <= 0
         ? null
         : () {
+            if (canApply != null && !canApply()) return;
             if (!pm.takePower(id)) return;
             effect();
+          },
+  );
+}
+
+/// `bool` dönen etkili [stockBonus] varyantı (S1#30 iade yolu).
+///
+/// Akış: [canApply] önkoşulu → [ProgressManager.takePower] ile 1 yük
+/// tüket → [effect] çalıştır. [effect] `false` dönerse (örn. balon
+/// tahtası boşken bomba) tüketilen 1 yük
+/// [ProgressManager.refundPower] ile iade edilir; stok harcanmış olmaz.
+/// `true` dönen etki stoğu tüketmiş sayılır. Stok 0 ise dokunulmaz.
+///
+/// Mevcut `void` kapamalar (`effect: () { _useBomb(); setState(...); }`
+/// gibi, `bool` sonucu atanlar) bu varyanta taşınmalıdır; taşınmayan
+/// çağrıcılar eski davranışı korur.
+ModeBonus stockBonusWithResult({
+  required String id,
+  required String label,
+  required String asset,
+  required bool Function() effect,
+  String? description,
+  int? price,
+  bool Function()? canApply,
+}) {
+  final pm = ProgressManager();
+  final count = pm.powerCount(id);
+  return ModeBonus(
+    label: label,
+    asset: asset,
+    count: count,
+    description: description,
+    price: price,
+    onTap: count <= 0
+        ? null
+        : () {
+            if (canApply != null && !canApply()) return;
+            if (!pm.takePower(id)) return;
+            if (!effect()) {
+              pm.refundPower(id);
+            }
           },
   );
 }

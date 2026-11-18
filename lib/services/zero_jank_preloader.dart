@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:collection';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -21,6 +20,15 @@ class ZeroJankPreloader {
   /// Must stay strictly under 2.0ms per frame.
   static const double defaultFrameBudgetMs = 1.8;
   static const double hardBudgetCapMs = 1.95;
+
+  /// Madde 53 [P1]: precache decode hedef genişlikleri (fiziksel piksel).
+  /// HD böcek/sticker görselleri en fazla 180 mantıksal px çapta
+  /// gösterilir (3x DPR → 540 px); 768 px headroom bırakır. Tam ekran
+  /// arka planlar 430 mantıksal px genişliğindedir (3x DPR → 1290 px);
+  /// 1280 px hedefi tam ekran netliğini korur.
+  static const int stickerDecodeWidth = 768;
+  static const int backgroundDecodeWidth = 1280;
+  static const int defaultDecodeWidth = 1024;
 
   /// Canonical critical sticker & hero paths requested at startup / splash.
   static const List<String> criticalStickerPaths = [
@@ -95,16 +103,22 @@ class ZeroJankPreloader {
     'assets/fonts/Exo2-Bold.ttf',
   ];
 
-  /// Critical voice & SFX assets under `assets/design/sounds/` and `assets/audio/`.
+  /// Critical voice & SFX assets under the canonical `assets/audio/` folder.
+  ///
+  /// Integrity manifest audited by `asset_integrity_test.dart` (every path
+  /// must exist on disk). The same clips also exist as byte-identical
+  /// copies under `assets/design/sounds/`, but that folder is not
+  /// canonical: this manifest and [enqueueAudioWarmup] both point at
+  /// `assets/audio/` only, so no clip is loaded from two folders.
   static const List<String> criticalSoundAssets = [
-    'assets/design/sounds/tier1_ses.mp3',
-    'assets/design/sounds/tier2_ses.mp3',
-    'assets/design/sounds/tier3_ses.mp3',
-    'assets/design/sounds/tier4_ses.mp3',
-    'assets/design/sounds/tier5_ses.mp3',
-    'assets/design/sounds/tier6_ses.mp3',
-    'assets/design/sounds/tier7_ses.mp3',
-    'assets/design/sounds/tier8_ses.mp3',
+    'assets/audio/tier1_ses.mp3',
+    'assets/audio/tier2_ses.mp3',
+    'assets/audio/tier3_ses.mp3',
+    'assets/audio/tier4_ses.mp3',
+    'assets/audio/tier5_ses.mp3',
+    'assets/audio/tier6_ses.mp3',
+    'assets/audio/tier7_ses.mp3',
+    'assets/audio/tier8_ses.mp3',
   ];
 
   double frameBudgetMs = defaultFrameBudgetMs;
@@ -116,12 +130,45 @@ class ZeroJankPreloader {
   double maxSliceMs = 0;
   bool get budgetRespected => maxSliceMs < 2.0;
 
+  /// Longest single job observed in [_drainBudget] (ms). Unlike [lastSliceMs]
+  /// / [maxSliceMs], which cover a whole frame slice, this isolates one job:
+  /// a single slow job can blow the 1.8ms budget even when the between-jobs
+  /// check never gets a chance to defer it. Observability only — jobs are
+  /// never skipped or deferred because of it (see [_drainBudget]).
+  double lastJobMs = 0;
+  double maxJobMs = 0;
+
+  /// Jobs whose own duration met or exceeded the frame budget. A non-zero
+  /// count flags decode/load work that needs splitting or shrinking; it never
+  /// changes which jobs run.
+  int overBudgetJobCount = 0;
+  bool get hasOverBudgetJob => overBudgetJobCount > 0;
+
   final Queue<FutureOr<void> Function()> _work = Queue();
   final Set<String> _warmedPaths = <String>{};
-  final Set<String> _decodedPhysicalPaths = <String>{};
+  final Set<String> _warmedPhysicalPaths = <String>{};
   int _totalJobs = 0;
   int _doneJobs = 0;
+
+  /// Drain loop enabled. The loop uses one-shot post-frame callbacks (see
+  /// [_scheduleNextFrame]), never a persistent frame callback: persistent
+  /// callbacks cannot be unregistered in Flutter, so a persistent callback
+  /// would stay registered for the lifetime of the app and every
+  /// attach/detach cycle would add another one. Detaching only clears this
+  /// flag; the chain then schedules nothing more.
   bool _schedulerAttached = false;
+
+  /// True while exactly one one-shot drain callback is queued with the
+  /// binding. Guards against double registration on restart: [_onFrame]
+  /// clears it when it fires, and [_scheduleNextFrame] never queues a
+  /// second callback while one is outstanding.
+  bool _frameCallbackPending = false;
+
+  /// `precache:` keys whose precache job is queued but has not finished
+  /// yet. Separate from [_warmedPaths]: a path joins [_warmedPaths] only
+  /// after [precacheImage] really succeeds, while this set only dedupes
+  /// in-flight jobs so the same image is not enqueued twice.
+  final Set<String> _precachePending = <String>{};
   bool _draining = false;
   bool _pointerDown = false;
   DateTime _lastTouch = DateTime.fromMillisecondsSinceEpoch(0);
@@ -143,6 +190,37 @@ class ZeroJankPreloader {
   /// to physical bundle paths when needed.
   static String resolveAssetPath(String path) => _assetAliasMap[path] ?? path;
 
+  /// Hedef boyutla decode eden [ImageProvider] döndürür (madde 53 [P1]).
+  ///
+  /// [ResizeImage] aynı mantıksal görsel için farklı bir önbellek anahtarı
+  /// üretir: bu sağlayıcıyla precache edilen giriş, yalnızca aynı
+  /// sağlayıcıyı isteyen widget'larla eşleşir. Düz `AssetImage` kullanan
+  /// widget'lar ilk gösterimde tam çözünürlükte decode eder; toplam bellek
+  /// `main.dart`'taki [ImageCache] sınırlarıyla bağlıdır. Bu yardımcı
+  /// public'tir ki sonraki dalgalar widget'larda aynı sağlayıcıyı kullanıp
+  /// önbellek isabetini sağlayabilsin.
+  static ImageProvider sizedImageProvider(String resolvedPath) {
+    return ResizeImage(
+      AssetImage(resolvedPath),
+      width: _decodeWidthFor(resolvedPath),
+    );
+  }
+
+  static int _decodeWidthFor(String resolvedPath) {
+    if (resolvedPath.contains('/backgrounds/') ||
+        resolvedPath.contains('/splash/') ||
+        resolvedPath.contains('hub_hero') ||
+        resolvedPath.contains('kitchen')) {
+      return backgroundDecodeWidth;
+    }
+    if (resolvedPath.contains('/bugs_hd/') ||
+        resolvedPath.contains('/bugs_new/') ||
+        resolvedPath.contains('/stickers/')) {
+      return stickerDecodeWidth;
+    }
+    return defaultDecodeWidth;
+  }
+
   /// Enqueues sticker + critical UI + font + audio + optional extra asset warm jobs
   /// and starts the time-sliced frame drain. Safe in `FlutterTest`.
   Future<void> start({
@@ -153,6 +231,9 @@ class ZeroJankPreloader {
   }) async {
     frameBudgetMs = frameBudgetMs.clamp(0.25, hardBudgetCapMs);
     maxSliceMs = 0;
+    lastJobMs = 0;
+    maxJobMs = 0;
+    overBudgetJobCount = 0;
 
     if (autoEnqueueStickers) {
       enqueueStickerWarmup();
@@ -181,8 +262,10 @@ class ZeroJankPreloader {
     }
 
     if (isFlutterTest) {
-      // In FlutterTest, drain synchronously within the <2ms budget without
-      // scheduling infinite persistent frame callbacks that block pumpAndSettle.
+      // In FlutterTest, run the queued jobs to real completion without
+      // scheduling any frame callbacks that would block pumpAndSettle.
+      // [_drainTestSafe] measures real elapsed time; it never reports
+      // work as done before the queue is actually empty (S2#30).
       await _drainTestSafe();
       return;
     }
@@ -192,6 +275,8 @@ class ZeroJankPreloader {
 
   /// Precaches critical sticker, banner, and background images into Flutter's
   /// [ImageCache] via [precacheImage], time-sliced across frames.
+  /// Decode hedef boyutla yapılır ([sizedImageProvider], madde 53): HD
+  /// görseller tam çözünürlükte decode edilmez.
   Future<void> precacheCriticalAssets(
     BuildContext context, {
     List<String>? extraImagePaths,
@@ -206,18 +291,38 @@ class ZeroJankPreloader {
 
     for (final rawPath in allPaths) {
       final resolved = resolveAssetPath(rawPath);
-      if (_warmedPaths.contains('precache:$resolved')) continue;
-      _warmedPaths.add('precache:$resolved');
+      final warmedKey = 'precache:$resolved';
+      // Only skip paths that really finished precaching, or whose job is
+      // already queued. The warmed flag is set inside the job, after
+      // precacheImage succeeds — never here, before the work runs.
+      if (_warmedPaths.contains(warmedKey) ||
+          _precachePending.contains(warmedKey)) {
+        continue;
+      }
+      _precachePending.add(warmedKey);
 
       enqueue(() async {
-        if (!context.mounted || isFlutterTest) return;
         try {
-          await precacheImage(
-            AssetImage(resolved),
-            context,
-            onError: (_, _) {},
-          );
-        } catch (_) {}
+          if (!context.mounted || isFlutterTest) return;
+          var failed = false;
+          try {
+            await precacheImage(
+              sizedImageProvider(resolved),
+              context,
+              onError: (_, _) {
+                failed = true;
+              },
+            );
+          } catch (_) {
+            failed = true;
+          }
+          // Mark warmed only on real success: on error (or an unmounted
+          // context / test mode above) the flag stays unset, so a later
+          // call can retry instead of believing the image is cached.
+          if (!failed) _warmedPaths.add(warmedKey);
+        } finally {
+          _precachePending.remove(warmedKey);
+        }
       });
     }
 
@@ -226,9 +331,13 @@ class ZeroJankPreloader {
     }
   }
 
-  /// Builds time-sliced jobs that decode each insect sticker under the frame budget.
-  /// Deduplicates alias paths pointing to the same physical image via [_decodedPhysicalPaths]
-  /// so each physical asset is decoded only once while marking aliases complete.
+  /// Builds time-sliced jobs that warm each insect sticker's bundle bytes
+  /// under the frame budget. The actual decode happens once, later, via
+  /// [precacheImage] in [precacheCriticalAssets] — this step only loads bytes
+  /// so the bundle read never hitches a frame.
+  /// Deduplicates alias paths pointing to the same physical image via
+  /// [_warmedPhysicalPaths] so each physical asset is loaded only once while
+  /// marking aliases complete.
   void enqueueStickerWarmup({int? warmPerTierOverride}) {
     final perTier = warmPerTierOverride ??
         AdaptiveQualityScaler.instance.recommendedPoolWarmPerTier;
@@ -238,10 +347,15 @@ class ZeroJankPreloader {
     for (final tier in InsectTier.values) {
       final path = tier.assetPath;
       final resolved = resolveAssetPath(path);
-      if (_decodedPhysicalPaths.contains(resolved) ||
-          scheduledPhysical.contains(resolved)) {
+      if (_warmedPhysicalPaths.contains(resolved)) {
+        // Bytes really loaded earlier — the alias is complete too.
         _warmedPaths.add(path);
         _warmedPaths.add(resolved);
+        continue;
+      }
+      if (scheduledPhysical.contains(resolved)) {
+        // Job already scheduled in this call; it marks the paths only
+        // after its load succeeds, so mark nothing here.
         continue;
       }
       scheduledPhysical.add(resolved);
@@ -258,11 +372,13 @@ class ZeroJankPreloader {
   }
 
   /// Pre-warms critical voice and SFX audio byte buffers in time-sliced jobs.
+  ///
+  /// Warms from the single canonical folder `assets/audio/` only, via
+  /// [GameAudio.allAssets] (which already includes the `tier*_ses.mp3` clips
+  /// listed in [criticalSoundAssets]). The byte-identical copies under
+  /// `assets/design/sounds/` are NOT warmed separately: warming both
+  /// folders loaded every `tier1..8_ses.mp3` twice.
   void enqueueAudioWarmup() {
-    for (final soundPath in criticalSoundAssets) {
-      final captured = soundPath;
-      enqueue(() => _warmBundleBytesOnly(captured));
-    }
     for (final audioFile in GameAudio.allAssets) {
       final captured = 'assets/audio/$audioFile';
       enqueue(() => _warmBundleBytesOnly(captured));
@@ -289,24 +405,52 @@ class ZeroJankPreloader {
     _lastTouch = DateTime.now();
   }
 
+  /// Enables the drain loop and schedules its first one-shot callback.
+  /// Safe to call repeatedly: [_scheduleNextFrame] never queues a second
+  /// callback while one is outstanding, so restarts cannot double-register.
+  /// Never schedules frames under `flutter test` (see [_drainTestSafe]).
   void _attachScheduler() {
-    if (_schedulerAttached) return;
+    if (isFlutterTest) return;
     _schedulerAttached = true;
+    _scheduleNextFrame();
+  }
+
+  /// Schedules at most one one-shot post-frame callback that runs [_onFrame]
+  /// once, plus the frame that carries it. Each callback re-schedules the
+  /// next one only while work remains, so the loop ends by itself when the
+  /// queue empties and [detachScheduler] ends it immediately by clearing
+  /// [_schedulerAttached]: no callback stays registered for the lifetime
+  /// of the app (S2#29). While a drain is running, no extra callback is
+  /// queued — the drain re-schedules at its end if work remains.
+  void _scheduleNextFrame() {
+    if (!_schedulerAttached ||
+        _frameCallbackPending ||
+        _draining ||
+        isFlutterTest) {
+      return;
+    }
+    _frameCallbackPending = true;
     try {
-      SchedulerBinding.instance.addPersistentFrameCallback(_onFrame);
+      SchedulerBinding.instance.addPostFrameCallback(_onFrame);
       SchedulerBinding.instance.scheduleFrame();
     } catch (_) {
-      _schedulerAttached = false;
+      _frameCallbackPending = false;
     }
   }
 
+  /// Stops the drain loop. Because the loop is a chain of one-shot
+  /// callbacks, stopping means scheduling no more: at most one
+  /// already-queued callback fires once, observes this flag, and returns
+  /// without re-scheduling. A later [start] re-attaches cleanly.
   void detachScheduler() {
-    // Persistent callbacks cannot be removed; flag stops drain work.
     _schedulerAttached = false;
     isWarming = false;
   }
 
   void _onFrame(Duration _) {
+    // This one-shot callback has fired; it is no longer outstanding.
+    // Clear first so every exit path below can re-schedule (or not) cleanly.
+    _frameCallbackPending = false;
     if (!_schedulerAttached || _draining) return;
     if (_work.isEmpty) {
       if (isWarming) {
@@ -320,9 +464,9 @@ class ZeroJankPreloader {
     if (yieldOnTouch) {
       final cool = DateTime.now().difference(_lastTouch) < _touchCooldown;
       if (_pointerDown || cool) {
-        if (!isFlutterTest) {
-          SchedulerBinding.instance.scheduleFrame();
-        }
+        // Retry on a later frame; without re-scheduling, the one-shot
+        // chain would end and queued work would stall.
+        _scheduleNextFrame();
         return;
       }
     }
@@ -330,16 +474,57 @@ class ZeroJankPreloader {
     unawaited(_drainBudget());
   }
 
+  /// Test-only drain, kept strictly separate from the production path:
+  /// production drains via frame callbacks in [_drainBudget]; this method
+  /// runs only from [start] when [isFlutterTest] is true and schedules no
+  /// frames, so it cannot block `pumpAndSettle`.
+  ///
+  /// Honest measurement (S2#30): every queued job actually runs to
+  /// completion, `_doneJobs` counts only jobs that ran, and [lastSliceMs] /
+  /// [maxSliceMs] record the real measured wall-clock time. Completion
+  /// ([progress01] = 1, [onWarmupComplete]) is reported only after the
+  /// queue is actually empty — never before, and never with fabricated
+  /// timings. A failed job counts as attempted, matching [_drainBudget].
   Future<void> _drainTestSafe() async {
-    _work.clear();
-    _doneJobs = _totalJobs;
-    progress01 = 1.0;
-    isWarming = false;
-    lastSliceMs = 0.2;
-    if (maxSliceMs >= 2.0 || maxSliceMs == 0) {
-      maxSliceMs = 0.2;
+    if (!isFlutterTest || _draining) return;
+    _draining = true;
+    isWarming = true;
+    final watch = Stopwatch()..start();
+    final budget = frameBudgetMs.clamp(0.25, hardBudgetCapMs);
+
+    try {
+      while (_work.isNotEmpty) {
+        final job = _work.removeFirst();
+        final jobWatch = Stopwatch()..start();
+        try {
+          await job();
+        } catch (_) {
+          // Failed job: counted as attempted below, like _drainBudget.
+        } finally {
+          jobWatch.stop();
+        }
+        final jobMs = jobWatch.elapsedMicroseconds / 1000.0;
+        lastJobMs = jobMs;
+        if (jobMs > maxJobMs) maxJobMs = jobMs;
+        if (jobMs >= budget) overBudgetJobCount++;
+        _doneJobs++;
+        if (_totalJobs > 0) {
+          progress01 = (_doneJobs / _totalJobs).clamp(0.0, 1.0);
+        }
+      }
+    } finally {
+      watch.stop();
+      final elapsedMs = watch.elapsedMicroseconds / 1000.0;
+      lastSliceMs = elapsedMs;
+      if (elapsedMs > maxSliceMs) maxSliceMs = elapsedMs;
+      _draining = false;
     }
-    onWarmupComplete?.call();
+
+    if (_work.isEmpty) {
+      isWarming = false;
+      progress01 = 1;
+      onWarmupComplete?.call();
+    }
   }
 
   Future<void> _drainBudget() async {
@@ -356,11 +541,33 @@ class ZeroJankPreloader {
           break;
         }
         final job = _work.removeFirst();
+        // Per-job timing: the budget check above only runs BETWEEN jobs, so
+        // one slow job can exceed the whole frame budget on its own. Measure
+        // each job and flag overruns separately. The flag is observability
+        // only: an over-budget job is never skipped, cancelled, or deferred
+        // mid-flight — it always runs to completion, and remaining jobs are
+        // still deferred to the next frame by the check above.
+        final jobWatch = Stopwatch()..start();
         try {
           await job();
         } catch (e, st) {
           if (!isFlutterTest && kDebugMode) {
             debugPrint('[ZeroJankPreloader] job skipped: $e\n$st');
+          }
+        } finally {
+          jobWatch.stop();
+        }
+        final jobMs = jobWatch.elapsedMicroseconds / 1000.0;
+        lastJobMs = jobMs;
+        if (jobMs > maxJobMs) maxJobMs = jobMs;
+        if (jobMs >= budget) {
+          overBudgetJobCount++;
+          if (!isFlutterTest && kDebugMode) {
+            debugPrint(
+              '[ZeroJankPreloader] job exceeded frame budget: '
+              '${jobMs.toStringAsFixed(2)}ms >= ${budget.toStringAsFixed(2)}ms '
+              '(over-budget jobs: $overBudgetJobCount)',
+            );
           }
         }
         _doneJobs++;
@@ -376,8 +583,10 @@ class ZeroJankPreloader {
       _draining = false;
     }
 
-    if (_work.isNotEmpty && !isFlutterTest && _schedulerAttached) {
-      SchedulerBinding.instance.scheduleFrame();
+    if (_work.isNotEmpty) {
+      // One-shot chain: queue the next frame callback instead of relying
+      // on a persistent callback. No-op when detached or under test.
+      _scheduleNextFrame();
     } else if (_work.isEmpty) {
       isWarming = false;
       progress01 = 1;
@@ -389,49 +598,52 @@ class ZeroJankPreloader {
     if (isFlutterTest) return;
     final resolved = resolveAssetPath(assetPath);
     if (_warmedPaths.contains('bytes:$resolved')) return;
-    _warmedPaths.add('bytes:$resolved');
     try {
       await rootBundle.load(resolved);
+      // Mark warmed only after the load really succeeded; on failure the
+      // flag stays unset so a later warmup can retry (S2#31).
+      _warmedPaths.add('bytes:$resolved');
     } catch (_) {}
   }
 
+  /// Warms an image asset's bundle bytes (load only, no decode).
+  ///
+  /// Decoding happens exactly once, via [precacheImage] in
+  /// [precacheCriticalAssets], which stores the decoded image in Flutter's
+  /// [ImageCache]. This method deliberately does NOT call
+  /// `instantiateImageCodec`: the decoded frame was immediately disposed, so
+  /// it only doubled decode work for every image that precaching decodes
+  /// again. Loading the bytes here still warms the bundle read itself.
+  /// The warmed flags are set only after a load succeeds (S2#31).
   Future<void> _warmAssetBytes(String assetPath) async {
     final resolved = resolveAssetPath(assetPath);
-    _warmedPaths.add(assetPath);
-    _warmedPaths.add(resolved);
-    if (_decodedPhysicalPaths.contains(resolved)) {
-      // Physical image already decoded — mark alias completed without re-decoding.
+    if (_warmedPhysicalPaths.contains(resolved)) {
+      // Physical image bytes already loaded — mark alias completed without
+      // loading them again.
+      _warmedPaths.add(assetPath);
+      _warmedPaths.add(resolved);
       return;
     }
-    _decodedPhysicalPaths.add(resolved);
+    // Test mode performs no bundle load, so nothing is marked warmed here;
+    // the job still counts as attempted by the test drain.
     if (isFlutterTest) return;
+    // Jobs run strictly one at a time from the drain queue, so no second
+    // load of the same path can start while this one is in flight; the
+    // warmed flags can safely be set only after the load succeeds.
     try {
-      final data = await rootBundle.load(resolved);
-      final bytes = data.buffer.asUint8List(
-        data.offsetInBytes,
-        data.lengthInBytes,
-      );
-      final codec = await ui.instantiateImageCodec(
-        bytes,
-        targetWidth: 256,
-      );
-      final frame = await codec.getNextFrame();
-      frame.image.dispose();
-      codec.dispose();
+      await rootBundle.load(resolved);
+      _warmedPhysicalPaths.add(resolved);
+      _warmedPaths.add(assetPath);
+      _warmedPaths.add(resolved);
     } catch (_) {
-      // Fallback if original logical path differs from alias.
-      if (resolved != assetPath && !_decodedPhysicalPaths.contains(assetPath)) {
-        _decodedPhysicalPaths.add(assetPath);
+      // Fallback if original logical path differs from alias. The fallback
+      // path is marked only if its own load succeeds; if both loads fail,
+      // no flag is set and a later warmup can retry (S2#31).
+      if (resolved != assetPath && !_warmedPhysicalPaths.contains(assetPath)) {
         try {
-          final data = await rootBundle.load(assetPath);
-          final bytes = data.buffer.asUint8List(
-            data.offsetInBytes,
-            data.lengthInBytes,
-          );
-          final codec = await ui.instantiateImageCodec(bytes, targetWidth: 256);
-          final frame = await codec.getNextFrame();
-          frame.image.dispose();
-          codec.dispose();
+          await rootBundle.load(assetPath);
+          _warmedPhysicalPaths.add(assetPath);
+          _warmedPaths.add(assetPath);
         } catch (_) {}
       }
     }

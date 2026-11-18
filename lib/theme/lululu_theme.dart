@@ -45,7 +45,28 @@ abstract final class LululuColors {
   static const ink = liquidGold;
 
   /// Secondary body / captions.
+  ///
+  /// WCAG AA hesabı (parlaklık formülü, 2026-11-18): `mutedTitanium`
+  /// (#8E9CAE, L=0.326) koyu zeminlerde 4.70–7.05 ile AA normal metni
+  /// (4.5) geçerken açık zeminlerde kalıyor (paper 2.79, paperSoft 2.58,
+  /// cream 2.62 — büyük metin eşiği 3.0'ın bile altında). Tek renk hem
+  /// paper hem carbonVoid karşısında 4.5'i sağlayamaz (gerekli L
+  /// aralıkları kesişmiyor: paper için L≤0.183, carbonVoid için L≥0.190).
+  /// Bu jeton PAYLAŞILDIĞI için koyultulmadı: koyu ekranlar oyunun
+  /// çoğunluğu ve koyultma onları 4.5'in altına düşürürdü. Kalıcı çözüm:
+  /// zemine özel ayrı body jetonları + açık zeminli ekranlardaki
+  /// doğrudan `mutedTitanium` metin kullanımlarının göçü (ayrı iş).
   static const body = mutedTitanium;
+
+  /// Koyu zeminlerdeki gövde metni — [body]/[mutedTitanium] ile aynı
+  /// değer (#8E9CAE). Koyu varsayılan; açık zeminlerde [bodyOnLight].
+  static const bodyOnDark = mutedTitanium;
+
+  /// Açık zeminlerdeki (paper/paperSoft/cream) gövde metni.
+  ///
+  /// #68727F (L=0.165): açık zeminlerde 4.51–4.88 ile WCAG AA normal
+  /// metni (4.5) geçer. Koyu zeminlerde kullanma — orada [bodyOnDark].
+  static const bodyOnLight = Color(0xFF68727F);
 
   /// Light home canvas (user-requested white hub).
   static const paper = Color(0xFFFFFFFF);
@@ -111,6 +132,51 @@ abstract final class LululuTypography {
     'sans-serif',
   ];
 
+  static const List<String> accentFallback = [
+    'Bangers',
+    'Baloo 2',
+    'Nunito',
+    'Exo 2',
+  ];
+
+  /// Yazı tipi çekme davranışını ayarlar. Varsayılan çevrimdışıdır
+  /// ([allowRuntimeFetching] `false`): gömülü aileler (`pubspec.yaml`:
+  /// Fredoka, Baloo 2, Bangers, Nunito, Exo 2) kullanılır, çevrimiçi çekme
+  /// yapılmaz. `buildLululuTheme()` her çağrıda bunu uygular, böylece tema
+  /// kurulduktan sonra çalışan doğrudan `GoogleFonts` çağrıları da aynı
+  /// varsayılanı görür.
+  static void configureFonts({bool allowRuntimeFetching = false}) {
+    GoogleFonts.config.allowRuntimeFetching = allowRuntimeFetching;
+  }
+
+  /// Tüm yardımcıların paylaştığı geri dönüş anahtarı: çevrimiçi çekme
+  /// kapalıyken gömülü aileyle `TextStyle` döndürülür.
+  static bool get _useBundledFonts =>
+      !GoogleFonts.config.allowRuntimeFetching;
+
+  /// Gömülü aileyle tek geri dönüş dalı — dört yardımcı da bunu kullanır.
+  static TextStyle _bundled({
+    required String fontFamily,
+    required List<String> fontFamilyFallback,
+    required double fontSize,
+    required FontWeight fontWeight,
+    required Color color,
+    double? height,
+    double? letterSpacing,
+    List<Shadow>? shadows,
+  }) {
+    return TextStyle(
+      fontFamily: fontFamily,
+      fontFamilyFallback: fontFamilyFallback,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      color: color,
+      height: height,
+      letterSpacing: letterSpacing,
+      shadows: shadows,
+    );
+  }
+
   /// Display style (`--font-display: 'Fredoka'` with `'Baloo 2'` fallback).
   static TextStyle display({
     double fontSize = 24,
@@ -120,8 +186,8 @@ abstract final class LululuTypography {
     double? letterSpacing,
     List<Shadow>? shadows,
   }) {
-    if (!GoogleFonts.config.allowRuntimeFetching) {
-      return TextStyle(
+    if (_useBundledFonts) {
+      return _bundled(
         fontFamily: fontDisplayAlt,
         fontFamilyFallback: displayFallback,
         fontSize: fontSize,
@@ -150,8 +216,8 @@ abstract final class LululuTypography {
     double? height = 1.45,
     double? letterSpacing,
   }) {
-    if (!GoogleFonts.config.allowRuntimeFetching) {
-      return TextStyle(
+    if (_useBundledFonts) {
+      return _bundled(
         fontFamily: fontBody,
         fontFamilyFallback: bodyFallback,
         fontSize: fontSize,
@@ -177,12 +243,22 @@ abstract final class LululuTypography {
     Color color = LululuColors.ink,
     double? height = 1.12,
   }) {
+    if (_useBundledFonts) {
+      return _bundled(
+        fontFamily: fontDisplayAlt,
+        fontFamilyFallback: displayFallback,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        color: color,
+        height: height,
+      );
+    }
     return GoogleFonts.baloo2(
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
       height: height,
-    );
+    ).copyWith(fontFamilyFallback: displayFallback);
   }
 
   /// Bangers arcade combo/title helper.
@@ -192,12 +268,23 @@ abstract final class LululuTypography {
     double? letterSpacing = 0.8,
     List<Shadow>? shadows,
   }) {
+    if (_useBundledFonts) {
+      return _bundled(
+        fontFamily: fontAccent,
+        fontFamilyFallback: accentFallback,
+        fontSize: fontSize,
+        fontWeight: FontWeight.w400,
+        color: color,
+        letterSpacing: letterSpacing,
+        shadows: shadows,
+      );
+    }
     return GoogleFonts.bangers(
       fontSize: fontSize,
       color: color,
       letterSpacing: letterSpacing,
       shadows: shadows,
-    );
+    ).copyWith(fontFamilyFallback: accentFallback);
   }
 }
 
@@ -413,6 +500,11 @@ abstract final class LululuKenneyAssets {
 }
 
 ThemeData buildLululuTheme() {
+  // Varsayılan: çevrimiçi yazı tipi çekme kapalı; gömülü aileler kullanılır.
+  // Tema ilk ekran çizilmeden önce kurulduğu için bu ayar, doğrudan
+  // GoogleFonts çağrılarının da varsayılanını belirler (paket, çekme
+  // kapalıyken gömülü aile adına geri döner; bkz. LululuTypography).
+  LululuTypography.configureFonts();
   const scheme = ColorScheme.dark(
     surface: LululuColors.spaceNavy,
     onSurface: LululuColors.ink,

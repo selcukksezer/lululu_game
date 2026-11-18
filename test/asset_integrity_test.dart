@@ -112,8 +112,8 @@ void main() {
     );
   });
 
-  group('2. Audio Integrity: tier1..13, voice_tier1..13 & SFX', () {
-    test('tier1_ses.mp3 .. tier13_ses.mp3 exist in assets/audio and assets/design/sounds (> 0 bytes)', () {
+  group('2. Audio Integrity: tier1..13, voice_tier1..13 & SFX (canonical assets/audio/ only)', () {
+    test('tier1_ses.mp3 .. tier13_ses.mp3 exist in assets/audio (> 0 bytes)', () {
       for (int tier = 1; tier <= 13; tier++) {
         final sesName = GameAudio.designSoundForTier(tier);
         expect(sesName, 'tier${tier}_ses.mp3');
@@ -121,14 +121,10 @@ void main() {
           'assets/audio/$sesName',
           context: 'Tier $tier audio/tier${tier}_ses.mp3',
         );
-        expectValidAsset(
-          'assets/design/sounds/$sesName',
-          context: 'Tier $tier design/sounds/tier${tier}_ses.mp3',
-        );
       }
     });
 
-    test('voice_tier1.mp3 .. voice_tier13.mp3 exist in assets/audio and assets/design/sounds (> 0 bytes)', () {
+    test('voice_tier1.mp3 .. voice_tier13.mp3 exist in assets/audio (> 0 bytes)', () {
       for (int tier = 1; tier <= 13; tier++) {
         final voiceName = GameAudio.voiceForTier(tier);
         expect(voiceName, 'voice_tier$tier.mp3');
@@ -136,23 +132,49 @@ void main() {
           'assets/audio/$voiceName',
           context: 'Tier $tier audio/voice_tier$tier.mp3',
         );
-        expectValidAsset(
-          'assets/design/sounds/$voiceName',
-          context: 'Tier $tier design/sounds/voice_tier$tier.mp3',
-        );
       }
     });
 
-    test('all SFX and voice clips in GameAudio.allAssets exist and are > 0 bytes', () {
+    test('all SFX and voice clips in GameAudio.allAssets exist in assets/audio and are > 0 bytes', () {
       expect(GameAudio.allAssets.length, greaterThanOrEqualTo(43));
       for (final fileName in GameAudio.allAssets) {
         expectValidAsset(
           'assets/audio/$fileName',
           context: 'GameAudio.allAssets in assets/audio',
         );
+      }
+    });
+
+    test('GameAudio entries stay bare filenames and the 7 viral one-shots live in canonical assets/audio/ (madde 17)', () {
+      // Mac merge rule: constants are BARE filenames, never full paths.
+      // AudioManager._normalizeAssetPath joins them with `audio/`; only
+      // the canonical `assets/audio/` folder is asserted here — the
+      // legacy duplicates were deleted in the madde 17 cleanup
+      // (see assets/audio/ASSETS_NOTE.md).
+      for (final fileName in GameAudio.allAssets) {
+        expect(
+          fileName.contains('/'),
+          isFalse,
+          reason: 'GameAudio entry must stay a bare filename: $fileName',
+        );
+      }
+      expect(
+        GameAudio.viralOneShots.toSet(),
+        <String>{
+          'mezarina_siktigim.mp3',
+          'diva_sinyal.mp3',
+          'diva_yasla.mp3',
+          'lululu_nakarat.mp3',
+          'duktur.mp3',
+          'kanka.mp3',
+          'husur_aday.mp3',
+        },
+      );
+      expect(GameAudio.viralOneShots.length, 7);
+      for (final fileName in GameAudio.viralOneShots) {
         expectValidAsset(
-          'assets/design/sounds/$fileName',
-          context: 'GameAudio.allAssets in assets/design/sounds',
+          'assets/audio/$fileName',
+          context: 'viral one-shot in canonical assets/audio',
         );
       }
     });
@@ -167,7 +189,7 @@ void main() {
           context: 'InsectTier.${insect.name}.assetPath',
         );
         expectValidAsset(
-          'assets/bugs/tier${insect.tier}_hd.webp',
+          'assets/bugs/tier${insect.tier}_hd${insect.tier == 5 ? '.webp' : '.png'}',
           context: 'WebP bug sticker tier ${insect.tier}',
         );
         expectValidAsset(
@@ -244,6 +266,9 @@ void main() {
       for (final p in ZeroJankPreloader.criticalFontAssets) {
         expectValidAsset(p, context: 'ZeroJankPreloader.criticalFontAssets');
       }
+      // NOTE: this audits the preloader manifest verbatim; the manifest
+      // lists canonical `assets/audio/` paths (zero_jank_preloader.dart)
+      // and nothing else is asserted here.
       for (final p in ZeroJankPreloader.criticalSoundAssets) {
         expectValidAsset(p, context: 'ZeroJankPreloader.criticalSoundAssets');
       }
