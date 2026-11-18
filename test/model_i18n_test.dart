@@ -24,9 +24,9 @@ const _modeTitlesEn = <LululuGameModeId, String>{
   LululuGameModeId.grid2048: '2048 Grid',
   LululuGameModeId.bubblePop: 'Balloon Pop',
   LululuGameModeId.match3: 'Match 3',
-  LululuGameModeId.connectBlast: 'Connect Blast',
+  LululuGameModeId.connectBlast: 'Link Pop',
   LululuGameModeId.stackDrop: 'Stack Drop',
-  LululuGameModeId.terlikTap: 'Terlik Tap',
+  LululuGameModeId.terlikTap: 'Slipper Tap',
   LululuGameModeId.yuvaDefense: 'Nest Defense',
   LululuGameModeId.osmantus: 'Osmantuş',
   LululuGameModeId.screamBug: 'Scream Bug',
@@ -501,17 +501,39 @@ void main() {
 
     test('iki dilde aynen kalan özel adlar EN localede korunur', () {
       // Başlık: özel ad / zaten İngilizce olanlar aynen kalır.
+      // `terlikTap` burada DEĞİLDİR: kanonik `titleEn` 'Slipper Tap'
+      // olup TR katalog başlığı 'Terlik Tap'ten farklıdır (aşağıda
+      // ayrıca kilitlenir).
       for (final id in [
         LululuGameModeId.suikaArena,
         LululuGameModeId.grid2048,
         LululuGameModeId.match3,
-        LululuGameModeId.terlikTap,
         LululuGameModeId.osmantus,
         LululuGameModeId.makarayiz,
       ]) {
         final mode = LululuGameMode.byId(id);
         expect(mode.titleFor(_en), mode.title, reason: '$id title');
       }
+      // Çevrilen başlıklar: kanonik `titleEn` TR katalog başlığından
+      // farklıdır; katalogdaki TR `title` alanı aynen kalır
+      // (lululu_game_mode.dart:302 `title: 'Terlik Tap'` TR alanıdır,
+      // EN karşılığı değildir).
+      expect(
+        LululuGameMode.byId(LululuGameModeId.connectBlast).title,
+        'Bağla Patlat',
+      );
+      expect(
+        LululuGameMode.byId(LululuGameModeId.connectBlast).titleFor(_en),
+        'Link Pop',
+      );
+      expect(
+        LululuGameMode.byId(LululuGameModeId.terlikTap).title,
+        'Terlik Tap',
+      );
+      expect(
+        LululuGameMode.byId(LululuGameModeId.terlikTap).titleFor(_en),
+        'Slipper Tap',
+      );
       // Rozet: HOT / 2048 / BONUS / NEON iki dilde de aynı yazılır.
       for (final id in [
         LululuGameModeId.suikaArena,

@@ -179,8 +179,6 @@ class DailyChallengeService extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get headline => 'Bugün $modeLabel · $targetScore puan';
-
   Duration get timeLeft {
     final now = DateTime.now();
     final end = DateTime(now.year, now.month, now.day).add(

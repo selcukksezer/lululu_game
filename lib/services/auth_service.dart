@@ -19,6 +19,7 @@ import 'daily_challenge_service.dart';
 import 'energy_service.dart';
 import 'firebase_bootstrap.dart';
 import 'leaderboard_service.dart';
+import 'online_notify_service.dart';
 import 'progress_manager.dart';
 
 enum AuthProviderKind { guest, apple, google, local, email }
@@ -1976,6 +1977,17 @@ class AuthService extends ChangeNotifier {
         'BugVideoService',
         BugVideoService.instance.clearLocalData,
       );
+      // Online "haberdar et" tercihi: servis bildirim göndermez ama
+      // tercihi kalıcı saklar; hesap silmede hem bellek-içi durum
+      // sıfırlanır hem de kalıcı anahtar kaldırılır (yeni hesap aynı
+      // oturumda eski tercihi devralmaz). Anahtar adı
+      // OnlineNotifyService._prefsKey ile aynı değerdir (o sabit
+      // özeldir; değişirse burası da güncellenmelidir).
+      await runCleanup('OnlineNotifyService', () async {
+        await OnlineNotifyService.instance.setSubscribed(false);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('lululu.online_notify');
+      });
     } finally {
       await runCleanup(
         'CloudSyncService.enableOnlineWhenSignedIn',

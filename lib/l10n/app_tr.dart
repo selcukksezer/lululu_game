@@ -221,7 +221,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get onlineNotifySignupSnack =>
-      'Kaydın alındı! Online mod açılır açılmaz sana haber vereceğiz.';
+      'Tercihin kaydedildi! Online mod açılır açılmaz burada görünecek.';
 
   @override
   String get seeAllArrow => 'Tümü →';
@@ -3156,6 +3156,9 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String dailyChallengeClaimedSnack(int coins) =>
       'Günlük challenge ödülü alındı: +$coins coin!';
+  @override
+  String dailyChallengeHeadline(String modeLabel, int targetScore) =>
+      'Bugün $modeLabel · $targetScore puan';
 
   // --- S7 (koordinatör takibi): tur sonu görev-tamamlanma bildirimi ---
   @override

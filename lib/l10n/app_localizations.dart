@@ -1445,6 +1445,11 @@ abstract class AppLocalizations {
   String get campaignHubSubtitle;
   String dailyChallengeClaimedSnack(int coins);
 
+  /// Günlük challenge kartı alt satırı: bugünün modu + hedef puan.
+  /// `modeLabel` modun kalıcı görünen adıdır (yerelleştirilmez),
+  /// yalnız şablon dile göre değişir.
+  String dailyChallengeHeadline(String modeLabel, int targetScore);
+
   // --- S7 (koordinatör takibi): tur sonu görev-tamamlanma bildirimi ---
   String taskCompletedSnack(String taskTitle);
 }

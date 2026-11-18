@@ -2093,7 +2093,10 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          daily.headline,
+                          l10n.dailyChallengeHeadline(
+                            daily.modeLabel,
+                            daily.targetScore,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.nunito(

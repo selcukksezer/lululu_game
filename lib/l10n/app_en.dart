@@ -216,7 +216,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onlineNotifySignupSnack =>
-      "You're signed up! We'll let you know as soon as Online mode opens.";
+      'Preference saved! Online mode will appear here as soon as it opens.';
 
   @override
   String get seeAllArrow => 'See all →';
@@ -3161,6 +3161,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String dailyChallengeClaimedSnack(int coins) =>
       'Daily challenge reward claimed: +$coins coins!';
+  @override
+  String dailyChallengeHeadline(String modeLabel, int targetScore) =>
+      'Today $modeLabel · $targetScore points';
 
   // --- S7 (koordinatör takibi): tur sonu görev-tamamlanma bildirimi ---
   @override

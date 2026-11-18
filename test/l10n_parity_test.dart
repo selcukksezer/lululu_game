@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 844 getter + 181 metot = 1025 anahtar,
+// açıkça sayılır (soyut sınıftaki 844 getter + 182 metot = 1026 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -1952,6 +1952,7 @@ void main() {
         'levelLockedMessage': l10n.levelLockedMessage(3),
         'taskRewardClaimedSnack': l10n.taskRewardClaimedSnack('X'),
         'dailyChallengeClaimedSnack': l10n.dailyChallengeClaimedSnack(3),
+        'dailyChallengeHeadline': l10n.dailyChallengeHeadline('X', 3),
         'taskCompletedSnack': l10n.taskCompletedSnack('X'),
       };
 
@@ -2150,6 +2151,7 @@ void main() {
         'levelLockedMessage': l10n.levelLockedMessage(3),
         'taskRewardClaimedSnack': l10n.taskRewardClaimedSnack('X'),
         'dailyChallengeClaimedSnack': l10n.dailyChallengeClaimedSnack(3),
+        'dailyChallengeHeadline': l10n.dailyChallengeHeadline('X', 3),
         'taskCompletedSnack': l10n.taskCompletedSnack('X'),
       };
 
@@ -2210,7 +2212,7 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 1025 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1026 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
@@ -2218,13 +2220,13 @@ void main() {
 
     expect(en.length, 844);
     expect(tr.length, 844);
-    expect(enMethods.length, 181);
-    expect(trMethods.length, 181);
+    expect(enMethods.length, 182);
+    expect(trMethods.length, 182);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1025);
+    expect(en.length + enMethods.length, 1026);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });
