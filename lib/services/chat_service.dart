@@ -592,8 +592,9 @@ class ChatService extends ChangeNotifier {
   /// Hesap silme için yerel sohbet verisini temizler (hesap-silme,
   /// yerel-temizlik): mesajlar, kanal önbellekleri, okunmamış sayaçlar
   /// ve görülen zamanlar (kalıcı anahtarları dahil) silinir; bulut
-  /// abonelikleri kapatılır. Bulut mesajları silinmez (sunucu tarafı
-  /// silme işi [AuthService.deleteAccount] dokümantasyonundadır).
+  /// abonelikleri kapatılır. Bulut mesajları
+  /// [deleteMessagesByAuthor] ile silinir (AuthService.deleteAccount
+  /// çağırır).
   Future<void> clearLocalData() async {
     await _cloudSub?.cancel();
     _cloudSub = null;
@@ -618,6 +619,36 @@ class ChatService extends ChangeNotifier {
     _loaded = false;
     _streamController.add(messages);
     notifyListeners();
+  }
+
+  /// Hesap silme için bulut sohbet mesajlarını Firestore'dan siler:
+  /// bütün kanallardaki (`lobby`, `clan`, `vs` + eski `vsChallenge`
+  /// adı) `authorId`/`senderId` değeri [uid] olan mesajlar. Kural
+  /// gereği yalnız mesajın göndereni silebilir (bkz. firestore.rules).
+  /// Firebase hazır değilse hiçbir şey yapmaz.
+  Future<void> deleteMessagesByAuthor(String uid) async {
+    if (!FirebaseBootstrap.isAvailable) return;
+    final db = FirebaseFirestore.instance;
+    final channelIds = <String>{
+      for (final c in ChatChannel.values) c.id,
+      'vsChallenge',
+    };
+    for (final channelId in channelIds) {
+      for (final field in const ['authorId', 'senderId']) {
+        final snap = await db
+            .collection('chat_channels')
+            .doc(channelId)
+            .collection('messages')
+            .where(field, isEqualTo: uid)
+            .get();
+        if (snap.docs.isEmpty) continue;
+        final batch = db.batch();
+        for (final doc in snap.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      }
+    }
   }
 
   List<ChatMessage> _defaultFeedFor(ChatChannel channel) {

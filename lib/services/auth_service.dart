@@ -1453,6 +1453,12 @@ class AuthService extends ChangeNotifier {
   ///
   /// Oturum açık değilse veya oturum misafir oturumuysa [StateError] fırlatır
   /// (misafirlerin silinecek hesap kaydı yoktur).
+  ///
+  /// Bulut tarafı: Firebase derlemesinde [deleteAccount] önce
+  /// [_deleteCloudAccount] ile Firestore profil/skor belgelerini,
+  /// sohbet mesajlarını ve Firebase Auth kullanıcısını siler; sonra
+  /// yerel kasayı temizler. `requires-recent-login` durumunda yerel
+  /// veri korunur — kullanıcı yeniden giriş yapıp tekrar dener.
   Future<void> deleteAccount() async {
     await ensureLoaded();
     final current = _user;
@@ -1462,6 +1468,9 @@ class AuthService extends ChangeNotifier {
     if (current.isGuest) {
       throw StateError('Misafir oturumunda silinecek hesap yok');
     }
+    // Bulut temizliği yerel silmeden ÖNCE: yeniden giriş gerekirse
+    // yerel veri korunur, kullanıcı tekrar deneyebilir.
+    await _deleteCloudAccount();
     final usernameKey = current.username;
     final accountId = current.id;
     final vaultKeys = _accounts.entries
@@ -1544,6 +1553,50 @@ class AuthService extends ChangeNotifier {
     if (failedCleanups.isNotEmpty) {
       debugPrint(
         '[lululu] deleteAccount: yerel temizlikte başarısız olanlar: ${failedCleanups.join('; ')}',
+      );
+    }
+  }
+
+  /// Firebase tarafı hesap silme (Google Play Kullanıcı Verisi
+  /// politikası: hesap silme, hesapla ilişkili tüm veriyi silmelidir).
+  ///
+  /// Sıra: Firestore profil/skor belgeleri → sohbet mesajları →
+  /// Firebase Auth kullanıcısı. Belge/mesaj silme başarısız olursa
+  /// (kural/ağ) loglanır ama hesap silme engellenmez — yerel kasa ve
+  /// Auth silme yine yapılır. `requires-recent-login` durumunda ise
+  /// [StateError] fırlatılır; çağrı noktası yerel veriyi silmeden
+  /// durur, kullanıcı yeniden giriş yapıp tekrar dener.
+  ///
+  /// Yerel-derlemede (Firebase hazır değil) veya Firebase oturumu
+  /// yoksa hiçbir şey yapmaz.
+  Future<void> _deleteCloudAccount() async {
+    if (!FirebaseBootstrap.ready) return;
+    final fbUser = fb.FirebaseAuth.instance.currentUser;
+    if (fbUser == null) return;
+    final uid = fbUser.uid;
+    try {
+      await CloudSyncService.instance.deleteCloudDataForUid(uid);
+    } catch (e) {
+      debugPrint('[lululu] deleteAccount: bulut profili silinemedi: $e');
+    }
+    try {
+      await ChatService.instance.deleteMessagesByAuthor(uid);
+    } catch (e) {
+      debugPrint(
+        '[lululu] deleteAccount: bulut sohbet mesajları silinemedi: $e',
+      );
+    }
+    try {
+      await fbUser.delete();
+    } on fb.FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        throw StateError(
+          'Güvenlik için yeniden giriş yapmanız gerekiyor — çıkış yapıp '
+          'tekrar giriş yaptıktan sonra hesap silmeyi yeniden deneyin.',
+        );
+      }
+      debugPrint(
+        '[lululu] deleteAccount: Firebase Auth silme hatası: ${e.code}',
       );
     }
   }

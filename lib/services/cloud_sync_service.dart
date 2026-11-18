@@ -879,6 +879,25 @@ class CloudSyncService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hesap silme için bulut profil/skor belgelerini Firestore'dan siler:
+  /// `players/{uid}`, `users/{uid}` ve `scores/{uid}/modes/*`.
+  /// Kural gereği yalnız belgenin sahibi silebilir
+  /// (bkz. firestore.rules). Firebase hazır değilse hiçbir şey yapmaz;
+  /// belge yoksa silme sessizce geçer (batch delete idempotent'tır).
+  Future<void> deleteCloudDataForUid(String uid) async {
+    if (!FirebaseBootstrap.ready) return;
+    final db = FirebaseFirestore.instance;
+    final modeDocs =
+        await db.collection('scores').doc(uid).collection('modes').get();
+    final batch = db.batch();
+    for (final doc in modeDocs.docs) {
+      batch.delete(doc.reference);
+    }
+    batch.delete(db.collection('players').doc(uid));
+    batch.delete(db.collection('users').doc(uid));
+    await batch.commit();
+  }
+
   Future<void> _persistQueue({String? addedTag}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_queueKey, List<String>.from(pending));

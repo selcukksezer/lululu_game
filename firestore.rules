@@ -392,14 +392,16 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUserCreate(userId);
       allow update: if isOwner(userId) && isValidUserUpdate(userId);
-      allow delete: if false;
+      // Hesap silme (Play Kullanıcı Verisi politikası): sahip kendi
+      // belgesini silebilir; başkasının belgesi silinemez.
+      allow delete: if isOwner(userId);
     }
 
     match /players/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUserCreate(userId);
       allow update: if isOwner(userId) && isValidUserUpdate(userId);
-      allow delete: if false;
+      allow delete: if isOwner(userId);
     }
 
     // 2. Anti-Cheat Leaderboards
@@ -407,7 +409,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidScoreDoc(userId, modeId);
       allow update: if isOwner(userId) && isValidScoreUpdate(userId, modeId);
-      allow delete: if false;
+      allow delete: if isOwner(userId);
     }
 
     match /leaderboard_entries/{entryId} {
@@ -421,7 +423,11 @@ service cloud.firestore {
                       (('playerId' in resource.data) && resource.data.playerId == request.auth.uid)
                     ) &&
                     isValidScoreUpdate(request.auth.uid, '');
-      allow delete: if false;
+      allow delete: if isAuthenticated() &&
+                    (
+                      (('uid' in resource.data) && resource.data.uid == request.auth.uid) ||
+                      (('playerId' in resource.data) && resource.data.playerId == request.auth.uid)
+                    );
     }
 
     // Support for CloudSyncService collectionGroup('modes') & per-user score subcollection
@@ -429,7 +435,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidScoreDoc(userId, modeId);
       allow update: if isOwner(userId) && isValidScoreUpdate(userId, modeId);
-      allow delete: if false;
+      allow delete: if isOwner(userId);
     }
 
     match /{path=**}/modes/{modeId} {
