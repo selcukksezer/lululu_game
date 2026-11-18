@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../screens/result_screen.dart';
 import 'achievement_pass_service.dart';
 import 'game_telemetry_service.dart';
@@ -63,6 +64,19 @@ Future<void> _runSettleStep(
   }
 }
 
+/// S7 — görev kimliğinden görev başlığına: Görevler ekranındaki
+/// başlıklarla aynı l10n anahtarları (`tasks_screen.dart::_taskTitle`
+/// ile birebir). Bilinmeyen kimlikte ham kimlik döner (çekirdek yalnız
+/// hedefi olan kimlikleri tamamlanmış sayar; pratikte ulaşılmaz).
+String _taskTitleFor(AppLocalizations l10n, String taskId) =>
+    switch (taskId) {
+      'play' => l10n.taskPlay3Games,
+      'merge' => l10n.taskMerge5,
+      'video' => l10n.taskWatch1Video,
+      'combo' => l10n.taskCombo4,
+      _ => taskId,
+    };
+
 /// Tek tur-bitirme noktası (S1#49).
 ///
 /// Eskiden ~11 ayrı `_presentResult` / `_triggerVictory` / `_triggerDefeat`
@@ -77,8 +91,9 @@ Future<void> _runSettleStep(
 /// 2. İlerleme: [modeScoreId] verilirse `recordModeScore` yazılır.
 /// 3. Liderlik: [leaderboardMode] verilirse `submitScore` gönderilir;
 ///    [leaderboardOnlyIfPositiveScore] `true` ise yalnız `score > 0` iken.
-/// 4. Görev: [recordPlayTask] `true` ise `recordTaskProgress('play')`
-///    kaydedilir.
+/// 4. Görev: [recordPlayTask] `true` ise
+///    `recordTaskProgressDetailed('play')` kaydedilir; bu çağrıyla yeni
+///    tamamlanan görev kimliği saklanır (7. adımda bildirilir).
 /// 5. Başarım/pass (K1a): `modeScoreId ?? leaderboardMode` kimliğiyle
 ///    `evaluateModeScore` çağrılır (mod→başarım eşlemesi servis
 ///    tarafındadır; `grid2048` gibi takma adlar `normalizeModeId` ile
@@ -89,6 +104,10 @@ Future<void> _runSettleStep(
 ///    da bu adımdan geçer.
 /// 6. Sonuç ekranı: [showGameResult] ile gösterilir; dönüş değeri
 ///    "TEKRAR OYNA" seçildiyse `true`'dur.
+/// 7. Bildirim (S7): sonuç ekranı kapandıktan sonra, bu turda yeni
+///    tamamlanan görev varsa görev başlıklı snackbar gösterilir.
+///    Ödül burada ödenmez; Görevler ekranından alınır. Bildirim
+///    hata verse bile dönüş değeri bozulmaz.
 ///
 /// TEK-ÖDEME SÖZLEŞMESİ (korunur): ödeme bu yardımcı (çağırıcı tarafı)
 /// tarafından yapılır; sonuç ekranı `coinsAwardedByCaller` varsayılanı
@@ -186,6 +205,10 @@ Future<bool> finishRun(
     return false;
   }
 
+  // S7: bu turda yeni tamamlanan görev kimlikleri (en fazla bir;
+  // playTask adımında dolar, sonuç ekranı kapandıktan sonra bildirilir).
+  var newlyCompletedTasks = <String>[];
+
   Future<void> settleStep() async {
     try {
       await _runSettleStep('payment', () async {
@@ -211,7 +234,8 @@ Future<bool> finishRun(
       }
       if (recordPlayTask) {
         await _runSettleStep('playTask', () async {
-          await pm.recordTaskProgress('play');
+          newlyCompletedTasks =
+              await pm.recordTaskProgressDetailed('play');
         });
       }
       // K1a — başarım/pass adımı (Y1 yalıtımlı): hata verse bile
@@ -247,15 +271,16 @@ Future<bool> finishRun(
     }
   }
 
+  final settleFuture = settleStep();
   if (awaitSettle) {
-    await settleStep();
+    await settleFuture;
   } else {
-    unawaited(settleStep());
+    unawaited(settleFuture);
   }
   // Ödeme sürerken tur değişmiş olabilir: gösterimden önce tekrar kontrol.
   if (!isStillValid()) return false;
   if (!context.mounted) return false;
-  return showGameResult(
+  final replay = await showGameResult(
     context,
     score: score,
     coins: effectiveCoins,
@@ -265,4 +290,25 @@ Future<bool> finishRun(
     merges: merges ?? 0,
     won: effectiveWon,
   );
+  // S7: sonuç ekranı kapandıktan sonra görev bildirimi. Ateşle-unut
+  // yolunda settle hâlâ sürüyor olabilir; bildirimden önce tamamlanması
+  // beklenir (adımlar yalıtımlı biter, bekleme akışı bozamaz).
+  await settleFuture;
+  if (newlyCompletedTasks.isNotEmpty && context.mounted) {
+    try {
+      final l10n = context.l10n;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            l10n.taskCompletedSnack(
+              _taskTitleFor(l10n, newlyCompletedTasks.first),
+            ),
+          ),
+        ),
+      );
+    } catch (error, stack) {
+      _logSettleError('taskNotify', error, stack);
+    }
+  }
+  return replay;
 }

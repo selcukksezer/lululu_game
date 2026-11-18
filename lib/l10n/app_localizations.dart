@@ -1443,6 +1443,9 @@ abstract class AppLocalizations {
   String get dailyChallengeHint;
   String get campaignHubSubtitle;
   String dailyChallengeClaimedSnack(int coins);
+
+  // --- S7 (koordinatör takibi): tur sonu görev-tamamlanma bildirimi ---
+  String taskCompletedSnack(String taskTitle);
 }
 
 /// [AppLocalizations.of] kısayolu: `context.l10n.play`.

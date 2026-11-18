@@ -3147,4 +3147,9 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String dailyChallengeClaimedSnack(int coins) =>
       'Günlük challenge ödülü alındı: +$coins coin!';
+
+  // --- S7 (koordinatör takibi): tur sonu görev-tamamlanma bildirimi ---
+  @override
+  String taskCompletedSnack(String taskTitle) =>
+      'Görev tamamlandı: $taskTitle — ödülünü Görevler ekranından al!';
 }
