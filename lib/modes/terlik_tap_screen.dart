@@ -3,7 +3,6 @@ import 'dart:math';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/hisir_character.dart';
@@ -13,6 +12,7 @@ import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
@@ -341,6 +341,40 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _stopLoop();
     }
     setState(() {});
+  }
+
+  /// Yardım diyaloğu açıkken oyun durur (B4): zamanlayıcı durdurulur,
+  /// diyalog kapanınca kaldığı yerden devam eder; altın terlik süresi
+  /// duraklatma kadar ötelenir. Elle duraklatma bayrağına dokunulmaz
+  /// (duraklatma kaplaması açılmaz).
+  Future<void> _showHelp() async {
+    final resumeLoop = _alive && !_paused && _loop != null;
+    if (resumeLoop) {
+      _pauseStartedAt ??= DateTime.now();
+      _stopLoop();
+    }
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(ctx.l10n.slipperTapTitle),
+          // Statik yönerge: canlı _hint (ıskalama/
+          // kombo mesajları) yardım diyaloğuna sızmaz (bulgu #9).
+          content: Text(ctx.l10n.terlikHintIdle),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(ctx.l10n.understoodButton),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (resumeLoop && mounted && _alive && !_paused) {
+        _shiftPauseDeadlines();
+        _startLoop();
+      }
+    }
   }
 
   void _tick(Timer _) {
@@ -692,7 +726,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         return;
       }
       _breakComboOnly(context.l10n.terlikMissedHit);
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
       setState(() {});
       return;
     }
@@ -703,7 +737,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       // Gerçek vuruş: tuzağa basmak da hamledir, iade hakkı biter.
       _hasHit = true;
       _applyMiss(context.l10n.terlikSteppedTrap);
-      HapticFeedback.heavyImpact();
+      unawaited(HapticService.instance.heavyImpact());
       unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
       if (_lives <= 0) {
         _die();
@@ -806,7 +840,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     if (_combo >= 5 || hit.isOsman) {
       AudioManager().triggerHeavyHaptic();
     } else {
-      HapticFeedback.mediumImpact();
+      AudioManager().triggerMediumHaptic();
     }
 
     unawaited(
@@ -868,7 +902,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     _coinsEarned += endCoins;
     _hint =
         context.l10n.terlikOutOfSlippers(_smashed, _maxCombo, _coinsEarned);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     unawaited(AudioManager().playLose());
     unawaited(
       LeaderboardService.instance.submitScore(
@@ -903,6 +937,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _paused = false;
       _pausedByLifecycle = false;
       _pauseStartedAt = null;
+      // Güç etkileri yeni tura sızmaz (B6): çift terlik / altın terlik
+      // sıfırlanır, yoksa önceki turun etkisi yeni turda da sürerdi.
+      _doubleNext = false;
+      _goldUntil = null;
       _resultShown = false;
       _bugs.clear();
       _fx.clear();
@@ -934,19 +972,11 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     if (!widget.prototypeVisualState) _startLoop();
   }
 
-  String _stats() =>
-      context.l10n.terlikStatsLine1(_smashed, _missed, _maxCombo) +
-      context.l10n.terlikStatsLine2(
-        _coinsEarned,
-        _slipperEarned,
-        _sprayEarned,
-      );
-
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useDoubleSlip() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _doubleNext = true;
@@ -963,7 +993,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   bool _useGoldSlip() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _goldUntil = DateTime.now().add(const Duration(seconds: 20));
@@ -980,13 +1010,18 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   bool _useBugSpray() {
     if (!_alive || _paused) return false;
-    HapticFeedback.heavyImpact();
+    // Boş tahta (B13): ezilecek hedef yoksa stok yanmaz. `false` dönüşü
+    // stockBonusWithResult'ın iade yolunu işletir; hedef üretmek için
+    // böcek doğurulmaz, skor verilmez, ipucu 0 hedefi gösterir.
+    if (!_bugs.any((b) => !b.smashed)) {
+      setState(() {
+        _hint = context.l10n.terlikSprayedTargets(0);
+      });
+      return false;
+    }
+    unawaited(HapticService.instance.heavyImpact());
     unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
     setState(() {
-      if (_bugs.every((b) => b.smashed)) {
-        _spawn();
-        _spawn();
-      }
       var cleared = 0;
       for (final bug in _bugs) {
         if (bug.smashed) continue;
@@ -1065,7 +1100,16 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   Future<void> _finishEarly() async {
     if (_resultShown) return;
     _resultShown = true;
-    await _presentResult(_runId, won: _score > 0);
+    // Dondurma (B5): sonuç diyaloğu hazırlanırken/gösterilirken tur
+    // ilerlemesin — zamanlayıcı durur. TEKRAR _restart ile döner.
+    _stopLoop();
+    try {
+      await _presentResult(_runId, won: _score > 0);
+    } finally {
+      // _restart zamanlayıcıyı başlattıysa _startLoop no-op'tur
+      // (_loop ??=); sonuç gösterilemeden dönüldüyse tur donuk kalmaz.
+      if (mounted && _alive && !_paused) _startLoop();
+    }
   }
 
   void _edgeShowResult() {
@@ -1091,8 +1135,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xDB080B12),
@@ -1426,22 +1470,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                           button: true,
                           label: context.l10n.helpButtonLabel,
                           child: GestureDetector(
-                            onTap: () => showDialog<void>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Text(ctx.l10n.slipperTapTitle),
-                                // Statik yönerge: canlı _hint (ıskalama/
-                                // kombo mesajları) yardım diyaloğuna
-                                // sızmaz (bulgu #9).
-                                content: Text(ctx.l10n.terlikHintIdle),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: Text(ctx.l10n.understoodButton),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            onTap: _showHelp,
                             child: Container(
                               width: 48,
                               height: 48,
@@ -1936,20 +1965,6 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                 ),
               ],
             ),
-            if (!_alive && !_resultShown)
-              Positioned.fill(
-                child: ArcadeResultOverlay(
-                  title: context.l10n.terlikOutTitle,
-                  message: _stats(),
-                  score: _score,
-                  best: _best,
-                  won: false,
-                  modeTitle: context.l10n.slipperTapTitle,
-                  shareLine: _stats(),
-                  retryLabel: context.l10n.tryAgainCaps,
-                  onRetry: _restart,
-                ),
-              ),
             if (_paused && _alive && !widget.prototypeVisualState)
               _pauseOverlay(),
           ],

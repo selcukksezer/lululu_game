@@ -5,7 +5,6 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
@@ -13,6 +12,7 @@ import '../models/osmantus_cast.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/arcade_chrome.dart';
@@ -102,7 +102,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   int _maxCombo = 0;
   int _best = 0;
   int _lives = 3;
-  int _dayStreak = 0;
   bool _alive = true;
   bool _resultShown = false;
 
@@ -135,7 +134,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   int _face = -1;
   int _flashUntilMs = 0;
   bool _flashBad = false;
-  String? _breakReason;
 
   int _boostUntilMs = 0;
   int _ringUntilMs = 0;
@@ -175,7 +173,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _best = 980;
       _combo = 5;
       _maxCombo = 5;
-      _dayStreak = 5;
       _bandText = 'MÜKEMMEL! X5';
       _bandUntilMs = 1 << 30;
       _phase.value = 1;
@@ -197,9 +194,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         LeaderboardService.modeOsmantus,
       );
       _best = widget.prototypeVisualState ? max(stored, 980) : stored;
-      _dayStreak = widget.prototypeVisualState
-          ? 5
-          : ProgressManager().dailyStreak;
     });
   }
 
@@ -257,6 +251,37 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     setState(() {});
   }
 
+  /// Yardım diyaloğu açıkken oyun durur (B4): saat + ticker durdurulur,
+  /// diyalog kapanınca kaldığı yerden devam eder. Elle duraklatma
+  /// bayrağına dokunulmaz (duraklatma kaplaması açılmaz). `_onFrame`
+  /// saat/senkron mantığına dokunulmaz.
+  Future<void> _showHelp() async {
+    final resumeClock = _alive && !_paused && _clock.isRunning;
+    final resumeTicker = _alive && !_paused && _ticker.isActive;
+    if (resumeClock) _clock.stop();
+    if (resumeTicker) _ticker.stop();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(context.l10n.osmantusTitle),
+          content: Text(context.l10n.osmantusRhythmHint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.understoodButton),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted && _alive && !_paused) {
+        if (resumeClock && !_clock.isRunning) _clock.start();
+        if (resumeTicker && !_ticker.isActive) _ticker.start();
+      }
+    }
+  }
+
   void _onFrame(Duration _) {
     if (!_alive || _paused) return;
     final now = _nowMs;
@@ -312,10 +337,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   void _miss(String reason, {bool costsLife = true}) {
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     final lostCombo = _combo;
     _combo = 0;
-    _breakReason = reason;
     _face = 0;
     _flashBad = true;
     _flashUntilMs = _nowMs + 320;
@@ -363,7 +387,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _hitThisBeat = true;
       final perfect = delta.abs() <= win * 0.35;
       _combo += 1;
-      _breakReason = null;
       if (_combo > _maxCombo) _maxCombo = _combo;
       final basePts = (perfect ? 120 : 70) + min(_combo, 30) * 8;
       _score += _boostOn ? basePts * 2 : basePts;
@@ -376,7 +399,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
           : context.l10n.osmantusLateBy(delta);
       if (perfect) _hint = context.l10n.osmantusJustInTime;
       AudioManager().triggerHaptic();
-      HapticFeedback.mediumImpact();
+      AudioManager().triggerMediumHaptic();
       unawaited(
         AudioManager().playOsmantusBeat(
           isPersonB: _speakerIndex == 1,
@@ -409,7 +432,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _lines[1] = OsmantusCast.duo[1].lines[2];
       _bandText = '';
       _face = -1;
-      _breakReason = null;
       _hint = context.l10n.osmantusHintIdle;
       _hitThisBeat = false;
       _boostUntilMs = 0;
@@ -424,12 +446,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     if (!_ticker.isActive) _ticker.start();
   }
 
-  String _statsLine() =>
-      '${context.l10n.osmantusStatsLine(_maxCombo, _dayStreak)}${_breakReason == null ? '' : ' · ${context.l10n.osmantusLastError(_breakReason!) }'}';
-
   bool _useDikkis() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _boostUntilMs = _nowMs + 12000;
@@ -441,7 +460,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   bool _useRing() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _ringUntilMs = _nowMs + 12000;
@@ -453,7 +472,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   bool _useMic() {
     if (!_alive || _paused || _micShield) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _micShield = true;
@@ -507,7 +526,20 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   Future<void> _finishEarly() async {
     if (_resultShown) return;
     _resultShown = true;
-    await _presentResult(won: _score > 0);
+    // Dondurma (B5): sonuç diyaloğu süresince saat + ticker durur,
+    // vuruş kaçırma/can kaybı işlemez. TEKRAR _restart ile döner.
+    if (_clock.isRunning) _clock.stop();
+    _ticker.stop();
+    try {
+      await _presentResult(won: _score > 0);
+    } finally {
+      // _restart saati sıfırlayıp başlattıysa korumalar no-op'tur;
+      // sonuç gösterilemeden dönüldüyse tur donuk kalmaz.
+      if (mounted && _alive && !_paused) {
+        if (!_clock.isRunning) _clock.start();
+        if (!_ticker.isActive) _ticker.start();
+      }
+    }
   }
 
   void _edgeShowResult() {
@@ -533,8 +565,8 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xDB080B12),
@@ -685,20 +717,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   ),
                 ),
               ),
-              if (!_alive && !_resultShown)
-                Positioned.fill(
-                  child: ArcadeResultOverlay(
-                    title: context.l10n.osmantusDuoWonTitle,
-                    message: _statsLine(),
-                    score: _score,
-                    best: _best,
-                    won: false,
-                    modeTitle: context.l10n.shopModeOsmantus,
-                    shareLine: _statsLine(),
-                    retryLabel: context.l10n.tryAgainCaps,
-                    onRetry: _restart,
-                  ),
-                ),
               if (_paused && _alive && !widget.prototypeVisualState)
                 _pauseOverlay(),
             ],
@@ -898,19 +916,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
               button: true,
               label: context.l10n.helpButtonLabel,
               child: GestureDetector(
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text(context.l10n.osmantusTitle),
-                  content: Text(context.l10n.osmantusRhythmHint),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(context.l10n.understoodButton),
-                    ),
-                  ],
-                ),
-              ),
+              onTap: _showHelp,
               child: Container(
                 width: 48,
                 height: 48,
@@ -1056,7 +1062,20 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     );
   }
 
+  /// Güç stokları (B11): dock `ProgressManager`'ı dinler; soğuk
+  /// başlatmada yükleme bitince `notifyListeners` ile yeniden çizilir,
+  /// ilk karelerdeki 0/0/0 kalıcı olmaz. Stok kullanımı/iadesi de aynı
+  /// bildirimle dock'u günceller. `initState`'te `load()` çağrılmaz:
+  /// yükleme ana önyüklemede yapılır ve buradan çağrılmak testlerde
+  /// bekleyen zamanlayıcı bırakırdı.
   Widget _powerDock() {
+    return ListenableBuilder(
+      listenable: ProgressManager(),
+      builder: (context, _) => _powerDockContent(),
+    );
+  }
+
+  Widget _powerDockContent() {
     final items = [
       stockBonusWithResult(
         id: 'dik',
