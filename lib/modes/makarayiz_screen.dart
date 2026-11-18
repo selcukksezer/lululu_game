@@ -4,7 +4,6 @@ import 'dart:ui' show ImageFilter, lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
@@ -12,6 +11,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/arcade_chrome.dart';
@@ -102,6 +102,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
   // elle duraklatmada da aynı ticker durdurulur; oyun saati (_now) donar.
   bool _paused = false;
   bool _pausedByLifecycle = false;
+  // F9: yardım diyaloğu açıkken ticker bu bayrakla durdurulur; diyalog
+  // kapanınca yalnız bu bayrak set edildiyse devam edilir.
+  bool _pausedForHelp = false;
   String _hint = '';
   bool _hintSeeded = false;
   String? _comboText;
@@ -143,6 +146,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
   int get debugCombo => _combo;
   @visibleForTesting
   int get debugLives => _lives;
+  @visibleForTesting
+  int get debugMisses => _misses;
   @visibleForTesting
   bool get debugAlive => _alive;
   @visibleForTesting
@@ -199,6 +204,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _alive = true;
     _paused = false;
     _pausedByLifecycle = false;
+    _pausedForHelp = false;
     _lastElapsed = null;
     _comboText = null;
     _breakText = null;
@@ -208,13 +214,17 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   Future<void> _loadBest() async {
-    await LeaderboardService.instance.ensureLoaded();
-    if (!mounted) return;
-    setState(() {
-      _best = LeaderboardService.instance.getBest(
-        LeaderboardService.modeMakarayiz,
-      );
-    });
+    // F4: ateşle-unut çağrısı; liderlik yüklemesi fırlatırsa hata
+    // yutulur, rekor 0 kalır, oyun etkilenmez.
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+      if (!mounted) return;
+      setState(() {
+        _best = LeaderboardService.instance.getBest(
+          LeaderboardService.modeMakarayiz,
+        );
+      });
+    } catch (_) {}
   }
 
   @override
@@ -266,6 +276,29 @@ class MakarayizScreenState extends State<MakarayizScreen>
       _ticker.stop();
     }
     setState(() {});
+  }
+
+  /// Yardım diyaloğu açılırken oyunu duraklat (F9): ticker durur,
+  /// oyun saati donar; notalar düşmez, can kaybı olmaz. Önceden elle
+  /// duraklatılmışsa bayrak set edilmez, kapanınca devam edilmez.
+  void _pauseForHelpDialog() {
+    if (widget.prototypeVisualState || !_alive || _paused) return;
+    if (_ticker.isActive) {
+      _ticker.stop();
+      _pausedForHelp = true;
+    }
+  }
+
+  /// Yardım diyaloğu kapanınca devam et (F9): yalnız diyalog
+  /// duraklatmasıysa ve elle/lifecycle duraklatması yoksa ticker
+  /// yeniden başlar.
+  void _resumeAfterHelpDialog() {
+    if (widget.prototypeVisualState || !_pausedForHelp) return;
+    _pausedForHelp = false;
+    _lastElapsed = null;
+    if (_alive && !_paused && !_pausedByLifecycle && !_ticker.isActive) {
+      _ticker.start();
+    }
   }
 
   Duration? _lastElapsed;
@@ -329,6 +362,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
         final loseLife = !lifeLost;
         lifeLost = true;
         _breakCombo(context.l10n.missedCaps, loseLife: loseLife);
+        // F18: canlar bittiyse (_gameOver) aynı karedeki diğer kaçan
+        // notalar _misses'i şişirmesin; döngüden çık.
+        if (!_alive) break;
       }
     }
     _notes.removeWhere((n) => n.done && _now - n.hitMs > 400);
@@ -357,7 +393,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _misses++;
     _hint = context.l10n.makaraMissWindow(reason, windowMs.round());
     _showText(brk: had >= 2 ? context.l10n.makaraComboBroken(reason) : reason);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     if (loseLife) {
       _lives -= 1;
       if (_lives <= 0) _gameOver();
@@ -411,7 +447,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
         playbackRate: 0.95 + _rng.nextDouble() * 0.2,
       ),
     );
-    HapticFeedback.mediumImpact();
+    // H1: kapılı orta darbe (AudioManager.triggerMediumHaptic titreşim
+    // ayarına + test ortamına duyarlıdır).
+    AudioManager().triggerMediumHaptic();
   }
 
   /// Şerit vuruşu: pencere içindeki en yakın nota, çizgiye bağlıdır.
@@ -463,7 +501,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useBeatFreeze() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _freezeUntil = _now + 8000;
@@ -475,7 +513,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useAuto() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _autoUntil = _now + 6000;
@@ -487,7 +525,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useX2() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _x2Until = _now + 12000;
@@ -503,14 +541,24 @@ class MakarayizScreenState extends State<MakarayizScreen>
     // ayrıca durur (eski çift-gönderim davranışı aynen korunur).
     // Doğal bitiş canların bitmesidir (kayıp); `won` verilmezse
     // kayıp başlığı gösterilir.
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      bestCombo: _bestCombo,
-      won: won ?? false,
-      leaderboardMode: LeaderboardService.modeMakarayiz,
-    );
+    // F4: finishRun fırlatırsa sonuçsuz takılma olmasın — bayrak
+    // düşürülür, BİTİR/geri ile yeniden deneme yolu açık kalır.
+    // setState çağrılmaz: yeniden çizim _edgeShowResult'u tetikleyip
+    // hatayı döngüye sokardı.
+    bool replay;
+    try {
+      replay = await finishRun(
+        context,
+        score: _score,
+        best: _best,
+        bestCombo: _bestCombo,
+        won: won ?? false,
+        leaderboardMode: LeaderboardService.modeMakarayiz,
+      );
+    } catch (_) {
+      if (mounted) _resultShown = false;
+      return;
+    }
     if (!mounted) return;
     _resultShown = false;
     if (!replay) {
@@ -705,22 +753,11 @@ class MakarayizScreenState extends State<MakarayizScreen>
       prototypeVisualState: proto,
       showPauseButton: !proto,
       onPausePressed: _togglePause,
-      overlay: (!_alive && !_resultShown)
-          ? ArcadeResultOverlay(
-              title: context.l10n.makaraOverTitle,
-              message:
-                  context.l10n.makaraResultMessage(_bestCombo, _hits, _misses),
-              score: _score,
-              best: _best,
-              won: false,
-              modeTitle: context.l10n.shopModeMakarayiz,
-              shareLine: context.l10n.makaraShareLine,
-              retryLabel: context.l10n.tryAgainCaps,
-              onRetry: _restart,
-            )
-          : (_paused
-              ? _pauseOverlay()
-              : null),
+      onHelpOpened: _pauseForHelpDialog,
+      onHelpClosed: _resumeAfterHelpDialog,
+      // F6: tek sonuç yolu finishRun diyaloğudur (_edgeShowResult);
+      // ölü ArcadeResultOverlay dalı kaldırıldı.
+      overlay: _paused ? _pauseOverlay() : null,
       bonuses: [
         stockBonusWithResult(
           id: 'beat',
@@ -1097,6 +1134,8 @@ class _MakarayizChrome extends StatelessWidget {
     this.overlay,
     this.showPauseButton = false,
     this.onPausePressed,
+    this.onHelpOpened,
+    this.onHelpClosed,
   });
 
   final int score;
@@ -1110,6 +1149,34 @@ class _MakarayizChrome extends StatelessWidget {
   final Widget? overlay;
   final bool showPauseButton;
   final VoidCallback? onPausePressed;
+  final VoidCallback? onHelpOpened;
+  final VoidCallback? onHelpClosed;
+
+  /// Yardım diyaloğu (F9): açılırken oyun duraklatılır, kapanınca
+  /// (önceden duraklatılmamışsa) devam eder. Diyalog içeriği statik
+  /// yönergedir; canlı hint yardım diyaloğuna sızmaz (bulgu #9).
+  Future<void> _showHelpDialog(BuildContext context) async {
+    onHelpOpened?.call();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(context.l10n.makarayizTitle),
+          // Statik yönerge: canlı hint yardım diyaloğuna
+          // sızmaz (bulgu #9).
+          content: Text(context.l10n.makaraHintIdle),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.understoodButton),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      onHelpClosed?.call();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1383,21 +1450,7 @@ class _MakarayizChrome extends StatelessWidget {
                     color: const Color(0xFFFFB800),
                   ),
                 ),
-                onTap: () => showDialog<void>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: Text(context.l10n.makarayizTitle),
-                    // Statik yönerge: canlı hint yardım diyaloğuna
-                    // sızmaz (bulgu #9).
-                    content: Text(context.l10n.makaraHintIdle),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text(context.l10n.understoodButton),
-                      ),
-                    ],
-                  ),
-                ),
+                onTap: () => _showHelpDialog(context),
               ),
             ],
           ),
@@ -1537,21 +1590,7 @@ class _MakarayizChrome extends StatelessWidget {
                   color: const Color(0xFFFFB800),
                 ),
               ),
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text(context.l10n.makarayizTitle),
-                  // Statik yönerge: canlı hint yardım diyaloğuna
-                  // sızmaz (bulgu #9).
-                  content: Text(context.l10n.makaraHintIdle),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(context.l10n.understoodButton),
-                    ),
-                  ],
-                ),
-              ),
+              onTap: () => _showHelpDialog(context),
             ),
           ],
         ),
@@ -1818,6 +1857,7 @@ class _MakarayizChrome extends StatelessWidget {
 
 /// Küçük duraklatma düğmesi (madde 37): başlık satırında '?' düğmesinin
 /// yanında, HUD düzenini kaydırmadan durur; prototip vitrininde gizlidir.
+/// Vuruş kutusu 48×48'dir (komşu _RoundButton ile aynı).
 class _PauseHeaderButton extends StatelessWidget {
   const _PauseHeaderButton({required this.onTap});
 
@@ -1831,8 +1871,8 @@ class _PauseHeaderButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xDB080B12),
