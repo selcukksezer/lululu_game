@@ -62,7 +62,7 @@ class LululuGameMode {
   // --- English (EN) counterparts: pure additions, TR defaults untouched. ---
   // Screens migrate to the `*For(Locale)` accessors in a later wave; the
   // existing `title`/`subtitle`/`badgeLabel`/`mechanicSummary` fields keep
-  // returning Turkish. Proper names (Osmantuş, Makarayız, Terlik Tap) and
+  // returning Turkish. Proper names (Osmantuş, Makarayız) and
   // already-English titles stay identical in EN. No AppLocalizations import:
   // these are pure `Locale`-parameterized accessors, so no import cycle.
   String get titleEn {
@@ -76,11 +76,11 @@ class LululuGameMode {
       case LululuGameModeId.match3:
         return 'Match 3';
       case LululuGameModeId.connectBlast:
-        return 'Connect Blast';
+        return 'Link Pop';
       case LululuGameModeId.stackDrop:
         return 'Stack Drop';
       case LululuGameModeId.terlikTap:
-        return 'Terlik Tap';
+        return 'Slipper Tap';
       case LululuGameModeId.yuvaDefense:
         return 'Nest Defense';
       case LululuGameModeId.osmantus:
