@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/audio_manager.dart';
 import '../theme/lululu_theme.dart';
 import 'home_shell.dart';
 
@@ -49,6 +50,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _nextSlide() {
+    // S12: sayfa geçiş sesi; `_finishing` kilidine dokunulmaz
+    // (son slaytta `_finish` ayrıca ses çalmaz, çift ses yok).
+    AudioManager().playPop();
     if (_index < 2) {
       _page.animateToPage(
         _index + 1,
@@ -256,11 +260,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 label: context.l10n.onboardingPageLabel(i + 1),
                 excludeSemantics: true,
                 child: GestureDetector(
-                  onTap: () => _page.animateToPage(
-                  i,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOutCubic,
-                ),
+                  onTap: () {
+                    AudioManager().playPop();
+                    _page.animateToPage(
+                      i,
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeOutCubic,
+                    );
+                  },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -335,7 +342,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   label: context.l10n.onboardingSkipLabel,
                   excludeSemantics: true,
                   child: GestureDetector(
-                    onTap: _finish,
+                    onTap: () {
+                      AudioManager().playPop();
+                      _finish();
+                    },
                   child: Container(
                     height: 48,
                     constraints: const BoxConstraints(
@@ -733,6 +743,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           excludeSemantics: true,
           child: GestureDetector(
             onTap: () {
+              AudioManager().playPop();
               setState(() => _progress = 1.0);
               _finish();
             },

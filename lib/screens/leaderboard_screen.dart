@@ -4,6 +4,7 @@ import '../l10n/app_localizations.dart';
 import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/auth_service.dart';
+import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
@@ -61,6 +62,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   void _handleBack() {
+    // S11: geri düğmesi sesi (sekme/satır dokunuşu bu ekranda yok —
+    // grep ile doğrulandı, yalnız geri + dock dokunuşları var).
+    AudioManager().playPop();
     if (widget.onClose != null) {
       widget.onClose!();
       return;
@@ -75,10 +79,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   void _handleDockSelect(BuildContext context, LululuDockTab tab) {
     if (widget.onSelectDockTab != null) {
+      AudioManager().playPop();
       widget.onSelectDockTab!(tab);
       return;
     }
     if (tab == LululuDockTab.scores) return;
+    AudioManager().playPop();
     final route = switch (tab) {
       LululuDockTab.home => LululuRoutes.hub,
       LululuDockTab.modes => LululuRoutes.modes,

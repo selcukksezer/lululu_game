@@ -423,6 +423,21 @@ class AppLocalizationsTr extends AppLocalizations {
   String get myBadges => 'ROZETLERİM';
 
   @override
+  String get profilePassRowSub => 'Başarımlarını ve sezon biletini görüntüle';
+
+  @override
+  String get profileInviteRowTitle => 'Arkadaşını Davet Et';
+
+  @override
+  String get profileInviteRowSub => 'Davet kodunu paylaş, rakibini çağır';
+
+  @override
+  String get profileInviteFailed => 'Davet paylaşılamadı. Tekrar dene.';
+
+  @override
+  String get profileRoyalCapeBadge => 'Kral Pelerini';
+
+  @override
   String badgesEarnedCount(int count) => '$count/6 KAZANILDI';
 
   @override
@@ -698,7 +713,20 @@ class AppLocalizationsTr extends AppLocalizations {
   String get authSignOutFailed => 'Oturum kapatılamadı. Tekrar dene.';
 
   @override
+  String get authSignInSuccess => 'Giriş yapıldı.';
+
+  @override
+  String get authRegisterSuccess => 'Hesabın oluşturuldu, giriş yapıldı.';
+
+  @override
+  String get authRegisterLocalOnly =>
+      'Hesabın bu cihazda oluşturuldu; bulut kaydı bir sonraki girişte tamamlanacak.';
+
+  @override
   String get settingsResetFailed => 'İlerleme sıfırlanamadı. Tekrar dene.';
+
+  @override
+  String get settingsResetDone => 'İlerleme sıfırlandı.';
 
   @override
   String get onboardingSaveFailed => 'Kaydedilemedi. Tekrar dene.';
@@ -858,6 +886,10 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get resetButton => 'SIFIRLA';
+
+  @override
+  String accountDeletedPartialSnack(int failedCount) =>
+      'Hesabın silindi, ancak $failedCount temizlik adımı tamamlanamadı.';
 
   @override
   String accountDeleteFailed(String error) => 'Hesap silinemedi: $error';

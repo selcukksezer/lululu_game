@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/audio_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../widgets/achievement_toast_overlay.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 import '../widgets/shop_dialog.dart';
 import 'game_selector_screen.dart';
@@ -50,6 +52,9 @@ class _HomeShellState extends State<HomeShell> {
 
   void _select(LululuDockTab tab) {
     if (tab == _tab) return;
+    // S10: sekme değişim sesi TEK katmanda, burada — dock çubuğundaki
+    // tüm dokunuşlar bu yoldan geçer (dock bar'da ayrıca çalınmaz).
+    AudioManager().playPop();
     setState(() => _tab = tab);
   }
 
@@ -106,6 +111,16 @@ class _HomeShellState extends State<HomeShell> {
               child: IgnorePointer(
                 child: _DockVisualOverlay(selected: _tab),
               ),
+            ),
+            // K1-mount: başarım toast banner'ı, engelsiz üst katman.
+            // Banner toast yokken sıfır boyutludur (SizedBox.shrink) ve
+            // yerleşimi kaydırmaz; toast varken yalnız kendi kutusu
+            // kadar yer kaplar (kapatma düğmesi dokunulabilir kalır).
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AchievementToastBanner(),
             ),
           ],
         ),

@@ -2,8 +2,11 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
+import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
+import '../services/friend_invite_service.dart';
 import '../services/progress_manager.dart';
+import '../widgets/achievement_toast_overlay.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -31,7 +34,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
   ];
 
   void _openAuth() {
+    // S11: avatar + misafir CTA dokunuş sesi (iki giriş de bu yoldan).
+    AudioManager().playPop();
     Navigator.of(context).pushNamed('/account');
+  }
+
+  void _handleBack() {
+    AudioManager().playPop();
+    if (widget.onClose != null) {
+      widget.onClose!();
+    } else {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  /// K1-entry: Başarımlar / Pass sheet girişi. Sheet'in `show`
+  /// yardımcısı yok; doğrudan bottom-sheet çağrısı (diğer sheet
+  /// açma desenleriyle aynı). Sheet içi `Expanded` için yükseklik
+  /// sınırlıdır.
+  void _openPassSheet() {
+    AudioManager().playPop();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const FractionallySizedBox(
+        heightFactor: 0.88,
+        child: AchievementPassSheet(),
+      ),
+    );
+  }
+
+  /// K17: davet paylaşımı. Servis `Future<void>` döner ve SharePlus
+  /// sonucunu (paylaşıldı/kapatıldı ayrımını) döndürmez; sheet'in
+  /// kapatılması "hata" sayılmaz, başarı sessiz varsayılır — yalnız
+  /// istisnada hata bildirimi gösterilir. Redeem akışı YOKTUR
+  /// (redeem kararı bekliyor).
+  Future<void> _shareInvite() async {
+    AudioManager().playPop();
+    try {
+      await FriendInviteService.instance.shareInvite();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.profileInviteFailed)),
+      );
+    }
   }
 
   /// Misafir çağrısı: giriş yap / kayıt ol düğmesi + kısa açıklama.
@@ -113,6 +161,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _handleDefaultDockSelect(LululuDockTab tab) {
+    AudioManager().playPop();
     if (widget.onSelectDockTab != null) {
       widget.onSelectDockTab!(tab);
       return;
@@ -254,8 +303,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             button: true,
                             label: context.l10n.goBackLabel,
                             child: GestureDetector(
-                            onTap: widget.onClose ??
-                                () => Navigator.of(context).maybePop(),
+                            onTap: _handleBack,
                             child: Container(
                               width: 48,
                               height: 48,
@@ -672,6 +720,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ),
 
+                          // K8-profil: pelerin sahipliği rozeti — PM bu
+                          // build'de zaten dinleniyor (ListenableBuilder),
+                          // değer değişince görünüm güncellenir.
+                          if (pm.hasRoyalCape ||
+                              pm.ownedCosmetics.contains('royal_cape'))
+                            _buildCapeBadge(),
+
                           if (isGuest) _buildGuestSignInCta(),
 
                           // .prof-stats (y=381.0, h=114.0, padding: 16px 12px 2px 12px)
@@ -803,6 +858,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ],
                             ),
                           ),
+                          // K1-entry + K17: Başarımlar/Pass + Davet girişleri.
+                          _buildProfileActionRow(
+                            key: const Key('profile_pass_row'),
+                            emoji: '🏆',
+                            title: l10n.masteryPassTitle,
+                            subtitle: l10n.profilePassRowSub,
+                            onTap: _openPassSheet,
+                          ),
+                          const SizedBox(height: 10),
+                          _buildProfileActionRow(
+                            key: const Key('profile_invite_row'),
+                            emoji: '✉️',
+                            title: l10n.profileInviteRowTitle,
+                            subtitle: l10n.profileInviteRowSub,
+                            onTap: _shareInvite,
+                          ),
                           const SizedBox(height: 8),
                         ],
                       ),
@@ -826,6 +897,139 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// K8-profil: pelerin sahipliği rozeti (yalnız sahipken çizilir).
+  Widget _buildCapeBadge() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Center(
+        child: Container(
+          key: const Key('profile_royal_cape_badge'),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF7DB),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: const Color(0xFFFFB800), width: 1.5),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('👑', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 6),
+              Text(
+                context.l10n.profileRoyalCapeBadge,
+                style: const TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF7A5B00),
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Profil giriş satırı (K1-entry / K17): rozet kartlarıyla aynı
+  /// beyaz kart dili, ≥56px dokunuş yüksekliği.
+  Widget _buildProfileActionRow({
+    Key? key,
+    required String emoji,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Semantics(
+        button: true,
+        label: '$title, $subtitle',
+        child: GestureDetector(
+          key: key,
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 56),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x12141B2A),
+                  offset: Offset(0, 5),
+                  blurRadius: 0,
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFFF7DB),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(emoji, style: const TextStyle(fontSize: 20)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF141B2A),
+                          height: 1.2,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Nunito',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF66738A),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const ExcludeSemantics(
+                  child: Text(
+                    '›',
+                    style: TextStyle(
+                      fontFamily: 'Baloo 2',
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFFFFB800),
+                      height: 1.0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

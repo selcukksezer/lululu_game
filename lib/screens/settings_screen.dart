@@ -362,6 +362,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       return false;
     }
+    // S4: başarı bildirimi (önce yalnız hata bildiriliyordu).
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.settingsResetDone)),
+    );
     setState(() {});
     return true;
   }
@@ -411,8 +415,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     _deleteArmTimer?.cancel();
     setState(() => _deleteBusy = true);
+    AccountDeletionResult deletionResult;
     try {
-      await AuthService.instance.deleteAccount();
+      deletionResult = await AuthService.instance.deleteAccount();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -425,8 +430,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     if (!mounted) return;
+    // 2E-UI (c): silme sonucu tüketilir — kısmi temizlik hatası varsa
+    // kullanıcı görür; tam başarıda mevcut mesaj korunur.
+    final failedCount = deletionResult.failedLocalCleanups.length +
+        deletionResult.failedCloudCleanups.length;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.l10n.accountDeletedSnack)),
+      SnackBar(
+        content: Text(
+          deletionResult.hasFailures
+              ? context.l10n.accountDeletedPartialSnack(failedCount)
+              : context.l10n.accountDeletedSnack,
+        ),
+      ),
     );
     setState(() {
       _deleteArmed = false;

@@ -130,7 +130,10 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  Future<void> _run(Future<void> Function() op) async {
+  Future<void> _run(
+    Future<void> Function() op, {
+    String Function()? successMessage,
+  }) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -143,7 +146,18 @@ class _AuthScreenState extends State<AuthScreen> {
       setState(() {
         _signedOutExplicitly = false;
       });
+      // S5: başarı bildirimi kapanma ÖNCESİ gösterilir; ScaffoldMessenger
+      // rota üstünde yaşadığı için bildirim dönen ekranda da görünür.
+      final message = successMessage?.call();
+      if (message != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
       widget.onSuccess?.call();
+    } on AuthSignInCancelledException {
+      // 2E-UI (a): Apple/Google iptali sessizce yutulur — hata bandı
+      // yok, form açık kalır. `_busy` finally'de sıfırlanır.
     } catch (e) {
       if (!mounted) return;
       final message = _authErrorMessage(e, context.l10n);
@@ -191,14 +205,28 @@ class _AuthScreenState extends State<AuthScreen> {
       setState(() => _error = validationError);
       return;
     }
-    await _run(() async {
-      if (_isRegister) {
-        await AuthService.instance.register(username: u, password: p);
-      } else {
-        await AuthService.instance.login(username: u, password: p);
-      }
-      _passCtl.clear();
-    });
+    // 2E-UI (b): kayıt bilgisi, servisin söylediği kadardır — doğrulama
+    // e-postası vb. iddia edilmez; yerel-öncelikli kayıt bayrağı
+    // servisin `lastRegistrationWasLocalOnly` sözleşmesinden okunur.
+    final wasRegister = _isRegister;
+    final l10n = context.l10n;
+    await _run(
+      () async {
+        if (_isRegister) {
+          await AuthService.instance.register(username: u, password: p);
+        } else {
+          await AuthService.instance.login(username: u, password: p);
+        }
+        _passCtl.clear();
+      },
+      successMessage: () {
+        if (!wasRegister) return l10n.authSignInSuccess;
+        if (AuthService.instance.lastRegistrationWasLocalOnly) {
+          return l10n.authRegisterLocalOnly;
+        }
+        return l10n.authRegisterSuccess;
+      },
+    );
   }
 
   /// İstemci doğrulaması (B12): servis kurallarının aynası.
@@ -568,6 +596,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               AudioManager().playPop();
                               _run(
                                 () => AuthService.instance.signInAsGuest(),
+                                successMessage: () =>
+                                    context.l10n.authSignInSuccess,
                               );
                             },
                     ),
@@ -582,7 +612,11 @@ class _AuthScreenState extends State<AuthScreen> {
                           ? null
                           : () {
                               AudioManager().playPop();
-                              _run(() => AuthService.instance.signInWithApple());
+                              _run(
+                                () => AuthService.instance.signInWithApple(),
+                                successMessage: () =>
+                                    context.l10n.authSignInSuccess,
+                              );
                             },
                     ),
                     const SizedBox(height: 9),
@@ -598,6 +632,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               AudioManager().playPop();
                               _run(
                                 () => AuthService.instance.signInWithGoogle(),
+                                successMessage: () =>
+                                    context.l10n.authSignInSuccess,
                               );
                             },
                     ),

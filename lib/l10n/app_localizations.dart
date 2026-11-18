@@ -259,6 +259,11 @@ abstract class AppLocalizations {
   String get gamesPlayedLabel;
   String get bestComboLabel;
   String get myBadges;
+  String get profilePassRowSub;
+  String get profileInviteRowTitle;
+  String get profileInviteRowSub;
+  String get profileInviteFailed;
+  String get profileRoyalCapeBadge;
 
   /// Rozet sayacı: '2/6 KAZANILDI' biçimi korunur.
   String badgesEarnedCount(int count);
@@ -384,7 +389,11 @@ abstract class AppLocalizations {
   String get authUsernameTaken;
   String get authTooManyAttempts;
   String get authSignOutFailed;
+  String get authSignInSuccess;
+  String get authRegisterSuccess;
+  String get authRegisterLocalOnly;
   String get settingsResetFailed;
+  String get settingsResetDone;
   String get onboardingSaveFailed;
   String get orDivider;
 
@@ -453,6 +462,7 @@ abstract class AppLocalizations {
   String get cancelCaps;
   String get resetButton;
   String accountDeleteFailed(String error);
+  String accountDeletedPartialSnack(int failedCount);
   String get accountDeletedSnack;
   String signedInAs(String displayName);
 

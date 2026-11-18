@@ -418,6 +418,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get myBadges => 'MY BADGES';
 
   @override
+  String get profilePassRowSub => 'View your achievements and season pass';
+
+  @override
+  String get profileInviteRowTitle => 'Invite a Friend';
+
+  @override
+  String get profileInviteRowSub => 'Share your invite code and call your rival';
+
+  @override
+  String get profileInviteFailed => 'The invite could not be shared. Try again.';
+
+  @override
+  String get profileRoyalCapeBadge => 'Royal Cape';
+
+  @override
   String badgesEarnedCount(int count) => '$count/6 EARNED';
 
   @override
@@ -694,7 +709,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authSignOutFailed => 'Could not sign out. Try again.';
 
   @override
+  String get authSignInSuccess => 'Signed in.';
+
+  @override
+  String get authRegisterSuccess =>
+      'Your account was created and you are signed in.';
+
+  @override
+  String get authRegisterLocalOnly =>
+      'Your account was created on this device; the cloud record will be completed at your next sign-in.';
+
+  @override
   String get settingsResetFailed => 'Progress could not be reset. Try again.';
+
+  @override
+  String get settingsResetDone => 'Progress has been reset.';
 
   @override
   String get onboardingSaveFailed => 'Could not save. Try again.';
@@ -854,6 +883,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get resetButton => 'RESET';
+
+  @override
+  String accountDeletedPartialSnack(int failedCount) =>
+      'Your account was deleted, but $failedCount cleanup steps could not be completed.';
 
   @override
   String accountDeleteFailed(String error) =>

@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 811 getter + 176 metot = 987 anahtar,
+// açıkça sayılır (soyut sınıftaki 820 getter + 177 metot = 997 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -145,6 +145,11 @@ void main() {
         'gamesPlayedLabel': l10n.gamesPlayedLabel,
         'bestComboLabel': l10n.bestComboLabel,
         'myBadges': l10n.myBadges,
+        'profilePassRowSub': l10n.profilePassRowSub,
+        'profileInviteRowTitle': l10n.profileInviteRowTitle,
+        'profileInviteRowSub': l10n.profileInviteRowSub,
+        'profileInviteFailed': l10n.profileInviteFailed,
+        'profileRoyalCapeBadge': l10n.profileRoyalCapeBadge,
         'lockedLabel': l10n.lockedLabel,
         'onboardingTagline': l10n.onboardingTagline,
         'onboardingNextLabel': l10n.onboardingNextLabel,
@@ -222,7 +227,11 @@ void main() {
         'authUsernameTaken': l10n.authUsernameTaken,
         'authTooManyAttempts': l10n.authTooManyAttempts,
         'authSignOutFailed': l10n.authSignOutFailed,
+        'authSignInSuccess': l10n.authSignInSuccess,
+        'authRegisterSuccess': l10n.authRegisterSuccess,
+        'authRegisterLocalOnly': l10n.authRegisterLocalOnly,
         'settingsResetFailed': l10n.settingsResetFailed,
+        'settingsResetDone': l10n.settingsResetDone,
         'onboardingSaveFailed': l10n.onboardingSaveFailed,
         'orDivider': l10n.orDivider,
         'comboTimeoutReason': l10n.comboTimeoutReason,
@@ -975,6 +984,11 @@ void main() {
         'gamesPlayedLabel': l10n.gamesPlayedLabel,
         'bestComboLabel': l10n.bestComboLabel,
         'myBadges': l10n.myBadges,
+        'profilePassRowSub': l10n.profilePassRowSub,
+        'profileInviteRowTitle': l10n.profileInviteRowTitle,
+        'profileInviteRowSub': l10n.profileInviteRowSub,
+        'profileInviteFailed': l10n.profileInviteFailed,
+        'profileRoyalCapeBadge': l10n.profileRoyalCapeBadge,
         'lockedLabel': l10n.lockedLabel,
         'onboardingTagline': l10n.onboardingTagline,
         'onboardingNextLabel': l10n.onboardingNextLabel,
@@ -1052,7 +1066,11 @@ void main() {
         'authUsernameTaken': l10n.authUsernameTaken,
         'authTooManyAttempts': l10n.authTooManyAttempts,
         'authSignOutFailed': l10n.authSignOutFailed,
+        'authSignInSuccess': l10n.authSignInSuccess,
+        'authRegisterSuccess': l10n.authRegisterSuccess,
+        'authRegisterLocalOnly': l10n.authRegisterLocalOnly,
         'settingsResetFailed': l10n.settingsResetFailed,
+        'settingsResetDone': l10n.settingsResetDone,
         'onboardingSaveFailed': l10n.onboardingSaveFailed,
         'orDivider': l10n.orDivider,
         'comboTimeoutReason': l10n.comboTimeoutReason,
@@ -1716,6 +1734,7 @@ void main() {
         'shareScoreSnack': l10n.shareScoreSnack(3),
         'scoreShareText': l10n.scoreShareText(3),
         'accountDeleteFailed': l10n.accountDeleteFailed('X'),
+        'accountDeletedPartialSnack': l10n.accountDeletedPartialSnack(2),
         'signedInAs': l10n.signedInAs('X'),
         'chapterLabelCaps': l10n.chapterLabelCaps(3),
         'secondsLabel': l10n.secondsLabel(3),
@@ -1909,6 +1928,7 @@ void main() {
         'shareScoreSnack': l10n.shareScoreSnack(3),
         'scoreShareText': l10n.scoreShareText(3),
         'accountDeleteFailed': l10n.accountDeleteFailed('X'),
+        'accountDeletedPartialSnack': l10n.accountDeletedPartialSnack(2),
         'signedInAs': l10n.signedInAs('X'),
         'chapterLabelCaps': l10n.chapterLabelCaps(3),
         'secondsLabel': l10n.secondsLabel(3),
@@ -2134,21 +2154,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 987 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 997 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 811);
-    expect(tr.length, 811);
-    expect(enMethods.length, 176);
-    expect(trMethods.length, 176);
+    expect(en.length, 820);
+    expect(tr.length, 820);
+    expect(enMethods.length, 177);
+    expect(trMethods.length, 177);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 987);
+    expect(en.length + enMethods.length, 997);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

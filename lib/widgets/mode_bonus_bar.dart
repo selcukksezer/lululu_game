@@ -6,6 +6,16 @@ import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
 import 'shop_dialog.dart';
 
+/// [stockBonus]/[stockBonusWithResult] kapamalarının,
+/// [ProgressManager.takePower] `false` döndüğünde (kurulum anında stok
+/// varken dokunuş anında tükenmişse — yarış durumu) çağırdığı tek
+/// seferlik bildirim kancası. Yalnız [_BonusButtonState._handleTap]
+/// tarafından `onTap` çağrısı süresince kurulur ve `finally` ile
+/// kaldırılır; çağrı eşzamanlıdır, kanca başka düğmeye sızamaz.
+/// Düğme dışından çağrılan kapamalarda kanca kurulmaz, eski sessiz
+/// davranış korunur.
+void Function(String label)? _powerUseFailedHandler;
+
 /// Tek güçlendirici yuvası — ikon, kısa etiket, stok rozeti.
 class ModeBonus {
   const ModeBonus({
@@ -88,21 +98,7 @@ class _BonusButtonState extends State<_BonusButton> {
   void _handleTap() {
     final item = widget.item;
     if (item.count <= 0) {
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      if (messenger == null) return;
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.boosterOutOfStockToast(item.label)),
-            action: SnackBarAction(
-              label: context.l10n.navShop,
-              onPressed: () {
-                if (mounted) ShopDialog.show(context);
-              },
-            ),
-          ),
-        );
+      _showOutOfStockSnackBar();
       return;
     }
     final onTap = item.onTap;
@@ -114,7 +110,36 @@ class _BonusButtonState extends State<_BonusButton> {
       return;
     }
     _lastPowerTapAt = now;
-    onTap();
+    // S9: takePower yarışında stok tükenmişse kapama bu kancayla
+    // bildirir; aynı boş-stok bildirimi gösterilir.
+    _powerUseFailedHandler = (_) => _showOutOfStockSnackBar();
+    try {
+      onTap();
+    } finally {
+      _powerUseFailedHandler = null;
+    }
+  }
+
+  /// Boş-stok bildirimi + mağaza eylemi (B26a deseni; S9 yarış
+  /// bildirimiyle paylaşılır).
+  void _showOutOfStockSnackBar() {
+    if (!mounted) return;
+    final item = widget.item;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.boosterOutOfStockToast(item.label)),
+          action: SnackBarAction(
+            label: context.l10n.navShop,
+            onPressed: () {
+              if (mounted) ShopDialog.show(context);
+            },
+          ),
+        ),
+      );
   }
 
   @override
@@ -278,7 +303,10 @@ ModeBonus stockBonus({
         ? null
         : () {
             if (canApply != null && !canApply()) return;
-            if (!pm.takePower(id)) return;
+            if (!pm.takePower(id)) {
+              _powerUseFailedHandler?.call(label);
+              return;
+            }
             effect();
           },
   );
@@ -326,7 +354,10 @@ ModeBonus stockBonusWithResult({
             }
             lastUse = now;
             if (canApply != null && !canApply()) return;
-            if (!pm.takePower(id)) return;
+            if (!pm.takePower(id)) {
+              _powerUseFailedHandler?.call(label);
+              return;
+            }
             if (!effect()) {
               pm.refundPower(id);
             }
