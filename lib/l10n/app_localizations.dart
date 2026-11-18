@@ -431,8 +431,6 @@ abstract class AppLocalizations {
   /// 'Giriş yap / kayıt ol'; [signInOrUpLabel] ('Giriş yap veya
   /// kayıt ol') metninden farklıdır.
   String get signInOrUpSlash;
-  String get musicTitle;
-  String get musicSubtitle;
   String get sfxTitle;
   String get sfxSubtitle;
   String get vibrationTitle;
@@ -684,10 +682,13 @@ abstract class AppLocalizations {
   String get shopPowerLightItUpDesc;
   String get shopModeGrid2048;
   String get shopPowerUndoName;
+  String get shopPowerUndoNameCaps;
   String get shopPowerUndoDesc;
   String get shopPowerShuffleName;
+  String get shopPowerShuffleNameCaps;
   String get shopPowerShuffleDesc;
   String get shopPowerMergePairName;
+  String get shopPowerMergePairNameCaps;
   String get shopPowerMergePairDesc;
   String get shopModeBalloonPop;
   String get shopPowerTripleArrowName;
@@ -695,6 +696,7 @@ abstract class AppLocalizations {
   String get shopPowerBombBalloonName;
   String get shopPowerBombBalloonDesc;
   String get shopPowerSlowName;
+  String get shopPowerSlowNameCaps;
   String get shopPowerSlowBalloonDesc;
   String get shopModeMatch3;
   String get shopPowerHammerName;
@@ -712,14 +714,18 @@ abstract class AppLocalizations {
   String get shopPowerMagnetDesc;
   String get shopModeStackDrop;
   String get shopPowerFreezeName;
+  String get shopPowerFreezeNameCaps;
   String get shopPowerFreezeDesc;
   String get shopPowerWidenName;
+  String get shopPowerWidenNameCaps;
   String get shopPowerWidenDesc;
   String get shopPowerSlowStackDesc;
   String get shopModeSlipperTap;
   String get shopPowerDoubleSlipperName;
+  String get shopPowerDoubleSlipperNameCaps;
   String get shopPowerDoubleSlipperDesc;
   String get shopPowerGoldenSlipperName;
+  String get shopPowerGoldenSlipperNameCaps;
   String get shopPowerGoldenSlipperDesc;
   String get shopPowerBugSprayName;
   String get shopPowerBugSprayDesc;
@@ -739,6 +745,7 @@ abstract class AppLocalizations {
   String get shopPowerShieldName;
   String get shopPowerShieldDesc;
   String get shopPowerNitroName;
+  String get shopPowerNitroNameCaps;
   String get shopPowerNitroDesc;
   String get shopModeMakarayiz;
   String get shopPowerBeatFreezeName;
@@ -832,6 +839,374 @@ abstract class AppLocalizations {
   /// Üst bar coin hapının erişilebilirlik etiketi: biçimlendirilmiş
   /// bakiye ([value], örn. '12.450') + coin paketi ekleme eylemi.
   String coinPillLabel(String value);
+
+  // --- W60-2: §3 paylaşılan anahtarlar (i18n göç planı) ---
+  String get pausedStatusCaps;
+  String get finishCaps;
+  String get finishLabel;
+  String get tryAgainCaps;
+  String get retryShort;
+  String get viralBadge;
+  String get moveLabel;
+  String get timeLabel;
+  String get livesLabel;
+  String get newBadge;
+  String get missedCaps;
+  String get perfectCaps;
+  String get comboBrokenShort;
+  String get understoodLabel;
+  String get connectTargetHit;
+  String get powerShieldCaps;
+  String get statusLabel;
+  String get resultComplete;
+  String get resultOver;
+  String get modeBadgeTitle;
+  String get doubleGoldEarnedCaps;
+  String perfectCombo(int combo);
+  String comboBrokenReason(String reason);
+  String pauseScoreComboLine(int score, int combo);
+  String arcadeMilestoneScore(int m);
+  String featuredBannerLabel(String badge);
+  String featuredEndsToday(String clock);
+  // --- W60-2: G2 connect_pop (i18n göç planı) ---
+  String get connectHintIdle;
+  String get connectChainPrototype;
+  String get connectBoardRefreshed;
+  String get connectLoopHint;
+  String get connectGroupHint;
+  String get connectLoopReady;
+  String get connectSquareClear;
+  String get connectLinesOut;
+  String get connectChainExtenderHint;
+  String get connectChainExtenderMilestone;
+  String get connectMagnetHint;
+  String get connectMagnetMilestone;
+  String get connectChainTag;
+  String get connectLineStat;
+  String get connectWonTitle;
+  String get connectLostTitle;
+  String get powerChainPlus;
+  String connectSelectedOne(int minLen);
+  String connectSelectedCount(int count);
+  String connectLongChain(int len);
+  String connectMinLength(int minLen);
+  String connectSquareHint(int streak, int gained);
+  String connectBonusDrop(int points);
+  String connectSquareChain(int gained);
+  String connectChainText(int streak, int gained);
+  String connectLoseHint(int target, int lines, int streak);
+  String connectStatsLine(int cleared, int loops, int streak, int longest);
+  String connectBoltHint(int count);
+  String connectBoltMilestone(int gained);
+  String connectTargetLine(int longest);
+  // --- W60-2: G3 makarayiz (i18n göç planı) ---
+  String get makaraHintIdle;
+  String get makaraBeatLine;
+  String get makaraReelOut;
+  String get makaraWrongLane;
+  String get makaraEarlyTap;
+  String get makaraFreezeHint;
+  String get makaraFreezeCallout;
+  String get makaraAutoHint;
+  String get makaraAutoCallout;
+  String get makaraX2Hint;
+  String get makaraX2Active;
+  String get makaraEndedTitle;
+  String get makaraShareLine;
+  String get makaraTaglineCaps;
+  String get powerScoreX2;
+  String makaraMissWindow(String reason, int windowMs);
+  String makaraResultMessage(int bestCombo, int hits, int misses);
+  String makaraFillPercent(int pct);
+  // --- W60-2: G5 osmantus (i18n göç planı) ---
+  String get osmantusHintIdle;
+  String get osmantusDikkisChant;
+  String get osmantusHowToBody1;
+  String get osmantusHintResume;
+  String get osmantusPressGreen;
+  String get osmantusMicSaved;
+  String get osmantusDefeatHint;
+  String get osmantusJustInTime;
+  String get osmantusEarlyPress;
+  String get osmantusWaitGreen;
+  String get osmantusDikkisBoost;
+  String get osmantusDikkisHint;
+  String get osmantusRingActive;
+  String get osmantusRingHint;
+  String get osmantusMicShieldCallout;
+  String get osmantusMicShieldHint;
+  String get osmantusDuoWonTitle;
+  String get osmantusHowToBody2;
+  String get powerDikkis;
+  String get powerRingPlus;
+  String get osmantusCardSub1;
+  String get osmantusCardSub2;
+  String get osmantusPressGreenButton;
+  String get osmantusDuoButton;
+  String osmantusComboBroken(String reason);
+  String osmantusLateBy(int delta);
+  String osmantusWarmupMiss(String reason);
+  String goodCombo(int combo);
+  String osmantusEarlyBy(int delta);
+  String osmantusStatsLine(int maxCombo, int streak);
+  // --- W60-2: G6 terlik_tap (i18n göç planı) ---
+  String get terlikHintIdle;
+  String get terlikBonusComboSlipper;
+  String get terlikTrapPassed;
+  String get terlikEscaped;
+  String get terlikTrapReplik;
+  String get terlikLuckBurst;
+  String get terlikBonusSlipper;
+  // --- W103-2: bonus efekt yazıları (bonus_fx.dart) ---
+  String get effectSlap;
+  String get effectCombo;
+  String get terlikMissedHit;
+  String get terlikSteppedTrap;
+  String get terlikDoubleReadyHint;
+  String get terlikDoubleCallout;
+  String get terlikGoldHint;
+  String get terlikGoldCallout;
+  String get terlikSprayCallout;
+  String get powerSprayCaps;
+  String get terlikHoleInstruction;
+  String get terlikOutTitle;
+  String get terlikEmptyHole;
+  String get terlikTrapTag;
+  String terlikBonusComboSpray(int combo);
+  String terlikOutOfSlippers(int smashed, int combo, int coins);
+  String terlikHitHint(int combo, int gain);
+  String terlikComboBreakLives(String reason, int remaining);
+  String terlikComboBreakLifeLost(String reason, int lives);
+  String terlikStatsLine1(int smashed, int missed, int combo);
+  String terlikStatsLine2(int coins, int slippers, int sprays);
+  String terlikSprayHint(int cleared);
+  String terlikPauseScore(int score, int smashed);
+  String terlikSpeedMultiplier(String rate);
+  String terlikHitsChip(int smashed);
+  String terlikMissedChip(int missed);
+  String terlikHoleSemantics(int hole);
+  // --- W60-2: ek anahtarlar (günlük ödül serisi + chat rozeti) ---
+  String dailyRewardSubtitleStreak(int streak);
+  String chatBadgeUnreadLabel(String badge);
+  // --- W65-1: G7 scream_roach (i18n göç planı) ---
+  String get screamHintIdle;
+  String get screamGatePrototype;
+  String get screamIdleGround;
+  String get screamShieldSaved;
+  String get screamMicPermissionSettings;
+  String get screamMicDeniedHint;
+  String get screamMegaJumpCallout;
+  String get screamMegaJumpHint;
+  String get screamShieldBalloonCallout;
+  String get screamShieldBalloonHint;
+  String get screamNitroCallout;
+  String get screamNitroHint;
+  String get powerJumpCaps;
+  String get screamMicOffLabel;
+  String get screamMicOnLabel;
+  String get screamVoicePower;
+  String get screamGateStat;
+  String get screamCrushedTitle;
+  String get gateTerlikDeath;
+  String get gateTerlikPass;
+  String get gateRaidDeath;
+  String get gateRaidPass;
+  String get gateTavaDeath;
+  String get gateTavaPass;
+  String get gateTuzakDeath;
+  String get gateTuzakPass;
+  String get gateHamamDeath;
+  String get gateHamamPass;
+  String get gateVuvuzelaDeath;
+  String get gateVuvuzelaPass;
+  String screamDeathLine(String deathLine, int gates);
+  String screamGateStreak(int streak);
+  String screamCrushedHint(int gates, int streak);
+  String screamStatsLine(int gates, int streak, int dayStreak);
+  String screamNextGate(int gate);
+  String screamShoutingPercent(int percent);
+  String screamArcadeHint(String hint);
+  String screamPauseScore(int score, int gates);
+  // --- W65-1: G8 stack_drop (i18n göç planı) ---
+  String get stackHintIdle;
+  String get stackPerfectPrototype;
+  String get stackMissedFall;
+  String get stackSliceThin;
+  String get stackMagnetHint;
+  String get stackMagnetMilestone;
+  String get stackWidenHint;
+  String get stackWidenMilestone;
+  String get stackSlowHint;
+  String get stackSlowMilestone;
+  String get stackTowerTag;
+  String get stackFloorStat;
+  String get stackTowerFellTitle;
+  String stackDirectHit(int combo, int gain);
+  String stackPerfectHit(int combo);
+  String stackNearHint(int gain, int floors);
+  String stackNearCallout(int gain);
+  String stackEdgeCutHint(int gain, int floors);
+  String stackEdgeCutCallout(int gain);
+  String stackMilestoneFloors(int m);
+  String stackStatsLine(int floors, int perfects, int nears, int combo);
+  String stackTutorialHint(String hint);
+  String stackFloorLabel(int floor);
+  // --- W65-1: G9 yuva_defense (i18n göç planı) ---
+  String get yuvaHintIdle;
+  String get yuvaShieldSaved;
+  String get yuvaFellHint;
+  String get yuvaDoubleHint;
+  String get yuvaGoldHint;
+  String get yuvaShieldIceHint;
+  String get yuvaMissHint;
+  String get yuvaTitleNewSemantic;
+  String get yuvaHowToBody1;
+  String get yuvaHowToBody2;
+  String get yuvaFellTitle;
+  String yuvaBugEntered(int lives);
+  String yuvaWaveHit(int wave, int points, int combo);
+  String yuvaHitHint(int points, int combo);
+  String yuvaPauseScore(int score, int hits);
+  String yuvaResultScore(int score, int combo);
+  String yuvaHitsPainter(int hits);
+  String yuvaMissedPainter(int misses);
+  // --- W65-1: G10 grid_2048 (i18n göç planı) ---
+  String get gridSuperCombo;
+  String get gridTarget2048;
+  String get gridHowToTitle;
+  String get gridHowToBody1;
+  String get gridHowToBody2;
+  String get gridHowToBody3;
+  String get gridHowToBody4;
+  String gridSuperMergeSpeech(String title);
+  String gridHighestTile(int value);
+  String gridMovesCount(int count);
+  String gridPauseStats(int moves, int merges, int streak);
+
+  // --- W69-1: L10N anahtar dalgası 3 (G13 + G15 + G12 + G17 + splash
+  // ›-suz + semantics eksik 10 + arcade görünür) ---
+  // Yalnız anahtar; UI göçü sonraki dalgada. W89-2: G17 gövde
+  // `energyEmptyBody` 3 parçaya açıldı — "dolar" 'dolmak' fiilinin
+  // çekimidir (koordinatör kararı: metin aynen korunur, para birimi
+  // anlamı yok); G10 gizli '2048 Grid' (Opacity(0) test-finder) göç dışı.
+
+  // G13: bölüm adları (campaign_map_screen.dart:31-34 yerel liste).
+  String get campaignChapter1;
+  String get campaignChapter2;
+  String get campaignChapter3;
+  String get campaignChapter4;
+
+  // G15: main.dart karşılama hata ekranı (375/385/402).
+  String get welcomeStatusReadFail;
+  String get welcomeSkipFail;
+  String get continueToHomeAnyway;
+
+  // G12: tiers_screen.dart başlık + alt başlık (258/279).
+  String get bugFamilyTitle;
+  String get bugFamilySubtitle;
+
+  // W85-2: tiers_screen.dart satır name + quote (T1–T13).
+  String get tierRowName1;
+  String get tierRowName2;
+  String get tierRowName3;
+  String get tierRowName4;
+  String get tierRowName5;
+  String get tierRowName6;
+  String get tierRowName7;
+  String get tierRowName8;
+  String get tierRowName9;
+  String get tierRowName10;
+  String get tierRowName11;
+  String get tierRowName12;
+  String get tierRowName13;
+  String get tierRowQuote1;
+  String get tierRowQuote2;
+  String get tierRowQuote3;
+  String get tierRowQuote4;
+  String get tierRowQuote5;
+  String get tierRowQuote6;
+  String get tierRowQuote7;
+  String get tierRowQuote8;
+  String get tierRowQuote9;
+  String get tierRowQuote10;
+  String get tierRowQuote11;
+  String get tierRowQuote12;
+  String get tierRowQuote13;
+
+  // G17: energy_empty_popup.dart (178/229/249/269).
+  String get energyEmptyTitle;
+  String get energyEmptyBodyStart;
+  String get energyEmptyBodyMiddle;
+  String get energyEmptyBodyEnd;
+  String get rewardedAdsSoonCaps;
+  String get shopEnergyPackButton;
+  String get waitForTimerCaps;
+
+  /// Splash ›-suz temiz değerler: [splashSkip], [splashStartButton]
+  /// ve [splashContinueButton] '›' içerir; Semantics etiketleri
+  /// temiz değeri kullanır (mevcut anahtarlara dokunulmadı).
+  String get splashSkipPlain;
+  String get splashStartButtonPlain;
+  String get splashContinueButtonPlain;
+
+  // Semantics eksik 10 (W65-3 raporu D-4/D-38/D-40/D-41/D-42/D-44/
+  // D-45/D-49/D-52/D-54).
+  String get play2048Label;
+  String get doubleRewardLabel;
+  String get watchAdChestLabel;
+  String get notifyOnLabel;
+
+  /// Seviye karosu erişilebilirlik etiketi: seviye no + yıldız;
+  /// kilitliyse ' · Kilitli' eklenir.
+  String levelTileLabel(int id, int stars, bool locked);
+  String chapterTabLabel(int index, int stars);
+
+  /// Sandık erişilebilirlik etiketi. [state]: 'claimable' (alınabilir),
+  /// 'claimed' (alındı) veya 'locked' (kilitli); bilinmeyen değerde
+  /// alınabilir dalı döner.
+  String chestClaimLabel(int stars, String state);
+  String channelSelectLabel(String name);
+  String sendStickerLabel(String name);
+  String featuredModeLabel(String title, String subtitle);
+
+  // --- W75-3: L10N anahtar dalgası 4 (yalnız anahtar; bağlama yok) ---
+  // howToPlaySuffix: arcade_chrome.dart:111 başlık soneki
+  // ('${title.toUpperCase()} — NASIL OYNANIR?'). Rozet anahtarları
+  // _resolvedBadge dönüşleri için tag anahtarlarından ayrıldı;
+  // değerleri connectChainTag/stackTowerTag ile aynı.
+  String get howToPlaySuffix;
+  String get connectChainBadge;
+  String get stackTowerBadge;
+
+  // --- W79-3: L10N anahtar dalgası 5 (online_screen + leaderboard;
+  // yalnız anahtar; bağlama yok) ---
+  // Online adları i18n-goc-plani.md G11'deki önerilen adlar; EN
+  // karşılıkları plan tablosundan (lonca/turnuva EN'i planda yoktu,
+  // doğru çeviri yazıldı). 'Seviye N' için planda ad önerisi yoktu
+  // (tohum içerik, plan Ek B); plan örneğindeki `levelLabel(int)`
+  // mevcut `levelLabel` getter'ı ('SEVİYE') ile çakışır, o yüzden
+  // recordWithValue kalıbıyla `levelWithValue` açıldı.
+  String get onlineNotifyRemovedSnack;
+  String get comingVerySoonCaps;
+  String get onlineComingSoonBody;
+  String get notifyOnCaps;
+  String get onlineDuelTitle;
+  String get onlineDuelSubtitle;
+  String get onlineGuildWarsTitle;
+  String get onlineGuildWarsSubtitle;
+  String get onlineTournamentsTitle;
+  String get onlineTournamentsSubtitle;
+
+  /// Skor tablosu satırındaki 'Seviye 24' etiketi; kısaltmalı
+  /// [levelShort] ('Sv. 24') ve rozetli [levelBadge] ('LVL 24')
+  /// biçimlerinden farklıdır. Tek şablon, koşulsuz metot.
+  String levelWithValue(int level);
+
+  /// Skor tablosu SEN satırındaki ad: 'SEN · LülüSever' biçimi.
+  /// [name] görünen addır ([AuthService.displayName]); giriş
+  /// yoksa 'LülüSever' yedeği verilir (leaderboard_service.dart
+  /// :577-578'deki yedekle aynı). Tek şablon, koşulsuz metot.
+  String youAsName(String name);
 }
 
 /// [AppLocalizations.of] kısayolu: `context.l10n.play`.

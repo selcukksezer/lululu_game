@@ -789,12 +789,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get signInOrUpSlash => 'Giriş yap / kayıt ol';
 
   @override
-  String get musicTitle => 'Müzik';
-
-  @override
-  String get musicSubtitle => 'Arkaplan müziği';
-
-  @override
   String get sfxTitle => 'Ses Efektleri';
 
   @override
@@ -1346,16 +1340,25 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopPowerUndoName => 'Geri Al';
 
   @override
+  String get shopPowerUndoNameCaps => 'GERİ AL';
+
+  @override
   String get shopPowerUndoDesc => 'Son hamleyi geri alır';
 
   @override
   String get shopPowerShuffleName => 'Karıştır';
 
   @override
-  String get shopPowerShuffleDesc => 'Izgarayı karıştırır, kilidi açar';
+  String get shopPowerShuffleNameCaps => 'KARIŞTIR';
+
+  @override
+  String get shopPowerShuffleDesc => "Izgara'yı karıştırır, kilidi açar";
 
   @override
   String get shopPowerMergePairName => 'Çiftleştir';
+
+  @override
+  String get shopPowerMergePairNameCaps => 'ÇİFTLEŞTİR';
 
   @override
   String get shopPowerMergePairDesc => 'Rastgele iki aynı karoyu birleştirir';
@@ -1377,6 +1380,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get shopPowerSlowName => 'Yavaşlat';
+
+  @override
+  String get shopPowerSlowNameCaps => 'YAVAŞLAT';
 
   @override
   String get shopPowerSlowBalloonDesc => 'Balonları 10 sn yavaşlatır';
@@ -1430,10 +1436,16 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopPowerFreezeName => 'Dondur';
 
   @override
+  String get shopPowerFreezeNameCaps => 'DONDUR';
+
+  @override
   String get shopPowerFreezeDesc => 'Sallantıyı durdurur';
 
   @override
   String get shopPowerWidenName => 'Genişlet';
+
+  @override
+  String get shopPowerWidenNameCaps => 'GENİŞLET';
 
   @override
   String get shopPowerWidenDesc => 'Dilimi büyütür';
@@ -1448,10 +1460,16 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopPowerDoubleSlipperName => 'Çift Terlik';
 
   @override
+  String get shopPowerDoubleSlipperNameCaps => 'ÇİFT TERLİK';
+
+  @override
   String get shopPowerDoubleSlipperDesc => 'Tek dokunuşta çift vuruş';
 
   @override
   String get shopPowerGoldenSlipperName => 'Altın Terlik';
+
+  @override
+  String get shopPowerGoldenSlipperNameCaps => 'ALTIN TERLİK';
 
   @override
   String get shopPowerGoldenSlipperDesc => 'Süreli 2x puan';
@@ -1511,6 +1529,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopPowerNitroName => 'Nitro';
 
   @override
+  String get shopPowerNitroNameCaps => 'NİTRO';
+
+  @override
   String get shopPowerNitroDesc => 'Hız ve puan artışı';
 
   @override
@@ -1532,7 +1553,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopPowerScoreMultiplierName => 'Puan Çarpanı';
 
   @override
-  String get shopPowerScoreMultiplierDesc => 'Süreli x2 puan';
+  String get shopPowerScoreMultiplierDesc => 'Süreli 2x puan';
 
   @override
   String get shopGoldenWeekendTitle => 'ALTIN HAFTA SONU';
@@ -1556,7 +1577,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopPowerUpsTitle => 'GÜÇLENDİRİCİLER';
 
   @override
-  String get shopPowerUpsNote => 'Moda özel · 30 çeşit';
+  String get shopPowerUpsNote => 'Moda özel · 33 çeşit';
 
   @override
   String get shopCoinPacksTitle => 'COİN PAKETLERİ';
@@ -1701,4 +1722,933 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String coinPillLabel(String value) => 'Coin: $value, coin paketi ekle';
+
+  // --- W60-2: §3 paylaşılan anahtarlar (i18n göç planı) ---
+  @override
+  String get pausedStatusCaps => 'DURAKLATILDI';
+
+  @override
+  String get finishCaps => 'BİTİR';
+
+  @override
+  String get finishLabel => 'Bitir';
+
+  @override
+  String get tryAgainCaps => 'YENİDEN';
+
+  @override
+  String get retryShort => 'TEKRAR';
+
+  @override
+  String get viralBadge => 'VİRAL';
+
+  @override
+  String get moveLabel => 'HAMLE';
+
+  @override
+  String get timeLabel => 'SÜRE';
+
+  @override
+  String get livesLabel => 'CAN';
+
+  @override
+  String get newBadge => 'YENİ';
+
+  @override
+  String get missedCaps => 'KAÇIRDIN';
+
+  @override
+  String get perfectCaps => 'MÜKEMMEL!';
+
+  @override
+  String get comboBrokenShort => 'KOMBO KIRILDI';
+
+  @override
+  String get understoodLabel => 'Anladım';
+
+  @override
+  String get connectTargetHit => 'Hedef tuttu.';
+
+  @override
+  String get powerShieldCaps => 'KALKAN';
+
+  @override
+  String get statusLabel => 'DURUM';
+
+  @override
+  String get resultComplete => 'TAMAM';
+
+  @override
+  String get resultOver => 'BİTTİ';
+
+  @override
+  String get modeBadgeTitle => 'MOD ROZETİ';
+
+  @override
+  String get doubleGoldEarnedCaps => '2X ALTIN KAZANILDI';
+
+  @override
+  String perfectCombo(int combo) => 'MÜKEMMEL! X$combo';
+
+  @override
+  String comboBrokenReason(String reason) => '$reason · KOMBO KIRILDI';
+
+  @override
+  String pauseScoreComboLine(int score, int combo) => 'Skor $score · Kombo x$combo';
+
+  @override
+  String arcadeMilestoneScore(int m) => 'SKOR $m!';
+
+  @override
+  String featuredBannerLabel(String badge) => 'ÖNE ÇIKAN · $badge';
+
+  @override
+  String featuredEndsToday(String clock) => 'Bugün bitiş · $clock';
+
+  // --- W60-2: G2 connect_pop (i18n göç planı) ---
+  @override
+  String get connectHintIdle => 'Aynı böceği çiz. Kare = o türün hepsi.';
+
+  @override
+  String get connectChainPrototype => 'ZİNCİR X2 · +150';
+
+  @override
+  String get connectBoardRefreshed => 'Tahta yenilendi.';
+
+  @override
+  String get connectLoopHint => 'İpucu: kare yap, türün hepsi gider.';
+
+  @override
+  String get connectGroupHint => 'İpucu: bu grubu bağla.';
+
+  @override
+  String get connectLoopReady => 'KARE · bırak, hepsi silinsin';
+
+  @override
+  String get connectSquareClear => 'KARE TEMİZLİK';
+
+  @override
+  String get connectLinesOut => 'Çizgi hakkın bitti.';
+
+  @override
+  String get connectChainExtenderHint => 'Zincir Uzatıcı aktif · +3 çizgi hakkı!';
+
+  @override
+  String get connectChainExtenderMilestone => 'ZİNCİR UZATICI · +3 ÇİZGİ!';
+
+  @override
+  String get connectMagnetHint => 'Mıknatıs / Bomba Halkası kare zinciri kurdu!';
+
+  @override
+  String get connectMagnetMilestone => 'MIKNATIS HALKASI · KARE HAZIR!';
+
+  @override
+  String get connectChainTag => 'ZİNCİR';
+
+  @override
+  String get connectLineStat => 'ÇİZGİ';
+
+  @override
+  String get connectWonTitle => 'BAĞLANDI';
+
+  @override
+  String get connectLostTitle => 'HAK BİTTİ';
+
+  @override
+  String get powerChainPlus => 'ZİNCİR +';
+
+  @override
+  String connectSelectedOne(int minLen) => 'Seçili 1 · en az $minLen';
+
+  @override
+  String connectSelectedCount(int count) => 'Seçili $count';
+
+  @override
+  String connectLongChain(int len) => 'Uzun zincir! $len';
+
+  @override
+  String connectMinLength(int minLen) => 'En az $minLen böcek bağla.';
+
+  @override
+  String connectSquareHint(int streak, int gained) => 'Kare! x$streak · +$gained';
+
+  @override
+  String connectBonusDrop(int points) => 'Bonus düşüş +$points';
+
+  @override
+  String connectSquareChain(int gained) => 'KARE · +$gained';
+
+  @override
+  String connectChainText(int streak, int gained) => 'ZİNCİR X$streak · +$gained';
+
+  @override
+  String connectLoseHint(int target, int lines, int streak) => 'Hedef $target · $lines çizgi · streak x$streak';
+
+  @override
+  String connectStatsLine(int cleared, int loops, int streak, int longest) => 'Temiz $cleared · Kare $loops · Max streak x$streak · En uzun $longest';
+
+  @override
+  String connectBoltHint(int count) => 'Yıldırım / Tür Temizleyici $count böceği çarptı!';
+
+  @override
+  String connectBoltMilestone(int gained) => 'YILDIRIM · +$gained PUAN!';
+
+  @override
+  String connectTargetLine(int longest) => 'HEDEF 1.600 · EN UZUN ZİNCİR $longest';
+
+  // --- W60-2: G3 makarayiz (i18n göç planı) ---
+  @override
+  String get makaraHintIdle => 'Nota beat çizgisine gelince şeride dokun ya da kaydır.';
+
+  @override
+  String get makaraBeatLine => 'BEAT ÇİZGİSİNDE BAS!';
+
+  @override
+  String get makaraReelOut => 'Makara bitti. Yeniden çek!';
+
+  @override
+  String get makaraWrongLane => 'YANLIŞ ŞERİT';
+
+  @override
+  String get makaraEarlyTap => 'ERKEN DOKUNDUN';
+
+  @override
+  String get makaraFreezeHint => 'BEAT DONDUR · 8 sn notalar dondu!';
+
+  @override
+  String get makaraFreezeCallout => 'BEAT DONDUR!';
+
+  @override
+  String get makaraAutoHint => 'OTO MAKARA · 6 sn otomatik vuruş!';
+
+  @override
+  String get makaraAutoCallout => 'OTO MAKARA!';
+
+  @override
+  String get makaraX2Hint => 'PUAN X2 · 12 sn çift puan!';
+
+  @override
+  String get makaraX2Active => 'PUAN X2 AKTİF!';
+
+  @override
+  String get makaraEndedTitle => 'MAKARA BİTTİ';
+
+  @override
+  String get makaraShareLine => 'Makarayız abi!';
+
+  @override
+  String get makaraTaglineCaps => 'MAKARAYIZ ABİ!';
+
+  @override
+  String get powerScoreX2 => 'PUAN X2';
+
+  @override
+  String makaraMissWindow(String reason, int windowMs) => '$reason — vuruş penceresi: ±$windowMs ms';
+
+  @override
+  String makaraResultMessage(int bestCombo, int hits, int misses) => 'En iyi kombo x$bestCombo · $hits vuruş · $misses kaçan';
+
+  @override
+  String makaraFillPercent(int pct) => 'MAKARA %$pct DOLDU';
+
+  // --- W60-2: G5 osmantus (i18n göç planı) ---
+  @override
+  String get osmantusHintIdle => 'Halka yeşile dönünce dokun!';
+
+  @override
+  String get osmantusDikkisChant => 'DIKKIŞ DIKKIŞ!';
+
+  @override
+  String get osmantusHowToBody1 => 'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! ';
+
+  @override
+  String get osmantusHintResume => 'Devam! Halka yeşile dönünce dokun.';
+
+  @override
+  String get osmantusPressGreen => 'YEŞİLDE BAS!';
+
+  @override
+  String get osmantusMicSaved => 'Mikrofon tuttu, can gitmedi.';
+
+  @override
+  String get osmantusDefeatHint => 'Bitti. Osman & Tuş seni yendi.';
+
+  @override
+  String get osmantusJustInTime => 'Tam zamanında!';
+
+  @override
+  String get osmantusEarlyPress => 'ERKEN BASTIN';
+
+  @override
+  String get osmantusWaitGreen => 'Bekle, halka yeşile dönsün.';
+
+  @override
+  String get osmantusDikkisBoost => 'DIKKIŞ 2X PUAN!';
+
+  @override
+  String get osmantusDikkisHint => 'DIKKIŞ aktif · 12 sn 2X sahne puanı ve geniş ritim!';
+
+  @override
+  String get osmantusRingActive => 'HALKA + AKTİF!';
+
+  @override
+  String get osmantusRingHint => 'Halka + aktif · 12 sn geniş zamanlama penceresi!';
+
+  @override
+  String get osmantusMicShieldCallout => 'MİKROFON KALKANI!';
+
+  @override
+  String get osmantusMicShieldHint => 'Mikrofon kalkanı hazır · sıradaki kaçışta can gitmez!';
+
+  @override
+  String get osmantusDuoWonTitle => 'İKİLİ YENDİ';
+
+  @override
+  String get osmantusHowToBody2 => 'Zamanında basarak kombo yap ve özel sahne güçlerini kullan.';
+
+  @override
+  String get powerDikkis => 'DIKKIŞ';
+
+  @override
+  String get powerRingPlus => 'HALKA +';
+
+  @override
+  String get osmantusCardSub1 => 'Tuşçu · işaretçi';
+
+  @override
+  String get osmantusCardSub2 => 'Makara · dinleyen';
+
+  @override
+  String get osmantusPressGreenButton => 'YEŞİLDE\nBAS!';
+
+  @override
+  String get osmantusDuoButton => 'İKİLİ TUŞ';
+
+  @override
+  String osmantusComboBroken(String reason) => 'KOMBO BOZULDU · $reason';
+
+  @override
+  String osmantusLateBy(int delta) => 'Biraz geç (+${delta}ms)';
+
+  @override
+  String osmantusWarmupMiss(String reason) => '$reason · ısınma turu, can gitmedi';
+
+  @override
+  String goodCombo(int combo) => 'İYİ! X$combo';
+
+  @override
+  String osmantusEarlyBy(int delta) => 'Biraz erken (${-delta}ms)';
+
+  @override
+  String osmantusStatsLine(int maxCombo, int streak) => 'Max combo x$maxCombo · Günlük streak $streak';
+
+  // --- W60-2: G6 terlik_tap (i18n göç planı) ---
+  @override
+  String get terlikHintIdle => 'Uçan böceği terlikle ez!';
+
+  @override
+  String get terlikBonusComboSlipper => 'COMBO x8 TERLİK +1';
+
+  @override
+  String get terlikTrapPassed => 'TUZAK GEÇTİ';
+
+  @override
+  String get terlikEscaped => 'KAÇTI';
+
+  @override
+  String get terlikTrapReplik => 'CIZZT! Tuzağa basma!';
+
+  @override
+  String get terlikLuckBurst => 'ŞANS PATLAMA';
+
+  @override
+  String get terlikBonusSlipper => 'TERLİK +1';
+
+  // --- W103-2: bonus efekt yazıları (bonus_fx.dart) ---
+  @override
+  String get effectSlap => 'ŞAK!';
+
+  @override
+  String get effectCombo => 'KOMBO!';
+
+  @override
+  String get terlikMissedHit => 'BOŞA VURDUN';
+
+  @override
+  String get terlikSteppedTrap => 'TUZAĞA BASTIN';
+
+  @override
+  String get terlikDoubleReadyHint => 'ÇİFT TERLİK HAZIR · SONRAKİ VURUŞ ÇİFT BÖCEK EZER!';
+
+  @override
+  String get terlikDoubleCallout => 'ÇİFT TERLİK!';
+
+  @override
+  String get terlikGoldHint => 'ALTIN TERLİK AKTİF · 20 SN BOYUNCA 2X PUAN!';
+
+  @override
+  String get terlikGoldCallout => 'ALTIN TERLİK 2X!';
+
+  @override
+  String get terlikSprayCallout => 'İLAÇ TEMİZLİĞİ!';
+
+  @override
+  String get powerSprayCaps => 'İLAÇ';
+
+  @override
+  String get terlikHoleInstruction => 'DELİKTEN ÇIKANI ANINDA EZ!';
+
+  @override
+  String get terlikOutTitle => 'TERLİK BİTTİ';
+
+  @override
+  String get terlikEmptyHole => 'Boş delik';
+
+  @override
+  String get terlikTrapTag => 'TUZAK!';
+
+  @override
+  String terlikBonusComboSpray(int combo) => 'COMBO x$combo SPREY +1';
+
+  @override
+  String terlikOutOfSlippers(int smashed, int combo, int coins) => 'Terlik yetmedi. Ezilen $smashed · max x$combo · +$coins💰';
+
+  @override
+  String terlikHitHint(int combo, int gain) => 'VURUŞ · COMBO X$combo · +$gain';
+
+  @override
+  String terlikComboBreakLives(String reason, int remaining) => '$reason · KOMBO KIRILDI · $remaining KAÇIŞA KADAR CAN';
+
+  @override
+  String terlikComboBreakLifeLost(String reason, int lives) => '$reason · -1 CAN · KOMBO KIRILDI · $lives CAN KALDI';
+
+  @override
+  String terlikStatsLine1(int smashed, int missed, int combo) => 'Ezilen $smashed · Kaçan $missed · Max combo x$combo\n';
+
+  @override
+  String terlikStatsLine2(int coins, int slippers, int sprays) => '+$coins coin · terlik +$slippers · sprey +$sprays';
+
+  @override
+  String terlikSprayHint(int cleared) => 'İLAÇ SIKILDI · $cleared HEDEF TEMİZLENDİ!';
+
+  @override
+  String terlikPauseScore(int score, int smashed) => 'Skor $score · Ezilen $smashed';
+
+  @override
+  String terlikSpeedMultiplier(String rate) => 'HIZ X$rate';
+
+  @override
+  String terlikHitsChip(int smashed) => 'VURUŞ $smashed';
+
+  @override
+  String terlikMissedChip(int missed) => 'KAÇAN $missed!';
+
+  @override
+  String terlikHoleSemantics(int hole) => 'Böceği ez, delik $hole';
+
+  // --- W60-2: ek anahtarlar (günlük ödül serisi + chat rozeti) ---
+  @override
+  String dailyRewardSubtitleStreak(int streak) => '$streak. gün · 500 coin seni bekliyor';
+
+  @override
+  String chatBadgeUnreadLabel(String badge) => '$badge okunmamış mesaj';
+
+  // --- W65-1: G7 scream_roach (i18n göç planı) ---
+  @override
+  String get screamHintIdle => 'Spam dokun = zıpla. Terlik · sprey · tava arasından geç!';
+
+  @override
+  String get screamGatePrototype => 'KAPI X7!';
+
+  @override
+  String get screamIdleGround => 'Çimde uyudun! Zıpla / spam et.';
+
+  @override
+  String get screamShieldSaved => 'Kalkan tuttu.';
+
+  @override
+  String get screamMicPermissionSettings => 'Ses kontrolü için Ayarlar’dan mikrofon izni ver.';
+
+  @override
+  String get screamMicDeniedHint => 'Ses izni verilmedi · dokunarak zıplayabilirsin.';
+
+  @override
+  String get screamMegaJumpCallout => 'MEGA ZIPLAMA!';
+
+  @override
+  String get screamMegaJumpHint => 'Mega zıplama aktif · ilk engel sıyırır!';
+
+  @override
+  String get screamShieldBalloonCallout => 'KALKAN BALONU!';
+
+  @override
+  String get screamShieldBalloonHint => 'Kalkan balonu aktif · çarpışmayı korur!';
+
+  @override
+  String get screamNitroCallout => 'NİTRO ÇIĞLIK!';
+
+  @override
+  String get screamNitroHint => 'Nitro aktif · 8 sn hızlı uçuş ve +25 kapı bonusu!';
+
+  @override
+  String get powerJumpCaps => 'ZIPLAMA';
+
+  @override
+  String get screamMicOffLabel => 'Mikrofonu kapat';
+
+  @override
+  String get screamMicOnLabel => 'Bağırarak zıplamayı aç';
+
+  @override
+  String get screamVoicePower => 'SES GÜCÜ';
+
+  @override
+  String get screamGateStat => 'KAPI';
+
+  @override
+  String get screamCrushedTitle => 'EZİLDİN';
+
+  @override
+  String get gateTerlikDeath => 'Terlik şılapp!';
+
+  @override
+  String get gateTerlikPass => 'Terlik sıyırdı!';
+
+  @override
+  String get gateRaidDeath => 'Raid bulutu!';
+
+  @override
+  String get gateRaidPass => 'Spreyi geçtin!';
+
+  @override
+  String get gateTavaDeath => 'Tava tokattı!';
+
+  @override
+  String get gateTavaPass => 'Tava altından!';
+
+  @override
+  String get gateTuzakDeath => 'Yapışkan tuzak!';
+
+  @override
+  String get gateTuzakPass => 'Tuzaktan kaçtın!';
+
+  @override
+  String get gateHamamDeath => 'Tas kafaya!';
+
+  @override
+  String get gateHamamPass => 'Hamam tas geçti!';
+
+  @override
+  String get gateVuvuzelaDeath => 'Vuvuzela ezdi!';
+
+  @override
+  String get gateVuvuzelaPass => 'Kongo koridoru!';
+
+  @override
+  String screamDeathLine(String deathLine, int gates) => '$deathLine Kapı $gates';
+
+  @override
+  String screamGateStreak(int streak) => 'KAPI X$streak!';
+
+  @override
+  String screamCrushedHint(int gates, int streak) => 'Ezildin! Kapı $gates · max spam x$streak';
+
+  @override
+  String screamStatsLine(int gates, int streak, int dayStreak) => 'Kapı $gates · Max spam x$streak · Streak $dayStreak';
+
+  @override
+  String screamNextGate(int gate) => 'SONRAKİ: KAPI $gate';
+
+  @override
+  String screamShoutingPercent(int percent) => '%$percent · BAĞIRIYOR';
+
+  @override
+  String screamArcadeHint(String hint) => 'Dokun veya mikrofonu açıp bağırarak zıpla. $hint';
+
+  @override
+  String screamPauseScore(int score, int gates) => 'Skor $score · Kapı $gates';
+  // --- W65-1: G8 stack_drop (i18n göç planı) ---
+  @override
+  String get stackHintIdle => 'Dokun. Tam ortala = combo. Kenar kesilir.';
+
+  @override
+  String get stackPerfectPrototype => 'MÜKEMMEL İSABET! X3';
+
+  @override
+  String get stackMissedFall => 'Kaçırdın. Kule yıkıldı.';
+
+  @override
+  String get stackSliceThin => 'Dilim çok inceldi.';
+
+  @override
+  String get stackMagnetHint => 'Mıknatıs Hizalama & Dondur (4 sn) aktif!';
+
+  @override
+  String get stackMagnetMilestone => 'MIKNATIS HİZALAMA & DONDUR!';
+
+  @override
+  String get stackWidenHint => 'Geniş Blok aktif · Kule tabanı genişledi!';
+
+  @override
+  String get stackWidenMilestone => 'GENİŞ BLOK AKTİF!';
+
+  @override
+  String get stackSlowHint => 'Yavaşlatıcı aktif (8 sn)!';
+
+  @override
+  String get stackSlowMilestone => 'YAVAŞLATICI AKTİF (8 SN)!';
+
+  @override
+  String get stackTowerTag => 'KULE';
+
+  @override
+  String get stackFloorStat => 'KAT';
+
+  @override
+  String get stackTowerFellTitle => 'KULE DÜŞTÜ';
+
+  @override
+  String stackDirectHit(int combo, int gain) => 'TAM İSABET x$combo · +$gain';
+
+  @override
+  String stackPerfectHit(int combo) => 'MÜKEMMEL İSABET! X$combo';
+
+  @override
+  String stackNearHint(int gain, int floors) => 'Neredeyse · +$gain · kat $floors';
+
+  @override
+  String stackNearCallout(int gain) => 'YAKIN! +$gain';
+
+  @override
+  String stackEdgeCutHint(int gain, int floors) => 'Kenar kesildi. +$gain · kat $floors';
+
+  @override
+  String stackEdgeCutCallout(int gain) => 'KENAR KESİLDİ · +$gain';
+
+  @override
+  String stackMilestoneFloors(int m) => '$m KAT!';
+
+  @override
+  String stackStatsLine(int floors, int perfects, int nears, int combo) => 'Kat $floors · Perfect $perfects · Near $nears · Max combo x$combo';
+
+  @override
+  String stackTutorialHint(String hint) => 'İlk 15 saniye öğretici tempoda. $hint';
+
+  @override
+  String stackFloorLabel(int floor) => 'KAT $floor';
+  // --- W65-1: G9 yuva_defense (i18n göç planı) ---
+  @override
+  String get yuvaHintIdle => 'Yuvaya yaklaşan böcekleri durdur!';
+
+  @override
+  String get yuvaShieldSaved => 'KALKAN YUVAYI KORUDU · BÖCEK GERİ PÜSKÜRTÜLDÜ!';
+
+  @override
+  String get yuvaFellHint => 'Yuva düştü · bir dokunuşla yeniden başla';
+
+  @override
+  String get yuvaDoubleHint => 'ÇİFT TERLİK AKTİF · 3 VURUŞ ÇİFT HEDEF EZER!';
+
+  @override
+  String get yuvaGoldHint => 'ALTIN TERLİK AKTİF · 12 SN BOYUNCA 2X PUAN!';
+
+  @override
+  String get yuvaShieldIceHint => 'KALKAN & BUZ BARİYERİ AKTİF · BÖCEKLER YAVAŞLADI!';
+
+  @override
+  String get yuvaMissHint => 'Iska! Kombo sıfırlandı';
+
+  @override
+  String get yuvaTitleNewSemantic => 'YUVA SAVUNMASI, YENİ';
+
+  @override
+  String get yuvaHowToBody1 => 'Yuvaya ulaşmadan böceklere dokun. ';
+
+  @override
+  String get yuvaHowToBody2 => 'Hızlı vuruşlarla kombonu büyüt; üç kaçışta oyun biter.';
+
+  @override
+  String get yuvaFellTitle => 'YUVA DÜŞTÜ';
+
+  @override
+  String yuvaBugEntered(int lives) => 'Böcek orta deliğe girdi · $lives kaçış hakkı kaldı';
+
+  @override
+  String yuvaWaveHit(int wave, int points, int combo) => 'DALGA $wave · VURUŞ +$points · KOMBO x$combo';
+
+  @override
+  String yuvaHitHint(int points, int combo) => 'VURUŞ +$points  ·  KOMBO x$combo';
+
+  @override
+  String yuvaPauseScore(int score, int hits) => 'Skor $score · Vuruş $hits';
+
+  @override
+  String yuvaResultScore(int score, int combo) => 'SKOR $score · KOMBO x$combo';
+
+  @override
+  String yuvaHitsPainter(int hits) => 'VURUŞ $hits';
+
+  @override
+  String yuvaMissedPainter(int misses) => 'KAÇAN $misses!';
+  // --- W65-1: G10 grid_2048 (i18n göç planı) ---
+  @override
+  String get gridSuperCombo => 'SÜPER!';
+
+  @override
+  String get gridTarget2048 => 'HEDEF: 2048 BÖCEK';
+
+  @override
+  String get gridHowToTitle => '2048 GRİD NASIL OYNANIR?';
+
+  @override
+  String get gridHowToBody1 => 'Tahtayı 4 yöne kaydır — aynı tier böcekler çarpışınca birleşir, yeni böcek doğar. 2048\'e ulaş!\n\n';
+
+  @override
+  String get gridHowToBody2 => '• GERİ AL: Son hamleyi geri alır.\n';
+
+  @override
+  String get gridHowToBody3 => '• KARIŞTIR: Tahtadaki tüm böceklerin yerlerini karıştırır.\n';
+
+  @override
+  String get gridHowToBody4 => '• ÇİFTLEŞTİR: En yüksek eşleşen iki böceği anında birleştirir.';
+
+  @override
+  String gridSuperMergeSpeech(String title) => 'LÜLÜLÜ! SÜPER BİRLEŞİM! ($title)';
+
+  @override
+  String gridHighestTile(int value) => 'EN YÜKSEK TAŞ: $value';
+
+  @override
+  String gridMovesCount(int count) => 'HAMLE $count';
+
+  @override
+  String gridPauseStats(int moves, int merges, int streak) => 'Hamle $moves · Birleşim $merges · Seri x$streak';
+
+  // --- W69-1: L10N anahtar dalgası 3 ---
+
+  @override
+  String get campaignChapter1 => 'Mutfak Tezgahı';
+
+  @override
+  String get campaignChapter2 => 'Diva Malikanesi';
+
+  @override
+  String get campaignChapter3 => 'Pikomotions Sahnesi';
+
+  @override
+  String get campaignChapter4 => 'Kongo İstilası';
+
+  @override
+  String get welcomeStatusReadFail => 'Karşılama durumu okunamadı.';
+
+  @override
+  String get welcomeSkipFail => 'Karşılama ekranı atlanmadı. Tekrar deneyin.';
+
+  @override
+  String get continueToHomeAnyway => 'Yine de ana ekrana devam et';
+
+  @override
+  String get bugFamilyTitle => 'BÖCEK AİLESİ';
+
+  @override
+  String get bugFamilySubtitle =>
+      'İki aynı tier çarpışır, bir üst tier doğar. Zincirin sonu: Pembe Bornozlu. Bir böceğe dokun — sesini duy, repliğini gör.';
+
+  @override
+  String get tierRowName1 => 'Bebek Huni';
+
+  @override
+  String get tierRowName2 => 'Tencereli Çırak';
+
+  @override
+  String get tierRowName3 => 'Makaracı Fan';
+
+  @override
+  String get tierRowName4 => 'Pijamalı Dansçı';
+
+  @override
+  String get tierRowName5 => 'Hamam Diva';
+
+  @override
+  String get tierRowName6 => 'Hamam Can';
+
+  @override
+  String get tierRowName7 => 'Kongo Lideri';
+
+  @override
+  String get tierRowName8 => 'Hasta Bilge';
+
+  @override
+  String get tierRowName9 => 'Millî Formalı';
+
+  @override
+  String get tierRowName10 => 'Pembe Ceketli';
+
+  @override
+  String get tierRowName11 => 'Beyaz Hayalet';
+
+  @override
+  String get tierRowName12 => 'Gri Tişörtlü';
+
+  @override
+  String get tierRowName13 => 'Pembe Bornozlu';
+
+  @override
+  String get tierRowQuote1 => 'HOP, GELDİM!';
+
+  @override
+  String get tierRowQuote2 => 'TENCERE KAFADA, HAZIRIZ!';
+
+  @override
+  String get tierRowQuote3 => 'MAKARAYIZ ABİ!';
+
+  @override
+  String get tierRowQuote4 => 'DANS PİSTİNE!';
+
+  @override
+  String get tierRowQuote5 => 'DİVA GELDİ!';
+
+  @override
+  String get tierRowQuote6 => 'HERKES HAVUZDAN ÇIKSIN!';
+
+  @override
+  String get tierRowQuote7 => 'LİDER KONUŞTU!';
+
+  @override
+  String get tierRowQuote8 => 'BİLGE YORGUN AMA EFSANE!';
+
+  @override
+  String get tierRowQuote9 => 'GOLLL LÜLÜLÜ!';
+
+  @override
+  String get tierRowQuote10 => 'PEMBE CEKETİM YAKIYOR!';
+
+  @override
+  String get tierRowQuote11 => 'BUUUUU! KORKTUN MU?';
+
+  @override
+  String get tierRowQuote12 => 'SPORCU BÖCEK GELİYOR!';
+
+  @override
+  String get tierRowQuote13 => 'BORNOZUMU GİYDİM KEYİFTEYİM!';
+
+  @override
+  String get energyEmptyTitle => 'ENERJİN BİTTİ!';
+
+  @override
+  String get energyEmptyBodyStart => 'Kalbin ';
+
+  @override
+  String get energyEmptyBodyMiddle =>
+      ' — oynamak için 1 enerji gerekir.\nSonraki enerji: ';
+
+  @override
+  String get energyEmptyBodyEnd => ' · her 5 dakikada +1 dolar.';
+
+  @override
+  String get rewardedAdsSoonCaps => 'ÖDÜLLÜ REKLAMLAR YAKINDA';
+
+  @override
+  String get shopEnergyPackButton => 'MAĞAZA · ENERJİ PAKETİ';
+
+  @override
+  String get waitForTimerCaps => 'SAYACI BEKLE';
+
+  @override
+  String get splashSkipPlain => 'GEÇ';
+
+  @override
+  String get splashStartButtonPlain => 'BAŞLA';
+
+  @override
+  String get splashContinueButtonPlain => 'DEVAM';
+
+  @override
+  String get play2048Label => 'Lülülü 2048 oyununu aç';
+
+  @override
+  String get doubleRewardLabel => '2 kat ödül, yakında';
+
+  @override
+  String get watchAdChestLabel => 'Reklam izle, ücretsiz sandık aç';
+
+  @override
+  String get notifyOnLabel => 'Bildirim açık';
+
+  @override
+  String levelTileLabel(int id, int stars, bool locked) =>
+      '$id. seviye, $stars yıldız${locked ? ' · Kilitli' : ''}';
+
+  @override
+  String chapterTabLabel(int index, int stars) =>
+      'Bölüm $index, $stars/30 yıldız';
+
+  @override
+  String chestClaimLabel(int stars, String state) => state == 'claimed'
+      ? 'Alındı'
+      : state == 'locked'
+          ? 'Kilitli'
+          : 'Ödülü al: $stars yıldız sandığı';
+
+  @override
+  String channelSelectLabel(String name) => '$name kanalını seç';
+
+  @override
+  String sendStickerLabel(String name) => '$name stickerını gönder';
+
+  @override
+  String featuredModeLabel(String title, String subtitle) =>
+      '$title modunu oyna: $subtitle';
+
+  // W75-3: L10N anahtar dalgası 4.
+  @override
+  String get howToPlaySuffix => '— NASIL OYNANIR?';
+
+  @override
+  String get connectChainBadge => 'ZİNCİR';
+
+  @override
+  String get stackTowerBadge => 'KULE';
+
+  // W79-3: L10N anahtar dalgası 5 (online_screen + leaderboard).
+  // TR değerleri online_screen.dart / leaderboard_screen.dart'taki
+  // gömülü metinlerden aynen alındı.
+  @override
+  String get onlineNotifyRemovedSnack => 'Bildirim tercihi kaldırıldı.';
+
+  @override
+  String get comingVerySoonCaps => 'ÇOK YAKINDA!';
+
+  @override
+  String get onlineComingSoonBody =>
+      'Arkadaşlarınla çevrimiçi kapış, loncanla aynı arenada buluş. Online mod yapım aşamasında — açıldığı gün ilk sen öğren.';
+
+  @override
+  String get notifyOnCaps => 'BİLDİRİM AÇIK';
+
+  @override
+  String get onlineDuelTitle => '1V1 DÜELLO';
+
+  @override
+  String get onlineDuelSubtitle => 'Arkadaşına meydan oku, arenada kapış';
+
+  @override
+  String get onlineGuildWarsTitle => 'LONCA SAVAŞLARI';
+
+  @override
+  String get onlineGuildWarsSubtitle =>
+      'Loncanla takım kur, haftalık savaşlara katıl';
+
+  @override
+  String get onlineTournamentsTitle => 'CANLI TURNUVALAR';
+
+  @override
+  String get onlineTournamentsSubtitle =>
+      'Sezonluk turnuvalarda büyük ödülleri topla';
+
+  @override
+  String levelWithValue(int level) => 'Seviye $level';
+
+  @override
+  String youAsName(String name) => 'SEN · $name';
 }

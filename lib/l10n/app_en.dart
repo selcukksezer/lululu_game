@@ -785,12 +785,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInOrUpSlash => 'Sign in / sign up';
 
   @override
-  String get musicTitle => 'Music';
-
-  @override
-  String get musicSubtitle => 'Background music';
-
-  @override
   String get sfxTitle => 'Sound Effects';
 
   @override
@@ -1345,16 +1339,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopPowerUndoName => 'Undo';
 
   @override
+  String get shopPowerUndoNameCaps => 'UNDO';
+
+  @override
   String get shopPowerUndoDesc => 'Undoes the last move';
 
   @override
   String get shopPowerShuffleName => 'Shuffle';
 
   @override
+  String get shopPowerShuffleNameCaps => 'SHUFFLE';
+
+  @override
   String get shopPowerShuffleDesc => 'Shuffles the grid, unlocks it';
 
   @override
   String get shopPowerMergePairName => 'Pair Up';
+
+  @override
+  String get shopPowerMergePairNameCaps => 'PAIR UP';
 
   @override
   String get shopPowerMergePairDesc => 'Merges two random matching tiles';
@@ -1376,6 +1379,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shopPowerSlowName => 'Slow Down';
+
+  @override
+  String get shopPowerSlowNameCaps => 'SLOW DOWN';
 
   @override
   String get shopPowerSlowBalloonDesc => 'Slows balloons for 10 sec';
@@ -1429,10 +1435,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopPowerFreezeName => 'Freeze';
 
   @override
+  String get shopPowerFreezeNameCaps => 'FREEZE';
+
+  @override
   String get shopPowerFreezeDesc => 'Stops the wobble';
 
   @override
   String get shopPowerWidenName => 'Widen';
+
+  @override
+  String get shopPowerWidenNameCaps => 'WIDEN';
 
   @override
   String get shopPowerWidenDesc => 'Enlarges the slice';
@@ -1447,10 +1459,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopPowerDoubleSlipperName => 'Double Slipper';
 
   @override
+  String get shopPowerDoubleSlipperNameCaps => 'DOUBLE SLIPPER';
+
+  @override
   String get shopPowerDoubleSlipperDesc => 'Double hit in one tap';
 
   @override
   String get shopPowerGoldenSlipperName => 'Golden Slipper';
+
+  @override
+  String get shopPowerGoldenSlipperNameCaps => 'GOLDEN SLIPPER';
 
   @override
   String get shopPowerGoldenSlipperDesc => '2x points for a limited time';
@@ -1510,6 +1528,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopPowerNitroName => 'Nitro';
 
   @override
+  String get shopPowerNitroNameCaps => 'NITRO';
+
+  @override
   String get shopPowerNitroDesc => 'Speed and score boost';
 
   @override
@@ -1531,7 +1552,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopPowerScoreMultiplierName => 'Score Multiplier';
 
   @override
-  String get shopPowerScoreMultiplierDesc => 'x2 points for a limited time';
+  String get shopPowerScoreMultiplierDesc => '2x points for a limited time';
 
   @override
   String get shopGoldenWeekendTitle => 'GOLDEN WEEKEND';
@@ -1555,7 +1576,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopPowerUpsTitle => 'POWER-UPS';
 
   @override
-  String get shopPowerUpsNote => 'Mode-specific · 30 kinds';
+  String get shopPowerUpsNote => 'Mode-specific · 33 kinds';
 
   @override
   String get shopCoinPacksTitle => 'COIN PACKS';
@@ -1700,4 +1721,934 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String coinPillLabel(String value) => 'Coin: $value, add coin pack';
+
+  // --- W60-2: §3 paylaşılan anahtarlar (i18n göç planı) ---
+  @override
+  String get pausedStatusCaps => 'PAUSED';
+
+  @override
+  String get finishCaps => 'FINISH';
+
+  @override
+  String get finishLabel => 'Finish';
+
+  @override
+  String get tryAgainCaps => 'TRY AGAIN';
+
+  @override
+  String get retryShort => 'RETRY';
+
+  @override
+  String get viralBadge => 'VIRAL';
+
+  @override
+  String get moveLabel => 'MOVE';
+
+  @override
+  String get timeLabel => 'TIME';
+
+  @override
+  String get livesLabel => 'LIVES';
+
+  @override
+  String get newBadge => 'NEW';
+
+  @override
+  String get missedCaps => 'MISSED';
+
+  @override
+  String get perfectCaps => 'PERFECT!';
+
+  @override
+  String get comboBrokenShort => 'COMBO BROKEN';
+
+  @override
+  String get understoodLabel => 'Got it';
+
+  @override
+  String get connectTargetHit => 'Target reached.';
+
+  @override
+  String get powerShieldCaps => 'SHIELD';
+
+  @override
+  String get statusLabel => 'STATUS';
+
+  @override
+  String get resultComplete => 'COMPLETE';
+
+  @override
+  String get resultOver => 'OVER';
+
+  @override
+  String get modeBadgeTitle => 'MODE BADGE';
+
+  @override
+  String get doubleGoldEarnedCaps => '2X GOLD EARNED';
+
+  @override
+  String perfectCombo(int combo) => 'PERFECT! X$combo';
+
+  @override
+  String comboBrokenReason(String reason) => '$reason · COMBO BROKEN';
+
+  @override
+  String pauseScoreComboLine(int score, int combo) => 'Score $score · Combo x$combo';
+
+  @override
+  String arcadeMilestoneScore(int m) => 'SCORE $m!';
+
+  @override
+  String featuredBannerLabel(String badge) => 'FEATURED · $badge';
+
+  @override
+  String featuredEndsToday(String clock) => 'Ends today · $clock';
+
+  // --- W60-2: G2 connect_pop (i18n göç planı) ---
+  @override
+  String get connectHintIdle => 'Draw the same bug. Square = all of that kind.';
+
+  @override
+  String get connectChainPrototype => 'CHAIN X2 · +150';
+
+  @override
+  String get connectBoardRefreshed => 'Board refreshed.';
+
+  @override
+  String get connectLoopHint => 'Tip: make a square, the whole kind goes.';
+
+  @override
+  String get connectGroupHint => 'Tip: link this group.';
+
+  @override
+  String get connectLoopReady => 'SQUARE · release, clear them all';
+
+  @override
+  String get connectSquareClear => 'SQUARE CLEAR';
+
+  @override
+  String get connectLinesOut => 'Out of line chances.';
+
+  @override
+  String get connectChainExtenderHint => 'Chain Extender active · +3 line chances!';
+
+  @override
+  String get connectChainExtenderMilestone => 'CHAIN EXTENDER · +3 LINES!';
+
+  @override
+  String get connectMagnetHint => 'Magnet / Bomb Ring built a square chain!';
+
+  @override
+  String get connectMagnetMilestone => 'MAGNET RING · SQUARE READY!';
+
+  @override
+  String get connectChainTag => 'CHAIN';
+
+  @override
+  String get connectLineStat => 'LINE';
+
+  @override
+  String get connectWonTitle => 'LINKED';
+
+  @override
+  String get connectLostTitle => 'OUT OF CHANCES';
+
+  @override
+  String get powerChainPlus => 'CHAIN +';
+
+  @override
+  String connectSelectedOne(int minLen) => 'Selected 1 · at least $minLen';
+
+  @override
+  String connectSelectedCount(int count) => 'Selected $count';
+
+  @override
+  String connectLongChain(int len) => 'Long chain! $len';
+
+  @override
+  String connectMinLength(int minLen) => 'Link at least $minLen bugs.';
+
+  @override
+  String connectSquareHint(int streak, int gained) => 'Square! x$streak · +$gained';
+
+  @override
+  String connectBonusDrop(int points) => 'Bonus drop +$points';
+
+  @override
+  String connectSquareChain(int gained) => 'SQUARE · +$gained';
+
+  @override
+  String connectChainText(int streak, int gained) => 'CHAIN X$streak · +$gained';
+
+  @override
+  String connectLoseHint(int target, int lines, int streak) => 'Target $target · $lines lines · streak x$streak';
+
+  @override
+  String connectStatsLine(int cleared, int loops, int streak, int longest) => 'Cleared $cleared · Squares $loops · Max streak x$streak · Longest $longest';
+
+  @override
+  String connectBoltHint(int count) => 'Lightning / Kind Cleanser zapped $count bugs!';
+
+  @override
+  String connectBoltMilestone(int gained) => 'LIGHTNING · +$gained POINTS!';
+
+  @override
+  String connectTargetLine(int longest) => 'TARGET 1,600 · LONGEST CHAIN $longest';
+
+  // --- W60-2: G3 makarayiz (i18n göç planı) ---
+  @override
+  String get makaraHintIdle => 'When the note reaches the beat line, tap or swipe the lane.';
+
+  @override
+  String get makaraBeatLine => 'TAP ON THE BEAT LINE!';
+
+  @override
+  String get makaraReelOut => 'Reel over. Pull again!';
+
+  @override
+  String get makaraWrongLane => 'WRONG LANE';
+
+  @override
+  String get makaraEarlyTap => 'TAPPED TOO EARLY';
+
+  @override
+  String get makaraFreezeHint => 'BEAT FREEZE · notes frozen for 8 sec!';
+
+  @override
+  String get makaraFreezeCallout => 'BEAT FREEZE!';
+
+  @override
+  String get makaraAutoHint => 'AUTO REEL · 6 sec auto hits!';
+
+  @override
+  String get makaraAutoCallout => 'AUTO REEL!';
+
+  @override
+  String get makaraX2Hint => 'SCORE X2 · double points for 12 sec!';
+
+  @override
+  String get makaraX2Active => 'SCORE X2 ACTIVE!';
+
+  @override
+  String get makaraEndedTitle => 'REEL OVER';
+
+  @override
+  String get makaraShareLine => 'Makarayız, bro!';
+
+  @override
+  String get makaraTaglineCaps => 'MAKARAYIZ, BRO!';
+
+  @override
+  String get powerScoreX2 => 'SCORE X2';
+
+  @override
+  String makaraMissWindow(String reason, int windowMs) => '$reason — hit window: ±$windowMs ms';
+
+  @override
+  String makaraResultMessage(int bestCombo, int hits, int misses) => 'Best combo x$bestCombo · $hits hits · $misses missed';
+
+  @override
+  String makaraFillPercent(int pct) => 'REEL $pct% FULL';
+
+  // --- W60-2: G5 osmantus (i18n göç planı) ---
+  @override
+  String get osmantusHintIdle => 'Tap when the ring turns green!';
+
+  @override
+  String get osmantusDikkisChant => 'DIKKIS DIKKIS!';
+
+  @override
+  String get osmantusHowToBody1 => 'When the rhythm ring turns green, tap the DUO KEY button! ';
+
+  @override
+  String get osmantusHintResume => 'Go on! Tap when the ring turns green.';
+
+  @override
+  String get osmantusPressGreen => 'TAP ON GREEN!';
+
+  @override
+  String get osmantusMicSaved => 'The mic saved you, no life lost.';
+
+  @override
+  String get osmantusDefeatHint => 'Over. Osman & Tuş beat you.';
+
+  @override
+  String get osmantusJustInTime => 'Just in time!';
+
+  @override
+  String get osmantusEarlyPress => 'PRESSED TOO EARLY';
+
+  @override
+  String get osmantusWaitGreen => 'Wait for the ring to turn green.';
+
+  @override
+  String get osmantusDikkisBoost => 'DIKKIS 2X POINTS!';
+
+  @override
+  String get osmantusDikkisHint => 'DIKKIS active · 12 sec 2X stage points and wide rhythm!';
+
+  @override
+  String get osmantusRingActive => 'RING + ACTIVE!';
+
+  @override
+  String get osmantusRingHint => 'Ring + active · 12 sec wide timing window!';
+
+  @override
+  String get osmantusMicShieldCallout => 'MIC SHIELD!';
+
+  @override
+  String get osmantusMicShieldHint => 'Mic shield ready · no life lost on the next miss!';
+
+  @override
+  String get osmantusDuoWonTitle => 'THE DUO WON';
+
+  @override
+  String get osmantusHowToBody2 => 'Tap on time to build combos and use special stage powers.';
+
+  @override
+  String get powerDikkis => 'DIKKIS';
+
+  @override
+  String get powerRingPlus => 'RING +';
+
+  @override
+  String get osmantusCardSub1 => 'Keyman · pointer';
+
+  @override
+  String get osmantusCardSub2 => 'Reel · listener';
+
+  @override
+  String get osmantusPressGreenButton => 'TAP ON\nGREEN!';
+
+  @override
+  String get osmantusDuoButton => 'DUO KEY';
+
+  @override
+  String osmantusComboBroken(String reason) => 'COMBO BROKEN · $reason';
+
+  @override
+  String osmantusLateBy(int delta) => 'A bit late (+${delta}ms)';
+
+  @override
+  String osmantusWarmupMiss(String reason) => '$reason · warm-up round, no life lost';
+
+  @override
+  String goodCombo(int combo) => 'GOOD! X$combo';
+
+  @override
+  String osmantusEarlyBy(int delta) => 'A bit early (${-delta}ms)';
+
+  @override
+  String osmantusStatsLine(int maxCombo, int streak) => 'Max combo x$maxCombo · Daily streak $streak';
+
+  // --- W60-2: G6 terlik_tap (i18n göç planı) ---
+  @override
+  String get terlikHintIdle => 'Smash the flying bug with the slipper!';
+
+  @override
+  String get terlikBonusComboSlipper => 'COMBO x8 SLIPPER +1';
+
+  @override
+  String get terlikTrapPassed => 'TRAP PASSED';
+
+  @override
+  String get terlikEscaped => 'ESCAPED';
+
+  @override
+  String get terlikTrapReplik => 'CIZZT! Don\'t step on the trap!';
+
+  @override
+  String get terlikLuckBurst => 'LUCK BURST';
+
+  @override
+  String get terlikBonusSlipper => 'SLIPPER +1';
+
+  // --- W103-2: bonus efekt yazıları (bonus_fx.dart) ---
+  @override
+  String get effectSlap => 'SLAP!';
+
+  @override
+  String get effectCombo => 'COMBO!';
+
+  @override
+  String get terlikMissedHit => 'YOU MISSED';
+
+  @override
+  String get terlikSteppedTrap => 'STEPPED ON A TRAP';
+
+  @override
+  String get terlikDoubleReadyHint => 'DOUBLE SLIPPER READY · NEXT HIT SMASHES TWO BUGS!';
+
+  @override
+  String get terlikDoubleCallout => 'DOUBLE SLIPPER!';
+
+  @override
+  String get terlikGoldHint => 'GOLDEN SLIPPER ACTIVE · 2X POINTS FOR 20 SEC!';
+
+  @override
+  String get terlikGoldCallout => 'GOLDEN SLIPPER 2X!';
+
+  @override
+  String get terlikSprayCallout => 'SPRAY CLEAN-UP!';
+
+  @override
+  String get powerSprayCaps => 'SPRAY';
+
+  @override
+  String get terlikHoleInstruction => 'SMASH WHATEVER POPS OUT OF THE HOLE AT ONCE!';
+
+  @override
+  String get terlikOutTitle => 'OUT OF SLIPPERS';
+
+  @override
+  String get terlikEmptyHole => 'Empty hole';
+
+  @override
+  String get terlikTrapTag => 'TRAP!';
+
+  @override
+  String terlikBonusComboSpray(int combo) => 'COMBO X$combo SPRAY +1';
+
+  @override
+  String terlikOutOfSlippers(int smashed, int combo, int coins) => 'Out of slippers. Smashed $smashed · max x$combo · +$coins💰';
+
+  @override
+  String terlikHitHint(int combo, int gain) => 'HIT · COMBO X$combo · +$gain';
+
+  @override
+  String terlikComboBreakLives(String reason, int remaining) => '$reason · COMBO BROKEN · $remaining ESCAPES BEFORE A LIFE IS LOST';
+
+  @override
+  String terlikComboBreakLifeLost(String reason, int lives) => '$reason · -1 LIFE · COMBO BROKEN · $lives LIVES LEFT';
+
+  @override
+  String terlikStatsLine1(int smashed, int missed, int combo) => 'Smashed $smashed · Escaped $missed · Max combo x$combo\n';
+
+  @override
+  String terlikStatsLine2(int coins, int slippers, int sprays) => '+$coins coins · slippers +$slippers · sprays +$sprays';
+
+  @override
+  String terlikSprayHint(int cleared) => 'SPRAY APPLIED · $cleared TARGETS CLEARED!';
+
+  @override
+  String terlikPauseScore(int score, int smashed) => 'Score $score · Smashed $smashed';
+
+  @override
+  String terlikSpeedMultiplier(String rate) => 'SPEED X$rate';
+
+  @override
+  String terlikHitsChip(int smashed) => 'HITS $smashed';
+
+  @override
+  String terlikMissedChip(int missed) => 'ESCAPED $missed!';
+
+  @override
+  String terlikHoleSemantics(int hole) => 'Smash the bug, hole $hole';
+
+  // --- W60-2: ek anahtarlar (günlük ödül serisi + chat rozeti) ---
+  @override
+  String dailyRewardSubtitleStreak(int streak) => 'Day $streak · 500 coins are waiting for you';
+
+  @override
+  String chatBadgeUnreadLabel(String badge) => '$badge unread messages';
+
+  // --- W65-1: G7 scream_roach (i18n göç planı) ---
+  @override
+  String get screamHintIdle => 'Spam-tap = jump. Get through slipper · spray · pan!';
+
+  @override
+  String get screamGatePrototype => 'GATE X7!';
+
+  @override
+  String get screamIdleGround => 'You fell asleep on the grass! Jump / spam-tap.';
+
+  @override
+  String get screamShieldSaved => 'Shield held.';
+
+  @override
+  String get screamMicPermissionSettings => 'Allow microphone permission from Settings for voice control.';
+
+  @override
+  String get screamMicDeniedHint => 'Voice permission not granted · you can jump by tapping.';
+
+  @override
+  String get screamMegaJumpCallout => 'MEGA JUMP!';
+
+  @override
+  String get screamMegaJumpHint => 'Mega jump active · first obstacle grazes by!';
+
+  @override
+  String get screamShieldBalloonCallout => 'SHIELD BALLOON!';
+
+  @override
+  String get screamShieldBalloonHint => 'Shield balloon active · protects from collision!';
+
+  @override
+  String get screamNitroCallout => 'NITRO SCREAM!';
+
+  @override
+  String get screamNitroHint => 'Nitro active · 8 sec fast flight and +25 gate bonus!';
+
+  @override
+  String get powerJumpCaps => 'JUMP';
+
+  @override
+  String get screamMicOffLabel => 'Turn off the microphone';
+
+  @override
+  String get screamMicOnLabel => 'Turn on shout-to-jump';
+
+  @override
+  String get screamVoicePower => 'VOICE POWER';
+
+  @override
+  String get screamGateStat => 'GATE';
+
+  @override
+  String get screamCrushedTitle => 'CRUSHED';
+
+  @override
+  String get gateTerlikDeath => 'Slipper slap!';
+
+  @override
+  String get gateTerlikPass => 'Slipped past the slipper!';
+
+  @override
+  String get gateRaidDeath => 'Raid cloud!';
+
+  @override
+  String get gateRaidPass => 'You passed the spray!';
+
+  @override
+  String get gateTavaDeath => 'Pan smack!';
+
+  @override
+  String get gateTavaPass => 'Under the pan!';
+
+  @override
+  String get gateTuzakDeath => 'Sticky trap!';
+
+  @override
+  String get gateTuzakPass => 'You escaped the trap!';
+
+  @override
+  String get gateHamamDeath => 'Bowl to the head!';
+
+  @override
+  String get gateHamamPass => 'Passed the hammam bowl!';
+
+  @override
+  String get gateVuvuzelaDeath => 'Vuvuzela crushed!';
+
+  @override
+  String get gateVuvuzelaPass => 'Congo corridor!';
+
+  @override
+  String screamDeathLine(String deathLine, int gates) => '$deathLine Gate $gates';
+
+  @override
+  String screamGateStreak(int streak) => 'GATE X$streak!';
+
+  @override
+  String screamCrushedHint(int gates, int streak) => 'Crushed! Gate $gates · max spam x$streak';
+
+  @override
+  String screamStatsLine(int gates, int streak, int dayStreak) => 'Gate $gates · Max spam x$streak · Streak $dayStreak';
+
+  @override
+  String screamNextGate(int gate) => 'NEXT: GATE $gate';
+
+  @override
+  String screamShoutingPercent(int percent) => '%$percent · SHOUTING';
+
+  @override
+  String screamArcadeHint(String hint) => 'Tap or turn on the mic and shout to jump. $hint';
+
+  @override
+  String screamPauseScore(int score, int gates) => 'Score $score · Gate $gates';
+  // --- W65-1: G8 stack_drop (i18n göç planı) ---
+  @override
+  String get stackHintIdle => 'Tap. Dead centre = combo. The edge gets cut.';
+
+  @override
+  String get stackPerfectPrototype => 'PERFECT HIT! X3';
+
+  @override
+  String get stackMissedFall => 'You missed. The tower fell.';
+
+  @override
+  String get stackSliceThin => 'The slice got too thin.';
+
+  @override
+  String get stackMagnetHint => 'Magnet Alignment & Freeze (4 sec) active!';
+
+  @override
+  String get stackMagnetMilestone => 'MAGNET ALIGNMENT & FREEZE!';
+
+  @override
+  String get stackWidenHint => 'Wide Block active · Tower base widened!';
+
+  @override
+  String get stackWidenMilestone => 'WIDE BLOCK ACTIVE!';
+
+  @override
+  String get stackSlowHint => 'Slowdown active (8 sec)!';
+
+  @override
+  String get stackSlowMilestone => 'SLOWDOWN ACTIVE (8 SEC)!';
+
+  @override
+  String get stackTowerTag => 'TOWER';
+
+  @override
+  String get stackFloorStat => 'FLOOR';
+
+  @override
+  String get stackTowerFellTitle => 'TOWER FELL';
+
+  @override
+  String stackDirectHit(int combo, int gain) => 'DEAD ON x$combo · +$gain';
+
+  @override
+  String stackPerfectHit(int combo) => 'PERFECT HIT! X$combo';
+
+  @override
+  String stackNearHint(int gain, int floors) => 'Almost · +$gain · floor $floors';
+
+  @override
+  String stackNearCallout(int gain) => 'CLOSE! +$gain';
+
+  @override
+  String stackEdgeCutHint(int gain, int floors) => 'Edge cut. +$gain · floor $floors';
+
+  @override
+  String stackEdgeCutCallout(int gain) => 'EDGE CUT · +$gain';
+
+  @override
+  String stackMilestoneFloors(int m) => '$m FLOORS!';
+
+  @override
+  String stackStatsLine(int floors, int perfects, int nears, int combo) => 'Floor $floors · Perfect $perfects · Near $nears · Max combo x$combo';
+
+  @override
+  String stackTutorialHint(String hint) => 'First 15 seconds at tutorial pace. $hint';
+
+  @override
+  String stackFloorLabel(int floor) => 'FLOOR $floor';
+  // --- W65-1: G9 yuva_defense (i18n göç planı) ---
+  @override
+  String get yuvaHintIdle => 'Stop the bugs closing in on the nest!';
+
+  @override
+  String get yuvaShieldSaved => 'SHIELD SAVED THE NEST · BUG REPELLED!';
+
+  @override
+  String get yuvaFellHint => 'The nest fell · restart with one tap';
+
+  @override
+  String get yuvaDoubleHint => 'DOUBLE SLIPPER ACTIVE · 3 HITS SMASH DOUBLE TARGETS!';
+
+  @override
+  String get yuvaGoldHint => 'GOLDEN SLIPPER ACTIVE · 2X POINTS FOR 12 SEC!';
+
+  @override
+  String get yuvaShieldIceHint => 'SHIELD & ICE BARRIER ACTIVE · BUGS SLOWED DOWN!';
+
+  @override
+  String get yuvaMissHint => 'Miss! Combo reset';
+
+  @override
+  String get yuvaTitleNewSemantic => 'NEST DEFENSE, NEW';
+
+  @override
+  String get yuvaHowToBody1 => 'Tap the bugs before they reach the nest. ';
+
+  @override
+  String get yuvaHowToBody2 => 'Grow your combo with fast hits; three escapes end the game.';
+
+  @override
+  String get yuvaFellTitle => 'NEST FELL';
+
+  @override
+  String yuvaBugEntered(int lives) => 'A bug entered the middle hole · $lives escapes left';
+
+  @override
+  String yuvaWaveHit(int wave, int points, int combo) => 'WAVE $wave · HIT +$points · COMBO x$combo';
+
+  @override
+  String yuvaHitHint(int points, int combo) => 'HIT +$points  ·  COMBO x$combo';
+
+  @override
+  String yuvaPauseScore(int score, int hits) => 'Score $score · Hits $hits';
+
+  @override
+  String yuvaResultScore(int score, int combo) => 'SCORE $score · COMBO x$combo';
+
+  @override
+  String yuvaHitsPainter(int hits) => 'HITS $hits';
+
+  @override
+  String yuvaMissedPainter(int misses) => 'MISSED $misses!';
+  // --- W65-1: G10 grid_2048 (i18n göç planı) ---
+  @override
+  String get gridSuperCombo => 'SUPER!';
+
+  @override
+  String get gridTarget2048 => 'TARGET: 2048 BUG';
+
+  @override
+  String get gridHowToTitle => 'HOW TO PLAY 2048 GRID?';
+
+  @override
+  String get gridHowToBody1 => 'Slide the board in 4 directions — same-tier bugs merge when they collide, a new bug is born. Reach 2048!\n\n';
+
+  @override
+  String get gridHowToBody2 => '• UNDO: Undoes the last move.\n';
+
+  @override
+  String get gridHowToBody3 => '• SHUFFLE: Shuffles all the bugs on the board.\n';
+
+  @override
+  String get gridHowToBody4 => '• PAIR UP: Instantly merges the two highest matching bugs.';
+
+  @override
+  String gridSuperMergeSpeech(String title) => 'LULULU! SUPER MERGE! ($title)';
+
+  @override
+  String gridHighestTile(int value) => 'HIGHEST TILE: $value';
+
+  @override
+  String gridMovesCount(int count) => 'MOVES $count';
+
+  @override
+  String gridPauseStats(int moves, int merges, int streak) => 'Moves $moves · Merges $merges · Streak x$streak';
+
+  // --- W69-1: L10N anahtar dalgası 3 ---
+
+  @override
+  String get campaignChapter1 => 'Kitchen Counter';
+
+  @override
+  String get campaignChapter2 => 'Diva Mansion';
+
+  @override
+  String get campaignChapter3 => 'Pikomotions Stage';
+
+  @override
+  String get campaignChapter4 => 'Congo Invasion';
+
+  @override
+  String get welcomeStatusReadFail => 'Welcome status could not be read.';
+
+  @override
+  String get welcomeSkipFail =>
+      'The welcome screen was not skipped. Please try again.';
+
+  @override
+  String get continueToHomeAnyway => 'Continue to home anyway';
+
+  @override
+  String get bugFamilyTitle => 'BUG FAMILY';
+
+  @override
+  String get bugFamilySubtitle =>
+      'Two same-tier bugs collide and the next tier is born. The end of the chain: Pink Robe. Tap a bug — hear its sound, see its line.';
+
+  @override
+  String get tierRowName1 => 'Baby Funnel';
+
+  @override
+  String get tierRowName2 => 'Pot-Wearing Apprentice';
+
+  @override
+  String get tierRowName3 => 'Reel Fan';
+
+  @override
+  String get tierRowName4 => 'Pajama Dancer';
+
+  @override
+  String get tierRowName5 => 'Bathhouse Diva';
+
+  @override
+  String get tierRowName6 => 'Bathhouse Can';
+
+  @override
+  String get tierRowName7 => 'Kongo Leader';
+
+  @override
+  String get tierRowName8 => 'Ailing Sage';
+
+  @override
+  String get tierRowName9 => 'National Jersey Bug';
+
+  @override
+  String get tierRowName10 => 'Pink Jacket Bug';
+
+  @override
+  String get tierRowName11 => 'White Ghost';
+
+  @override
+  String get tierRowName12 => 'Gray T-Shirt Bug';
+
+  @override
+  String get tierRowName13 => 'Pink Robe Bug';
+
+  @override
+  String get tierRowQuote1 => "HOP, I'M HERE!";
+
+  @override
+  String get tierRowQuote2 => 'POT ON HEAD, WE ARE READY!';
+
+  @override
+  String get tierRowQuote3 => 'MAKARAYIZ, BRO!';
+
+  @override
+  String get tierRowQuote4 => 'TO THE DANCE FLOOR!';
+
+  @override
+  String get tierRowQuote5 => 'THE DIVA IS HERE!';
+
+  @override
+  String get tierRowQuote6 => 'EVERYONE OUT OF THE POOL!';
+
+  @override
+  String get tierRowQuote7 => 'THE LEADER HAS SPOKEN!';
+
+  @override
+  String get tierRowQuote8 => 'THE SAGE IS TIRED BUT LEGENDARY!';
+
+  @override
+  String get tierRowQuote9 => 'GOOOAL, LULULU!';
+
+  @override
+  String get tierRowQuote10 => 'MY PINK JACKET IS ON FIRE!';
+
+  @override
+  String get tierRowQuote11 => 'BOOOO! SCARED YOU?';
+
+  @override
+  String get tierRowQuote12 => 'THE SPORTY BUG IS COMING!';
+
+  @override
+  String get tierRowQuote13 => 'ROBE ON, FEELING GREAT!';
+
+  @override
+  String get energyEmptyTitle => 'OUT OF ENERGY!';
+
+  @override
+  String get energyEmptyBodyStart => 'Your energy ';
+
+  @override
+  String get energyEmptyBodyMiddle =>
+      ' — you need 1 energy to play.\nNext energy: ';
+
+  @override
+  String get energyEmptyBodyEnd => ' · +1 every 5 minutes.';
+
+  @override
+  String get rewardedAdsSoonCaps => 'REWARDED ADS COMING SOON';
+
+  @override
+  String get shopEnergyPackButton => 'SHOP · ENERGY PACK';
+
+  @override
+  String get waitForTimerCaps => 'WAIT FOR THE TIMER';
+
+  @override
+  String get splashSkipPlain => 'SKIP';
+
+  @override
+  String get splashStartButtonPlain => 'START';
+
+  @override
+  String get splashContinueButtonPlain => 'CONTINUE';
+
+  @override
+  String get play2048Label => 'Open the Lülülü 2048 game';
+
+  @override
+  String get doubleRewardLabel => 'Double reward, coming soon';
+
+  @override
+  String get watchAdChestLabel => 'Watch an ad, open a free chest';
+
+  @override
+  String get notifyOnLabel => 'Notifications on';
+
+  @override
+  String levelTileLabel(int id, int stars, bool locked) =>
+      'Level $id, $stars stars${locked ? ' · Locked' : ''}';
+
+  @override
+  String chapterTabLabel(int index, int stars) =>
+      'Chapter $index, $stars/30 stars';
+
+  @override
+  String chestClaimLabel(int stars, String state) => state == 'claimed'
+      ? 'Claimed'
+      : state == 'locked'
+          ? 'Locked'
+          : 'Claim reward: $stars-star chest';
+
+  @override
+  String channelSelectLabel(String name) => 'Select the $name channel';
+
+  @override
+  String sendStickerLabel(String name) => 'Send the $name sticker';
+
+  @override
+  String featuredModeLabel(String title, String subtitle) =>
+      'Play the $title mode: $subtitle';
+
+  // W75-3: L10N anahtar dalgası 4.
+  @override
+  String get howToPlaySuffix => '— HOW TO PLAY?';
+
+  @override
+  String get connectChainBadge => 'CHAIN';
+
+  @override
+  String get stackTowerBadge => 'TOWER';
+
+  // W79-3: L10N anahtar dalgası 5 (online_screen + leaderboard).
+  // Online EN karşılıkları i18n-goc-plani.md G11'den (lonca/turnuva
+  // EN'i planda yoktu, doğru çeviri yazıldı).
+  @override
+  String get onlineNotifyRemovedSnack => 'Notification preference removed.';
+
+  @override
+  String get comingVerySoonCaps => 'COMING VERY SOON!';
+
+  @override
+  String get onlineComingSoonBody =>
+      'Battle friends online and meet your guild in the same arena. Online mode is under construction — you\'ll be the first to know when it opens.';
+
+  @override
+  String get notifyOnCaps => 'NOTIFICATIONS ON';
+
+  @override
+  String get onlineDuelTitle => '1V1 DUEL';
+
+  @override
+  String get onlineDuelSubtitle => 'Challenge a friend and battle in the arena';
+
+  @override
+  String get onlineGuildWarsTitle => 'GUILD WARS';
+
+  @override
+  String get onlineGuildWarsSubtitle =>
+      'Team up with your guild and join the weekly wars';
+
+  @override
+  String get onlineTournamentsTitle => 'LIVE TOURNAMENTS';
+
+  @override
+  String get onlineTournamentsSubtitle =>
+      'Collect big rewards in seasonal tournaments';
+
+  @override
+  String levelWithValue(int level) => 'Level $level';
+
+  @override
+  String youAsName(String name) => 'YOU · $name';
 }
