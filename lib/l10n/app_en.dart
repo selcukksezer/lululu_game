@@ -632,6 +632,52 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInButton => 'SIGN IN';
 
   @override
+  String get authUsernameRequired => 'Enter a username.';
+
+  @override
+  String get authUsernameInvalid =>
+      'Username must be 3–20 characters and use only lowercase letters, digits and underscores.';
+
+  @override
+  String get authPasswordRequired => 'Enter a password.';
+
+  @override
+  String get authPasswordTooShort => 'Password must be at least 6 characters.';
+
+  @override
+  String get authPasswordTooLong => 'Password can be at most 128 characters.';
+
+  @override
+  String get authPasswordInvalid => 'Password contains an invalid character.';
+
+  @override
+  String get authGenericFailed =>
+      'The action could not be completed. Try again.';
+
+  @override
+  String get authWrongPassword => 'Wrong password.';
+
+  @override
+  String get authUserNotFound => 'User not found — register first.';
+
+  @override
+  String get authUsernameTaken =>
+      'This username is already registered — sign in.';
+
+  @override
+  String get authTooManyAttempts =>
+      'Too many failed attempts. Wait a bit and try again.';
+
+  @override
+  String get authSignOutFailed => 'Could not sign out. Try again.';
+
+  @override
+  String get settingsResetFailed => 'Progress could not be reset. Try again.';
+
+  @override
+  String get onboardingSaveFailed => 'Could not save. Try again.';
+
+  @override
   String get orDivider => 'OR';
 
   // --- Dalga 20 göçü: Oyun + sonuç ekranı (game_screen, result_screen) ---

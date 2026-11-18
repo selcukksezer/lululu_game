@@ -18,10 +18,43 @@ import 'privacy_policy_screen.dart';
 
 /// 1:1 Pixel-Perfect Settings modal & screen matching `#settingsOverlay` (`.settings-sheet`).
 class SettingsScreen extends StatefulWidget {
+  /// "İlerlemeyi Sıfırla"nın temizlediği SharedPreferences anahtarları
+  /// (ProgressManager sıfırlama kümesiyle aynı).
+  static const _progressResetKeys = <String>[
+    'lululu_unlocked_level',
+    'lululu_coins',
+    'LululuCoinBalance',
+    'lululu_spray',
+    'lululu_raid',
+    'lululu_slipper',
+    'lululu_terlik',
+    'lululu_aydinlat',
+    'lululu_f16',
+    'lululu_shop_chest_day',
+    'lululu_limited_drop_day',
+    'lululu_royal_cape',
+    'lululu_owned_cosmetics',
+    'lululu_unlocked_tiers',
+    'lululu_mode_high_scores',
+    'lululu_daily_tasks_day',
+    'lululu_daily_tasks_progress',
+    'lululu_daily_tasks_claimed',
+    'lululu_daily_streak',
+    'lululu_last_streak_claim_day',
+    'lululu_extra_powers',
+    'lululu_level_stars',
+    'lululu_level_scores',
+    'lululu_power_seed_v1',
+    'lululu_daily_free_energy_day',
+    'lululu_daily_free_energy_claims',
+    'lululu_last_free_energy_epoch_ms',
+    'lululu_state_integrity_sig',
+  ];
+
   const SettingsScreen({
     super.key,
     this.isModal = false,
-    this.showExtendedOptions = false,
+    this.showExtendedOptions = true,
   });
 
   final bool isModal;
@@ -40,6 +73,12 @@ class SettingsScreen extends StatefulWidget {
 
   /// Shows a confirmation dialog and safely resets all progress in [ProgressManager.instance].
   static Future<bool> resetAll(BuildContext context) async {
+    if (!await _confirmReset(context)) return false;
+    return _performReset();
+  }
+
+  /// Sıfırlama onay penceresini gösterir; kullanıcı onaylarsa `true` döner.
+  static Future<bool> _confirmReset(BuildContext context) async {
     AudioManager().playPop();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -179,45 +218,23 @@ class SettingsScreen extends StatefulWidget {
       ),
     );
 
-    if (confirmed != true) return false;
+    return confirmed == true;
+  }
 
-    final prefs = await SharedPreferences.getInstance();
-    const progressKeys = <String>[
-      'lululu_unlocked_level',
-      'lululu_coins',
-      'LululuCoinBalance',
-      'lululu_spray',
-      'lululu_raid',
-      'lululu_slipper',
-      'lululu_terlik',
-      'lululu_aydinlat',
-      'lululu_f16',
-      'lululu_shop_chest_day',
-      'lululu_limited_drop_day',
-      'lululu_royal_cape',
-      'lululu_owned_cosmetics',
-      'lululu_unlocked_tiers',
-      'lululu_mode_high_scores',
-      'lululu_daily_tasks_day',
-      'lululu_daily_tasks_progress',
-      'lululu_daily_tasks_claimed',
-      'lululu_daily_streak',
-      'lululu_last_streak_claim_day',
-      'lululu_extra_powers',
-      'lululu_level_stars',
-      'lululu_level_scores',
-      'lululu_power_seed_v1',
-      'lululu_daily_free_energy_day',
-      'lululu_daily_free_energy_claims',
-      'lululu_last_free_energy_epoch_ms',
-      'lululu_state_integrity_sig',
-    ];
-    for (final key in progressKeys) {
-      await prefs.remove(key);
+  /// Onaylanmış sıfırlamayı uygular; herhangi bir adım patlarsa
+  /// `false` döner (çağıran, kullanıcıya bildirir).
+  static Future<bool> _performReset() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in _progressResetKeys) {
+        await prefs.remove(key);
+      }
+      await ProgressManager.instance.load();
+      await EnergyService.instance.refillFull();
+      return true;
+    } catch (_) {
+      return false;
     }
-    await ProgressManager.instance.load();
-    await EnergyService.instance.refillFull();
-    return true;
   }
 
   @override
@@ -252,14 +269,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final sfx = prefs.getBool('LululuSetSfx') ??
-        prefs.getBool('lululu_sfx_enabled') ??
-        !_audio.isMuted;
-    final voice = prefs.getBool('LululuSetVoice') ??
-        prefs.getBool('lululu_voice_enabled') ??
-        true;
-    final vib = prefs.getBool('LululuSetVib') ?? false;
+    bool sfx;
+    bool voice;
+    bool vib;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      sfx = prefs.getBool('LululuSetSfx') ??
+          prefs.getBool('lululu_sfx_enabled') ??
+          !_audio.isMuted;
+      voice = prefs.getBool('LululuSetVoice') ??
+          prefs.getBool('lululu_voice_enabled') ??
+          true;
+      vib = prefs.getBool('LululuSetVib') ?? false;
+    } catch (_) {
+      // Tercihler okunamazsa initState varsayılanlarıyla devam et.
+      return;
+    }
 
     _audio.setSfxEnabled(sfx);
     // Ses ve sesli anahtarları bağımsızdır: her bayrak yalnız kendi
@@ -278,8 +303,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _savePref(String key, bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(key, value);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(key, value);
+    } catch (_) {
+      // Fire-and-forget yazım: kalıcılık başarısız olursa anahtar
+      // yalnız bu oturumda etkili olur; akışı bozma.
+    }
   }
 
   void _onSfxChanged(bool v) {
@@ -322,19 +352,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<bool> resetAll([BuildContext? dialogContext]) async {
-    final reset = await SettingsScreen.resetAll(dialogContext ?? context);
-    if (reset && mounted) {
-      setState(() {});
+    final ctx = dialogContext ?? context;
+    if (!await SettingsScreen._confirmReset(ctx)) return false;
+    final reset = await SettingsScreen._performReset();
+    if (!mounted) return reset;
+    if (!reset) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.settingsResetFailed)),
+      );
+      return false;
     }
-    return reset;
+    setState(() {});
+    return true;
   }
 
   void _openAuth() {
     AudioManager().playPop();
-    if (widget.isModal && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
+    // Navigator pop ÖNCESİ yakalanır: pop sonrası bu context'in öğesi
+    // devre dışı kalır; aynı context ile push patlar (B10).
+    final navigator = Navigator.of(context);
+    if (widget.isModal && navigator.canPop()) {
+      navigator.pop();
     }
-    AuthScreen.open(context);
+    AuthScreen.openOn(navigator);
   }
 
   void _openHowToPlay() {

@@ -26,10 +26,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _page = PageController();
   int _index = 0;
   double _progress = 0.78;
+  bool _finishing = false;
 
   Future<void> _finish() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(OnboardingScreen.prefsKey, true);
+    if (_finishing) return;
+    _finishing = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(OnboardingScreen.prefsKey, true);
+    } catch (_) {
+      _finishing = false;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.onboardingSaveFailed)),
+      );
+      return;
+    }
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(builder: (_) => const HomeShell()),
@@ -44,12 +56,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         curve: Curves.easeOutCubic,
       );
     } else {
-      setState(() => _index = 0);
-      _page.animateToPage(
-        0,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-      );
+      // Son slayt: başa dönme, tanıtımı bitir (B13).
+      _finish();
     }
   }
 

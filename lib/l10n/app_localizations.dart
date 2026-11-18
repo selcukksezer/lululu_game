@@ -363,6 +363,20 @@ abstract class AppLocalizations {
   String get registerTab;
   String get createAccountButton;
   String get signInButton;
+  String get authUsernameRequired;
+  String get authUsernameInvalid;
+  String get authPasswordRequired;
+  String get authPasswordTooShort;
+  String get authPasswordTooLong;
+  String get authPasswordInvalid;
+  String get authGenericFailed;
+  String get authWrongPassword;
+  String get authUserNotFound;
+  String get authUsernameTaken;
+  String get authTooManyAttempts;
+  String get authSignOutFailed;
+  String get settingsResetFailed;
+  String get onboardingSaveFailed;
   String get orDivider;
 
   // --- Dalga 20 göçü: Oyun + sonuç ekranı (game_screen, result_screen) ---

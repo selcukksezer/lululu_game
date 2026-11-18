@@ -639,6 +639,50 @@ class AppLocalizationsTr extends AppLocalizations {
   String get signInButton => 'GİRİŞ YAP';
 
   @override
+  String get authUsernameRequired => 'Kullanıcı adı gir.';
+
+  @override
+  String get authUsernameInvalid =>
+      'Kullanıcı adı 3–20 karakter olmalı; yalnızca küçük harf, rakam ve alt çizgi kullan.';
+
+  @override
+  String get authPasswordRequired => 'Şifre gir.';
+
+  @override
+  String get authPasswordTooShort => 'Şifre en az 6 karakter olmalı.';
+
+  @override
+  String get authPasswordTooLong => 'Şifre en fazla 128 karakter olabilir.';
+
+  @override
+  String get authPasswordInvalid => 'Şifre geçersiz karakter içeriyor.';
+
+  @override
+  String get authGenericFailed => 'İşlem tamamlanamadı. Tekrar dene.';
+
+  @override
+  String get authWrongPassword => 'Şifre yanlış.';
+
+  @override
+  String get authUserNotFound => 'Kullanıcı bulunamadı — önce kayıt ol.';
+
+  @override
+  String get authUsernameTaken => 'Bu kullanıcı adı zaten kayıtlı — giriş yap.';
+
+  @override
+  String get authTooManyAttempts =>
+      'Çok fazla başarısız deneme. Biraz bekleyip tekrar dene.';
+
+  @override
+  String get authSignOutFailed => 'Oturum kapatılamadı. Tekrar dene.';
+
+  @override
+  String get settingsResetFailed => 'İlerleme sıfırlanamadı. Tekrar dene.';
+
+  @override
+  String get onboardingSaveFailed => 'Kaydedilemedi. Tekrar dene.';
+
+  @override
   String get orDivider => 'VEYA';
 
   // --- Dalga 20 göçü: Oyun + sonuç ekranı (game_screen, result_screen) ---
