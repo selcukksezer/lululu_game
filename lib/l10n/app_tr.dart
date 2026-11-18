@@ -199,6 +199,23 @@ class AppLocalizationsTr extends AppLocalizations {
       'Günlük enerji bugün zaten alındı.';
 
   @override
+  String get hbEnergyTag => '-1 ENERJİ';
+
+  @override
+  String get chestClaimFailed => 'Sandık açılamadı. Tekrar dene.';
+
+  @override
+  String boosterOutOfStockToast(String label) =>
+      '$label kalmadı! Mağazadan alabilirsin.';
+
+  @override
+  String levelLockedMessage(int previousLevel) =>
+      'Önce $previousLevel. seviyeyi tamamla.';
+
+  @override
+  String taskRewardClaimedSnack(String rewardText) => '$rewardText alındı!';
+
+  @override
   String get onlineNotifySignupSnack =>
       'Kaydın alındı! Online mod açılır açılmaz sana haber vereceğiz.';
 

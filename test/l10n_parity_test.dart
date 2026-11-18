@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 799 getter + 170 metot = 969 anahtar,
+// açıkça sayılır (soyut sınıftaki 801 getter + 173 metot = 974 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -78,6 +78,8 @@ void main() {
         'dailyEnergyClaimedSnack': l10n.dailyEnergyClaimedSnack,
         'dailyEnergyAlreadyClaimedSnack':
             l10n.dailyEnergyAlreadyClaimedSnack,
+        'hbEnergyTag': l10n.hbEnergyTag,
+        'chestClaimFailed': l10n.chestClaimFailed,
         'onlineNotifySignupSnack': l10n.onlineNotifySignupSnack,
         'seeAllArrow': l10n.seeAllArrow,
         'studioTitle': l10n.studioTitle,
@@ -896,6 +898,8 @@ void main() {
         'dailyEnergyClaimedSnack': l10n.dailyEnergyClaimedSnack,
         'dailyEnergyAlreadyClaimedSnack':
             l10n.dailyEnergyAlreadyClaimedSnack,
+        'hbEnergyTag': l10n.hbEnergyTag,
+        'chestClaimFailed': l10n.chestClaimFailed,
         'onlineNotifySignupSnack': l10n.onlineNotifySignupSnack,
         'seeAllArrow': l10n.seeAllArrow,
         'studioTitle': l10n.studioTitle,
@@ -1852,6 +1856,9 @@ void main() {
         'balloonFireballShot': l10n.balloonFireballShot(3),
         'balloonSuperPop': l10n.balloonSuperPop(3),
         'balloonStatsLine': l10n.balloonStatsLine(3, 3, 3, 3),
+        'boosterOutOfStockToast': l10n.boosterOutOfStockToast('X'),
+        'levelLockedMessage': l10n.levelLockedMessage(3),
+        'taskRewardClaimedSnack': l10n.taskRewardClaimedSnack('X'),
       };
 
   Map<String, String> trMethodStrings(AppLocalizationsTr l10n) => {
@@ -2039,6 +2046,9 @@ void main() {
         'balloonFireballShot': l10n.balloonFireballShot(3),
         'balloonSuperPop': l10n.balloonSuperPop(3),
         'balloonStatsLine': l10n.balloonStatsLine(3, 3, 3, 3),
+        'boosterOutOfStockToast': l10n.boosterOutOfStockToast('X'),
+        'levelLockedMessage': l10n.levelLockedMessage(3),
+        'taskRewardClaimedSnack': l10n.taskRewardClaimedSnack('X'),
       };
 
   // İki dilde de aynen kalan meşru değerler. Liste programatik
@@ -2098,21 +2108,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 969 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 974 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 799);
-    expect(tr.length, 799);
-    expect(enMethods.length, 170);
-    expect(trMethods.length, 170);
+    expect(en.length, 801);
+    expect(tr.length, 801);
+    expect(enMethods.length, 173);
+    expect(trMethods.length, 173);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 969);
+    expect(en.length + enMethods.length, 974);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

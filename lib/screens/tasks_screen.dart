@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
+import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/home/lululu_dock_bar.dart';
@@ -82,36 +83,88 @@ class _TasksScreenState extends State<TasksScreen> {
     return buf.toString();
   }
 
-  void _syncFromProgressManager() {
+  @override
+  void initState() {
+    super.initState();
+    _syncFromProgressManager();
+    ProgressManager.instance.addListener(_handleProgressChanged);
+  }
+
+  @override
+  void dispose() {
+    ProgressManager.instance.removeListener(_handleProgressChanged);
+    super.dispose();
+  }
+
+  void _handleProgressChanged() {
+    if (!mounted) return;
+    if (_syncFromProgressManager()) {
+      setState(() {});
+    }
+  }
+
+  /// Yerel görev durumunu [ProgressManager] ile eşitler; herhangi bir
+  /// görev değiştiyse `true` döner. Yalnızca [initState] ve ilerleme
+  /// dinleyicisinden çağrılır — build içinden ASLA (B23c).
+  bool _syncFromProgressManager() {
     final pm = ProgressManager.instance;
+    var changed = false;
     for (final t in _tasks) {
       final pVal = pm.dailyTaskProgress[t.pmKey] ??
           pm.dailyTaskProgress[t.id] ??
           0;
       if (pVal > t.cur) {
         t.cur = pVal;
+        changed = true;
       }
       final cVal = pm.claimedDailyTasks.contains(t.pmKey) ||
           pm.claimedDailyTasks.contains(t.id);
-      if (cVal) {
+      if (cVal && !t.claimed) {
         t.claimed = true;
+        changed = true;
       }
     }
+    return changed;
   }
 
-  void _claimTask(_TaskItem task) {
+  /// Ödülü kalıcı [ProgressManager.claimDailyTaskReward] API'siyle alır
+  /// (K5): talep + ödül + kalıcılık tek atomik adımda. Başarıda ses +
+  /// bildirim, başarısızlıkta hata bildirimi gösterilir (B23a/b/d).
+  Future<void> _claimTask(BuildContext context, _TaskItem task) async {
     if (task.claimed || task.cur < task.max) return;
+    final pm = ProgressManager.instance;
+    // İlerleme iki anahtardan birinde tutulabilir (pmKey kalıtsal,
+    // id yedeği); ilerlemesi büyük olan anahtarla talep edilir.
+    final pmProgress = pm.dailyTaskProgress[task.pmKey] ?? 0;
+    final idProgress = pm.dailyTaskProgress[task.id] ?? 0;
+    final claimKey = idProgress > pmProgress ? task.id : task.pmKey;
+    final ok = await pm.claimDailyTaskReward(
+      claimKey,
+      target: task.max,
+      coinReward: task.rewardType == 'coin' ? task.rewardAmount : 0,
+      energyReward: task.rewardType == 'energy' ? task.rewardAmount : 0,
+    );
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       task.claimed = true;
     });
-    final pm = ProgressManager.instance;
-    pm.claimedDailyTasks.add(task.pmKey);
-    pm.claimedDailyTasks.add(task.id);
-    if (task.rewardType == 'coin') {
-      pm.addCoins(task.rewardAmount);
-    } else if (task.rewardType == 'energy') {
-      EnergyService.instance.addEnergy(task.rewardAmount);
-    }
+    AudioManager().playVictorySfx(includeVoice: false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          context.l10n.taskRewardClaimedSnack(
+            _taskRewardText(context.l10n, task),
+          ),
+        ),
+      ),
+    );
   }
 
   void _handleDockSelect(BuildContext context, LululuDockTab tab) {
@@ -141,7 +194,6 @@ class _TasksScreenState extends State<TasksScreen> {
         EnergyService.instance,
       ]),
       builder: (context, _) {
-        _syncFromProgressManager();
         final l10n = context.l10n;
         final rawCoins = ProgressManager.instance.coins;
         final coinsText = _formatDots(rawCoins);
@@ -286,7 +338,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           Column(
                             verticalDirection: VerticalDirection.up,
                             children: [
-                              _buildTaskCard(l10n, _tasks[0]),
+                              _buildTaskCard(context, l10n, _tasks[0]),
                               // .tasks-hero (x=12, y=105.4, w=406, h=123.1, margin: 10px 12px 2px)
                               Padding(
                                 padding:
@@ -461,7 +513,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           ),
 
                           for (int i = 1; i < _tasks.length; i++)
-                            _buildTaskCard(l10n, _tasks[i]),
+                            _buildTaskCard(context, l10n, _tasks[i]),
 
                           // .tasks-note (margin: 12px 16px 4px)
                           Padding(
@@ -540,7 +592,11 @@ class _TasksScreenState extends State<TasksScreen> {
           ? l10n.rewardEnergy(task.rewardAmount)
           : l10n.rewardCoins(task.rewardAmount);
 
-  Widget _buildTaskCard(AppLocalizations l10n, _TaskItem t) {
+  Widget _buildTaskCard(
+    BuildContext context,
+    AppLocalizations l10n,
+    _TaskItem t,
+  ) {
     final pct = (t.cur / t.max).clamp(0.0, 1.0);
     final isDone = t.cur >= t.max;
     final isEnergy = t.rewardType == 'energy';
@@ -708,7 +764,9 @@ class _TasksScreenState extends State<TasksScreen> {
                       button: true,
                       label: l10n.claimTaskLabel(title, rewardText),
                       child: GestureDetector(
-                      onTap: () => _claimTask(t),
+                      onTap: () {
+                        _claimTask(context, t);
+                      },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,

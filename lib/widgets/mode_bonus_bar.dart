@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
+import 'shop_dialog.dart';
 
 /// Tek güçlendirici yuvası — ikon, kısa etiket, stok rozeti.
 class ModeBonus {
@@ -12,16 +13,12 @@ class ModeBonus {
     required this.asset,
     required this.count,
     this.onTap,
-    this.description,
-    this.price,
   });
 
   final String label;
   final String asset;
   final int count;
   final VoidCallback? onTap;
-  final String? description;
-  final int? price;
 }
 
 /// Prototip power-dock (`power-bar` / `power-dock`): 3 yuvarlak güçlendirici,
@@ -83,11 +80,52 @@ class _BonusButton extends StatefulWidget {
 class _BonusButtonState extends State<_BonusButton> {
   bool _pressed = false;
 
+  /// Son başarılı güç dokunuşu; 300ms içindeki tekrarlar yutulur (F16).
+  DateTime? _lastPowerTapAt;
+
+  /// Boş stokta dokunma: bildirim + mağaza eylemi (B26a). Stok varken
+  /// 300ms çift-dokunuş kilidiyle güç çalıştırılır (F16).
+  void _handleTap() {
+    final item = widget.item;
+    if (item.count <= 0) {
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(context.l10n.boosterOutOfStockToast(item.label)),
+            action: SnackBarAction(
+              label: context.l10n.navShop,
+              onPressed: () {
+                if (mounted) ShopDialog.show(context);
+              },
+            ),
+          ),
+        );
+      return;
+    }
+    final onTap = item.onTap;
+    if (onTap == null) return;
+    final now = DateTime.now();
+    final last = _lastPowerTapAt;
+    if (last != null &&
+        now.difference(last) < const Duration(milliseconds: 300)) {
+      return;
+    }
+    _lastPowerTapAt = now;
+    onTap();
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
     final hasStock = item.count > 0;
-    final enabled = item.onTap != null && hasStock;
+
+    // Dokunma bir şey yapıyorsa düğme etkindir: stok varken güç,
+    // stok yokken boş-stok bildirimi. Stok varken `onTap` yoksa
+    // çağırıcı düğmeyi bilerek kapatmıştır.
+    final enabled = hasStock ? item.onTap != null : true;
 
     return Semantics(
       button: true,
@@ -97,7 +135,7 @@ class _BonusButtonState extends State<_BonusButton> {
         onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
         onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
         onTapCancel: _pressed ? () => setState(() => _pressed = false) : null,
-        onTap: enabled ? item.onTap : null,
+        onTap: enabled ? _handleTap : null,
         behavior: HitTestBehavior.opaque,
         child: AnimatedScale(
           scale: _pressed ? 0.93 : 1.0,
@@ -228,8 +266,6 @@ ModeBonus stockBonus({
   required String label,
   required String asset,
   required VoidCallback effect,
-  String? description,
-  int? price,
   bool Function()? canApply,
 }) {
   final pm = ProgressManager();
@@ -238,8 +274,6 @@ ModeBonus stockBonus({
     label: label,
     asset: asset,
     count: count,
-    description: description,
-    price: price,
     onTap: count <= 0
         ? null
         : () {
@@ -258,6 +292,11 @@ ModeBonus stockBonus({
 /// [ProgressManager.refundPower] ile iade edilir; stok harcanmış olmaz.
 /// `true` dönen etki stoğu tüketmiş sayılır. Stok 0 ise dokunulmaz.
 ///
+/// F16: aynı kapamaya 300ms içinde gelen ikinci dokunuş yutulur —
+/// hızlı çift dokunuş iki güç tüketmez. Düğme düzeyindeki kilit
+/// ([_BonusButtonState]) yeniden kurulumlarda da korur; bu kapama
+/// kilidi programatik çift çağrıyı da engeller.
+///
 /// Mevcut `void` kapamalar (`effect: () { _useBomb(); setState(...); }`
 /// gibi, `bool` sonucu atanlar) bu varyanta taşınmalıdır; taşınmayan
 /// çağrıcılar eski davranışı korur.
@@ -266,21 +305,26 @@ ModeBonus stockBonusWithResult({
   required String label,
   required String asset,
   required bool Function() effect,
-  String? description,
-  int? price,
   bool Function()? canApply,
 }) {
   final pm = ProgressManager();
   final count = pm.powerCount(id);
+  DateTime? lastUse;
   return ModeBonus(
     label: label,
     asset: asset,
     count: count,
-    description: description,
-    price: price,
     onTap: count <= 0
         ? null
         : () {
+            final now = DateTime.now();
+            final previous = lastUse;
+            if (previous != null &&
+                now.difference(previous) <
+                    const Duration(milliseconds: 300)) {
+              return;
+            }
+            lastUse = now;
             if (canApply != null && !canApply()) return;
             if (!pm.takePower(id)) return;
             if (!effect()) {

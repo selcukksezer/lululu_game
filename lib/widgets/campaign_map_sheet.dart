@@ -49,6 +49,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
 
   late int _selectedChapterIndex;
   String? _chestFeedbackBanner;
+  _FeedbackTone _chestFeedbackTone = _FeedbackTone.success;
 
   static const List<Color> _chapterAccents = [
     LululuColors.coralFlare,
@@ -101,26 +102,47 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
   }
 
   Future<void> _handleClaimChest(int chapterIndex, int milestoneStars) async {
-    final reward = await _progression.claimChapterChest(
-      chapterIndex,
-      milestoneStars,
-    );
+    ChapterChestReward? reward;
+    try {
+      reward = await _progression.claimChapterChest(
+        chapterIndex,
+        milestoneStars,
+      );
+    } catch (_) {
+      reward = null;
+    }
     if (!mounted) return;
     if (reward != null) {
       setState(() {
+        _chestFeedbackTone = _FeedbackTone.success;
         _chestFeedbackBanner = context.l10n.chestUnlockedToast(
           milestoneStars,
-          reward.coinsGranted,
+          reward!.coinsGranted,
           reward.boosterCount,
           _boosterDisplayNames[reward.boosterKey] ??
               reward.boosterKey.toUpperCase(),
         );
       });
+    } else {
+      // Sandık açılamadı (null/hata): sessiz boşluk yerine görünür banner.
+      setState(() {
+        _chestFeedbackTone = _FeedbackTone.error;
+        _chestFeedbackBanner = context.l10n.chestClaimFailed;
+      });
     }
   }
 
   void _handleNodeTap(CampaignLevel level) {
-    if (!_progression.isLevelUnlocked(level.id)) return;
+    if (!_progression.isLevelUnlocked(level.id)) {
+      // Kilitli düğüm: kilit sebebini banner'da göster.
+      final previousLevel = level.id > 1 ? level.id - 1 : 1;
+      setState(() {
+        _chestFeedbackTone = _FeedbackTone.warning;
+        _chestFeedbackBanner =
+            context.l10n.levelLockedMessage(previousLevel);
+      });
+      return;
+    }
     if (widget.onSelectLevel != null) {
       widget.onSelectLevel!(level);
       return;
@@ -207,10 +229,12 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: LululuColors.toxicNeon.withValues(alpha: 0.16),
+                        color: _chestFeedbackTone.color
+                            .withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: LululuColors.toxicNeon.withValues(alpha: 0.65),
+                          color: _chestFeedbackTone.color
+                              .withValues(alpha: 0.65),
                         ),
                       ),
                       child: Text(
@@ -218,10 +242,10 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
-                          color: LululuColors.toxicNeon,
+                          color: _chestFeedbackTone.color,
                         ),
                       ),
                     ),
@@ -364,6 +388,7 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
                   onTap: () => setState(() {
                     _selectedChapterIndex = ch.chapterIndex;
                     _chestFeedbackBanner = null;
+                    _chestFeedbackTone = _FeedbackTone.success;
                   }),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
@@ -670,11 +695,22 @@ class _CampaignMapSheetState extends State<CampaignMapSheet> {
           stars: stars,
           accent: accent,
           compact: compact,
-          onTap: unlocked ? () => _handleNodeTap(level) : null,
+          onTap: () => _handleNodeTap(level),
         );
       },
     );
   }
+}
+
+/// Geri bildirim banner'ının tonu: sandık başarısı yeşil, kilit
+/// sebebi amber, sandık hatası kırmızı.
+enum _FeedbackTone {
+  success(LululuColors.toxicNeon),
+  warning(LululuColors.warningSolar),
+  error(LululuColors.coralFlare);
+
+  const _FeedbackTone(this.color);
+  final Color color;
 }
 
 class _CampaignLevelNodeCard extends StatelessWidget {

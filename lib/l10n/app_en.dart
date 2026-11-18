@@ -193,6 +193,24 @@ class AppLocalizationsEn extends AppLocalizations {
       'Daily energy was already claimed today.';
 
   @override
+  String get hbEnergyTag => '-1 ENERGY';
+
+  @override
+  String get chestClaimFailed =>
+      'The chest could not be opened. Try again.';
+
+  @override
+  String boosterOutOfStockToast(String label) =>
+      '$label is out of stock! Get more in the shop.';
+
+  @override
+  String levelLockedMessage(int previousLevel) =>
+      'Complete level $previousLevel first.';
+
+  @override
+  String taskRewardClaimedSnack(String rewardText) => '$rewardText claimed!';
+
+  @override
   String get onlineNotifySignupSnack =>
       "You're signed up! We'll let you know as soon as Online mode opens.";
 

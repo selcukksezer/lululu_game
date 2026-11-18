@@ -173,6 +173,11 @@ abstract class AppLocalizations {
   String get rewardedAdsComingSoon;
   String get dailyEnergyClaimedSnack;
   String get dailyEnergyAlreadyClaimedSnack;
+  String get hbEnergyTag;
+  String get chestClaimFailed;
+  String boosterOutOfStockToast(String label);
+  String levelLockedMessage(int previousLevel);
+  String taskRewardClaimedSnack(String rewardText);
   String get onlineNotifySignupSnack;
   String get seeAllArrow;
   String get studioTitle;
