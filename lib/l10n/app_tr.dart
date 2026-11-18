@@ -2907,6 +2907,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get chatGuestNameHint => 'Görünen ad';
   String get chatGuestNameEmpty => 'Ad boş olamaz.';
   String get chatGuestNameSaved => 'Adın kaydedildi.';
+  String get chatActionFailed => 'İşlem tamamlanamadı. Tekrar dene.';
   String get chatEmptyChannel => 'Bu kanalda henüz mesaj yok.';
   String get chatOptionsLabel => 'Sohbet seçenekleri';
   String get chatChangeNameAction => 'Adını değiştir';

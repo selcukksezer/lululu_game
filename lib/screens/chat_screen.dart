@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
@@ -59,6 +60,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   String? _sendError;
   bool _isSending = false;
+  bool _isSendingSticker = false;
 
   // Exact initial messages from `#scr-chat` (`reference-chat.png` & `reference-chat-spec.json`)
   final List<_ChatItem> _messages = <_ChatItem>[
@@ -216,7 +218,10 @@ class _ChatScreenState extends State<ChatScreen> {
     AudioManager().playPop();
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
+      return;
     }
+    // Yığında ekran yoksa (bağımsız/ilk açılış): suskun kalma, ana sekmeye git.
+    goTo(context, LululuRoutes.hub, replace: true);
   }
 
   Future<void> _sendMessage() async {
@@ -235,7 +240,20 @@ class _ChatScreenState extends State<ChatScreen> {
       await ChatService.instance.sendText(text);
     } on ChatTermsRequiredException {
       // Şart onayı yok: diyaloğu göster, kabulde bir kez tekrar dene.
-      final accepted = await _showTermsDialog();
+      // B2: diyalog/onay hatası bu dalın dışında yakalanmaz; sarılmazsa
+      // _isSending true kalır ve sohbet sessizce susar.
+      bool accepted;
+      try {
+        accepted = await _showTermsDialog();
+      } catch (e) {
+        debugPrint('[lululu] Sohbet şart diyaloğu açılamadı: $e');
+        if (!mounted) return;
+        setState(() {
+          _isSending = false;
+          _sendError = context.l10n.messageSendFailed;
+        });
+        return;
+      }
       if (!mounted) return;
       if (!accepted) {
         setState(() {
@@ -297,7 +315,14 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
     if (accepted == true) {
-      await ChatService.instance.acceptChatTerms();
+      // B2: kalıcı kayıt hatası fırlatırsa çağrı noktası kilitlenir;
+      // başarısız onayı reddedilmiş say, çağrı noktası hata bandını göstersin.
+      try {
+        await ChatService.instance.acceptChatTerms();
+      } catch (e) {
+        debugPrint('[lululu] Sohbet şart onayı kaydedilemedi: $e');
+        return false;
+      }
       return true;
     }
     return false;
@@ -356,12 +381,35 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Buluta gönderilemeyen mesajların bulut yazımını yeniden dener.
   Future<void> _retryCloudPushes() async {
-    await ChatService.instance.retryFailedCloudPushes();
+    try {
+      await ChatService.instance.retryFailedCloudPushes();
+    } catch (e) {
+      debugPrint('[lululu] Bulut yeniden gönderimi başarısız: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.cloudSendFailedNote)),
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() {});
   }
 
+  /// Çıkartma gönderimi kilitli: çift dokunuş çift çıkartma üretmez.
   Future<void> _sendSticker(
+    int tier,
+    ({String name, String line, String asset}) sticker,
+  ) async {
+    if (_isSendingSticker) return;
+    _isSendingSticker = true;
+    try {
+      await _sendStickerBody(tier, sticker);
+    } finally {
+      _isSendingSticker = false;
+    }
+  }
+
+  Future<void> _sendStickerBody(
     int tier,
     ({String name, String line, String asset}) sticker,
   ) async {
@@ -369,7 +417,19 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await ChatService.instance.sendBugSticker(tier);
     } on ChatTermsRequiredException {
-      final accepted = await _showTermsDialog();
+      // B2 ile aynı kilit riski (burada kilit yok ama işlenmemiş hata
+      // olur): diyalog hatasını hata bandına bağla.
+      bool accepted;
+      try {
+        accepted = await _showTermsDialog();
+      } catch (e) {
+        debugPrint('[lululu] Sohbet şart diyaloğu açılamadı: $e');
+        if (!mounted) return;
+        setState(() {
+          _sendError = context.l10n.stickerSendFailed;
+        });
+        return;
+      }
       if (!mounted) return;
       if (!accepted) {
         setState(() {
@@ -606,8 +666,18 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
     if (confirmed != true || !mounted) return;
-    final outcome =
-        await ChatService.instance.reportMessage(message, selected);
+    ChatReportOutcome outcome;
+    try {
+      outcome =
+          await ChatService.instance.reportMessage(message, selected);
+    } catch (e) {
+      debugPrint('[lululu] Rapor gönderilemedi: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.chatActionFailed)),
+      );
+      return;
+    }
     if (!mounted) return;
     final text = switch (outcome) {
       ChatReportOutcome.sent => context.l10n.chatReportSent,
@@ -621,10 +691,19 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _blockAuthor(ChatMessage message) async {
-    await ChatService.instance.blockAuthor(
-      message.authorId,
-      authorName: message.authorName,
-    );
+    try {
+      await ChatService.instance.blockAuthor(
+        message.authorId,
+        authorName: message.authorName,
+      );
+    } catch (e) {
+      debugPrint('[lululu] Kullanıcı engellenemedi: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.chatActionFailed)),
+      );
+      return;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.chatUserBlocked)),
@@ -724,7 +803,17 @@ class _ChatScreenState extends State<ChatScreen> {
     final name = controller.text;
     controller.dispose();
     if (saved != true || !mounted) return;
-    final ok = await ChatService.instance.setGuestDisplayName(name);
+    bool ok;
+    try {
+      ok = await ChatService.instance.setGuestDisplayName(name);
+    } catch (e) {
+      debugPrint('[lululu] Misafir adı kaydedilemedi: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.chatActionFailed)),
+      );
+      return;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -786,8 +875,25 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         TextButton(
                           onPressed: () async {
-                            await ChatService.instance
-                                .unblockAuthor(entry.key);
+                            try {
+                              await ChatService.instance
+                                  .unblockAuthor(entry.key);
+                            } catch (e) {
+                              debugPrint(
+                                '[lululu] Engel kaldırılamadı: $e',
+                              );
+                              if (!ctx.mounted) return;
+                              Navigator.of(ctx).pop();
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    context.l10n.chatActionFailed,
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
                             if (!ctx.mounted) return;
                             Navigator.of(ctx).pop();
                             if (!mounted) return;

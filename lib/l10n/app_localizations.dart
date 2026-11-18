@@ -1343,6 +1343,7 @@ abstract class AppLocalizations {
   String get chatGuestNameHint;
   String get chatGuestNameEmpty;
   String get chatGuestNameSaved;
+  String get chatActionFailed;
   String get chatEmptyChannel;
   String get chatOptionsLabel;
   String get chatChangeNameAction;

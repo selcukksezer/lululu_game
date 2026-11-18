@@ -2907,6 +2907,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatGuestNameHint => 'Display name';
   String get chatGuestNameEmpty => 'Name cannot be empty.';
   String get chatGuestNameSaved => 'Your name was saved.';
+  String get chatActionFailed =>
+      'The action could not be completed. Try again.';
   String get chatEmptyChannel => 'No messages in this channel yet.';
   String get chatOptionsLabel => 'Chat options';
   String get chatChangeNameAction => 'Change name';
