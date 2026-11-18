@@ -277,7 +277,13 @@ void main() {
         await auth.signOut();
         await sync.enableOnlineWhenSignedIn();
         expect(sync.onlineEnabled, isFalse);
+        // Reset: prefs silinir; PM de boş prefs'ten yeniden yüklenir
+        // (gerçek sıfırlama akışı SettingsScreen.resetAll ile aynı).
+        // K2 düzeltmesinden beri tahta yüklemesi PM skorlarını
+        // temizlemez; getBest tahtada kayıt yoksa PM'ye düştüğünden
+        // yalnız tahtayı yeniden yüklemek 0 vermez.
         SharedPreferences.setMockInitialValues(<String, Object>{});
+        await ProgressManager.instance.load();
         await board.load();
         expect(board.getBest(LeaderboardService.modeSuika), 0);
       },
