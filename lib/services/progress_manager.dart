@@ -212,6 +212,19 @@ class ProgressManager extends ChangeNotifier {
   /// 11 oyun modunun yerel en yüksek skorları.
   final Map<String, int> modeHighScores = <String, int>{};
 
+  /// Günlük görev tamamlama eşikleri — `TasksScreen` aynası (PM-detailed).
+  ///
+  /// Değerler `TasksScreen._TaskItem.max` ile AYNI (oyna 3, birleştir
+  /// 5, video 1, kombo 4); ekonomi değişimi yok, eşik aynen kopyalandı.
+  /// [recordTaskProgressDetailed] tamamlanma hesabını buradan okur;
+  /// görev ekranı kendi tanımlarını kullanmaya devam eder.
+  static const Map<String, int> dailyTaskTargets = <String, int>{
+    'play': 3,
+    'merge': 5,
+    'video': 1,
+    'combo': 4,
+  };
+
   /// Günlük görev ilerlemeleri ve ödül alım durumları.
   final Map<String, int> dailyTaskProgress = <String, int>{
     'play': 0,
@@ -323,23 +336,39 @@ class ProgressManager extends ChangeNotifier {
     }
 
     final safeAmount = amount.clamp(1, EnergyService.maxEnergy);
+    // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
+    // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
+    final snapshot = _ClaimSnapshot.capture(this);
     lastDailyFreeEnergyDay = today;
     dailyFreeEnergyClaimsToday += 1;
     lastFreeEnergyClaimEpochMs = nowMs;
 
     EnergyService.instance.addEnergy(safeAmount);
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('lululu_daily_free_energy_day', lastDailyFreeEnergyDay);
-    await prefs.setInt(
-      'lululu_daily_free_energy_claims',
-      dailyFreeEnergyClaimsToday,
-    );
-    await prefs.setInt(
-      'lululu_last_free_energy_epoch_ms',
-      lastFreeEnergyClaimEpochMs,
-    );
-    await _persistEconomy();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'lululu_daily_free_energy_day',
+        lastDailyFreeEnergyDay,
+      );
+      await prefs.setInt(
+        'lululu_daily_free_energy_claims',
+        dailyFreeEnergyClaimsToday,
+      );
+      await prefs.setInt(
+        'lululu_last_free_energy_epoch_ms',
+        lastFreeEnergyClaimEpochMs,
+      );
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: claimDailyFreeEnergy kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return false;
+    }
     notifyListeners();
     return true;
   }
@@ -1109,12 +1138,53 @@ class ProgressManager extends ChangeNotifier {
     int delta = 1,
     int? absoluteValue,
   }) async {
+    // Tek hesaplama yeri _recordTaskProgressCore: dönüş (yeni
+    // tamamlananlar) bu imzada yoksayılır.
+    await _recordTaskProgressCore(
+      taskId,
+      delta: delta,
+      absoluteValue: absoluteValue,
+    );
+  }
+
+  /// Günlük görev ilerlemesini kaydeder ve bu çağrıyla YENİ
+  /// tamamlanan görev kimliklerini döner.
+  ///
+  /// Sözleşme (PM-detailed, koordinatör bağlayacak):
+  /// * İlerleme kaydı [recordTaskProgress] ile aynıdır (varsayılan
+  ///   `delta: 1`; gün değişiminde sıfırlama + kalıcı kayıt + bildirim
+  ///   aynen yapılır — tek hesaplama yeri _recordTaskProgressCore).
+  /// * Dönen liste, bu çağrıdan ÖNCE tamamlanmamışken çağrıyla eşiğe
+  ///   ulaşan görevleri içerir; hiçbiri tamamlanmadıysa boş listedir.
+  ///   Zaten ödülü alınmış görev tekrar bildirilmez.
+  /// * Tek çağrı tek görevi ilerlettiği için liste en fazla bir
+  ///   kimlik içerir (`[kind]` ya da `[]`).
+  /// * Eşikler [dailyTaskTargets]tandır; bilinmeyen görev kaydedilir
+  ///   ama asla tamamlanmış sayılmaz (boş liste döner).
+  Future<List<String>> recordTaskProgressDetailed(String kind) =>
+      _recordTaskProgressCore(kind);
+
+  /// Görev ilerleme kaydının TEK hesaplama yeri: [recordTaskProgress]
+  /// ve [recordTaskProgressDetailed] buraya delege eder. Dönen liste,
+  /// bu çağrıyla yeni tamamlanan görev kimlikleridir (en fazla bir
+  /// kimlik; yoksa boş liste). `delta`/`absoluteValue` parametreleri
+  /// [recordTaskProgress] çağrıcıları içindir (oyun ekranları mutlak
+  /// kombo ve çoklu birleştirme kaydeder); ayrıntılı imza bunları
+  /// taşımaz, varsayılanları kullanır.
+  Future<List<String>> _recordTaskProgressCore(
+    String taskId, {
+    int delta = 1,
+    int? absoluteValue,
+  }) async {
     final today = _todayKey();
     if (dailyTasksDay != today) {
       dailyTasksDay = today;
       dailyTaskProgress.updateAll((_, _) => 0);
       claimedDailyTasks.clear();
     }
+    final target = dailyTaskTargets[taskId];
+    final before = dailyTaskProgress[taskId] ?? 0;
+    final wasClaimed = claimedDailyTasks.contains(taskId);
     if (absoluteValue != null) {
       final current = dailyTaskProgress[taskId] ?? 0;
       if (absoluteValue > current) {
@@ -1125,6 +1195,10 @@ class ProgressManager extends ChangeNotifier {
     }
     await _persistDailyTasks();
     notifyListeners();
+    if (target == null || wasClaimed) return <String>[];
+    final after = dailyTaskProgress[taskId] ?? 0;
+    if (before < target && after >= target) return <String>[taskId];
+    return <String>[];
   }
 
   Future<bool> claimDailyTaskReward(
@@ -1137,6 +1211,9 @@ class ProgressManager extends ChangeNotifier {
     if (progress < target || claimedDailyTasks.contains(taskId)) {
       return false;
     }
+    // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
+    // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
+    final snapshot = _ClaimSnapshot.capture(this);
     claimedDailyTasks.add(taskId);
     if (coinReward > 0) {
       coins += coinReward;
@@ -1144,8 +1221,18 @@ class ProgressManager extends ChangeNotifier {
     if (energyReward > 0) {
       EnergyService.instance.addEnergy(energyReward);
     }
-    await _persistDailyTasks();
-    await _persistEconomy();
+    try {
+      await _persistDailyTasks();
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: claimDailyTaskReward kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return false;
+    }
     notifyListeners();
     return true;
   }
@@ -1178,6 +1265,9 @@ class ProgressManager extends ChangeNotifier {
     // `doubled` bilinçli olarak okunmaz (bkz. yukarıdaki not).
     final today = _todayKey();
     if (lastStreakClaimDay == today) return null;
+    // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
+    // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
+    final snapshot = _ClaimSnapshot.capture(this);
     if (lastStreakClaimDay == _yesterdayKey()) {
       streak += 1;
     } else if (lastStreakClaimDay.isNotEmpty) {
@@ -1190,10 +1280,23 @@ class ProgressManager extends ChangeNotifier {
     const rewardEnergy = 5;
     coins += rewardCoins;
     EnergyService.instance.addEnergy(rewardEnergy);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('lululu_daily_streak', streak);
-    await prefs.setString('lululu_last_streak_claim_day', lastStreakClaimDay);
-    await _persistEconomy();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('lululu_daily_streak', streak);
+      await prefs.setString(
+        'lululu_last_streak_claim_day',
+        lastStreakClaimDay,
+      );
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: claimDailyGiftBox kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return null;
+    }
     notifyListeners();
     return (coins: rewardCoins, energy: rewardEnergy, streak: streak);
   }
@@ -1331,70 +1434,85 @@ class ProgressManager extends ChangeNotifier {
     // O3: negatif maliyet [buyBooster] ile aynı kuralda reddedilir
     // (negatif maliyet coin eklerdi).
     if (cost < 0 || coins < cost) return false;
-    switch (id) {
-      case 'makara':
-        coins -= cost;
-        slipperCount += 3;
-        sprayCount += 3;
-        aydinlatCount += 1;
-        break;
-      case 'kongo':
-        coins -= cost;
-        slipperCount += 5;
-        sprayCount += 5;
-        aydinlatCount += 2;
-        break;
-      case 'limited':
-        if (!canBuyLimitedDrop) return false;
-        coins -= cost;
-        slipperCount += 4;
-        sprayCount += 4;
-        aydinlatCount += 2;
-        coins += 120; // bonus coin splash
-        limitedDropDay = _todayKey();
-        break;
-      case 'f16_x3':
-        coins -= cost;
-        aydinlatCount += 3;
-        break;
-      case 'raid_x3':
-        coins -= cost;
-        sprayCount += 3;
-        break;
-      case 'terlik_x5':
-        coins -= cost;
-        slipperCount += 5;
-        break;
-      case 'full_energy':
-        coins -= cost;
-        await EnergyService.instance.refillFull();
-        break;
-      case 'gold_chest':
-        coins -= cost;
-        coins += 1200;
-        slipperCount += 2;
-        sprayCount += 2;
-        aydinlatCount += 1;
-        break;
-      case 'royal_cape':
-        coins -= cost;
-        hasRoyalCape = true;
-        ownedCosmetics.add('royal_cape');
-        break;
-      case 'mega_starter_pack':
-        coins -= cost;
-        coins += 3000;
-        aydinlatCount += 3;
-        sprayCount += 3;
-        slipperCount += 5;
-        hasRoyalCape = true;
-        ownedCosmetics.add('royal_cape');
-        await EnergyService.instance.refillFull();
-        break;
-      default:
-        return false;
+    // PM-claim: kalıcı yazım (veya enerji doldurma) başarısız olursa
+    // ödeme geri alınır (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya
+    // fırlatma yok. Koruma öncesi erken dönüşler (bilinmeyen id,
+    // `limited` gün koruması) değişim yapmadan döner.
+    final snapshot = _ClaimSnapshot.capture(this);
+    try {
+      switch (id) {
+        case 'makara':
+          coins -= cost;
+          slipperCount += 3;
+          sprayCount += 3;
+          aydinlatCount += 1;
+          break;
+        case 'kongo':
+          coins -= cost;
+          slipperCount += 5;
+          sprayCount += 5;
+          aydinlatCount += 2;
+          break;
+        case 'limited':
+          if (!canBuyLimitedDrop) return false;
+          coins -= cost;
+          slipperCount += 4;
+          sprayCount += 4;
+          aydinlatCount += 2;
+          coins += 120; // bonus coin splash
+          limitedDropDay = _todayKey();
+          break;
+        case 'f16_x3':
+          coins -= cost;
+          aydinlatCount += 3;
+          break;
+        case 'raid_x3':
+          coins -= cost;
+          sprayCount += 3;
+          break;
+        case 'terlik_x5':
+          coins -= cost;
+          slipperCount += 5;
+          break;
+        case 'full_energy':
+          coins -= cost;
+          await EnergyService.instance.refillFull();
+          break;
+        case 'gold_chest':
+          coins -= cost;
+          coins += 1200;
+          slipperCount += 2;
+          sprayCount += 2;
+          aydinlatCount += 1;
+          break;
+        case 'royal_cape':
+          coins -= cost;
+          hasRoyalCape = true;
+          ownedCosmetics.add('royal_cape');
+          break;
+        case 'mega_starter_pack':
+          coins -= cost;
+          coins += 3000;
+          aydinlatCount += 3;
+          sprayCount += 3;
+          slipperCount += 5;
+          hasRoyalCape = true;
+          ownedCosmetics.add('royal_cape');
+          await EnergyService.instance.refillFull();
+          break;
+        default:
+          return false;
+      }
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: buyBundle kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return false;
     }
-    await _persistEconomy();
     notifyListeners();
     return true;
   }
@@ -1402,6 +1520,9 @@ class ProgressManager extends ChangeNotifier {
   /// Free daily shop case — coins + small booster drip.
   Future<({int coins, int slipper, int spray})?> claimShopChest() async {
     if (!canClaimShopChest) return null;
+    // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
+    // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
+    final snapshot = _ClaimSnapshot.capture(this);
     shopChestDay = _todayKey();
     const grantCoins = 80;
     const grantSlipper = 1;
@@ -1409,7 +1530,17 @@ class ProgressManager extends ChangeNotifier {
     coins += grantCoins;
     slipperCount += grantSlipper;
     sprayCount += grantSpray;
-    await _persistEconomy();
+    try {
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: claimShopChest kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return null;
+    }
     notifyListeners();
     return (coins: grantCoins, slipper: grantSlipper, spray: grantSpray);
   }
@@ -1560,5 +1691,100 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setString('lululu_extra_powers', jsonEncode(extraPowers));
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+  }
+}
+
+/// Claim/ödeme metotlarının geri alma anlık görüntüsü (PM-claim).
+///
+/// Semantik: kalıcı yazım başarısız olursa bellek durumu ödeme-öncesi
+/// hâle döndürülür ve metot başarısızlık değerini döner
+/// (`false`/`null`) — hata UI'ya fırlatılmaz, `debugPrint` ile
+/// görünür kılınır. Yalnız başarısızlık dönmek yetmezdi: bellek içi
+/// koruma bayrakları (gün işaretleri, `claimedDailyTasks`) tekrar
+/// denemeyi engellerdi; geri alma çağırıcının tekrar deneyebilmesini
+/// sağlar. Ödeme-yan-etki sırası değişmez (önce hesap, sonra yazım);
+/// kısmi ödeme oluşmaz. Desen, IAP tarafındaki O19 geri alma anlık
+/// görüntüsüyle aynıdır.
+///
+/// Kapsam: [ProgressManager]ın claim metotlarının değiştirdiği tüm
+/// alanlar + enerji bakiyesi. Bütünlük imzası bellek içinde geri
+/// alınan durumdan yeniden hesaplanır; kalıcı kayıt yazılmaz.
+/// `coins` setter'ının ertelenmiş kaydı (`_scheduleCoinPersist`)
+/// ateşle-unut yoludur ve bu kapsamın dışındadır (önceden var olan
+/// davranış, değiştirilmedi).
+class _ClaimSnapshot {
+  _ClaimSnapshot.capture(ProgressManager pm)
+      : _coins = pm.coins,
+        _sprayCount = pm.sprayCount,
+        _slipperCount = pm.slipperCount,
+        _aydinlatCount = pm.aydinlatCount,
+        _hasRoyalCape = pm.hasRoyalCape,
+        _ownedCosmetics = Set<String>.of(pm.ownedCosmetics),
+        _extraPowers = Map<String, int>.of(pm.extraPowers),
+        _shopChestDay = pm.shopChestDay,
+        _limitedDropDay = pm.limitedDropDay,
+        _streak = pm.streak,
+        _lastStreakClaimDay = pm.lastStreakClaimDay,
+        _dailyTaskProgress = Map<String, int>.of(pm.dailyTaskProgress),
+        _claimedDailyTasks = Set<String>.of(pm.claimedDailyTasks),
+        _dailyTasksDay = pm.dailyTasksDay,
+        _lastDailyFreeEnergyDay = pm.lastDailyFreeEnergyDay,
+        _dailyFreeEnergyClaimsToday = pm.dailyFreeEnergyClaimsToday,
+        _lastFreeEnergyClaimEpochMs = pm.lastFreeEnergyClaimEpochMs,
+        _energy = EnergyService.instance.energy;
+
+  final int _coins;
+  final int _sprayCount;
+  final int _slipperCount;
+  final int _aydinlatCount;
+  final bool _hasRoyalCape;
+  final Set<String> _ownedCosmetics;
+  final Map<String, int> _extraPowers;
+  final String _shopChestDay;
+  final String _limitedDropDay;
+  final int _streak;
+  final String _lastStreakClaimDay;
+  final Map<String, int> _dailyTaskProgress;
+  final Set<String> _claimedDailyTasks;
+  final String _dailyTasksDay;
+  final String _lastDailyFreeEnergyDay;
+  final int _dailyFreeEnergyClaimsToday;
+  final int _lastFreeEnergyClaimEpochMs;
+  final int _energy;
+
+  /// Bellek durumunu anlık görüntüdeki hâle döndürür. `coins`
+  /// doğrudan alana yazılır (setter'ın ertelenmiş kalıcı kaydı hata
+  /// yolunda yeniden zamanlanmaz); bildirim değeri elle eşitlenir.
+  /// Dinleyici bildirimi çağırana aittir (`notifyListeners` korumalı
+  /// üyedir, bu sınıftan çağrılamaz).
+  void restore(ProgressManager pm) {
+    pm._coins = _coins;
+    pm.coinsNotifier.value = _coins;
+    pm.sprayCount = _sprayCount;
+    pm.slipperCount = _slipperCount;
+    pm.aydinlatCount = _aydinlatCount;
+    pm.hasRoyalCape = _hasRoyalCape;
+    pm.ownedCosmetics
+      ..clear()
+      ..addAll(_ownedCosmetics);
+    pm.extraPowers
+      ..clear()
+      ..addAll(_extraPowers);
+    pm.shopChestDay = _shopChestDay;
+    pm.limitedDropDay = _limitedDropDay;
+    pm.streak = _streak;
+    pm.lastStreakClaimDay = _lastStreakClaimDay;
+    pm.dailyTaskProgress
+      ..clear()
+      ..addAll(_dailyTaskProgress);
+    pm.claimedDailyTasks
+      ..clear()
+      ..addAll(_claimedDailyTasks);
+    pm.dailyTasksDay = _dailyTasksDay;
+    pm.lastDailyFreeEnergyDay = _lastDailyFreeEnergyDay;
+    pm.dailyFreeEnergyClaimsToday = _dailyFreeEnergyClaimsToday;
+    pm.lastFreeEnergyClaimEpochMs = _lastFreeEnergyClaimEpochMs;
+    pm._stateIntegritySig = pm._computeStateIntegritySig();
+    EnergyService.instance.energy = _energy;
   }
 }
