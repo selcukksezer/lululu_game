@@ -183,7 +183,7 @@ class IapService extends ChangeNotifier {
     StoreCatalogItem(
       id: 'double_coin',
       title: 'Çifte Coin',
-      description: '30 dakika boyunca 2× coin',
+      description: 'Makarayız Puan Çarpanı x2',
       coinCost: 400,
       priceLabel: '₺39,99',
       powerKey: 'x2',
@@ -196,7 +196,7 @@ class IapService extends ChangeNotifier {
       description: '2048 Çiftleştir x1',
       coinCost: 180,
       priceLabel: '₺19,99',
-      powerKey: 'pair',
+      powerKey: 'pair2048',
       powerGrant: 1,
       rewardedAdEligible: true,
     ),

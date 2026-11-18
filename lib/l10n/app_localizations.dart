@@ -806,6 +806,8 @@ abstract class AppLocalizations {
   String get shopAddedGoldenChestToast;
   String get shopAddedDoubleCoinToast;
   String get shopAddedLuckPotionToast;
+  String get energyPackBoughtToast;
+  String get shopPurchaseFailedRefundToast;
 
   /// Güç satırı açıklama satırı: çevrilmiş açıklama + çevrilmiş mod adı.
   /// [desc] ve [modeName] zaten çevrilmiş değerlerdir.

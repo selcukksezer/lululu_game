@@ -1629,13 +1629,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemStarPackTitle => 'Yıldız Paketi';
 
   @override
-  String get shopItemStarPackDesc => '25 yıldız + 1.000 coin';
+  String get shopItemStarPackDesc => '1.000 coin + F16 x1';
 
   @override
   String get shopItemSurpriseBoxTitle => 'Sürpriz Kutu';
 
   @override
-  String get shopItemSurpriseBoxDesc => 'Rastgele moddan 1 güçlendirici';
+  String get shopItemSurpriseBoxDesc => 'Anne Terliği x1 + Raid x1';
 
   @override
   String get shopItemHandfulTitle => 'Bir Avuç';
@@ -1653,7 +1653,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemWoodenChestTitle => 'Ahşap Sandık';
 
   @override
-  String get shopItemWoodenChestDesc => 'Rastgele güçlendirici + coin';
+  String get shopItemWoodenChestDesc => 'Anne Terliği x1 + 250 coin';
 
   @override
   String get shopItemGoldenChestTitle => 'Altın Sandık';
@@ -1665,13 +1665,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemDoubleCoinTitle => 'Çifte Coin';
 
   @override
-  String get shopItemDoubleCoinDesc => '30 dakika boyunca 2× coin';
+  String get shopItemDoubleCoinDesc => 'Makarayız Puan Çarpanı x2';
 
   @override
   String get shopItemLuckPotionTitle => 'Şans İksiri';
 
   @override
-  String get shopItemLuckPotionDesc => 'Birleşmede kritik şansı artar';
+  String get shopItemLuckPotionDesc => '2048 Çiftleştir x1';
 
   @override
   String get shopNotEnoughGoldToast => 'Yetersiz altın! Oyun oynayarak altın kazanabilirsin.';
@@ -1711,6 +1711,12 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get shopAddedLuckPotionToast => 'Şans İksiri sepete eklendi';
+
+  @override
+  String get energyPackBoughtToast => '+5 enerji eklendi!';
+
+  @override
+  String get shopPurchaseFailedRefundToast => 'Satın alma başarısız oldu, altınların iade edildi.';
 
   @override
   String shopPowerUpDescModeSuffix(String desc, String modeName) => '$desc · yalnızca $modeName modunda';

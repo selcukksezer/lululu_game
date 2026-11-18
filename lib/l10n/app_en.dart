@@ -1627,13 +1627,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemStarPackTitle => 'Star Pack';
 
   @override
-  String get shopItemStarPackDesc => '25 stars + 1,000 coins';
+  String get shopItemStarPackDesc => '1,000 coins + F16 x1';
 
   @override
   String get shopItemSurpriseBoxTitle => 'Surprise Box';
 
   @override
-  String get shopItemSurpriseBoxDesc => '1 power-up from a random mode';
+  String get shopItemSurpriseBoxDesc => 'Slipper Shake x1 + Raid Spray x1';
 
   @override
   String get shopItemHandfulTitle => 'A Handful';
@@ -1651,7 +1651,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemWoodenChestTitle => 'Wooden Chest';
 
   @override
-  String get shopItemWoodenChestDesc => 'Random power-up + coins';
+  String get shopItemWoodenChestDesc => 'Slipper Shake x1 + 250 coins';
 
   @override
   String get shopItemGoldenChestTitle => 'Golden Chest';
@@ -1663,13 +1663,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemDoubleCoinTitle => 'Double Coins';
 
   @override
-  String get shopItemDoubleCoinDesc => '2× coins for 30 minutes';
+  String get shopItemDoubleCoinDesc => 'Makarayız Score Multiplier x2';
 
   @override
   String get shopItemLuckPotionTitle => 'Luck Potion';
 
   @override
-  String get shopItemLuckPotionDesc => 'Increases crit chance on merges';
+  String get shopItemLuckPotionDesc => '2048 Pair Up x1';
 
   @override
   String get shopNotEnoughGoldToast => 'Not enough gold! Play games to earn gold.';
@@ -1709,6 +1709,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shopAddedLuckPotionToast => 'Luck Potion added to cart';
+
+  @override
+  String get energyPackBoughtToast => '+5 energy added!';
+
+  @override
+  String get shopPurchaseFailedRefundToast => 'Purchase failed — your coins were refunded.';
 
   @override
   String shopPowerUpDescModeSuffix(String desc, String modeName) => '$desc · only in $modeName mode';

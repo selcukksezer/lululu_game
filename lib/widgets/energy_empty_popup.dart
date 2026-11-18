@@ -62,17 +62,58 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
     super.dispose();
   }
 
+  void _showToast(ScaffoldMessengerState messenger, String msg) {
+    AudioManager().playPop();
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            msg,
+            style: const TextStyle(
+              fontFamily: 'Nunito',
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
+          ),
+          duration: const Duration(milliseconds: 1600),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF141B2A),
+        ),
+      );
+  }
+
   Future<void> _buyEnergyPack() async {
     if (_busy) return;
     AudioManager().playPop();
+    // l10n + messenger bağıştan ÖNCE alınır: bağış enerji dinleyicisini
+    // tetikleyip diyaloğu kapatırsa bile bildirim gösterilebilir.
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
-    if (_pm.coins >= 100) {
-      await _pm.spendCoins(100);
+    try {
+      final spent = await _pm.spendCoins(100);
+      if (!spent) {
+        // Yetersiz bakiye: enerji verilmez, diyalog açık kalır.
+        _showToast(messenger, l10n.shopNotEnoughGoldToast);
+        return;
+      }
+      try {
+        await _energy.grantFull(5);
+      } catch (_) {
+        // Ödeme sonrası bağış hatası: coin iade edilir, bildirim gösterilir.
+        try {
+          await _pm.addCoins(100);
+        } catch (_) {}
+        _showToast(messenger, l10n.shopPurchaseFailedRefundToast);
+        return;
+      }
+      _showToast(messenger, l10n.energyPackBoughtToast);
+      if (!mounted) return;
+      Navigator.of(context).maybePop();
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    await _energy.grantFull(5);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    Navigator.of(context).maybePop();
   }
 
   String _formatWait(Duration d) {

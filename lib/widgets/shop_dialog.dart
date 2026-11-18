@@ -81,6 +81,10 @@ class ShopScreen extends StatefulWidget {
 class _ShopScreenState extends State<ShopScreen> {
   final ProgressManager _pm = ProgressManager();
 
+  /// IAP + coin'li alımların ortak kilidi: çift dokunma / eşzamanlı
+  /// iki satın alma aynı anda işlemez.
+  bool _purchaseBusy = false;
+
   List<_ModePowerGroup> _powerGroups(AppLocalizations l10n) => [
     _ModePowerGroup(
       modeName: l10n.shopModeSuikaArena,
@@ -276,21 +280,21 @@ class _ShopScreenState extends State<ShopScreen> {
       iconAsset: 'assets/icons2/target.png',
       powers: [
         _PowerRowItem(
-          id: 'dblslip',
+          id: 'yuva_dblslip',
           name: l10n.shopPowerDoubleSlipperName,
           iconAsset: 'assets/icons2/boot.png',
           desc: l10n.shopPowerDoubleSlipperDesc,
           cost: 300,
         ),
         _PowerRowItem(
-          id: 'goldslip',
+          id: 'yuva_goldslip',
           name: l10n.shopPowerGoldenSlipperName,
           iconAsset: 'assets/icons2/premium_token.png',
           desc: l10n.shopPowerGoldenSlipperDesc,
           cost: 450,
         ),
         _PowerRowItem(
-          id: 'shield',
+          id: 'nest_shield',
           name: l10n.shopPowerNestShieldName,
           iconAsset: 'assets/icons2/shield.png',
           desc: l10n.shopPowerNestShieldDesc,
@@ -414,13 +418,44 @@ class _ShopScreenState extends State<ShopScreen> {
       );
   }
 
+  /// 2048 güçleri yalnız `*2048` anahtarlarına yazılır: 2048 ekranı
+  /// yalnız bu anahtarları okur; `undo`/`shuffle`/`pair` anahtarlarını
+  /// okuyan lib kodu yoktur. Çift-yazım kaldırıldı.
+  static const Map<String, String> _power2048Keys = {
+    'undo': 'undo2048',
+    'shuffle': 'shuffle2048',
+    'pair': 'pair2048',
+  };
+
   Future<void> _grantPowerStock(String powerKey, [int amount = 1]) async {
-    final current = _pm.powerCount(powerKey);
-    await _pm.setPowerCount(powerKey, current + amount);
-    if (powerKey == 'undo' || powerKey == 'shuffle' || powerKey == 'pair') {
-      final legacyKey = '${powerKey}2048';
-      await _pm.setPowerCount(legacyKey, _pm.powerCount(legacyKey) + amount);
+    final targetKey = _power2048Keys[powerKey] ?? powerKey;
+    await _pm.incrementPowerCount(targetKey, amount);
+  }
+
+  /// IAP satın alma: ortak kilit + try/catch. Başlatma başarısında EK
+  /// ÖDEME YAPILMAZ — teslimat yalnız satın alma akışından
+  /// (`IapService` purchase stream) gelir; `purchase()` dönüşü yalnız
+  /// başlatmanın kabul edildiğini söyler.
+  Future<void> _buyIapProduct({
+    required String productId,
+    required String successToast,
+  }) async {
+    if (_purchaseBusy) return;
+    _purchaseBusy = true;
+    bool ok;
+    try {
+      ok = await IapService.instance.purchase(productId);
+    } catch (_) {
+      ok = false;
+    } finally {
+      _purchaseBusy = false;
     }
+    if (!mounted) return;
+    setState(() {});
+    widget.onStateChanged?.call();
+    _showToast(
+      ok ? successToast : context.l10n.shopStoreUnavailableToast,
+    );
   }
 
   Future<void> _watchFreeChestAd() async {
@@ -436,19 +471,39 @@ class _ShopScreenState extends State<ShopScreen> {
     required int cost,
     FutureOr<void> Function()? onSuccess,
   }) async {
-    final ok = await _pm.spendCoins(cost);
-    if (ok) {
+    if (_purchaseBusy) return;
+    _purchaseBusy = true;
+    var spent = false;
+    try {
+      spent = await _pm.spendCoins(cost);
+      if (!spent) {
+        if (mounted) {
+          _showToast(context.l10n.shopNotEnoughGoldToast);
+        }
+        return;
+      }
       await onSuccess?.call();
-      if (!mounted) return;
-      setState(() {});
-      widget.onStateChanged?.call();
-      _showToast(toastMsg);
-    } else {
-      if (!mounted) return;
-      _showToast(
-        context.l10n.shopNotEnoughGoldToast,
-      );
+    } catch (_) {
+      if (spent) {
+        // Ödeme-sonrası bağış hatası: coin iade edilir. PM'de ayrı
+        // refundCoins API'si yok; iade addCoins ile yapılır.
+        try {
+          await _pm.addCoins(cost);
+        } catch (_) {}
+        if (mounted) {
+          _showToast(context.l10n.shopPurchaseFailedRefundToast);
+        }
+      } else if (mounted) {
+        _showToast(context.l10n.errorGeneric);
+      }
+      return;
+    } finally {
+      _purchaseBusy = false;
     }
+    if (!mounted) return;
+    setState(() {});
+    widget.onStateChanged?.call();
+    _showToast(toastMsg);
   }
 
   Widget _buildStatusBar() {
@@ -960,19 +1015,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: l10n.shopItemEnergyPackDesc,
                             priceText: '₺29,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              // Satın alma sonucuna göre: mağaza yoksa
-                              // (sürümde) ürün verilmez, yalnızca bilgi
-                              // gösterilir. Teslimat IAP akışından gelir.
-                              final ok = await IapService.instance
-                                  .purchase('energy_pack_10');
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopEnergyAddedToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'energy_pack_10',
+                              successToast: l10n.shopEnergyAddedToast,
+                            ),
                           ),
                           _ShopItemData(
                             badge: l10n.shopBadgeBest,
@@ -982,19 +1028,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: l10n.shopItemEnergyDepotDesc,
                             priceText: '₺59,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              final ok = await IapService.instance
-                                  .purchase('full_energy');
-                              if (ok) {
-                                await _pm.refillFullEnergy();
-                              }
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopEnergyFullToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'full_energy',
+                              successToast: l10n.shopEnergyFullToast,
+                            ),
                           ),
                         ),
 
@@ -1019,19 +1056,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: l10n.shopItemStarPackDesc,
                             priceText: '₺149,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              final ok = await IapService.instance
-                                  .purchase('mega_starter_pack');
-                              if (ok) {
-                                await _pm.addCoins(1000);
-                              }
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopAddedStarPackToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'mega_starter_pack',
+                              successToast: l10n.shopAddedStarPackToast,
+                            ),
                           ),
                           _ShopItemData(
                             badge: null,
@@ -1044,7 +1072,8 @@ class _ShopScreenState extends State<ShopScreen> {
                             onTap: () => _buyCoinItem(
                               toastMsg: l10n.shopAddedSurpriseBoxToast,
                               cost: 350,
-                              onSuccess: () => _grantPowerStock('triple', 1),
+                              onSuccess: () =>
+                                  _pm.grantArcadeDrop(slipper: 1, spray: 1),
                             ),
                           ),
                         ),
@@ -1060,16 +1089,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: l10n.shopItemHandfulDesc,
                             priceText: '₺59,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              final ok = await IapService.instance
-                                  .purchase('coins_mid');
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopAddedCoinPackToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_mid',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
                           ),
                           _ShopItemData(
                             badge: l10n.shopBadgeBest,
@@ -1079,16 +1102,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: l10n.shopItemCrateDesc,
                             priceText: '₺249,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              final ok = await IapService.instance
-                                  .purchase('coins_big');
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopAddedCoinPackToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_big',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
                           ),
                           topPadding: 8,
                         ),
@@ -1108,7 +1125,7 @@ class _ShopScreenState extends State<ShopScreen> {
                               toastMsg: l10n.shopAddedWoodenChestToast,
                               cost: 200,
                               onSuccess: () =>
-                                  _pm.grantArcadeDrop(coins: 100, slipper: 1),
+                                  _pm.grantArcadeDrop(coins: 250, slipper: 1),
                             ),
                           ),
                           _ShopItemData(
@@ -1123,10 +1140,10 @@ class _ShopScreenState extends State<ShopScreen> {
                               toastMsg: l10n.shopAddedGoldenChestToast,
                               cost: 750,
                               onSuccess: () => _pm.grantArcadeDrop(
-                                coins: 250,
+                                coins: 1200,
                                 f16: 1,
-                                spray: 1,
-                                slipper: 1,
+                                spray: 2,
+                                slipper: 2,
                               ),
                             ),
                           ),
@@ -1145,7 +1162,7 @@ class _ShopScreenState extends State<ShopScreen> {
                             onTap: () => _buyCoinItem(
                               toastMsg: l10n.shopAddedDoubleCoinToast,
                               cost: 400,
-                              onSuccess: () => _grantPowerStock('x2', 1),
+                              onSuccess: () => _grantPowerStock('x2', 2),
                             ),
                           ),
                           _ShopItemData(
@@ -1159,7 +1176,7 @@ class _ShopScreenState extends State<ShopScreen> {
                             onTap: () => _buyCoinItem(
                               toastMsg: l10n.shopAddedLuckPotionToast,
                               cost: 180,
-                              onSuccess: () => _grantPowerStock('hunter', 1),
+                              onSuccess: () => _grantPowerStock('pair', 1),
                             ),
                           ),
                         ),

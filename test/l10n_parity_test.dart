@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 782 getter + 170 metot = 952 anahtar,
+// açıkça sayılır (soyut sınıftaki 784 getter + 170 metot = 954 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -498,6 +498,8 @@ void main() {
         'shopAddedGoldenChestToast': l10n.shopAddedGoldenChestToast,
         'shopAddedDoubleCoinToast': l10n.shopAddedDoubleCoinToast,
         'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
+        'energyPackBoughtToast': l10n.energyPackBoughtToast,
+        'shopPurchaseFailedRefundToast': l10n.shopPurchaseFailedRefundToast,
         'helpButtonLabel': l10n.helpButtonLabel,
         'sendMessageLabel': l10n.sendMessageLabel,
         'sendStickerHint': l10n.sendStickerHint,
@@ -1298,6 +1300,8 @@ void main() {
         'shopAddedGoldenChestToast': l10n.shopAddedGoldenChestToast,
         'shopAddedDoubleCoinToast': l10n.shopAddedDoubleCoinToast,
         'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
+        'energyPackBoughtToast': l10n.energyPackBoughtToast,
+        'shopPurchaseFailedRefundToast': l10n.shopPurchaseFailedRefundToast,
         'helpButtonLabel': l10n.helpButtonLabel,
         'sendMessageLabel': l10n.sendMessageLabel,
         'sendStickerHint': l10n.sendStickerHint,
@@ -2062,21 +2066,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 952 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 954 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 782);
-    expect(tr.length, 782);
+    expect(en.length, 784);
+    expect(tr.length, 784);
     expect(enMethods.length, 170);
     expect(trMethods.length, 170);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 952);
+    expect(en.length + enMethods.length, 954);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });
