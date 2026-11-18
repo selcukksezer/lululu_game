@@ -1,13 +1,16 @@
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
+import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/lululu_press.dart';
 
@@ -170,16 +173,61 @@ class _GameResultScreenState extends State<GameResultScreen>
     );
   }
 
-  void _shareResult() {
-    setState(() => _shared = true);
+  /// Gerçek skor paylaşımı (B9): skor kartı render edilip sistem
+  /// paylaşımı açılır (`arcade_chrome.dart` deseni); `_shared`
+  /// YALNIZCA paylaşım `true` dönerse set edilir. Web'de kart
+  /// paylaşımı yapılamaz ([ScoreShareCard.share] `false` döner):
+  /// skor metni panoya kopyalanır; kopyalama başarılıysa
+  /// "kopyalandı" bildirimi, değilse hata bildirimi gösterilir.
+  /// Sahte başarı bildirimi yok.
+  Future<void> _shareResult() async {
     AudioManager().playPop();
+    final l10n = context.l10n;
+    final shared = await ScoreShareCard.instance.share(
+      l10n: l10n,
+      modeTitle:
+          widget.won ? l10n.levelCompleteTitle : l10n.resultGameOverTitle,
+      score: widget.score,
+      best: widget.bestScore,
+      line: widget.won ? l10n.resultSubtitle : l10n.resultGameOverSubtitle,
+    );
+    if (!mounted) return;
+    if (shared) {
+      setState(() => _shared = true);
+      return;
+    }
+    if (kIsWeb) {
+      var copied = false;
+      try {
+        await Clipboard.setData(
+          ClipboardData(text: l10n.scoreShareText(widget.score)),
+        );
+        copied = true;
+      } catch (_) {
+        copied = false;
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            copied
+                ? l10n.shareScoreSnack(widget.score)
+                : l10n.shareScoreFailed,
+            style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
+          ),
+          backgroundColor:
+              copied ? LululuColors.cyberFuchsia : LululuColors.carbonVoid,
+        ),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          context.l10n.shareScoreSnack(widget.score),
+          l10n.shareScoreFailed,
           style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
         ),
-        backgroundColor: LululuColors.cyberFuchsia,
+        backgroundColor: LululuColors.carbonVoid,
       ),
     );
   }

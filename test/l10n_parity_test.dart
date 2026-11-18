@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 807 getter + 174 metot = 981 anahtar,
+// açıkça sayılır (soyut sınıftaki 811 getter + 176 metot = 987 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -348,6 +348,9 @@ void main() {
         'usernameHintDetailed': l10n.usernameHintDetailed,
         'passwordHintDetailed': l10n.passwordHintDetailed,
         'linkCopiedToast': l10n.linkCopiedToast,
+        'videoPreviewBadge': l10n.videoPreviewBadge,
+        'videoSharedToast': l10n.videoSharedToast,
+        'videoTextCopiedToast': l10n.videoTextCopiedToast,
         'videoAddedToDownloadsToast': l10n.videoAddedToDownloadsToast,
         'shareLabel': l10n.shareLabel,
         'downloadLabel': l10n.downloadLabel,
@@ -386,6 +389,7 @@ void main() {
         'speedFast': l10n.speedFast,
         'createGifLabel': l10n.createGifLabel,
         'storageTitle': l10n.storageTitle,
+        'deleteDownloadTitle': l10n.deleteDownloadTitle,
         'energyLabel': l10n.energyLabel,
         'showPasswordLabel': l10n.showPasswordLabel,
         'hidePasswordLabel': l10n.hidePasswordLabel,
@@ -1174,6 +1178,9 @@ void main() {
         'usernameHintDetailed': l10n.usernameHintDetailed,
         'passwordHintDetailed': l10n.passwordHintDetailed,
         'linkCopiedToast': l10n.linkCopiedToast,
+        'videoPreviewBadge': l10n.videoPreviewBadge,
+        'videoSharedToast': l10n.videoSharedToast,
+        'videoTextCopiedToast': l10n.videoTextCopiedToast,
         'videoAddedToDownloadsToast': l10n.videoAddedToDownloadsToast,
         'shareLabel': l10n.shareLabel,
         'downloadLabel': l10n.downloadLabel,
@@ -1212,6 +1219,7 @@ void main() {
         'speedFast': l10n.speedFast,
         'createGifLabel': l10n.createGifLabel,
         'storageTitle': l10n.storageTitle,
+        'deleteDownloadTitle': l10n.deleteDownloadTitle,
         'energyLabel': l10n.energyLabel,
         'showPasswordLabel': l10n.showPasswordLabel,
         'hidePasswordLabel': l10n.hidePasswordLabel,
@@ -1706,6 +1714,7 @@ void main() {
         'comboToast': l10n.comboToast(3),
         'boosterCountLabel': l10n.boosterCountLabel('X', 3),
         'shareScoreSnack': l10n.shareScoreSnack(3),
+        'scoreShareText': l10n.scoreShareText(3),
         'accountDeleteFailed': l10n.accountDeleteFailed('X'),
         'signedInAs': l10n.signedInAs('X'),
         'chapterLabelCaps': l10n.chapterLabelCaps(3),
@@ -1736,6 +1745,7 @@ void main() {
         'playItemLabel': l10n.playItemLabel('X'),
         'nowPlayingLabel': l10n.nowPlayingLabel('X'),
         'deleteItemLabel': l10n.deleteItemLabel('X'),
+        'deleteDownloadConfirm': l10n.deleteDownloadConfirm('X'),
         'dockUnreadLabel': l10n.dockUnreadLabel('X', '5'),
         'shopBuyItemLabel': l10n.shopBuyItemLabel('X', 'X'),
         'shopBuyPowerUpLabel': l10n.shopBuyPowerUpLabel('X', 3),
@@ -1897,6 +1907,7 @@ void main() {
         'comboToast': l10n.comboToast(3),
         'boosterCountLabel': l10n.boosterCountLabel('X', 3),
         'shareScoreSnack': l10n.shareScoreSnack(3),
+        'scoreShareText': l10n.scoreShareText(3),
         'accountDeleteFailed': l10n.accountDeleteFailed('X'),
         'signedInAs': l10n.signedInAs('X'),
         'chapterLabelCaps': l10n.chapterLabelCaps(3),
@@ -1927,6 +1938,7 @@ void main() {
         'playItemLabel': l10n.playItemLabel('X'),
         'nowPlayingLabel': l10n.nowPlayingLabel('X'),
         'deleteItemLabel': l10n.deleteItemLabel('X'),
+        'deleteDownloadConfirm': l10n.deleteDownloadConfirm('X'),
         'dockUnreadLabel': l10n.dockUnreadLabel('X', '5'),
         'shopBuyItemLabel': l10n.shopBuyItemLabel('X', 'X'),
         'shopBuyPowerUpLabel': l10n.shopBuyPowerUpLabel('X', 3),
@@ -2122,21 +2134,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 981 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 987 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 807);
-    expect(tr.length, 807);
-    expect(enMethods.length, 174);
-    expect(trMethods.length, 174);
+    expect(en.length, 811);
+    expect(tr.length, 811);
+    expect(enMethods.length, 176);
+    expect(trMethods.length, 176);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 981);
+    expect(en.length + enMethods.length, 987);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

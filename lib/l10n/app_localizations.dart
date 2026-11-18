@@ -425,6 +425,7 @@ abstract class AppLocalizations {
   String get boosterLightLabel;
   String boosterCountLabel(String label, int count);
   String shareScoreSnack(int score);
+  String scoreShareText(int score);
   String get resultSubtitle;
   String get levelCompleteTitle;
   String get resultGameOverTitle;
@@ -612,6 +613,9 @@ abstract class AppLocalizations {
   // verisidir; anahtar yapılmadı.
 
   String get linkCopiedToast;
+  String get videoPreviewBadge;
+  String get videoSharedToast;
+  String get videoTextCopiedToast;
   String get videoAddedToDownloadsToast;
   String videoPlayPauseLabel(bool isPlaying, String title);
   String likeLabel(String count, bool liked);
@@ -668,6 +672,8 @@ abstract class AppLocalizations {
   String playItemLabel(String title);
   String nowPlayingLabel(String title);
   String deleteItemLabel(String title);
+  String get deleteDownloadTitle;
+  String deleteDownloadConfirm(String title);
 
   // --- Dalga 33 göçü (W33-1): erişilebilirlik etiketleri ---
   // Yalnız anahtar eklendi; UI göçü sonraki dalgada (kaynak metinler

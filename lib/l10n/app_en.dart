@@ -797,6 +797,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your score was copied to the clipboard: $score points! #LululuGame';
 
   @override
+  String scoreShareText(int score) =>
+      'My Lülülü score: $score points! #LululuGame';
+
+  @override
   String get resultSubtitle =>
       'One step closer to the top — the Pink Bathrobe!';
 
@@ -1223,6 +1227,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get linkCopiedToast => 'Link copied — ready to share';
 
   @override
+  String get videoPreviewBadge => 'PREVIEW';
+
+  @override
+  String get videoSharedToast => 'Video shared';
+
+  @override
+  String get videoTextCopiedToast => 'Video info copied to clipboard';
+
+  @override
   String get videoAddedToDownloadsToast => 'Video added to Downloads';
 
   @override
@@ -1372,6 +1385,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String deleteItemLabel(String title) => 'Delete: $title';
+
+  @override
+  String get deleteDownloadTitle => 'Delete downloaded file?';
+
+  @override
+  String deleteDownloadConfirm(String title) =>
+      '"$title" will be removed from downloads. Are you sure?';
 
   // --- Dalga 33 göçü (W33-1): erişilebilirlik etiketleri ---
   // Yalnız anahtar eklendi; UI göçü sonraki dalgada (kaynak metinler

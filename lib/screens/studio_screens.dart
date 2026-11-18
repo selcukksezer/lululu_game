@@ -4,7 +4,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
@@ -74,6 +76,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
   bool _liked = false;
   bool _likeBusy = false;
   bool _downloadBusy = false;
+  bool _shareBusy = false;
 
   final _videos = [
     {
@@ -172,10 +175,63 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
     }
   }
 
+  /// Gerçek paylaşım (B6-paylaşım): paylaşım sheet'i tercih edilir
+  /// ([SharePlus] — `friend_invite_service.dart` deseni). Web'de Web
+  /// Share API'si yoksa share_plus önce mailto yedeğine düşer, o da
+  /// olmazsa fırlatır; sheet açılamazsa pano yedeği denenir.
+  /// Bildirim YALNIZCA gerçek sonuca bağlıdır: sheet başarısı, pano
+  /// başarısı ve hata ayrı bildirilir; kapatma (dismissed) sessiz
+  /// geçilir. `recordTaskProgress('video')` YALNIZCA gerçek paylaşım
+  /// veya pano başarısında kaydedilir ([_downloadCurrent] ve
+  /// [_toggleLikeCurrent] ile aynı kural: koşulsuz kayıt sahte
+  /// ilerlemedir). Kilit: [_downloadBusy] deseni.
   Future<void> _shareCurrent() async {
+    if (_shareBusy) return;
+    _shareBusy = true;
+    final cur = _videos[_activeVideoIndex];
+    final shareText =
+        "${cur['title'] as String}\n${_videoMeta(cur)} — Lülülü";
     unawaited(AudioManager().playButtonTap());
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
-    _toast(context.l10n.linkCopiedToast);
+    var shared = false;
+    var copied = false;
+    var dismissed = false;
+    try {
+      final result = await SharePlus.instance.share(
+        ShareParams(text: shareText, subject: cur['title'] as String),
+      );
+      shared = result.status == ShareResultStatus.success ||
+          result.status == ShareResultStatus.unavailable;
+      dismissed = result.status == ShareResultStatus.dismissed;
+    } catch (_) {
+      shared = false;
+    }
+    if (!shared && !dismissed) {
+      // Paylaşım açılamadı (örn. web'de Web Share + mailto yok):
+      // pano yedeği — kopyalama başarısı ayrıca bildirilir.
+      try {
+        await Clipboard.setData(ClipboardData(text: shareText));
+        copied = true;
+      } catch (_) {
+        copied = false;
+      }
+    }
+    _shareBusy = false;
+    if (!mounted) return;
+    if (shared) {
+      _toast(context.l10n.videoSharedToast);
+    } else if (copied) {
+      _toast(context.l10n.videoTextCopiedToast);
+    } else if (!dismissed) {
+      _toast(context.l10n.errorGeneric);
+      return;
+    } else {
+      return;
+    }
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; paylaşım sonucunu etkilemez.
+    }
   }
 
   Future<void> _downloadCurrent() async {
@@ -285,6 +341,34 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                         color: Color(0xFF1B2336),
                                       );
                                     },
+                                  ),
+                                ),
+                              ),
+                              // Dürüst etiket (B6-oynatma): oynatıcı yok;
+                              // alan sabit küçük resim + görsel bayraktır,
+                              // gerçek oynatılabilir video baytı yok
+                              // (yer-tutucu baytlar, 2M kararı). Gerçek
+                              // oynatıcı kararı bekliyor (Selçuk S14).
+                              Positioned(
+                                top: 10,
+                                left: 10,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xB8000000),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    context.l10n.videoPreviewBadge,
+                                    style: GoogleFonts.nunito(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.2,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -2374,6 +2458,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
   bool _deleteBusy = false;
   final _downloads = [
     {
+      'id': 'dl_default_1',
       'title': 'birlesme_rekoru.mp4',
       'size': '84,2 MB',
       'sizeMb': 84.2,
@@ -2383,6 +2468,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
       'isBug': false,
     },
     {
+      'id': 'dl_default_2',
       'title': 'kapi7_rehberi.mp4',
       'size': '156,8 MB',
       'sizeMb': 156.8,
@@ -2392,6 +2478,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
       'isBug': false,
     },
     {
+      'id': 'dl_default_3',
       'title': 'dans_zamani.gif',
       'size': '6,4 MB',
       'sizeMb': 6.4,
@@ -2402,6 +2489,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
       'isBug': true,
     },
     {
+      'id': 'dl_default_4',
       'title': 'hamam_diva_klip.mp4',
       'size': '42,1 MB',
       'sizeMb': 42.1,
@@ -2441,15 +2529,44 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
     return '${totalMb.toStringAsFixed(1).replaceAll('.', ',')} MB';
   }
 
-  Future<void> _delete(int index) async {
+  /// Kimlikle silme (2N gözlemi): yerel liste indeksiyle silme,
+  /// servis listesi ayrıştığında (örn. yeni indirme başa eklenince)
+  /// YANLIŞ kaydı siler; silme [BugDownloadEntry.id] ile yapılır,
+  /// servis-önce sıralaması korunur (servis başarısızsa öğe yerinde
+  /// kalır). Silme öncesi onay dialogu gösterilir (sohbet rapor
+  /// deseni: `AlertDialog` + iptal/onayla); tek dokunuşla silme yok.
+  Future<void> _delete(String id) async {
     if (_deleteBusy) return;
-    if (index < 0 || index >= _downloads.length) return;
-    _deleteBusy = true;
-    unawaited(AudioManager().playButtonTap());
+    final index = _downloads.indexWhere((d) => d['id'] == id);
+    if (index < 0) return;
     final item = _downloads[index];
+    unawaited(AudioManager().playButtonTap());
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(ctx.l10n.deleteDownloadTitle),
+          content: Text(
+            ctx.l10n.deleteDownloadConfirm(item['title'] as String),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(ctx.l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(ctx.l10n.confirm),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    _deleteBusy = true;
     var removed = false;
     try {
-      removed = await BugVideoService.instance.removeDownloadAt(index) != null;
+      removed = await BugVideoService.instance.removeDownload(id);
     } catch (_) {
       removed = false;
     }
@@ -2461,7 +2578,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
       );
       return;
     }
-    setState(() => _downloads.removeAt(index));
+    setState(() => _downloads.removeWhere((d) => d['id'] == id));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.deletedItemSnack(item['title'] as String))),
     );
@@ -2722,7 +2839,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                       button: true,
                                       label: context.l10n.deleteItemLabel(_downloads[i]['title'] as String),
                                       child: GestureDetector(
-                                      onTap: () => _delete(i),
+                                      onTap: () => _delete(_downloads[i]['id'] as String),
                                       child: Container(
                                         width: 48,
                                         height: 48,
