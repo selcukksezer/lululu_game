@@ -435,6 +435,8 @@ abstract class AppLocalizations {
   String get sfxSubtitle;
   String get vibrationTitle;
   String get vibrationSubtitle;
+  String get languageTitle;
+  String get languageSubtitle;
   String get privacyTitle;
   String get privacySubtitle;
   String get deletingLabel;

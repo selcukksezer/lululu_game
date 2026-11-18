@@ -23,6 +23,7 @@ import 'services/firebase_bootstrap.dart';
 import 'services/firebase_options.dart';
 import 'services/iap_service.dart';
 import 'services/leaderboard_service.dart';
+import 'services/locale_service.dart';
 import 'services/progress_manager.dart';
 import 'services/zero_jank_preloader.dart';
 import 'theme/lululu_theme.dart';
@@ -63,6 +64,10 @@ Future<void> main() async {
       AdaptiveQualityScaler.instance.initialize(totalRamMb: null);
       unawaited(ZeroJankPreloader.instance.start());
       AudioManager().initialize();
+
+      // Dil tercihi (Ayarlar'dan TR/EN): okunur okunmaz notifier
+      // kök widget'ı yeniden kurar; açılış boyanması beklenmez.
+      unawaited(LocaleService.instance.load());
 
       // Paint immediately — never sit on white native splash waiting for I/O.
       runApp(const _BootApp());
@@ -141,6 +146,7 @@ class _BootAppState extends State<_BootApp> {
     FirebaseBootstrap.availableNotifier.addListener(
       _onFirebaseAvailabilityChanged,
     );
+    LocaleService.instance.overrideNotifier.addListener(_onLocaleChanged);
     // Splash sırasında kritik görselleri <2ms frame bütçesiyle precacheImage'e al.
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -153,6 +159,7 @@ class _BootAppState extends State<_BootApp> {
     FirebaseBootstrap.availableNotifier.removeListener(
       _onFirebaseAvailabilityChanged,
     );
+    LocaleService.instance.overrideNotifier.removeListener(_onLocaleChanged);
     // S2#8 devamı (W13-3): AudioManager singleton havuzunu yalnızca
     // kök widget sökülürken bırak. Pause/resume yollarına bağlanmaz:
     // arka plan geçişlerini AppLifecycleGuard stopAll + sessize alma
@@ -164,6 +171,11 @@ class _BootAppState extends State<_BootApp> {
       AudioManager.instance.dispose();
     }
     super.dispose();
+  }
+
+  /// Dil seçimi değişince kök ağacı yeniden kur (yeniden başlatma yok).
+  void _onLocaleChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onFirebaseAvailabilityChanged() {
@@ -325,9 +337,10 @@ class _BootAppState extends State<_BootApp> {
         title: 'LÜLÜLÜ',
         debugShowCheckedModeBanner: false,
         theme: buildLululuTheme(),
-        // Madde 95 [P1]: yerelleştirme altyapısı — EN + TR. Dil cihaz
-        // dilinden alınır; desteklenmeyen dilde varsayılan TR'dir
-        // (AppLocalizations.localeResolutionCallback).
+        // Madde 95 [P1]: yerelleştirme altyapısı — EN + TR. Dil
+        // varsayılanı cihaz dilinden alınır (desteklenmeyen dilde TR);
+        // kullanıcı Ayarlar'dan TR/EN seçerse seçim geçerli olur
+        // (LocaleService; null ise cihaz kuralı işler).
         localizationsDelegates: const [
           AppLocalizations.delegate,
           GlobalMaterialLocalizations.delegate,
@@ -337,6 +350,7 @@ class _BootAppState extends State<_BootApp> {
         supportedLocales: AppLocalizations.supportedLocales,
         localeResolutionCallback:
             AppLocalizations.localeResolutionCallback,
+        locale: LocaleService.instance.overrideNotifier.value,
         onGenerateRoute: LululuRoutes.onGenerateRoute,
         onUnknownRoute: LululuRoutes.onUnknownRoute,
         home: AnimatedSwitcher(

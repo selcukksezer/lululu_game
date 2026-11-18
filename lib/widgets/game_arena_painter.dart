@@ -7,6 +7,13 @@ import '../physics/physics_engine.dart';
 import '../theme/lululu_theme.dart';
 
 class GameArenaPainter extends CustomPainter {
+  /// Görsel/fizik oranı: karakter PNG'leri dik portre (tier1 en-boy
+  /// 0.37, tier5 0.50) — çarpışma dairesi boyunda çizilince böcekler
+  /// olduğundan küçük ve ayrık görünüyordu (Selçuk, 2026-11-18:
+  /// "arada çok boşluk var"). Fizik aynen durur; yalnız çizim
+  /// büyütülür, komşular görselde birbirine değer.
+  static const double _spriteVisualScale = 1.55;
+
   final CircularPhysicsEngine engine;
   final Map<String, ImageInfo?> insectImages;
   final double dangerPulse;
@@ -285,7 +292,7 @@ class GameArenaPainter extends CustomPainter {
         img.width.toDouble(),
         img.height.toDouble(),
       );
-      final maxSide = r * 2;
+      final maxSide = r * 2 * _spriteVisualScale;
       final aspect = img.width / img.height;
       final double dw;
       final double dh;

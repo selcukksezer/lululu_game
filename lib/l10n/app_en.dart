@@ -797,6 +797,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get vibrationSubtitle => 'Gentle vibration on merge';
 
   @override
+  String get languageTitle => 'Language';
+
+  @override
+  String get languageSubtitle => 'Game language: Türkçe or English';
+
+  @override
   String get privacyTitle => 'PRIVACY POLICY';
 
   @override

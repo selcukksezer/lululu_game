@@ -801,6 +801,12 @@ class AppLocalizationsTr extends AppLocalizations {
   String get vibrationSubtitle => 'Birleştirmede hafif titreşim';
 
   @override
+  String get languageTitle => 'Dil';
+
+  @override
+  String get languageSubtitle => 'Oyun dili: Türkçe veya English';
+
+  @override
   String get privacyTitle => 'GİZLİLİK POLİTİKASI';
 
   @override

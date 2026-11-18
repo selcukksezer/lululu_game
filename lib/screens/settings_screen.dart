@@ -10,6 +10,7 @@ import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
 import '../services/energy_service.dart';
 import '../services/haptic_service.dart';
+import '../services/locale_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/item_detail_popup.dart';
 import 'auth_screen.dart';
@@ -229,6 +230,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _sfxOn = true;
   bool _voiceOn = true;
   bool _vibOn = false;
+  String _localeCode = 'tr';
   bool _deleteArmed = false;
   bool _deleteBusy = false;
   Timer? _deleteArmTimer;
@@ -239,6 +241,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _sfxOn = _pm.sfxEnabled && !_audio.isMuted;
     _voiceOn = _audio.voiceEnabled;
     _vibOn = false;
+    _localeCode = LocaleService.instance.effectiveCode();
     _loadPrefs();
   }
 
@@ -270,6 +273,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _sfxOn = sfx;
       _voiceOn = voice;
       _vibOn = vib;
+      _localeCode = LocaleService.instance.effectiveCode();
     });
   }
 
@@ -308,6 +312,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     unawaited(HapticService.instance.setEnabled(v));
     unawaited(ProgressManager.instance.setVibrationEnabled(v));
     unawaited(_savePref('LululuSetVib', v));
+  }
+
+  void _onLanguageChanged(String code) {
+    if (_localeCode == code) return;
+    AudioManager().playPop();
+    setState(() => _localeCode = code);
+    unawaited(LocaleService.instance.setLocaleCode(code));
   }
 
   Future<bool> resetAll([BuildContext? dialogContext]) async {
@@ -459,6 +470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: _vibOn,
                   onChanged: _onVibrationChanged,
                 ),
+                _buildLanguageRow(),
                 _buildActionRow(
                   leadingSpacerWidth: 33,
                   title: context.l10n.privacyTitle,
@@ -598,6 +610,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return SizedBox(width: spacerWidth, height: 33);
     }
     return const SizedBox(width: 33, height: 33);
+  }
+
+  /// `.set-row` dil seçimi: TR/EN hap düğmeleri (Selçuk, 2026-11-18).
+  Widget _buildLanguageRow() {
+    return Semantics(
+      button: true,
+      label: '${context.l10n.languageTitle}: $_localeCode',
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 56),
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 12),
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: Color(0x1AFFFFFF), width: 1),
+          ),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 33, height: 33),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.l10n.languageTitle,
+                    style: GoogleFonts.nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.25,
+                    ),
+                  ),
+                  Text(
+                    context.l10n.languageSubtitle,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF8E9CAE),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            _buildLangPill('tr', 'Türkçe'),
+            const SizedBox(width: 8),
+            _buildLangPill('en', 'English'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLangPill(String code, String label) {
+    final selected = _localeCode == code;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _onLanguageChanged(code),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFFB800) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color:
+                selected ? const Color(0xFFFFB800) : const Color(0x40FFFFFF),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: selected ? const Color(0xFF111923) : Colors.white,
+            height: 1.2,
+          ),
+        ),
+      ),
+    );
   }
 
   /// `.set-row` clickable row with gold `›` chevron

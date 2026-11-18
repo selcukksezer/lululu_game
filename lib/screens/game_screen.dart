@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:vibration/vibration.dart';
 import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../physics/physics_engine.dart';
 import '../services/adaptive_quality_scaler.dart';
@@ -77,6 +78,11 @@ class _GameScreenState extends State<GameScreen>
   double _comboTimeRemaining = 0;
   String? _comboBreakToast;
   Timer? _comboBreakTimer;
+  Timer? _hisirTimer;
+  Timer? _hisirHideTimer;
+  bool _hisirVisible = false;
+  double _hisirXFraction = 0.5;
+  DateTime? _hisirTapSuppressUntil;
   bool _dropHadMerge = false;
   InsectTier _currentDropperTier = InsectTier.cone;
   InsectTier _nextDropperTier = InsectTier.helmet;
@@ -217,6 +223,7 @@ class _GameScreenState extends State<GameScreen>
     }
 
     _ticker = createTicker(_onTick)..start();
+    _scheduleHisir(const Duration(seconds: 15));
   }
 
   Future<void> _loadBest() async {
@@ -354,6 +361,8 @@ class _GameScreenState extends State<GameScreen>
     _speechTimer?.cancel();
     _milestoneTimer?.cancel();
     _comboBreakTimer?.cancel();
+    _hisirTimer?.cancel();
+    _hisirHideTimer?.cancel();
     for (final timer in _juiceTimers) {
       timer.cancel();
     }
@@ -389,6 +398,7 @@ class _GameScreenState extends State<GameScreen>
       _survivalTimeRemaining = level.timeLimitSeconds.toDouble();
       _bossIntroPlayed = false;
       _milestoneToast = null;
+      _hisirVisible = false;
       _juicePopups.clear();
       _bonusPulse.clear();
       _currentDropperTier = _rollDropTier();
@@ -398,6 +408,7 @@ class _GameScreenState extends State<GameScreen>
       _engine?.layoutBlocks(!widget.arcade && level.hasObstacles ? 3 : 0);
       _engine?.clear();
     });
+    _scheduleHisir(const Duration(seconds: 15));
   }
 
   @override
@@ -425,6 +436,8 @@ class _GameScreenState extends State<GameScreen>
       timer.cancel();
     }
     _juiceTimers.clear();
+    _hisirTimer?.cancel();
+    _hisirHideTimer?.cancel();
     super.dispose();
   }
 
@@ -700,6 +713,10 @@ class _GameScreenState extends State<GameScreen>
   /// Tap = aim at finger X + drop (drag still aims without forcing release).
   void _onDropperTap(TapUpDetails details) {
     if (_engine == null || _isFinished || _paused) return;
+    final suppressUntil = _hisirTapSuppressUntil;
+    if (suppressUntil != null && DateTime.now().isBefore(suppressUntil)) {
+      return;
+    }
     setState(() => _aimDropperAt(details.localPosition.dx));
     _dropInsect();
   }
@@ -766,6 +783,42 @@ class _GameScreenState extends State<GameScreen>
     setState(() => _milestoneToast = context.l10n.milestoneToast(tier.title));
     _milestoneTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) setState(() => _milestoneToast = null);
+    });
+  }
+
+  /// Hışır Suika'da: tier dışı sürpriz hedef (Selçuk, 2026-11-18).
+  /// Belirdiğinde "mezarına sıçtığım" der; dokunulursa +150 bonus.
+  void _scheduleHisir(Duration delay) {
+    _hisirTimer?.cancel();
+    _hisirTimer = Timer(delay, _showHisir);
+  }
+
+  void _showHisir() {
+    if (!mounted || _engine == null || _isFinished || _paused) {
+      _scheduleHisir(const Duration(seconds: 20));
+      return;
+    }
+    setState(() {
+      _hisirVisible = true;
+      _hisirXFraction = 0.15 + _rng.nextDouble() * 0.7;
+    });
+    unawaited(AudioManager().playMezarinaSiktigim());
+    _hisirHideTimer?.cancel();
+    _hisirHideTimer = Timer(const Duration(seconds: 7), () {
+      if (mounted) setState(() => _hisirVisible = false);
+    });
+    _scheduleHisir(Duration(seconds: 40 + _rng.nextInt(31)));
+  }
+
+  void _onHisirTapDown(TapDownDetails _) {
+    // Aynı dokunuşun böcek düşürmesini engelle (500 ms).
+    _hisirTapSuppressUntil =
+        DateTime.now().add(const Duration(milliseconds: 500));
+    if (!_hisirVisible) return;
+    _hisirHideTimer?.cancel();
+    setState(() {
+      _hisirVisible = false;
+      _score += 150;
     });
   }
 
@@ -2229,6 +2282,7 @@ class _GameScreenState extends State<GameScreen>
                       ),
               ),
               Positioned.fill(child: hudAndPlay),
+              if (_hisirVisible) _buildHisirOverlay(),
               if (widget.prototypeVisualState)
                 const Positioned(
                   top: 0,
@@ -2250,6 +2304,51 @@ class _GameScreenState extends State<GameScreen>
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Hışır sürpriz hedefi: konuşma balonu + kasketli dede görseli.
+  Widget _buildHisirOverlay() {
+    final size = MediaQuery.sizeOf(context);
+    return Positioned(
+      left: _hisirXFraction * size.width - 55,
+      top: size.height * 0.22,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: _onHisirTapDown,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xE6111923),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: LululuColors.liquidGold,
+                  width: 1,
+                ),
+              ),
+              child: const Text(
+                'Mezarına sıçtığım!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Image.asset(
+              HisirCharacter.assetPath,
+              width: 110,
+              height: 110,
+              fit: BoxFit.contain,
+            ),
+          ],
         ),
       ),
     );
