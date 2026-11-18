@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
@@ -11,6 +10,7 @@ import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../screens/result_screen.dart';
@@ -82,7 +82,7 @@ class _CutPiece {
 enum _Phase { ready, falling, failed }
 
 class _StackDropScreenState extends State<StackDropScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const double slabH = 36;
   static const double _stageHintHeight = 0;
   // İsabet bantları ÇAKIŞMAZ (S1#47): perfect = offset ≤ perfectPx,
@@ -113,6 +113,24 @@ class _StackDropScreenState extends State<StackDropScreen>
   DateTime? _failedAt;
   bool _resultShown = false;
 
+  /// Tur kimliği (F2): her `_boot` artırır. Bekleyen `_presentResult`,
+  /// tur değiştiyse eski turun sonucunu göstermez (`stillValid`).
+  int _runId = 0;
+
+  /// Yaşam döngüsü duraklatması ayrımı (L1): `resumed` yalnız bu
+  /// bayrak setliyken oyunu devam ettirir; elle duraklatma sürer.
+  bool _pausedByLifecycle = false;
+
+  /// Yardım sayfası duraklatması bayrağı (F3): sayfa kapanınca yalnız
+  /// bu bayrak setliyken devam ettirilir (önceden elle duraklatıldıysa
+  /// duraklatma sürer).
+  bool _pausedByHowToPlay = false;
+
+  /// Duraklatma başlangıcı (L1): duvar-saati son tarihleri
+  /// (`_freezeUntil`, `_perfectSlowUntil`, `_slowDropUntil`) duraklatma
+  /// süresince işlemesin diye devamda kaydırılır.
+  DateTime? _pauseStartedAt;
+
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk dilim bırakma
   /// (`_drop`) veya tur tamamlanması (`_fail`) ile `true` olur;
   /// TEKRAR/yeniden başlatmada SIFIRLANMAZ (Suika `_dropsMade`
@@ -142,7 +160,10 @@ class _StackDropScreenState extends State<StackDropScreen>
   int _nears = 0;
   double _comboMeter = 0;
   double _elapsedSeconds = 0;
-  String _hint = 'Dokun. Tam ortala = combo. Kenar kesilir.';
+  // Ş5: başlatıcı boş — ilk karede EN oyuncu TR metin görmesin diye
+  // gerçek metin `didChangeDependencies`'te l10n'den atanır (Osmantus deseni).
+  String _hint = '';
+  bool _hintSeeded = false;
   String? _feedback;
   String? _milestone;
   Timer? _milestoneTimer;
@@ -158,9 +179,23 @@ class _StackDropScreenState extends State<StackDropScreen>
   DateTime? _freezeUntil;
   DateTime? _perfectSlowUntil;
 
+  /// Yavaşlatma gücünün geçici çarpan son tarihi (F8): `_speed`'e
+  /// yazılmaz, süre bitince eski hız aynen sürer.
+  DateTime? _slowDropUntil;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.stackHintIdle;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _ensureDefaultPowers();
     if (widget.prototypeVisualState) {
@@ -199,6 +234,7 @@ class _StackDropScreenState extends State<StackDropScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _ticker?.dispose();
     _milestoneTimer?.cancel();
@@ -207,8 +243,61 @@ class _StackDropScreenState extends State<StackDropScreen>
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState || !mounted) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Osmantus deseni: arka planda oyun donsun; dönüşte _tick'in
+        // dt kısması (0.05) ikinci korumadır. Zaten duraklatılmışsa
+        // bayrak set edilmez — dönüşte elle duraklatma sürer.
+        if (_phase == _Phase.failed || _resultShown || _paused) return;
+        _pausedByLifecycle = true;
+        _pauseStartedAt ??= DateTime.now();
+        setState(() => _paused = true);
+      case AppLifecycleState.resumed:
+        // Yalnız yaşam döngüsü duraklatmasıysa devam et.
+        if (!_pausedByLifecycle) return;
+        _pausedByLifecycle = false;
+        // Yardım sayfası açıkken arka plana gidildiyse devam kararı
+        // sayfa kapanınca yardım kancasında verilir; son tarih kaydırma
+        // da o ana bırakılır.
+        if (_pausedByHowToPlay) return;
+        _shiftPauseDeadlines();
+        setState(() => _paused = false);
+    }
+  }
+
+  /// Duraklatma süresince duvar-saati süreleri (freeze / perfect-slow /
+  /// yavaşlatma) işlemesin: devamda son tarihler duraklatma süresi
+  /// kadar ileri kaydırılır (Scream deseni).
+  void _shiftPauseDeadlines() {
+    final started = _pauseStartedAt;
+    _pauseStartedAt = null;
+    if (started == null) return;
+    final pausedFor = DateTime.now().difference(started);
+    if (pausedFor <= Duration.zero) return;
+    if (_freezeUntil != null) _freezeUntil = _freezeUntil!.add(pausedFor);
+    if (_perfectSlowUntil != null) {
+      _perfectSlowUntil = _perfectSlowUntil!.add(pausedFor);
+    }
+    if (_slowDropUntil != null) {
+      _slowDropUntil = _slowDropUntil!.add(pausedFor);
+    }
+  }
+
   Future<void> _loadBest() async {
-    await LeaderboardService.instance.ensureLoaded();
+    // F4: `ensureLoaded` fırlatırsa (initState'ten beklemesiz çağrılır)
+    // işlenmemiş async hata olmasın; rekor 0 kalır, oyun sürer.
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+    } catch (error) {
+      debugPrint('StackDropScreen: _loadBest hatası: $error');
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _best = widget.prototypeVisualState
@@ -219,11 +308,18 @@ class _StackDropScreenState extends State<StackDropScreen>
 
   Future<void> _persist() async {
     if (_score <= 0) return;
-    await LeaderboardService.instance.ensureLoaded();
-    await LeaderboardService.instance.submitScore(
-      LeaderboardService.modeStack,
-      _score,
-    );
+    // F4 deseni: `_fail`/`dispose`'dan beklemesiz çağrılır; liderlik
+    // yazımı fırlatırsa oyun akışı bozulmasın.
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+      await LeaderboardService.instance.submitScore(
+        LeaderboardService.modeStack,
+        _score,
+      );
+    } catch (error) {
+      debugPrint('StackDropScreen: _persist hatası: $error');
+      return;
+    }
     final best = LeaderboardService.instance.getBest(
       LeaderboardService.modeStack,
     );
@@ -231,6 +327,10 @@ class _StackDropScreenState extends State<StackDropScreen>
   }
 
   void _boot() {
+    // F2: tur kimliği her yeni turda artar; bekleyen eski sunum
+    // `stillValid` ile elenir. Bayrak sıfırlamadan ÖNCE artırılır ki
+    // araya giren async sunum yeni turu kirletmesin.
+    _runId++;
     _stack.clear();
     _cutPieces.clear();
     _activePowerFx = null;
@@ -267,8 +367,16 @@ class _StackDropScreenState extends State<StackDropScreen>
     _elapsedSeconds = 0;
     _feedback = null;
     _feedbackTimer?.cancel();
+    // F11: dönüm noktası zamanlayıcısı da iptal edilir; F5: freeze yeni
+    // tura sızmaz; F8: yavaşlatma son tarihi de sıfırlanır.
+    _milestoneTimer?.cancel();
+    _freezeUntil = null;
     _perfectSlowUntil = null;
+    _slowDropUntil = null;
     _paused = false;
+    _pausedByLifecycle = false;
+    _pausedByHowToPlay = false;
+    _pauseStartedAt = null;
     _milestonesHit.clear();
     _milestone = null;
     _shake = 0;
@@ -281,12 +389,35 @@ class _StackDropScreenState extends State<StackDropScreen>
   }
 
   void _ensure(double w, double h) {
-    if (_laidOut || w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0) return;
+    if (!_laidOut) {
+      _arenaW = w;
+      _arenaH = h;
+      _boot();
+      if (widget.prototypeVisualState) _applyPrototypeVisualState();
+      _laidOut = true;
+      return;
+    }
+    // F13: rotasyon / boyut değişimi mandala takılmaz — ölçü farkı
+    // 0.5px'i aşarsa arena güncellenir, tahta yeni ölçüyle orantılı
+    // kurulur (skor/tur korunur, dilimler ve hareketli dilim ölçeklenir).
+    if ((w - _arenaW).abs() <= 0.5 && (h - _arenaH).abs() <= 0.5) return;
+    final oldW = _arenaW;
+    final scale = oldW > 0 ? w / oldW : 1.0;
     _arenaW = w;
     _arenaH = h;
-    _boot();
-    if (widget.prototypeVisualState) _applyPrototypeVisualState();
-    _laidOut = true;
+    for (final slab in _stack) {
+      slab.width = (slab.width * scale).clamp(14.0, w);
+      slab.center = (slab.center * scale).clamp(
+        slab.width / 2,
+        w - slab.width / 2,
+      );
+    }
+    _moverW = (_moverW * scale).clamp(14.0, w);
+    _moverX = (_moverX * scale).clamp(_moverW / 2, w - _moverW / 2);
+    for (final cp in _cutPieces) {
+      cp.center = cp.center * scale;
+    }
   }
 
   void _applyPrototypeVisualState() {
@@ -380,16 +511,19 @@ class _StackDropScreenState extends State<StackDropScreen>
     if (_phase == _Phase.ready) {
       final tutorialProgress = (_elapsedSeconds / 15).clamp(0.0, 1.0);
       final tutorialSpeed = 0.52 + tutorialProgress * 0.48;
+      final now = DateTime.now();
       final perfectSlow =
-          _perfectSlowUntil != null &&
-          DateTime.now().isBefore(_perfectSlowUntil!);
+          _perfectSlowUntil != null && now.isBefore(_perfectSlowUntil!);
       if (!perfectSlow) _perfectSlowUntil = null;
+      // F8: yavaşlatma gücü yalnız geçici çarpandır; `_speed`'e yazılmaz.
+      final slowDrop = _slowDropUntil != null && now.isBefore(_slowDropUntil!);
+      if (!slowDrop) _slowDropUntil = null;
       final pulse = 1.0 + 0.08 * sin(_sway * 1.7);
       _moverX +=
           _dir *
           _speed *
           tutorialSpeed *
-          (perfectSlow ? 0.48 : 1.0) *
+          (perfectSlow || slowDrop ? 0.48 : 1.0) *
           pulse *
           dt;
       final half = _moverW / 2;
@@ -508,7 +642,7 @@ class _StackDropScreenState extends State<StackDropScreen>
       _hint = context.l10n.stackDirectHit(_combo, gain);
       _showFeedback(context.l10n.stackPerfectHit(_combo));
       AudioManager().playMerge(tierNumber: _tier, comboCount: _combo);
-      HapticFeedback.mediumImpact();
+      AudioManager().triggerMediumHaptic();
       if (_combo == 3 || _combo == 5 || _combo == 8) {
         _showMilestone('COMBO x$_combo');
       }
@@ -521,7 +655,7 @@ class _StackDropScreenState extends State<StackDropScreen>
       _hint = context.l10n.stackNearHint(gain, _floors);
       _showFeedback(context.l10n.stackNearCallout(gain));
       AudioManager().playMerge(tierNumber: _tier);
-      HapticFeedback.lightImpact();
+      unawaited(HapticService.instance.lightImpact());
     } else {
       _combo = 0;
       _comboMeter = max(0, _comboMeter - 0.25);
@@ -530,7 +664,7 @@ class _StackDropScreenState extends State<StackDropScreen>
       _hint = context.l10n.stackEdgeCutHint(gain, _floors);
       _showFeedback(context.l10n.stackEdgeCutCallout(gain));
       AudioManager().playMerge(tierNumber: _tier);
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
     }
 
     if (_score > _best) _best = _score;
@@ -565,15 +699,54 @@ class _StackDropScreenState extends State<StackDropScreen>
     _hint = why;
     _paused = false;
     _shake = 1.0;
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playLose();
     unawaited(_persist());
     setState(() {});
   }
 
   void _togglePause() {
+    if (widget.prototypeVisualState) return;
     if (_phase == _Phase.failed || _phase == _Phase.falling) return;
-    setState(() => _paused = !_paused);
+    if (_paused) {
+      _paused = false;
+      _pausedByLifecycle = false;
+      _pausedByHowToPlay = false;
+      _shiftPauseDeadlines();
+    } else {
+      _paused = true;
+      _pauseStartedAt ??= DateTime.now();
+    }
+    setState(() {});
+  }
+
+  /// Yardım sayfası görünürlük kancası (F3): sayfa açılırken oyunu
+  /// duraklat, kapanırken yalnız bu kancayla duraklatıldıysa devam et.
+  /// Sayaç koruması yok: ilk dialogun bariyeri ikinci dokunuşu yuttuğu
+  /// için üst üste dialog pratikte mümkün değildir (1D notu).
+  void _handleHowToPlayVisibilityChanged(bool visible) {
+    // Kapanış geri çağrısı asenkron gelir (dialog future'ı): sayfa
+    // açıkken rota dispose edildiyse setState çökmesin.
+    if (!mounted) return;
+    if (visible) {
+      if (_phase == _Phase.failed ||
+          _resultShown ||
+          _paused ||
+          widget.prototypeVisualState) {
+        return;
+      }
+      _pausedByHowToPlay = true;
+      _pauseStartedAt ??= DateTime.now();
+      setState(() => _paused = true);
+    } else {
+      if (!_pausedByHowToPlay) return;
+      _pausedByHowToPlay = false;
+      // Yaşam döngüsü duraklatması sürüyorsa devam kararı `resumed`
+      // kancasında verilir; son tarih kaydırma da o ana bırakılır.
+      if (_pausedByLifecycle) return;
+      _shiftPauseDeadlines();
+      setState(() => _paused = false);
+    }
   }
 
   void _showMilestone(String text) {
@@ -608,8 +781,10 @@ class _StackDropScreenState extends State<StackDropScreen>
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useFreeze() {
-    if (_phase == _Phase.failed) return false;
-    HapticFeedback.mediumImpact();
+    // F7: duraklatılmışken veya düşüş ortasında kullanım reddedilir
+    // (stok `stockBonusWithResult` ile iade edilir).
+    if (_paused || _phase != _Phase.ready) return false;
+    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _tier);
     setState(() {
       if (_stack.isNotEmpty) {
@@ -625,15 +800,15 @@ class _StackDropScreenState extends State<StackDropScreen>
   }
 
   bool _useWiden() {
-    if (_phase == _Phase.failed || _arenaW <= 0) return false;
-    HapticFeedback.mediumImpact();
+    // F7: duraklatılmışken veya düşüş ortasında kullanım reddedilir.
+    if (_paused || _phase != _Phase.ready || _arenaW <= 0) return false;
+    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _tier);
     setState(() {
+      // F8: yalnız hareketli dilim genişler; yerleşmiş dilim
+      // (`_stack.last.width`) kalıcı genişletilmez.
       _moverW = min(_arenaW * 0.86, _moverW + 40);
       _moverX = _moverX.clamp(_moverW / 2, _arenaW - _moverW / 2);
-      if (_stack.isNotEmpty) {
-        _stack.last.width = max(_stack.last.width, _moverW);
-      }
       _activePowerFx = 'widen';
       _powerFxLife = 1.0;
       _hint = context.l10n.stackWidenHint;
@@ -643,12 +818,14 @@ class _StackDropScreenState extends State<StackDropScreen>
   }
 
   bool _useSlowDrop() {
-    if (_phase == _Phase.failed) return false;
-    HapticFeedback.mediumImpact();
+    // F7: duraklatılmışken veya düşüş ortasında kullanım reddedilir.
+    if (_paused || _phase != _Phase.ready) return false;
+    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _tier);
     setState(() {
-      _speed = max(70, _speed * 0.62);
-      _perfectSlowUntil = DateTime.now().add(const Duration(seconds: 8));
+      // F8: `_speed`'e yazılmaz; yalnız 8 saniyelik geçici çarpan
+      // (`_slowDropUntil`) kullanılır, süre bitince eski hız sürer.
+      _slowDropUntil = DateTime.now().add(const Duration(seconds: 8));
       _activePowerFx = 'slows';
       _powerFxLife = 1.0;
       _hint = context.l10n.stackSlowHint;
@@ -657,25 +834,49 @@ class _StackDropScreenState extends State<StackDropScreen>
     return true;
   }
 
-  Future<void> _presentResult({bool? won}) async {
-    final coins = _score > 0 ? max(1, ResultScoring.coinsFor(_score)) : 0;
+  Future<void> _presentResult(int runId, {bool? won}) async {
+    // F2: tur değiştiyse (ölüm sonrası dokunuşla `_restart` araya
+    // girdiyse) eski turun sonucunu gösterme; yeni turun bayrağına
+    // dokunma (Yuva deseni — `_restart` bayrağı sıfırladı).
+    if (runId != _runId) return;
+    if (!mounted) return;
+    final score = _score;
+    final best = _best;
+    final bestCombo = _maxCombo;
+    final coins = score > 0 ? max(1, ResultScoring.coinsFor(score)) : 0;
     // S1#49: ödeme + liderlik (yalnız skor > 0) + görev kaydı + sonuç
     // ekranı finishRun() üzerinden (tek-ödeme korunur). Doğal bitiş
     // kulenin devrilmesidir (kayıp); `won` verilmezse kayıp başlığı
     // gösterilir.
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      coins: coins,
-      bestCombo: _maxCombo,
-      won: won ?? false,
-      leaderboardMode: LeaderboardService.modeStack,
-      leaderboardOnlyIfPositiveScore: true,
-    );
+    bool replay;
+    try {
+      replay = await finishRun(
+        context,
+        score: score,
+        best: best,
+        coins: coins,
+        bestCombo: bestCombo,
+        won: won ?? false,
+        leaderboardMode: LeaderboardService.modeStack,
+        leaderboardOnlyIfPositiveScore: true,
+        // F2: sunum anında tur değişmişse dialog açılmadan `false` döner.
+        stillValid: () => mounted && runId == _runId,
+      );
+    } catch (error) {
+      // F4: finishRun fırlatırsa sonuçsuz takılma olmasın — bayrak
+      // düşürülür, BİTİR/ölüm kenarı sonucu yeniden deneyebilir.
+      // setState çağrılmaz: yeniden çizim `_edgeShowResult`'u tetikleyip
+      // hatayı döngüye sokardı (Makara deseni).
+      debugPrint('StackDropScreen: finishRun hatası: $error');
+      if (runId == _runId) _resultShown = false;
+      return;
+    }
+    // Bayat sunum: `stillValid` yüzünden dialog açılmadıysa veya tur
+    // değiştiyse yeni turu pop/restart ile kirletme.
+    if (runId != _runId) return;
     if (!mounted) return;
     if (!replay) {
-      if (mounted) Navigator.of(context).maybePop();
+      Navigator.of(context).maybePop();
       return;
     }
     _resultShown = false;
@@ -705,14 +906,15 @@ class _StackDropScreenState extends State<StackDropScreen>
   Future<void> _finishEarly() async {
     if (_resultShown) return;
     _resultShown = true;
-    await _presentResult(won: _score > 0);
+    await _presentResult(_runId, won: _score > 0);
   }
 
   void _edgeShowResult() {
     if (_resultShown) return;
     _resultShown = true;
+    final runId = _runId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _presentResult();
+      if (mounted) _presentResult(runId);
     });
   }
 
@@ -742,19 +944,9 @@ class _StackDropScreenState extends State<StackDropScreen>
       statLabel: context.l10n.stackFloorStat,
       statValue: '$_floors',
       onRestart: _finishEarly,
-      overlay: (_phase == _Phase.failed && !_resultShown)
-          ? ArcadeResultOverlay(
-              title: context.l10n.stackTowerFellTitle,
-              message: _statsLine(),
-              score: _score,
-              best: _best,
-              won: false,
-              modeTitle: context.l10n.shopModeStackDrop,
-              shareLine: _statsLine(),
-              retryLabel: context.l10n.retryShort,
-              onRetry: _restart,
-            )
-          : _paused
+      onPausePressed: _togglePause,
+      onHowToPlayVisibilityChanged: _handleHowToPlayVisibilityChanged,
+      overlay: _paused
           ? Positioned.fill(
               child: ColoredBox(
                 color: LululuColors.carbonVoid.withValues(alpha: 0.72),
