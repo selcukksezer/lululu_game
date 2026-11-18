@@ -976,7 +976,8 @@ class _GameScreenState extends State<GameScreen>
         widget.arcade ? earnedCoins : max(earnedCoins, starCoins);
     // Ödenen skor-tabanlı toplam = starCoins + extraCoins = totalCoins.
     // İlk tamamlamada servis ayrıca rewardCoins + boss bonusu öder
-    // (K3c) — bu ekstralar sonuç ekranındaki tutara dahil değildir.
+    // (K3c) — bu ekstralar sonuç ekranındaki coin hapına dahil değildir;
+    // özetten türetilip ayrı bantta gösterilir (5B: `firstClearExtras`).
     final extraCoins = earnedCoins - starCoins;
 
     AudioManager().playWin();
@@ -987,6 +988,10 @@ class _GameScreenState extends State<GameScreen>
     // kampanya ödemesi (recordLevelCompletion + fark coini) settle
     // kapaması içinde, eski unawaited sırasıyla aynen yapılır. Liderlik
     // gönderimi _submitSuikaScore'da kalır (ensureLoaded + rekor tazeleme).
+    // 5B: settle içindeki TEK recordLevelCompletion çağrısının dönüş
+    // özetinden türetilen salt-görünüm ekstraları burada yakalanır;
+    // arcade yolunda settle özet üretmez, bant boş kalır.
+    var capturedExtras = const FirstClearExtras();
     final replay = await finishRun(
       context,
       score: _score,
@@ -999,6 +1004,9 @@ class _GameScreenState extends State<GameScreen>
       modeScoreId: LeaderboardService.modeSuika,
       idempotencyKey: _runIdempotencyKey,
       awaitSettle: false,
+      // 5B: getter verilince finishRun settle'ı gösterimden önce bekler,
+      // böylece özet hazır olur (awaitSettle: false korunur).
+      firstClearExtras: () => capturedExtras,
       settle: () async {
         if (widget.arcade) {
           if (earnedCoins > 0) {
@@ -1010,13 +1018,19 @@ class _GameScreenState extends State<GameScreen>
           // ödemesi + kilit açma), ayrıca 0-yıldızlı zaferi tamamlama
           // sayar ve ilk-geçiş ödüllerini (rewardCoins + boss bonusu)
           // öder. recordLevelResult ayrıca çağrılmaz (çift ödeme).
-          unawaited(
-            CampaignProgressionService.instance.recordLevelCompletion(
-              levelNumber: _currentLevel.id,
-              score: _score,
-              explicitStars: stars,
-              victory: true,
-            ),
+          // 5B: çağrı TEK ve argümanları aynıdır; yalnız dönüş özeti
+          // beklenip salt-görünüm ekstralarına çevrilir (ödeme değişmez).
+          final summary =
+              await CampaignProgressionService.instance.recordLevelCompletion(
+                levelNumber: _currentLevel.id,
+                score: _score,
+                explicitStars: stars,
+                victory: true,
+              );
+          capturedExtras = FirstClearExtras.fromSummary(
+            coinsAwarded: summary.coinsAwarded,
+            bossFirstClearBonusCoins: summary.bossFirstClearBonusCoins,
+            starCoins: starCoins,
           );
           if (extraCoins > 0) {
             unawaited(ProgressManager.instance.addCoins(extraCoins));

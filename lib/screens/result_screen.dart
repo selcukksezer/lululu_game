@@ -42,7 +42,8 @@ Widget _buildExactImage(
 /// (şu an böyle bir çağırıcı yok — 12 çağrı noktasının tamamı ödemeyi
 /// kendisi yapıyor; S1#49'dan beri ödeme `finishRun()` yardımcısında
 /// tek noktada toplanır, parametre gelecekteki çağırıcılar için
-/// güvenlik ağıdır).
+/// güvenlik ağıdır). [firstClearExtras] da salt-görünümdür: bant
+/// yalnızca gösterir, ödeme yapmaz ve [coins] tutarına eklenmez.
 Future<bool> showGameResult(
   BuildContext context, {
   required int score,
@@ -53,6 +54,7 @@ Future<bool> showGameResult(
   int merges = ResultScoring.defaultMerges,
   bool coinsAwardedByCaller = true,
   bool won = true,
+  FirstClearExtras firstClearExtras = const FirstClearExtras(),
 }) async {
   final replay = await Navigator.of(context).push<bool>(
     MaterialPageRoute(
@@ -65,6 +67,7 @@ Future<bool> showGameResult(
         merges: merges,
         coinsAwardedByCaller: coinsAwardedByCaller,
         won: won,
+        firstClearExtras: firstClearExtras,
       ),
     ),
   );
@@ -90,6 +93,59 @@ abstract final class ResultScoring {
   }
 }
 
+/// Sonuç ekranında gösterilen ilk-tamamlama ekstraları (5B, salt-görünüm).
+///
+/// Yalnızca zaten ödenmiş tutarları gösterir; bu sınıf ödeme yapmaz ve
+/// tutarlar sonuç ekranındaki coin hapına (`coins`) eklenmez. Değerler
+/// seviye-tamamlama özetinden [FirstClearExtras.fromSummary] ile
+/// türetilir; ödeme hesabı burada yeniden yapılmaz.
+class FirstClearExtras {
+  const FirstClearExtras({
+    this.levelRewardCoins = 0,
+    this.bossBonusCoins = 0,
+  });
+
+  /// Seviye taban ödülü kısmı (yalnız ilk tamamlamada ödenir).
+  final int levelRewardCoins;
+
+  /// Boss ilk-geçiş bonusu kısmı (yalnız boss seviyesinde, ilk geçişte).
+  final int bossBonusCoins;
+
+  /// Gösterilecek ekstra toplamı.
+  int get total => levelRewardCoins + bossBonusCoins;
+
+  bool get isEmpty => total <= 0;
+  bool get isNotEmpty => total > 0;
+
+  /// Seviye-tamamlama özetinden ekstraları türetir.
+  ///
+  /// [coinsAwarded] yıldız ödemesi + ilk-tamamlama ekstralarının
+  /// toplamıdır (servis özeti öyle döndürür); çağıranın kayıt öncesinde
+  /// bildiği [starCoins] (yıldız artışı × 50) çıkarılarak ekstra kısmı
+  /// bulunur. Boss kısmı [bossFirstClearBonusCoins] alanından doğrudan
+  /// alınır ve ekstra toplamını aşamaz (savunmacı kısma); kalanı seviye
+  /// taban ödülüdür. Negatif girdiler 0'a kısılır; tekrar tamamlamada
+  /// özet yıldız ödemesinden fazlasını içermediği için sonuç boştur.
+  factory FirstClearExtras.fromSummary({
+    required int coinsAwarded,
+    required int bossFirstClearBonusCoins,
+    required int starCoins,
+  }) {
+    // İç içe max/min çıkarımı `num` üretebildiği için kısma açık
+    // tamsayı aritmetiğiyle yapılır (sonuç her zaman `int`).
+    final starPart = starCoins < 0 ? 0 : starCoins;
+    final rawExtras = coinsAwarded - starPart;
+    final extras = rawExtras < 0 ? 0 : rawExtras;
+    final bossPart =
+        bossFirstClearBonusCoins < 0 ? 0 : bossFirstClearBonusCoins;
+    final boss = bossPart > extras ? extras : bossPart;
+    return FirstClearExtras(
+      levelRewardCoins: extras - boss,
+      bossBonusCoins: boss,
+    );
+  }
+}
+
 class GameResultScreen extends StatefulWidget {
   const GameResultScreen({
     super.key,
@@ -101,6 +157,7 @@ class GameResultScreen extends StatefulWidget {
     this.merges = ResultScoring.defaultMerges,
     this.coinsAwardedByCaller = true,
     this.won = true,
+    this.firstClearExtras = const FirstClearExtras(),
   });
 
   final int score;
@@ -109,6 +166,11 @@ class GameResultScreen extends StatefulWidget {
   final int bestScore;
   final int bestCombo;
   final int merges;
+
+  /// İlk-tamamlama ekstraları (salt-görünüm): boş değilse skor kartının
+  /// altında ayrı bir bantta gösterilir; ödeme yapmaz, [coins] tutarına
+  /// eklenmez.
+  final FirstClearExtras firstClearExtras;
 
   /// `false` ise kayıp/0-skor başlığı gösterilir ("OYUN BİTTİ!"):
   /// canlar bitince veya skor 0'ken BİTİR'e basınca "SEVİYE TAMAM!"
@@ -294,6 +356,13 @@ class _GameResultScreenState extends State<GameResultScreen>
                         // Score Card
                         _buildScoreCard(),
                         const SizedBox(height: 2),
+
+                        // İlk-tamamlama ekstraları bandı (5B): yalnız
+                        // özet boş değilse gösterilir.
+                        if (widget.firstClearExtras.isNotEmpty) ...[
+                          _buildFirstClearExtrasBand(),
+                          const SizedBox(height: 2),
+                        ],
 
                         // Mascot & Chest Row
                         _buildMascotAndChest(),
@@ -701,6 +770,83 @@ class _GameResultScreenState extends State<GameResultScreen>
           ),
         ],
       ),
+    );
+  }
+
+  /// İlk-tamamlama ekstraları bandı (5B, salt-görünüm): skor kartının
+  /// desenine uyar; seviye taban ödülü ve boss bonusu ayrı satırlarda,
+  /// mevcut l10n etiketleriyle gösterilir. Yalnızca 0'dan büyük kısımlar
+  /// çizilir; bant ödeme yapmaz.
+  Widget _buildFirstClearExtrasBand() {
+    final extras = widget.firstClearExtras;
+    final rows = <Widget>[];
+    if (extras.levelRewardCoins > 0) {
+      rows.add(
+        _buildExtrasRow(
+          context.l10n.rewardCoins(extras.levelRewardCoins),
+        ),
+      );
+    }
+    if (extras.bossBonusCoins > 0) {
+      if (rows.isNotEmpty) rows.add(const SizedBox(height: 4));
+      rows.add(
+        _buildExtrasRow(
+          context.l10n.bossFirstClearBonus(extras.bossBonusCoins),
+        ),
+      );
+    }
+    return Container(
+      key: const Key('result_first_clear_extras'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFF9E9), Color(0xFFFFEFC4)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        border: Border.all(
+          color: const Color(0xFFB97A2E),
+          width: 2,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x8C8C5414),
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: rows,
+      ),
+    );
+  }
+
+  Widget _buildExtrasRow(String label) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildExactImage(
+          'assets/design/ui/res_coin.png',
+          width: 18,
+          height: 18,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              height: 18.2 / 13.0,
+              color: const Color(0xFF6E3F14),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

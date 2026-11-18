@@ -153,6 +153,13 @@ String _taskTitleFor(AppLocalizations l10n, String taskId) =>
 /// canların bitmesi kayıp başlığını ("OYUN BİTTİ!") gösterir
 /// (playtest bulgu #2). Kazanma/kaybetme ayrımı olan modlar
 /// (Match3/Connect hedefi, can-biten modlar) açık değer geçirir.
+///
+/// [firstClearExtras] (5B, salt-görünüm) verilirse settle tamamlandıktan
+/// sonra, gösterimden önce çağrılır ve dönen ekstralar sonuç ekranında
+/// ayrı bir bantta gösterilir. Ödeme yapmaz. Ekstralar settle özetinden
+/// türetildiği için [awaitSettle] `false` olsa bile settle gösterimden
+/// önce beklenir, böylece özet hazır olur. Verilmezse bant gösterilmez
+/// (diğer çağırıcıların davranışı değişmez).
 Future<bool> finishRun(
   BuildContext context, {
   required int score,
@@ -171,6 +178,7 @@ Future<bool> finishRun(
   bool recordPlayTask = true,
   bool Function()? stillValid,
   String? idempotencyKey,
+  FirstClearExtras Function()? firstClearExtras,
 }) async {
   final pm = ProgressManager.instance;
   // F10-kuralı: skor > 0 ise varsayılan ödeme en az 1 coindir.
@@ -272,7 +280,9 @@ Future<bool> finishRun(
   }
 
   final settleFuture = settleStep();
-  if (awaitSettle) {
+  // 5B: ekstralar settle özetinden türetiliyorsa gösterimden önce settle
+  // beklenir (awaitSettle false olsa bile); yoksa özet henüz hazır olmaz.
+  if (awaitSettle || firstClearExtras != null) {
     await settleFuture;
   } else {
     unawaited(settleFuture);
@@ -280,6 +290,16 @@ Future<bool> finishRun(
   // Ödeme sürerken tur değişmiş olabilir: gösterimden önce tekrar kontrol.
   if (!isStillValid()) return false;
   if (!context.mounted) return false;
+  // 5B: salt-görünüm ekstraları settle sonrasında bir kez okunur; okuma
+  // hata verirse bant boş gösterilir, sonuç ekranı yine açılır.
+  var displayExtras = const FirstClearExtras();
+  if (firstClearExtras != null) {
+    try {
+      displayExtras = firstClearExtras();
+    } catch (error, stack) {
+      _logSettleError('firstClearExtras', error, stack);
+    }
+  }
   final replay = await showGameResult(
     context,
     score: score,
@@ -289,6 +309,7 @@ Future<bool> finishRun(
     bestCombo: bestCombo ?? 0,
     merges: merges ?? 0,
     won: effectiveWon,
+    firstClearExtras: displayExtras,
   );
   // S7: sonuç ekranı kapandıktan sonra görev bildirimi. Ateşle-unut
   // yolunda settle hâlâ sürüyor olabilir; bildirimden önce tamamlanması
