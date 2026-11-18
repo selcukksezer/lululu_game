@@ -981,6 +981,7 @@ abstract class AppLocalizations {
   String get makaraAutoCallout;
   String get makaraX2Hint;
   String get makaraX2Active;
+  String get makaraRules;
   String get makaraEndedTitle;
   String get makaraShareLine;
   String get makaraTaglineCaps;

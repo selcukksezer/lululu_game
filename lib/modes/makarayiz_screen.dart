@@ -89,6 +89,11 @@ class MakarayizScreenState extends State<MakarayizScreen>
   bool _alive = true;
   bool _resultShown = false;
 
+  /// Y3 idempotency damgası: tur başlangıcında bir kez alınır
+  /// (`_boot`); aynı turun tüm bitiş yolları aynı anahtarı kullanır,
+  /// yeni tur yeni damga alır. Bitiş anında `DateTime.now()` alınmaz.
+  int _runStartedAtUs = DateTime.now().microsecondsSinceEpoch;
+
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk şerit dokunuşu
   /// (`tryHit`, ıska da dahil), oto-vuruş isabeti (`_hit`) veya tur
   /// tamamlanması (`_gameOver`) ile `true` olur; TEKRAR/yeniden
@@ -190,6 +195,13 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   void _boot() {
+    // Y3: tur başlangıç damgası — her turda bir kez yenilenir; monoton
+    // koruma aynı mikrosaniyede başlayan iki turun anahtar çakışmasını
+    // engeller (aynı anahtar ikinci turu ödeme dışı bırakırdı).
+    _runStartedAtUs = max(
+      DateTime.now().microsecondsSinceEpoch,
+      _runStartedAtUs + 1,
+    );
     _notes.clear();
     _now = 0;
     _nextHit = 1800;
@@ -554,6 +566,14 @@ class MakarayizScreenState extends State<MakarayizScreen>
         bestCombo: _bestCombo,
         won: won ?? false,
         leaderboardMode: LeaderboardService.modeMakarayiz,
+        // K16: mod skoru kimliği liderlik kimliğiyle aynıdır
+        // (`lululu_game_mode.dart` bestScoreKey: 'makarayiz').
+        modeScoreId: LeaderboardService.modeMakarayiz,
+        // Y3: tur başlangıç damgalı anahtar; bu turun tüm bitiş
+        // yolları (_finishEarly + _edgeShowResult) aynı anahtarı
+        // paylaşır, çift ödeme/gösterim engellenir.
+        idempotencyKey:
+            '${LeaderboardService.modeMakarayiz}:$_runStartedAtUs',
       );
     } catch (_) {
       if (mounted) _resultShown = false;
@@ -1153,8 +1173,10 @@ class _MakarayizChrome extends StatelessWidget {
   final VoidCallback? onHelpClosed;
 
   /// Yardım diyaloğu (F9): açılırken oyun duraklatılır, kapanınca
-  /// (önceden duraklatılmamışsa) devam eder. Diyalog içeriği statik
-  /// yönergedir; canlı hint yardım diyaloğuna sızmaz (bulgu #9).
+  /// (önceden duraklatılmamışsa) devam eder. Diyalog içeriği kural
+  /// metnidir (F4, tek kaynak `makaraRules`); canlı hint yardım
+  /// diyaloğuna sızmaz (bulgu #9). İki yardım düğmesi de (geniş/dar
+  /// yerleşim) bu tek metoda bağlıdır.
   Future<void> _showHelpDialog(BuildContext context) async {
     onHelpOpened?.call();
     try {
@@ -1162,9 +1184,9 @@ class _MakarayizChrome extends StatelessWidget {
         context: context,
         builder: (context) => AlertDialog(
           title: Text(context.l10n.makarayizTitle),
-          // Statik yönerge: canlı hint yardım diyaloğuna
-          // sızmaz (bulgu #9).
-          content: Text(context.l10n.makaraHintIdle),
+          // F4: kural metni; canlı hint yardım diyaloğuna
+          // sızmaz (bulgu #9). Oyun-içi hint gösterimi aynen durur.
+          content: Text(context.l10n.makaraRules),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),

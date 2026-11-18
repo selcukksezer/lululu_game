@@ -2132,6 +2132,15 @@ class AppLocalizationsTr extends AppLocalizations {
   String get makaraX2Active => 'PUAN X2 AKTİF!';
 
   @override
+  String get makaraRules =>
+      'Notlar beat çizgisine gelince doğru şeride dokun ya da kaydır. '
+      'Zamanında vuruş kombo yapar; kombo büyüdükçe puan artar, tam isabet ekstra puan verir. '
+      'Her vuruş makarayı doldurur; makara dolunca +250 puan alırsın ve eksik canın varsa 1 can dolar. '
+      'Kaçan veya yanlış şeride vurulan nota kombo bozar ve can azaltır; 3 can bitince tur biter. '
+      'Güçler: BEAT DONDUR notaları 8 sn durdurur, OTO MAKARA 6 sn otomatik vurur, PUAN X2 12 sn puanı ikiye katlar. '
+      'Güçlerin kendisi kombo bozmaz ve can götürmez.';
+
+  @override
   String get makaraEndedTitle => 'MAKARA BİTTİ';
 
   @override

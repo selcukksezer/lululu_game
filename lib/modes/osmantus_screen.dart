@@ -105,6 +105,12 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   bool _alive = true;
   bool _resultShown = false;
 
+  /// Y3 idempotency damgası: tur başlangıcında bir kez alınır
+  /// (`initState` / `_restart`); aynı turun tüm bitiş yolları aynı
+  /// anahtarı kullanır, yeni tur yeni damga alır. Bitiş anında
+  /// `DateTime.now()` alınmaz.
+  int _runStartedAtUs = DateTime.now().microsecondsSinceEpoch;
+
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk dokunuş
   /// (`_onTapDown` — isabet, erken basış veya pencere dışı
   /// bekle-dokunuş fark etmez; oyun canlıyken sahneye yapılan her
@@ -181,6 +187,12 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _loadBest();
       return;
     }
+    // Y3: ilk turun başlangıç damgası (monoton koruma: aynı
+    // mikrosaniyede başlayan iki turun anahtarı çakışmaz).
+    _runStartedAtUs = max(
+      DateTime.now().microsecondsSinceEpoch,
+      _runStartedAtUs + 1,
+    );
     _clock.start();
     _ticker.start();
     _loadBest();
@@ -421,6 +433,12 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     setState(() {
       _paused = false;
       _pausedByLifecycle = false;
+      // Y3: yeni tur, yeni damga — önceki turun anahtarı tekrar
+      // kullanılmaz (monoton koruma çakışmayı engeller).
+      _runStartedAtUs = max(
+        DateTime.now().microsecondsSinceEpoch,
+        _runStartedAtUs + 1,
+      );
       _score = 0;
       _combo = 0;
       _maxCombo = 0;
@@ -493,6 +511,14 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       bestCombo: _maxCombo,
       won: won ?? false,
       leaderboardMode: LeaderboardService.modeOsmantus,
+      // K16: mod skoru kimliği liderlik kimliğiyle aynıdır
+      // (`lululu_game_mode.dart` bestScoreKey: 'osmantus').
+      modeScoreId: LeaderboardService.modeOsmantus,
+      // Y3: tur başlangıç damgalı anahtar; bu turun tüm bitiş
+      // yolları (_finishEarly + _edgeShowResult) aynı anahtarı
+      // paylaşır, çift ödeme/gösterim engellenir.
+      idempotencyKey:
+          '${LeaderboardService.modeOsmantus}:$_runStartedAtUs',
     );
     if (!mounted) return;
     _resultShown = false;

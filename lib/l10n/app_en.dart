@@ -2134,6 +2134,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get makaraX2Active => 'SCORE X2 ACTIVE!';
 
   @override
+  String get makaraRules =>
+      'Tap or swipe the correct lane when a note reaches the beat line. '
+      'Well-timed hits build combos; bigger combos score more, and a perfect hit scores extra. '
+      'Every hit fills the reel; a full reel gives +250 points and restores 1 life if you are missing one. '
+      'A missed note or a tap on the wrong lane breaks the combo and costs a life; the run ends when all 3 lives are gone. '
+      'Powers: BEAT FREEZE stops the notes for 8 sec, AUTO REEL hits automatically for 6 sec, SCORE X2 doubles points for 12 sec. '
+      'Powers themselves never break combos or cost lives.';
+
+  @override
   String get makaraEndedTitle => 'REEL OVER';
 
   @override
