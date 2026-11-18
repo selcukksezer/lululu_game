@@ -816,6 +816,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         final gain = 1 << next;
         _score += gain;
         if (_score > _best) _best = _score;
+        if (next > _highestTier) _highestTier = next;
+        unawaited(ProgressManager.instance.unlockTier(next));
       }
       // B15: 2048'e güçlendiriciyle ulaşmak da zaferdir.
       if (next >= 11 && !_won) {
