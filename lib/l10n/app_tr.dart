@@ -930,7 +930,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get privacySection5Body3 =>
-      'Hesabını aşağıdaki düğmeyle silebilirsin: cihazındaki hesap kaydı silinir ve oturumun kapatılır. Oyun ilerlemen ve bulutta saklanan kopyalar ayrıca silinmez.';
+      'Hesabını aşağıdaki düğmeyle silebilirsin: cihazındaki hesap kaydı ve oyun ilerlemen silinir, oturumun kapatılır; giriş yaptıysan bulutta saklanan profil, skor ve sohbet mesajı kopyaların da silinir ve hesap kaydın kapatılır.';
 
   @override
   String get privacySection6Title => '6. Değişiklikler';

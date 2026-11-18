@@ -925,7 +925,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacySection5Body3 =>
-      'You can delete your account with the button below: the account record on your device is deleted and you are signed out. Your game progress and copies stored in the cloud are not deleted separately.';
+      'You can delete your account with the button below: the account record and game progress on your device are deleted and you are signed out; if you are signed in, your profile, scores and chat messages stored in the cloud are also deleted and your account is closed.';
 
   @override
   String get privacySection6Title => '6. Changes';
