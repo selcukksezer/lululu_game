@@ -109,6 +109,14 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   /// artırır; bekleyen sonuç sunumu eski tura aitse gösterilmez.
   int _runId = 0;
 
+  /// Tur başlangıç damgası (Y3): idempotency anahtarının tur bileşeni.
+  /// İlk turda State kurulurken, her yeni turda `_restart` içinde
+  /// yakalanır; bitiş anında `DateTime.now()` kullanılmaz. BİTİR +
+  /// yenilgi yolları aynı `_presentResult` üzerinden aynı anahtarı
+  /// paylaşır. Monoton artırılır: aynı milisaniyede iki yeniden
+  /// başlatma bile farklı anahtar üretir.
+  int _runStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk savunma
   /// aksiyonu ile `true` olur — arenaya ilk dokunuş (`_tapArena`,
   /// isabet/ıska fark etmez), böcek ezilmesi (`_hitBug`, dokunuşla
@@ -587,7 +595,14 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         bestCombo: _maxCombo,
         won: won ?? false,
         leaderboardMode: LeaderboardService.modeYuva,
+        // K16: kimlik `bestScoreKey` ('yuva_defense') ile aynıdır —
+        // `LeaderboardService.modeYuva` da aynı değerdir.
+        modeScoreId: LeaderboardService.modeYuva,
         stillValid: () => mounted && runId == _runId,
+        // Y3: '<mod>:<tur başlangıç damgası>' — damga tur
+        // başlangıcında yakalandı (`_runStartedAtMs`), bitiş anı değil.
+        idempotencyKey:
+            '${LeaderboardService.modeYuva}:$_runStartedAtMs',
       );
       if (runId != _runId) return;
       if (!mounted) return;
@@ -854,6 +869,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     // görünümünde sabit vitrin sayıları korunur (ekran zaten sabit gösterir).
     // Yeni tur kimliği: bekleyen eski sonuç sunumu gösterilmez (B5).
     _runId++;
+    // Y3: yeni tur, yeni idempotency damgası (monoton — aynı
+    // milisaniyede iki yeniden başlatma bile çakışmaz).
+    _runStartedAtMs =
+        max(DateTime.now().millisecondsSinceEpoch, _runStartedAtMs + 1);
     final pm = ProgressManager.instance;
     final doubleSlip = widget.prototypeVisualState
         ? 3
