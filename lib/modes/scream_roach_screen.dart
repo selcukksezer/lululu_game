@@ -4,7 +4,6 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:noise_meter/noise_meter.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -15,6 +14,7 @@ import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/arcade_chrome.dart';
@@ -60,6 +60,11 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   Duration _last = Duration.zero;
   StreamSubscription<NoiseReading>? _noiseSubscription;
 
+  /// Mikrofon aboneliği duraklatma/arka plan nedeniyle askıda mı?
+  /// `pause()`/`resume()` çağrıları bu bayrakla tekilleştirilir
+  /// (çift `pause` çift `resume` ister; sayaç kaymasın).
+  bool _noisePaused = false;
+
   double _x = 28;
   double _y = 220;
   double _vy = 0;
@@ -68,13 +73,16 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   int _best = 0;
   int _screamStreak = 0;
   int _maxScreamStreak = 0;
-  int _dayStreak = 0;
   int _gatesPassed = 0;
   bool _alive = true;
   // S1#48: ölüm anı — ölüm sonrası ilk 500 ms içindeki dokunuş
   // yeniden başlatmaz.
   DateTime? _diedAt;
   bool _resultShown = false;
+
+  /// Tur kimliği (Terlik deseni): her `_restart` artırır; eski turun
+  /// bekleyen `_presentResult` çağrısı kimlik tutmazsa sonuç göstermez.
+  int _runId = 0;
 
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk zıplama
   /// (`_scream`, dokunuş veya ses) veya tur tamamlanması (`_die`)
@@ -108,6 +116,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// Voice lock: no new SFX / no character swap until clip ends.
   bool _voiceBusy = false;
   bool _voiceInputEnabled = false;
+  bool _voiceToggling = false;
   bool _voiceArmed = true;
   bool _prototypeInitialized = false;
   DateTime _lastVoiceTrigger = DateTime.fromMillisecondsSinceEpoch(0);
@@ -164,7 +173,6 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _best = LeaderboardService.instance.getBest(
         LeaderboardService.modeScream,
       );
-      _dayStreak = ProgressManager().dailyStreak;
     });
   }
 
@@ -185,6 +193,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
+        // Mikrofon arka planda dinlemesin: abonelik askıya alınır,
+        // dönüşte (elle duraklatma yoksa) kaldığı yerden devam eder.
+        _pauseNoiseSubscription();
         // Osmantuş deseni: arka planda ticker dursun; dönüşte _last
         // sıfırlanır, dt kısması da ikinci korumadır.
         if (_ticker.isActive) {
@@ -194,6 +205,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         }
         break;
       case AppLifecycleState.resumed:
+        // Elle duraklatılmışsa mikrofon kapalı kalsın; devam
+        // düğmesi (_togglePause) açar.
+        if (!_paused) _resumeNoiseSubscription();
         // Elle duraklatılmışsa dönüşte kendiliğinden başlamasın.
         if (_pausedByLifecycle && !_paused) {
           _pausedByLifecycle = false;
@@ -215,6 +229,21 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (_nitroUntil != null) _nitroUntil = _nitroUntil!.add(pausedFor);
   }
 
+  /// Mikrofon aboneliğini askıya al (tekilleştirilmiş: çift `pause`
+  /// çağrısı aboneliği kalıcı askıda bırakmasın).
+  void _pauseNoiseSubscription() {
+    if (_noisePaused) return;
+    _noisePaused = true;
+    _noiseSubscription?.pause();
+  }
+
+  /// Askıdaki mikrofon aboneliğini devam ettir (tekilleştirilmiş).
+  void _resumeNoiseSubscription() {
+    if (!_noisePaused) return;
+    _noisePaused = false;
+    _noiseSubscription?.resume();
+  }
+
   /// Elle duraklatma / devam (madde 37): ticker durur, fizik ve kapılar donar.
   void _togglePause() {
     if (widget.prototypeVisualState || !_alive) return;
@@ -223,10 +252,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _pausedByLifecycle = false;
       _shiftPauseDeadlines();
       _last = Duration.zero;
+      _resumeNoiseSubscription();
       if (!_ticker.isActive) _ticker.start();
     } else {
       _paused = true;
       _pauseStartedAt ??= DateTime.now();
+      _pauseNoiseSubscription();
       _ticker.stop();
     }
     setState(() {});
@@ -349,7 +380,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           _hop = false;
           continue;
         }
-        _die(context.l10n.screamDeathLine(g.kind.deathLineFor(context.l10n), _gatesPassed));
+        _die(
+          context.l10n.screamDeathLine(
+            g.kind.deathLineFor(context.l10n),
+            _gatesPassed,
+          ),
+        );
         return;
       }
       if (!g.scored && g.x + _gateW < _x) {
@@ -359,7 +395,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         _score += gain;
         _callout = context.l10n.screamGateStreak(_screamStreak);
         _scorePopup = '+$gain X$_screamStreak';
-        HapticFeedback.lightImpact();
+        unawaited(HapticService.instance.lightImpact());
         _hint = '${g.kind.passLineFor(context.l10n)} · spam x$_screamStreak';
         unawaited(
           DailyChallengeService.instance.tryCompleteWithScore(
@@ -433,8 +469,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _moveMade = true;
     _screamStreak = 0;
     _hint =
-        reason ?? context.l10n.screamCrushedHint(_gatesPassed, _maxScreamStreak);
-    HapticFeedback.heavyImpact();
+        reason ??
+        context.l10n.screamCrushedHint(_gatesPassed, _maxScreamStreak);
+    unawaited(HapticService.instance.heavyImpact());
     unawaited(AudioManager().playLose());
     unawaited(
       LeaderboardService.instance.submitScore(
@@ -497,7 +534,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _groundIdle = 0;
     _power = (_power + 0.28).clamp(0.0, 1.0);
     _vy = _flapImpulse;
-    HapticFeedback.selectionClick();
+    unawaited(HapticService.instance.selectionClick());
     _hint =
         '${_callout.isEmpty ? _bug.viralReplik : _callout} · spam x$_screamStreak';
 
@@ -526,43 +563,57 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   Future<void> _toggleVoiceInput() async {
-    if (_voiceInputEnabled) {
-      await _noiseSubscription?.cancel();
-      _noiseSubscription = null;
-      if (mounted) setState(() => _voiceInputEnabled = false);
-      return;
-    }
-
-    final permission = await Permission.microphone.request();
-    if (!permission.isGranted) {
-      if (mounted) {
-        setState(() {
-          _hint = permission.isPermanentlyDenied
-              ? context.l10n.screamMicPermissionSettings
-              : context.l10n.screamMicDeniedHint;
-        });
-      }
-      return;
-    }
-
+    // Çift-dokunma yarışı: izin beklerken ikinci dokunma ikinci
+    // listen() açmasın, ilki sızmasın.
+    if (_voiceToggling) return;
+    _voiceToggling = true;
     try {
-      _noiseSubscription = _noiseMeter.noise.listen(
-        _onNoiseReading,
-        onError: (Object _) {
-          if (mounted) setState(() => _voiceInputEnabled = false);
-          _noiseSubscription?.cancel();
-          _noiseSubscription = null;
-        },
-        cancelOnError: true,
-      );
-      if (mounted) setState(() => _voiceInputEnabled = true);
-    } catch (_) {
-      if (mounted) setState(() => _voiceInputEnabled = false);
+      if (_voiceInputEnabled) {
+        await _noiseSubscription?.cancel();
+        _noiseSubscription = null;
+        _noisePaused = false;
+        if (mounted) setState(() => _voiceInputEnabled = false);
+        return;
+      }
+
+      final permission = await Permission.microphone.request();
+      if (!permission.isGranted) {
+        if (mounted) {
+          setState(() {
+            _hint = permission.isPermanentlyDenied
+                ? context.l10n.screamMicPermissionSettings
+                : context.l10n.screamMicDeniedHint;
+          });
+        }
+        return;
+      }
+
+      try {
+        _noiseSubscription = _noiseMeter.noise.listen(
+          _onNoiseReading,
+          onError: (Object _) {
+            if (mounted) setState(() => _voiceInputEnabled = false);
+            _noiseSubscription?.cancel();
+            _noiseSubscription = null;
+            _noisePaused = false;
+          },
+          cancelOnError: true,
+        );
+        _noisePaused = false;
+        if (mounted) setState(() => _voiceInputEnabled = true);
+      } catch (_) {
+        _noisePaused = false;
+        if (mounted) setState(() => _voiceInputEnabled = false);
+      }
+    } finally {
+      _voiceToggling = false;
     }
   }
 
   void _onNoiseReading(NoiseReading reading) {
-    if (!mounted || !_alive) return;
+    // Duraklatmada ve arka planda ses zıplatmasın (abonelik askısı
+    // birinci koruma; bu kontrol kuyrukta kalmış okumalar için).
+    if (!mounted || !_alive || _paused || _pausedByLifecycle) return;
     final level = reading.meanDecibel;
     if (level < _voiceThresholdDb - 8) _voiceArmed = true;
     if (level < _voiceThresholdDb || !_voiceArmed) return;
@@ -575,12 +626,18 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   void _restart() {
     unawaited(AudioManager().stopAll());
+    // Yeni tur kimliği: eski turun bekleyen sonuç çağrısı gösterilmez.
+    _runId++;
     setState(() {
       _alive = true;
       _diedAt = null;
       _paused = false;
       _pausedByLifecycle = false;
       _pauseStartedAt = null;
+      _resultShown = false;
+      _shield = false;
+      _hop = false;
+      _nitroUntil = null;
       _layoutReady = _arenaW > 0 && _arenaH > 0;
       _score = 0;
       _gatesPassed = 0;
@@ -604,17 +661,18 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       if (_layoutReady) _spawnGate(initial: true);
     });
     // Duraklatılmışken yeniden başlatılırsa ticker dursun kalmasın.
+    // BİTİR ile dondurulan mikrofon da devam etsin: _finishEarly
+    // aboneliği askıya almıştı, TEKRAR OYNA sonrası ses girişi
+    // ölü kalmasın (askıda değilse no-op).
+    _resumeNoiseSubscription();
     if (!_ticker.isActive) _ticker.start();
   }
-
-  String _statsLine() =>
-      context.l10n.screamStatsLine(_gatesPassed, _maxScreamStreak, _dayStreak);
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useJump() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _vy = -520;
@@ -627,7 +685,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   bool _useShield() {
     if (!_alive || _paused || _shield) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _shield = true;
@@ -639,7 +697,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   bool _useNitro() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
+    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _nitroUntil = DateTime.now().add(const Duration(seconds: 8));
@@ -650,24 +708,39 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     return true;
   }
 
-  Future<void> _presentResult({bool? won}) async {
+  Future<void> _presentResult(int runId, {bool? won}) async {
+    // Tur değiştiyse (yeniden başlatma araya girdiyse) eski turun
+    // sonucunu gösterme ve yeni turun ödülüne dokunma (Terlik deseni).
+    // Yeni turun bayrağına dokunulmaz: `_restart` zaten temizledi.
+    if (runId != _runId) return;
+    if (!mounted) return;
     // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
     // üzerinden (tek-ödeme korunur). Doğal bitiş böceğin düşmesidir
     // (kayıp); `won` verilmezse kayıp başlığı gösterilir.
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      won: won ?? false,
-      leaderboardMode: LeaderboardService.modeScream,
-    );
-    if (!mounted) return;
-    _resultShown = false;
-    if (!replay) {
-      if (mounted) Navigator.of(context).maybePop();
-      return;
+    try {
+      final replay = await finishRun(
+        context,
+        score: _score,
+        best: _best,
+        won: won ?? false,
+        leaderboardMode: LeaderboardService.modeScream,
+        stillValid: () => mounted && runId == _runId,
+      );
+      if (runId != _runId) return;
+      if (!mounted) return;
+      if (!replay) {
+        // İade kontrolü bayrağı temiz görsün (önceki sıra korunur).
+        _resultShown = false;
+        Navigator.of(context).maybePop();
+        return;
+      }
+      _restart();
+    } finally {
+      // Aynı turdaysa bayrağı temizle ki hata/iptal sonrası BİTİR
+      // yeniden denensin; yeni tur başladıysa onun bayrağına dokunma
+      // (`_restart` temizledi, `_finishEarly` yeniden kurmuş olabilir).
+      if (runId == _runId) _resultShown = false;
     }
-    _restart();
   }
 
   /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
@@ -690,14 +763,24 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   Future<void> _finishEarly() async {
     if (_resultShown) return;
     _resultShown = true;
-    await _presentResult(won: _score > 0);
+    // Turu dondur: ticker durur, `_paused` girişleri (`_scream`,
+    // bonuslar, mikrofon) kilitler. TEKRAR OYNA `_restart` ile
+    // devam ettirir; hata çıkarsa duraklatma kaplamasından DEVAM
+    // ile kaldığı yerden dönülür.
+    _paused = true;
+    _pauseStartedAt ??= DateTime.now();
+    _pauseNoiseSubscription();
+    _ticker.stop();
+    if (mounted) setState(() {});
+    await _presentResult(_runId, won: _score > 0);
   }
 
   void _edgeShowResult() {
     if (_resultShown) return;
     _resultShown = true;
+    final runId = _runId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _presentResult();
+      if (mounted) _presentResult(runId);
     });
   }
 
@@ -926,9 +1009,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                           ),
                         if (_scorePopup.isNotEmpty)
                           Positioned(
-                            left: wideScreen
-                                ? 126
-                                : playfield.maxWidth * 0.37,
+                            left: wideScreen ? 126 : playfield.maxWidth * 0.37,
                             top: wideScreen
                                 ? playfield.maxHeight * 0.58
                                 : playfield.maxHeight * 0.57,
@@ -968,19 +1049,19 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                             alignment: Alignment.center,
                             child: Text(
                               context.l10n.screamNextGate(_gatesPassed + 1),
-                              style: (wideScreen
+                              style:
+                                  (wideScreen
                                   ? GoogleFonts.nunito
                                   : GoogleFonts.exo2)(
-                                fontSize: 12,
-                                height: 1,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                              ),
+                                    fontSize: 12,
+                                    height: 1,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                  ),
                             ),
                           ),
                         ),
-                        if (!widget.prototypeVisualState &&
-                            (_shield || _nitro))
+                        if (!widget.prototypeVisualState && (_shield || _nitro))
                           Positioned(
                             left: _x - 6,
                             top: bugTop - 6,
@@ -1112,7 +1193,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                           Expanded(
                             child: Text(
                               _voiceInputEnabled || _power >= 0.7
-                                  ? context.l10n.screamShoutingPercent((_power * 100).round())
+                                  ? context.l10n.screamShoutingPercent(
+                                      (_power * 100).round(),
+                                    )
                                   : '${context.l10n.screamTapPercent((_power * 100).round())}${isTutorialActive ? context.l10n.screamSlowStart : ''}',
                               maxLines: 1,
                               textAlign: TextAlign.right,
@@ -1180,43 +1263,29 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           if (didPop) _maybeRefundEnergy();
         },
         child: ArcadeScreen(
-        backgroundAsset: 'assets/scream_sky.webp',
-        title: context.l10n.screamBugTitle,
-        score: _score,
-        best: _best,
-        hint: context.l10n.screamArcadeHint(_hint),
-        statLabel: context.l10n.screamGateStat,
-        statValue: '$_gatesPassed',
-        tag: context.l10n.viralBadge,
-        tagColor: const Color(0xFF00C853),
-        tagTextColor: const Color(0xFF04140A),
-        prototypeChrome: true,
-        showStatusBar: true,
-        prototypeModeChrome: true,
-        prototypeTagLayout: true,
-        onRestart: _finishEarly,
-        overlay: (!_alive && !_resultShown)
-            ? ArcadeResultOverlay(
-                title: context.l10n.screamCrushedTitle,
-                message: _statsLine(),
-                score: _score,
-                best: _best,
-                won: false,
-                modeTitle: context.l10n.shopModeScreamBug,
-                shareLine: _statsLine(),
-                retryLabel: context.l10n.tryAgainCaps,
-                onRetry: _restart,
-              )
-            : (_paused
-                ? _pauseOverlay()
-                : null),
-        footer: Center(
-          child: SizedBox(
-            width: 285,
-            child: ModeBonusBar(items: bonuses),
+          backgroundAsset: 'assets/scream_sky.webp',
+          title: context.l10n.screamBugTitle,
+          score: _score,
+          best: _best,
+          hint: context.l10n.screamArcadeHint(_hint),
+          statLabel: context.l10n.screamGateStat,
+          statValue: '$_gatesPassed',
+          tag: context.l10n.viralBadge,
+          tagColor: const Color(0xFF00C853),
+          tagTextColor: const Color(0xFF04140A),
+          prototypeChrome: true,
+          showStatusBar: true,
+          prototypeModeChrome: true,
+          prototypeTagLayout: true,
+          onRestart: _finishEarly,
+          // Ölü sonuç kaplaması kaldırıldı: build başındaki
+          // _edgeShowResult `_resultShown`u hep `true` yaptığı için bu
+          // koşul hiç sağlanmıyordu; tek sonuç yolu finishRun diyaloğu.
+          overlay: _paused ? _pauseOverlay() : null,
+          footer: Center(
+            child: SizedBox(width: 285, child: ModeBonusBar(items: bonuses)),
           ),
-        ),
-        child: stageChild,
+          child: stageChild,
         ),
       );
     }
@@ -1227,101 +1296,89 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         if (didPop) _maybeRefundEnergy();
       },
       child: MediaQuery.removePadding(
-      context: context,
-      removeTop: true,
-      removeBottom: true,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF080B12),
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.96,
-                child: Image.asset(
-                  'assets/scream_sky.webp',
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0, 0.24, 0.76, 1],
-                    colors: [
-                      Color(0x4D080B12),
-                      Color(0x00080B12),
-                      Color(0x00080B12),
-                      Color(0x52080B12),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Column(
-              children: [
-                if (hasShellStatusBar)
-                  SizedBox(
-                    height: widget.prototypeVisualState
-                        ? 35.4
-                        : MediaQuery.paddingOf(context).top,
-                  )
-                else
-                  _prototypeStatusBar(),
-                _prototypeHeader(context),
-                _prototypeHud(),
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0x660E1422), Color(0x800E1422)],
-                      ),
-                      border: Border.all(
-                        color: const Color(0x24FFFFFF),
-                        width: 2,
-                      ),
-                    ),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                      child: stageChild,
-                    ),
-                  ),
-                ),
-                _prototypeDock(bonuses),
-              ],
-            ),
-            if (!_alive && !_resultShown)
+        context: context,
+        removeTop: true,
+        removeBottom: true,
+        child: Scaffold(
+          backgroundColor: const Color(0xFF080B12),
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
               Positioned.fill(
-                child: ArcadeResultOverlay(
-                  title: context.l10n.screamCrushedTitle,
-                  message: _statsLine(),
-                  score: _score,
-                  best: _best,
-                  won: false,
-                  modeTitle: context.l10n.shopModeScreamBug,
-                  shareLine: _statsLine(),
-                  retryLabel: context.l10n.tryAgainCaps,
-                  onRetry: _restart,
+                child: Opacity(
+                  opacity: 0.96,
+                  child: Image.asset(
+                    'assets/scream_sky.webp',
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
-            if (_paused && _alive && !widget.prototypeVisualState)
-              _pauseOverlay(),
-          ],
+              const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0, 0.24, 0.76, 1],
+                      colors: [
+                        Color(0x4D080B12),
+                        Color(0x00080B12),
+                        Color(0x00080B12),
+                        Color(0x52080B12),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Column(
+                children: [
+                  if (hasShellStatusBar)
+                    SizedBox(
+                      height: widget.prototypeVisualState
+                          ? 35.4
+                          : MediaQuery.paddingOf(context).top,
+                    )
+                  else
+                    _prototypeStatusBar(),
+                  _prototypeHeader(context),
+                  _prototypeHud(),
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x660E1422), Color(0x800E1422)],
+                        ),
+                        border: Border.all(
+                          color: const Color(0x24FFFFFF),
+                          width: 2,
+                        ),
+                      ),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                        child: stageChild,
+                      ),
+                    ),
+                  ),
+                  _prototypeDock(bonuses),
+                ],
+              ),
+              // Ölü sonuç kaplaması kaldırıldı (dar ekranla aynı gerekçe);
+              // tek sonuç yolu finishRun diyaloğu.
+              if (_paused && _alive && !widget.prototypeVisualState)
+                _pauseOverlay(),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
 
-  /// Küçük duraklatma düğmesi (madde 37, geniş ekran): başlık satırında
+  /// Duraklatma düğmesi (madde 37, geniş ekran): başlık satırında
   /// '?' düğmesinin yanında, HUD düzenini kaydırmadan durur.
   Widget _pauseButton() {
     return Semantics(
@@ -1330,8 +1387,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xDB080B12),
@@ -1343,7 +1400,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           ),
           child: const Icon(
             Icons.pause_rounded,
-            size: 20,
+            size: 22,
             color: Color(0xFFFFB800),
           ),
         ),
@@ -1382,13 +1439,64 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+                ArcadeButton(
+                  label: context.l10n.continueAction,
+                  onPressed: _togglePause,
+                ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// Yardım diyaloğu: açıkken oyun durur, kapanınca kaldığı yerden
+  /// devam eder. Zaten duraklatılmışsa veya tur bitmişse duraklatma
+  /// durumuna dokunulmaz (diyalog kapanınca eski hâl korunur).
+  Future<void> _showHelpDialog() async {
+    final wasAlive = _alive;
+    final wasPaused = _paused;
+    final frozeHere = wasAlive && !wasPaused;
+    if (frozeHere) {
+      _paused = true;
+      _pauseStartedAt ??= DateTime.now();
+      _pauseNoiseSubscription();
+      _ticker.stop();
+      setState(() {});
+    }
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(context.l10n.screamBugTitle),
+          // Statik yönerge: canlı _hint (spam/kombo mesajları)
+          // yardım diyaloğuna sızmaz (bulgu #9).
+          content: Text(
+            context.l10n.screamArcadeHint(context.l10n.screamHintIdle),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.understoodButton),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (frozeHere && mounted) {
+        _paused = false;
+        // Diyalog açıkken arka plana alındıysa konan bayrak da
+        // temizlenir; yoksa `_onNoiseReading` koruması mikrofonu
+        // kalıcı kilitler (koordinatör incelemesinde bulundu).
+        _pausedByLifecycle = false;
+        _shiftPauseDeadlines();
+        _last = Duration.zero;
+        _resumeNoiseSubscription();
+        if (_alive && !_ticker.isActive) _ticker.start();
+        setState(() {});
+      }
+    }
   }
 
   Widget _prototypeStatusBar() {
@@ -1430,30 +1538,30 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               button: true,
               label: context.l10n.goBackLabel,
               child: GestureDetector(
-              onTap: () => Navigator.maybePop(context),
-              child: Container(
-                width: 45.9,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xD9080B12),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
-                  ],
-                ),
-                child: Image.asset(
-                  'assets/icons2/back-prototype.png',
-                  width: 29,
-                  height: 29,
-                  errorBuilder: (_, _, _) => const Icon(
-                    Icons.arrow_back_rounded,
-                    color: Color(0xFF4A9DDB),
-                    size: 20,
+                onTap: () => Navigator.maybePop(context),
+                child: Container(
+                  width: 45.9,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xD9080B12),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
+                    ],
+                  ),
+                  child: Image.asset(
+                    'assets/icons2/back-prototype.png',
+                    width: 29,
+                    height: 29,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.arrow_back_rounded,
+                      color: Color(0xFF4A9DDB),
+                      size: 20,
+                    ),
                   ),
                 ),
               ),
-            ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1533,11 +1641,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.asset(
-                    'assets/icons2/coin.png',
-                    width: 25,
-                    height: 25,
-                  ),
+                  Image.asset('assets/icons2/coin.png', width: 25, height: 25),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -1569,47 +1673,32 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               button: true,
               label: context.l10n.helpButtonLabel,
               child: GestureDetector(
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text(context.l10n.screamBugTitle),
-                  // Statik yönerge: canlı _hint (spam/kombo mesajları)
-                  // yardım diyaloğuna sızmaz (bulgu #9).
-                  content: Text(
-                    context.l10n.screamArcadeHint(
-                      context.l10n.screamHintIdle,
+                onTap: _showHelpDialog,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xDB080B12),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xB3FFB800),
+                      width: 2,
                     ),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+                    ],
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(context.l10n.understoodButton),
+                  child: Text(
+                    '?',
+                    style: GoogleFonts.baloo2(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFFFB800),
                     ),
-                  ],
-                ),
-              ),
-              child: Container(
-                width: 48,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xDB080B12),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xB3FFB800), width: 2),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
-                  ],
-                ),
-                child: Text(
-                  '?',
-                  style: GoogleFonts.baloo2(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFFFFB800),
                   ),
                 ),
               ),
-            ),
             ),
           ],
         ),
@@ -1634,28 +1723,28 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               button: true,
               label: context.l10n.finishRoundLabel,
               child: GestureDetector(
-              onTap: _finishEarly,
-              child: Container(
-                width: 57.8,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFB800),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0xFFB97A00), offset: Offset(0, 3)),
-                  ],
-                ),
-                child: Text(
-                  context.l10n.finishCaps,
-                  style: GoogleFonts.baloo2(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF4A2E00),
+                onTap: _finishEarly,
+                child: Container(
+                  width: 57.8,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFB800),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0xFFB97A00), offset: Offset(0, 3)),
+                    ],
+                  ),
+                  child: Text(
+                    context.l10n.finishCaps,
+                    style: GoogleFonts.baloo2(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF4A2E00),
+                    ),
                   ),
                 ),
               ),
-            ),
             ),
           ],
         ),
@@ -1747,98 +1836,98 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       child: GestureDetector(
         onTap: count > 0 ? item.onTap : null,
         behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 66,
-        height: 62.9,
-        child: Column(
-          children: [
-            const SizedBox(height: 2),
-            SizedBox(
-              height: 48,
-              width: 66,
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFF333F58), Color(0xFF1B2336)],
-                      ),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0x47FFFFFF),
-                        width: 1.5,
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x73000000),
-                          offset: Offset(0, 3),
+        child: SizedBox(
+          width: 66,
+          height: 62.9,
+          child: Column(
+            children: [
+              const SizedBox(height: 2),
+              SizedBox(
+                height: 48,
+                width: 66,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xFF333F58), Color(0xFF1B2336)],
                         ),
-                        BoxShadow(
-                          color: Color(0x4D000000),
-                          offset: Offset(0, 6),
-                          blurRadius: 12,
-                        ),
-                      ],
-                    ),
-                    child: Image.asset(item.asset, fit: BoxFit.contain),
-                  ),
-                  Positioned(
-                    top: -4,
-                    right: 3,
-                    child: Container(
-                      width: 22,
-                      height: 22,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE01E5A),
                         shape: BoxShape.circle,
-                        border: Border.fromBorderSide(
-                          BorderSide(color: Color(0xFF141B2A), width: 2),
+                        border: Border.all(
+                          color: const Color(0x47FFFFFF),
+                          width: 1.5,
                         ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x73000000),
+                            offset: Offset(0, 3),
+                          ),
+                          BoxShadow(
+                            color: Color(0x4D000000),
+                            offset: Offset(0, 6),
+                            blurRadius: 12,
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        '$count',
-                        style: GoogleFonts.nunito(
-                          fontSize: 11,
-                          height: 1,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
+                      child: Image.asset(item.asset, fit: BoxFit.contain),
+                    ),
+                    Positioned(
+                      top: -4,
+                      right: 3,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE01E5A),
+                          shape: BoxShape.circle,
+                          border: Border.fromBorderSide(
+                            BorderSide(color: Color(0xFF141B2A), width: 2),
+                          ),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: GoogleFonts.nunito(
+                            fontSize: 11,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 3),
-            SizedBox(
-              height: 9.9,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  item.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 9,
-                    height: 1.1,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.18,
-                    color: const Color(0xFFD8E0EE),
+              const SizedBox(height: 3),
+              SizedBox(
+                height: 9.9,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.nunito(
+                      fontSize: 9,
+                      height: 1.1,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.18,
+                      color: const Color(0xFFD8E0EE),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
