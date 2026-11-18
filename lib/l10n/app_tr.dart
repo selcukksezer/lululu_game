@@ -1774,6 +1774,30 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemCrateDesc => '7.500 coin · +%50 bonus';
 
   @override
+  String get shopItemCoinsMidTitle => 'Makara Paket';
+
+  @override
+  String get shopItemCoinsMidDesc => '1.500 coin';
+
+  @override
+  String get shopItemCoinsBigTitle => 'Kongo Sandık';
+
+  @override
+  String get shopItemCoinsBigDesc => '5.000 coin';
+
+  @override
+  String get shopItemRoyalCapeTitle => 'Kraliyet Pelerini';
+
+  @override
+  String get shopItemRoyalCapeDesc => 'Efsanevi Kraliyet Pelerini kozmetik görünümü';
+
+  @override
+  String get shopCosmeticsTitle => 'Kozmetik';
+
+  @override
+  String get shopRoyalCapeOwnedLabel => 'Sahip Olundu';
+
+  @override
   String get shopItemWoodenChestTitle => 'Ahşap Sandık';
 
   @override
@@ -1841,6 +1865,31 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get shopPurchaseFailedRefundToast => 'Satın alma başarısız oldu, altınların iade edildi.';
+
+  @override
+  String get shopPurchaseConfirmTitle => 'Satın almayı onayla';
+
+  @override
+  String get shopEnergyEmptyConfirmBody => '+5 enerji için 100 coin harcamak istiyor musun?';
+
+  @override
+  String get shopRestorePurchasesLabel => 'Satın alımları geri yükle';
+
+  @override
+  String get shopRestoreStartedToast => 'Geri yükleme başlatıldı — satın alımların geri yüklenecek.';
+
+  @override
+  String get shopRestoreUnavailableToast => 'Geri yükleme kullanılamıyor — mağaza yok.';
+
+  @override
+  String get shopAddedRoyalCapeToast => 'Kraliyet Pelerini sepete eklendi';
+
+  @override
+  String shopPurchaseConfirmBody(String itemName, String priceLabel) =>
+      '"$itemName" ürününü $priceLabel karşılığında almak istiyor musun?';
+
+  @override
+  String shopCoinPriceLabel(int cost) => '$cost coin';
 
   @override
   String shopPowerUpDescModeSuffix(String desc, String modeName) => '$desc · yalnızca $modeName modunda';

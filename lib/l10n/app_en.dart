@@ -1776,6 +1776,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemCrateDesc => '7,500 coins · +50% bonus';
 
   @override
+  String get shopItemCoinsMidTitle => 'Reel Pack';
+
+  @override
+  String get shopItemCoinsMidDesc => '1,500 coins';
+
+  @override
+  String get shopItemCoinsBigTitle => 'Congo Chest';
+
+  @override
+  String get shopItemCoinsBigDesc => '5,000 coins';
+
+  @override
+  String get shopItemRoyalCapeTitle => 'Royal Cape';
+
+  @override
+  String get shopItemRoyalCapeDesc => 'Legendary Royal Cape cosmetic look';
+
+  @override
+  String get shopCosmeticsTitle => 'Cosmetics';
+
+  @override
+  String get shopRoyalCapeOwnedLabel => 'Owned';
+
+  @override
   String get shopItemWoodenChestTitle => 'Wooden Chest';
 
   @override
@@ -1843,6 +1867,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shopPurchaseFailedRefundToast => 'Purchase failed — your coins were refunded.';
+
+  @override
+  String get shopPurchaseConfirmTitle => 'Confirm purchase';
+
+  @override
+  String get shopEnergyEmptyConfirmBody => 'Buy +5 energy for 100 coins?';
+
+  @override
+  String get shopRestorePurchasesLabel => 'Restore purchases';
+
+  @override
+  String get shopRestoreStartedToast => 'Restore started — your purchases will be restored.';
+
+  @override
+  String get shopRestoreUnavailableToast => 'Restore unavailable — store not available.';
+
+  @override
+  String get shopAddedRoyalCapeToast => 'Royal Cape added to cart';
+
+  @override
+  String shopPurchaseConfirmBody(String itemName, String priceLabel) =>
+      'Buy "$itemName" for $priceLabel?';
+
+  @override
+  String shopCoinPriceLabel(int cost) => '$cost coins';
 
   @override
   String shopPowerUpDescModeSuffix(String desc, String modeName) => '$desc · only in $modeName mode';

@@ -83,8 +83,36 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
       );
   }
 
+  /// Enerji paketi ön-onayı (O3): mağaza onay deseniyle aynı
+  /// (AlertDialog + Vazgeç / Onayla). Onaylanmazsa hiç harcama ve yan
+  /// etki olmaz, popup açık kalır. Tutarlar kodda sabit: 100 coin
+  /// karşılığı +5 enerji.
+  Future<bool> _confirmEnergyPurchase() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.shopPurchaseConfirmTitle),
+        content: Text(ctx.l10n.shopEnergyEmptyConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.confirm),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   Future<void> _buyEnergyPack() async {
     if (_busy) return;
+    final confirmed = await _confirmEnergyPurchase();
+    if (!confirmed || !mounted || _busy) return;
     AudioManager().playPop();
     // l10n + messenger bağıştan ÖNCE alınır: bağış enerji dinleyicisini
     // tetikleyip diyaloğu kapatırsa bile bildirim gösterilebilir.

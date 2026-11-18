@@ -826,6 +826,14 @@ abstract class AppLocalizations {
   String get shopItemHandfulDesc;
   String get shopItemCrateTitle;
   String get shopItemCrateDesc;
+  String get shopItemCoinsMidTitle;
+  String get shopItemCoinsMidDesc;
+  String get shopItemCoinsBigTitle;
+  String get shopItemCoinsBigDesc;
+  String get shopItemRoyalCapeTitle;
+  String get shopItemRoyalCapeDesc;
+  String get shopCosmeticsTitle;
+  String get shopRoyalCapeOwnedLabel;
   String get shopItemWoodenChestTitle;
   String get shopItemWoodenChestDesc;
   String get shopItemGoldenChestTitle;
@@ -849,6 +857,18 @@ abstract class AppLocalizations {
   String get shopAddedLuckPotionToast;
   String get energyPackBoughtToast;
   String get shopPurchaseFailedRefundToast;
+  String get shopPurchaseConfirmTitle;
+  String get shopEnergyEmptyConfirmBody;
+  String get shopRestorePurchasesLabel;
+  String get shopRestoreStartedToast;
+  String get shopRestoreUnavailableToast;
+  String get shopAddedRoyalCapeToast;
+
+  /// Satın alma onay gövdesi: ürün adı + görüntülenen fiyat etiketi.
+  String shopPurchaseConfirmBody(String itemName, String priceLabel);
+
+  /// Coin fiyat etiketi: bedel + coin birimi.
+  String shopCoinPriceLabel(int cost);
 
   /// Güç satırı açıklama satırı: çevrilmiş açıklama + çevrilmiş mod adı.
   /// [desc] ve [modeName] zaten çevrilmiş değerlerdir.

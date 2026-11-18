@@ -432,15 +432,55 @@ class _ShopScreenState extends State<ShopScreen> {
     await _pm.incrementPowerCount(targetKey, amount);
   }
 
-  /// IAP satın alma: ortak kilit + try/catch. Başlatma başarısında EK
-  /// ÖDEME YAPILMAZ — teslimat yalnız satın alma akışından
-  /// (`IapService` purchase stream) gelir; `purchase()` dönüşü yalnız
-  /// başlatmanın kabul edildiğini söyler.
+  /// Satın alma ön-onayı (O1/O2): ürün adı + fiyat etiketi gösterilir,
+  /// onaylanmazsa (Vazgeç / dışarı dokunma) hiçbir harcama ve yan etki
+  /// olmaz. Desen: sohbet onay dialogları (AlertDialog + Vazgeç
+  /// TextButton + Onayla FilledButton). Kilit (`_purchaseBusy`) onay
+  /// SONRASINDA, satın alma yolunda alınır.
+  Future<bool> _confirmPurchase({
+    required String itemName,
+    required String priceLabel,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.shopPurchaseConfirmTitle),
+        content: Text(
+          ctx.l10n.shopPurchaseConfirmBody(itemName, priceLabel),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.confirm),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// IAP satın alma: ön-onay + ortak kilit + try/catch. Başlatma
+  /// başarısında EK ÖDEME YAPILMAZ — teslimat yalnız satın alma
+  /// akışından (`IapService` purchase stream) gelir; `purchase()`
+  /// dönüşü yalnız başlatmanın kabul edildiğini söyler. Bu dosya
+  /// içindeki TEK doğrudan `purchase()` çağrı noktası burasıdır.
   Future<void> _buyIapProduct({
     required String productId,
+    required String itemName,
+    required String priceLabel,
     required String successToast,
   }) async {
     if (_purchaseBusy) return;
+    final confirmed = await _confirmPurchase(
+      itemName: itemName,
+      priceLabel: priceLabel,
+    );
+    if (!confirmed || !mounted || _purchaseBusy) return;
     _purchaseBusy = true;
     bool ok;
     try {
@@ -467,11 +507,17 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Future<void> _buyCoinItem({
+    required String itemName,
     required String toastMsg,
     required int cost,
     FutureOr<void> Function()? onSuccess,
   }) async {
     if (_purchaseBusy) return;
+    final confirmed = await _confirmPurchase(
+      itemName: itemName,
+      priceLabel: context.l10n.shopCoinPriceLabel(cost),
+    );
+    if (!confirmed || !mounted || _purchaseBusy) return;
     _purchaseBusy = true;
     var spent = false;
     try {
@@ -504,6 +550,31 @@ class _ShopScreenState extends State<ShopScreen> {
     setState(() {});
     widget.onStateChanged?.call();
     _showToast(toastMsg);
+  }
+
+  /// Satın alma geri yükleme (non-consumable ürünler, örn. Kraliyet
+  /// Pelerini): `IapService.restorePurchases` mağaza yoksa `false`
+  /// döner, fırlatmaz; geri yüklenen ürünler satın alma akışından
+  /// teslim edilir. Sonuç her durumda toast ile bildirilir.
+  Future<void> _restorePurchases() async {
+    if (_purchaseBusy) return;
+    _purchaseBusy = true;
+    bool ok;
+    try {
+      ok = await IapService.instance.restorePurchases();
+    } catch (_) {
+      ok = false;
+    } finally {
+      _purchaseBusy = false;
+    }
+    if (!mounted) return;
+    setState(() {});
+    widget.onStateChanged?.call();
+    _showToast(
+      ok
+          ? context.l10n.shopRestoreStartedToast
+          : context.l10n.shopRestoreUnavailableToast,
+    );
   }
 
   Widget _buildStatusBar() {
@@ -1017,6 +1088,8 @@ class _ShopScreenState extends State<ShopScreen> {
                             isCoinPrice: false,
                             onTap: () => _buyIapProduct(
                               productId: 'energy_pack_10',
+                              itemName: l10n.shopItemEnergyPackTitle,
+                              priceLabel: '₺29,99',
                               successToast: l10n.shopEnergyAddedToast,
                             ),
                           ),
@@ -1030,6 +1103,8 @@ class _ShopScreenState extends State<ShopScreen> {
                             isCoinPrice: false,
                             onTap: () => _buyIapProduct(
                               productId: 'full_energy',
+                              itemName: l10n.shopItemEnergyDepotTitle,
+                              priceLabel: '₺59,99',
                               successToast: l10n.shopEnergyFullToast,
                             ),
                           ),
@@ -1057,7 +1132,13 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '₺149,99',
                             isCoinPrice: false,
                             onTap: () => _buyIapProduct(
-                              productId: 'mega_starter_pack',
+                              // 2H Bayrak 2: kart başlık/açıklama
+                              // katalog `star_pack`'i vaat ediyor
+                              // (fiyat ₺149,99 iki üründe de aynı);
+                              // düğme teslim edilen ürüne çevrildi.
+                              productId: 'star_pack',
+                              itemName: l10n.shopItemStarPackTitle,
+                              priceLabel: '₺149,99',
                               successToast: l10n.shopAddedStarPackToast,
                             ),
                           ),
@@ -1070,6 +1151,7 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '350',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemSurpriseBoxTitle,
                               toastMsg: l10n.shopAddedSurpriseBoxToast,
                               cost: 350,
                               onSuccess: () =>
@@ -1085,12 +1167,18 @@ class _ShopScreenState extends State<ShopScreen> {
                             badge: null,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/coin_stack.png',
-                            title: l10n.shopItemHandfulTitle,
-                            desc: l10n.shopItemHandfulDesc,
-                            priceText: '₺59,99',
+                            // 2H Bayrak 1: kart, düğmenin teslim
+                            // ettiği katalog ürününe uyduruldu
+                            // (`coins_mid`: Makara Paket, 1500 coin,
+                            // ₺79,99). productId değişmedi.
+                            title: l10n.shopItemCoinsMidTitle,
+                            desc: l10n.shopItemCoinsMidDesc,
+                            priceText: '₺79,99',
                             isCoinPrice: false,
                             onTap: () => _buyIapProduct(
                               productId: 'coins_mid',
+                              itemName: l10n.shopItemCoinsMidTitle,
+                              priceLabel: '₺79,99',
                               successToast: l10n.shopAddedCoinPackToast,
                             ),
                           ),
@@ -1098,12 +1186,18 @@ class _ShopScreenState extends State<ShopScreen> {
                             badge: l10n.shopBadgeBest,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/money_bag.png',
-                            title: l10n.shopItemCrateTitle,
-                            desc: l10n.shopItemCrateDesc,
-                            priceText: '₺249,99',
+                            // 2H Bayrak 1: kart, düğmenin teslim
+                            // ettiği katalog ürününe uyduruldu
+                            // (`coins_big`: Kongo Sandık, 5000 coin,
+                            // ₺199,99). productId değişmedi.
+                            title: l10n.shopItemCoinsBigTitle,
+                            desc: l10n.shopItemCoinsBigDesc,
+                            priceText: '₺199,99',
                             isCoinPrice: false,
                             onTap: () => _buyIapProduct(
                               productId: 'coins_big',
+                              itemName: l10n.shopItemCoinsBigTitle,
+                              priceLabel: '₺199,99',
                               successToast: l10n.shopAddedCoinPackToast,
                             ),
                           ),
@@ -1122,6 +1216,7 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '200',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemWoodenChestTitle,
                               toastMsg: l10n.shopAddedWoodenChestToast,
                               cost: 200,
                               onSuccess: () =>
@@ -1137,6 +1232,7 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '750',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemGoldenChestTitle,
                               toastMsg: l10n.shopAddedGoldenChestToast,
                               cost: 750,
                               onSuccess: () => _pm.grantArcadeDrop(
@@ -1160,6 +1256,7 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '400',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemDoubleCoinTitle,
                               toastMsg: l10n.shopAddedDoubleCoinToast,
                               cost: 400,
                               onSuccess: () => _grantPowerStock('x2', 2),
@@ -1174,9 +1271,76 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '180',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemLuckPotionTitle,
                               toastMsg: l10n.shopAddedLuckPotionToast,
                               cost: 180,
                               onSuccess: () => _grantPowerStock('pair', 1),
+                            ),
+                          ),
+                        ),
+
+                        // Section: Kozmetik (K8 — Kraliyet Pelerini:
+                        // katalog `royal_cape`, non-consumable, ₺99,99;
+                        // coin fiyatı da var (900) ama kart mağaza
+                        // (IAP) yolunu kullanır; sahiplik
+                        // `PM.hasRoyalCape` ile okunur — görünür etki
+                        // (profil rozeti) 3D'nin işi, kanca:
+                        // `hasRoyalCape` / `ownedCosmetics`.)
+                        _buildSecHead(title: l10n.shopCosmeticsTitle),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: l10n.shopBadgeBest,
+                            badgeGold: true,
+                            iconAsset: 'assets/icons2/crown.png',
+                            title: l10n.shopItemRoyalCapeTitle,
+                            desc: l10n.shopItemRoyalCapeDesc,
+                            priceText: '₺99,99',
+                            isCoinPrice: false,
+                            owned: _pm.hasRoyalCape,
+                            onTap: () => _buyIapProduct(
+                              productId: 'royal_cape',
+                              itemName: l10n.shopItemRoyalCapeTitle,
+                              priceLabel: '₺99,99',
+                              successToast: l10n.shopAddedRoyalCapeToast,
+                            ),
+                          ),
+                          null,
+                          topPadding: 8,
+                          bottomPadding: 12,
+                        ),
+
+                        // Geri yükleme girişi (non-consumable ürünler
+                        // için; sonuç toast ile bildirilir).
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                          child: Semantics(
+                            button: true,
+                            label: l10n.shopRestorePurchasesLabel,
+                            child: GestureDetector(
+                              onTap: _restorePurchases,
+                              child: Container(
+                                height: 48,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: const Color(0xFFD5DAE4),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Text(
+                                  l10n.shopRestorePurchasesLabel,
+                                  style: const TextStyle(
+                                    fontFamily: 'Nunito',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.06,
+                                    color: Color(0xFFE01E5A),
+                                    height: 1.55,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1251,7 +1415,7 @@ class _ShopScreenState extends State<ShopScreen> {
 
   Widget _buildShopGridRow(
     _ShopItemData left,
-    _ShopItemData right, {
+    _ShopItemData? right, {
     double topPadding = 0,
     double bottomPadding = 8,
   }) {
@@ -1263,7 +1427,11 @@ class _ShopScreenState extends State<ShopScreen> {
           children: [
             Expanded(child: _buildShopCard(left)),
             const SizedBox(width: 12),
-            Expanded(child: _buildShopCard(right)),
+            Expanded(
+              child: right == null
+                  ? const SizedBox.shrink()
+                  : _buildShopCard(right),
+            ),
           ],
         ),
       ),
@@ -1346,19 +1514,26 @@ class _ShopScreenState extends State<ShopScreen> {
               ),
               Semantics(
                 button: true,
-                label: context.l10n.shopBuyItemLabel(item.title, item.priceText),
+                label: item.owned
+                    ? '${item.title} · ${context.l10n.shopRoyalCapeOwnedLabel}'
+                    : context.l10n.shopBuyItemLabel(
+                        item.title,
+                        item.priceText,
+                      ),
                 excludeSemantics: true,
                 child: GestureDetector(
                   // CustomPaint katmanı üzerinden dokunma
                   // ulaşmıyordu (canlı prob: düğme ölü); tüm düğme
                   // yüzeyi dokunulabilir olsun (bulgu #16).
                   behavior: HitTestBehavior.opaque,
-                  onTap: item.onTap,
+                  onTap: item.owned ? null : item.onTap,
                   child: CustomPaint(
                   painter: _ShopBtnShadowPainter(
-                    solidColor: item.isCoinPrice
-                        ? const Color(0xFFB97A00)
-                        : const Color(0xFF7E0A2E),
+                    solidColor: item.owned
+                        ? const Color(0xFF6B7482)
+                        : item.isCoinPrice
+                            ? const Color(0xFFB97A00)
+                            : const Color(0xFF7E0A2E),
                   ),
                   child: Container(
                     width: double.infinity,
@@ -1369,8 +1544,19 @@ class _ShopScreenState extends State<ShopScreen> {
                     ),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
-                      gradient: item.isCoinPrice
+                      gradient: item.owned
                           ? const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              stops: [0.0, 0.55, 1.0],
+                              colors: [
+                                Color(0xFFB8BFCB),
+                                Color(0xFF9AA3B2),
+                                Color(0xFF8A93A3),
+                              ],
+                            )
+                          : item.isCoinPrice
+                              ? const LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               stops: [0.0, 0.55, 1.0],
@@ -1392,8 +1578,28 @@ class _ShopScreenState extends State<ShopScreen> {
                             ),
                     ),
                     child: Center(
-                      child: item.isCoinPrice
-                          ? Row(
+                      child: item.owned
+                          ? Text(
+                              context.l10n.shopRoyalCapeOwnedLabel,
+                              style: const TextStyle(
+                                fontFamily: 'Baloo 2',
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                fontVariations: [FontVariation('wght', 750)],
+                                color: Colors.white,
+                                letterSpacing: 0.05,
+                                height: 1.1,
+                                shadows: [
+                                  Shadow(
+                                    color: Color(0x665A001E),
+                                    offset: Offset(0, 1),
+                                    blurRadius: 0,
+                                  ),
+                                ],
+                              ),
+                            )
+                          : item.isCoinPrice
+                              ? Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Image.asset(
@@ -1674,6 +1880,7 @@ class _ShopScreenState extends State<ShopScreen> {
               excludeSemantics: true,
               child: GestureDetector(
                 onTap: () => _buyCoinItem(
+                  itemName: pow.name,
                   toastMsg: context.l10n.shopPowerUpAddedToCartToast(pow.name, group.modeName),
                 cost: pow.cost,
                 onSuccess: () => _grantPowerStock(pow.id, 1),
@@ -1781,6 +1988,11 @@ class _ShopItemData {
   final String desc;
   final String priceText;
   final bool isCoinPrice;
+
+  /// Sahip olunan (tek seferlik) ürün: düğme devre dışıdır, fiyat
+  /// yerine "sahip olundu" etiketi gösterir, dokunma satın alma
+  /// başlatmaz.
+  final bool owned;
   final VoidCallback onTap;
 
   const _ShopItemData({
@@ -1791,6 +2003,7 @@ class _ShopItemData {
     required this.desc,
     required this.priceText,
     required this.isCoinPrice,
+    this.owned = false,
     required this.onTap,
   });
 }

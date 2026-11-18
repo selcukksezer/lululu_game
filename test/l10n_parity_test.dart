@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 820 getter + 177 metot = 997 anahtar,
+// açıkça sayılır (soyut sınıftaki 834 getter + 179 metot = 1013 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -509,6 +509,14 @@ void main() {
         'shopItemHandfulDesc': l10n.shopItemHandfulDesc,
         'shopItemCrateTitle': l10n.shopItemCrateTitle,
         'shopItemCrateDesc': l10n.shopItemCrateDesc,
+        'shopItemCoinsMidTitle': l10n.shopItemCoinsMidTitle,
+        'shopItemCoinsMidDesc': l10n.shopItemCoinsMidDesc,
+        'shopItemCoinsBigTitle': l10n.shopItemCoinsBigTitle,
+        'shopItemCoinsBigDesc': l10n.shopItemCoinsBigDesc,
+        'shopItemRoyalCapeTitle': l10n.shopItemRoyalCapeTitle,
+        'shopItemRoyalCapeDesc': l10n.shopItemRoyalCapeDesc,
+        'shopCosmeticsTitle': l10n.shopCosmeticsTitle,
+        'shopRoyalCapeOwnedLabel': l10n.shopRoyalCapeOwnedLabel,
         'shopItemWoodenChestTitle': l10n.shopItemWoodenChestTitle,
         'shopItemWoodenChestDesc': l10n.shopItemWoodenChestDesc,
         'shopItemGoldenChestTitle': l10n.shopItemGoldenChestTitle,
@@ -532,6 +540,12 @@ void main() {
         'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
         'energyPackBoughtToast': l10n.energyPackBoughtToast,
         'shopPurchaseFailedRefundToast': l10n.shopPurchaseFailedRefundToast,
+        'shopPurchaseConfirmTitle': l10n.shopPurchaseConfirmTitle,
+        'shopEnergyEmptyConfirmBody': l10n.shopEnergyEmptyConfirmBody,
+        'shopRestorePurchasesLabel': l10n.shopRestorePurchasesLabel,
+        'shopRestoreStartedToast': l10n.shopRestoreStartedToast,
+        'shopRestoreUnavailableToast': l10n.shopRestoreUnavailableToast,
+        'shopAddedRoyalCapeToast': l10n.shopAddedRoyalCapeToast,
         'helpButtonLabel': l10n.helpButtonLabel,
         'sendMessageLabel': l10n.sendMessageLabel,
         'sendStickerHint': l10n.sendStickerHint,
@@ -1348,6 +1362,14 @@ void main() {
         'shopItemHandfulDesc': l10n.shopItemHandfulDesc,
         'shopItemCrateTitle': l10n.shopItemCrateTitle,
         'shopItemCrateDesc': l10n.shopItemCrateDesc,
+        'shopItemCoinsMidTitle': l10n.shopItemCoinsMidTitle,
+        'shopItemCoinsMidDesc': l10n.shopItemCoinsMidDesc,
+        'shopItemCoinsBigTitle': l10n.shopItemCoinsBigTitle,
+        'shopItemCoinsBigDesc': l10n.shopItemCoinsBigDesc,
+        'shopItemRoyalCapeTitle': l10n.shopItemRoyalCapeTitle,
+        'shopItemRoyalCapeDesc': l10n.shopItemRoyalCapeDesc,
+        'shopCosmeticsTitle': l10n.shopCosmeticsTitle,
+        'shopRoyalCapeOwnedLabel': l10n.shopRoyalCapeOwnedLabel,
         'shopItemWoodenChestTitle': l10n.shopItemWoodenChestTitle,
         'shopItemWoodenChestDesc': l10n.shopItemWoodenChestDesc,
         'shopItemGoldenChestTitle': l10n.shopItemGoldenChestTitle,
@@ -1371,6 +1393,12 @@ void main() {
         'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
         'energyPackBoughtToast': l10n.energyPackBoughtToast,
         'shopPurchaseFailedRefundToast': l10n.shopPurchaseFailedRefundToast,
+        'shopPurchaseConfirmTitle': l10n.shopPurchaseConfirmTitle,
+        'shopEnergyEmptyConfirmBody': l10n.shopEnergyEmptyConfirmBody,
+        'shopRestorePurchasesLabel': l10n.shopRestorePurchasesLabel,
+        'shopRestoreStartedToast': l10n.shopRestoreStartedToast,
+        'shopRestoreUnavailableToast': l10n.shopRestoreUnavailableToast,
+        'shopAddedRoyalCapeToast': l10n.shopAddedRoyalCapeToast,
         'helpButtonLabel': l10n.helpButtonLabel,
         'sendMessageLabel': l10n.sendMessageLabel,
         'sendStickerHint': l10n.sendStickerHint,
@@ -1771,6 +1799,8 @@ void main() {
         'shopPowerUpDescModeSuffix': l10n.shopPowerUpDescModeSuffix('X', 'X'),
         'shopPowerUpAddedToCartToast': l10n.shopPowerUpAddedToCartToast('X', 'X'),
         'shopPowerGroupBonusCount': l10n.shopPowerGroupBonusCount(3),
+        'shopPurchaseConfirmBody': l10n.shopPurchaseConfirmBody('X', 'X'),
+        'shopCoinPriceLabel': l10n.shopCoinPriceLabel(3),
         'profilePillLabel': l10n.profilePillLabel('X', 3),
         'coinPillLabel': l10n.coinPillLabel('X'),
         // W60-2: §3 paylaşılan anahtarlar (i18n göç planı)
@@ -1965,6 +1995,8 @@ void main() {
         'shopPowerUpDescModeSuffix': l10n.shopPowerUpDescModeSuffix('X', 'X'),
         'shopPowerUpAddedToCartToast': l10n.shopPowerUpAddedToCartToast('X', 'X'),
         'shopPowerGroupBonusCount': l10n.shopPowerGroupBonusCount(3),
+        'shopPurchaseConfirmBody': l10n.shopPurchaseConfirmBody('X', 'X'),
+        'shopCoinPriceLabel': l10n.shopCoinPriceLabel(3),
         'profilePillLabel': l10n.profilePillLabel('X', 3),
         'coinPillLabel': l10n.coinPillLabel('X'),
         // W60-2: §3 paylaşılan anahtarlar (i18n göç planı)
@@ -2154,21 +2186,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 997 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1013 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 820);
-    expect(tr.length, 820);
-    expect(enMethods.length, 177);
-    expect(trMethods.length, 177);
+    expect(en.length, 834);
+    expect(tr.length, 834);
+    expect(enMethods.length, 179);
+    expect(trMethods.length, 179);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 997);
+    expect(en.length + enMethods.length, 1013);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });
