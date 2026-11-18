@@ -39,6 +39,23 @@ class BalloonPopScreen extends StatefulWidget {
   State<BalloonPopScreen> createState() => _BalloonPopScreenState();
 }
 
+enum _BalloonHint {
+  drift,
+  rowDropped,
+  ceilingDropped,
+  missedAim,
+  noStick,
+  stuck,
+  popped,
+  poppedPlain,
+  piercing,
+  reachedShooter,
+  ceilingFull,
+  tripleActive,
+  fireball,
+  waveActive,
+}
+
 class _BalloonPopScreenState extends State<BalloonPopScreen>
     with SingleTickerProviderStateMixin {
   static const int cols = 7;
@@ -70,7 +87,34 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   bool _energyRefunded = false;
 
   bool _shotArmed = false;
-  String _hint = 'balonlar süzülüyor · 3 aynı balon patlar';
+  _BalloonHint _hintKind = _BalloonHint.drift;
+  int _hintA = 0;
+  int _hintB = 0;
+  String _hintText = '';
+
+  void _setHint(_BalloonHint kind, [int a = 0, int b = 0, String text = '']) {
+    _hintKind = kind;
+    _hintA = a;
+    _hintB = b;
+    _hintText = text;
+  }
+
+  String _hintString(AppLocalizations l10n) => switch (_hintKind) {
+        _BalloonHint.drift => l10n.balloonHintDrift,
+        _BalloonHint.rowDropped => l10n.balloonHintRowDropped,
+        _BalloonHint.ceilingDropped => l10n.balloonCeilingDropped,
+        _BalloonHint.missedAim => l10n.balloonMissedAim,
+        _BalloonHint.noStick => l10n.balloonNoStickAim,
+        _BalloonHint.stuck => l10n.balloonStuckNeed3,
+        _BalloonHint.popped => '$_hintText +$_hintB · x$_hintA',
+        _BalloonHint.poppedPlain => l10n.balloonPoppedStreak(_hintA, _hintB),
+        _BalloonHint.piercing => l10n.balloonPiercingShot(_hintA, _hintB),
+        _BalloonHint.reachedShooter => l10n.balloonLoseReached,
+        _BalloonHint.ceilingFull => l10n.balloonLoseCeiling,
+        _BalloonHint.tripleActive => l10n.balloonTripleActive,
+        _BalloonHint.fireball => l10n.balloonFireballShot(_hintA),
+        _BalloonHint.waveActive => l10n.balloonWaveActive,
+      };
   Offset? _fly;
   Offset _vel = Offset.zero;
   Offset _aim = const Offset(0, -1);
@@ -124,7 +168,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _score = 1940;
       _best = 3260;
       _elapsed = 42;
-      _hint = 'balonlar süzülüyor · bir sıra daha indi';
+      _setHint(_BalloonHint.rowDropped);
     } else {
       _ensureDefaultPowers();
       _loadBest();
@@ -189,7 +233,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _over = false;
     _paused = false;
     _shotArmed = false;
-    _hint = 'balonlar süzülüyor · 3 aynı balon patlar';
+    _setHint(_BalloonHint.drift);
     _fly = null;
     _streak = 0;
     _maxStreak = 0;
@@ -364,7 +408,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         _shotArmed = false;
         _streak = 0;
         _flashMiss();
-        setState(() => _hint = 'Iskaladın. Tekrar nişan al.');
+        setState(() => _setHint(_BalloonHint.missedAim));
         return;
       }
     }
@@ -391,7 +435,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     if (spot == null) {
       _streak = 0;
       _comboMeter = max(0, _comboMeter - 0.3);
-      _hint = 'Tutunamadı. Tekrar nişan al.';
+      _setHint(_BalloonHint.noStick);
       _flashMiss();
       setState(() {});
       return;
@@ -428,9 +472,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
           1.0 + min(1.2, (_streak - 1) * 0.18) + min(0.6, (popped - 3) * 0.12);
       gained += (popped * popped * 14 * shotTier * heat).round();
       _comboMeter = min(1.0, 0.35 + _streak * 0.14 + popped * 0.04);
-      if (popped >= 6) _showMilestone('SÜPER PATLAMA · $popped');
+      if (popped >= 6) _showMilestone(context.l10n.balloonSuperPop(popped));
     } else if (pierced == 0) {
-      if (_streak > 1) _showMilestone('KOMBO KIRILDI · ıskaladın');
+      if (_streak > 1) _showMilestone(context.l10n.balloonComboBrokenMiss);
       _streak = 0;
       _comboMeter = max(0, _comboMeter - 0.2);
     }
@@ -462,21 +506,23 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
           });
         }
       });
-      _hint = fallen > 0
-          ? '${insect.viralReplik} +$gained · x$_streak'
-          : 'Patladı x$_streak · +$gained';
+      if (fallen > 0) {
+        _setHint(_BalloonHint.popped, _streak, gained, insect.viralReplik);
+      } else {
+        _setHint(_BalloonHint.poppedPlain, _streak, gained);
+      }
     } else if (pierced > 0) {
       HapticFeedback.selectionClick();
-      _hint = 'Delici atış $pierced balonu deldi · seri x$_streak korundu.';
+      _setHint(_BalloonHint.piercing, pierced, _streak);
     } else {
       HapticFeedback.selectionClick();
-      _hint = 'Yapıştı. 3 aynı lazım.';
+      _setHint(_BalloonHint.stuck);
     }
     _current = _next;
     _next = _rollColor();
     _shots++;
     if (_reachedDanger()) {
-      _lose('Balonlar nişancıya dayandı.');
+      _lose(_BalloonHint.reachedShooter);
       return;
     }
     if (_shots % descendEvery == 0) _descend();
@@ -641,7 +687,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   void _descend() {
     for (var c = 0; c < cols; c++) {
       if (_grid[rows - 1][c] != 0) {
-        _lose('Tavan indi, yer kalmadı.');
+        _lose(_BalloonHint.ceilingFull);
         return;
       }
     }
@@ -664,11 +710,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       AudioManager().playMerge(tierNumber: _current);
       _checkScoreMilestones();
     }
-    _hint = 'Tavan bir sıra indi.';
-    if (_reachedDanger()) _lose('Balonlar nişancıya dayandı.');
+    _setHint(_BalloonHint.ceilingDropped);
+    if (_reachedDanger()) _lose(_BalloonHint.reachedShooter);
   }
 
-  void _lose(String why) {
+  void _lose(_BalloonHint why) {
     if (_over) return;
     // Tur tamamlandı: iade hakkı biter (bayrak oturum ömründe kalır).
     _moveMade = true;
@@ -676,15 +722,19 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _flying = false;
     _fly = null;
     _paused = false;
-    _hint = why;
+    _setHint(why);
     HapticFeedback.heavyImpact();
     AudioManager().playLose();
     unawaited(_persist());
     setState(() {});
   }
 
-  String _statsLine() =>
-      'Patlama $_popTotal · Düşen $_fallTotal · Max streak x$_maxStreak · En büyük $_biggestPop';
+  String _statsLine() => context.l10n.balloonStatsLine(
+        _popTotal,
+        _fallTotal,
+        _maxStreak,
+        _biggestPop,
+      );
 
   List<Offset> _aimDots(_Hex hex) {
     var p = hex.shooter;
@@ -721,9 +771,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _pierce = true;
       _activePowerFx = 'triple';
       _powerFxLife = 1.0;
-      _hint = 'Üçlü Ok / Lazer Nişan aktif · 3 balonu deler!';
+      _setHint(_BalloonHint.tripleActive);
     });
-    _showMilestone('ÜÇLÜ OK · LAZER NİŞAN AKTİF!');
+    _showMilestone('${context.l10n.powerTripleArrowCaps} · ${context.l10n.laserAimActive}!');
     return true;
   }
 
@@ -759,10 +809,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _activePowerFx = 'bombb';
       _powerFxLife = 1.0;
       _gainText = '+$gained BOMBA!';
-      _hint = 'Ateş Topu / Bomba $take balonu uçurdu!';
+      _setHint(_BalloonHint.fireball, take);
       _checkScoreMilestones();
     });
-    _showMilestone('ATEŞ TOPU · BOMBA PATLADI!');
+    _showMilestone(context.l10n.balloonFireballMilestone);
     return true;
   }
 
@@ -798,9 +848,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       }
       _activePowerFx = 'slowb';
       _powerFxLife = 1.0;
-      _hint = 'Renk Dalgası & Yavaşlatma (10 sn) aktif!';
+      _setHint(_BalloonHint.waveActive);
     });
-    _showMilestone('YAVAŞLAT & RENK BOMBASI AKTİF!');
+    _showMilestone(context.l10n.slowColorBombActive);
     return true;
   }
 
@@ -852,7 +902,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     final bonusItems = [
       stockBonusWithResult(
         id: 'triple',
-        label: 'ÜÇLÜ OK',
+        label: context.l10n.powerTripleArrowCaps,
         asset: 'assets/icons2/target.png',
         effect: () {
           final applied = _useTriple();
@@ -862,7 +912,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       ),
       stockBonusWithResult(
         id: 'bombb',
-        label: 'BOMBA',
+        label: context.l10n.powerBombCaps,
         asset: 'assets/icons2/boom.png',
         effect: () {
           final applied = _useBomb();
@@ -872,7 +922,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       ),
       stockBonusWithResult(
         id: 'slowb',
-        label: 'YAVAŞLAT',
+        label: context.l10n.shopPowerSlowNameCaps,
         asset: 'assets/icons2/stopwatch.png',
         effect: () {
           final applied = _useSlow();
@@ -930,7 +980,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'TAVAN',
+                                  context.l10n.ceilingLabel,
                                   style: GoogleFonts.nunito(
                                     fontSize: 11,
                                     height: 1.55,
@@ -943,8 +993,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                                 Flexible(
                                   child: Text(
                                     _paused
-                                        ? 'DURAKLATILDI'
-                                        : '$_hint · $until atışta sıra iner',
+                                        ? context.l10n.pausedStatusCaps
+                                        : '${_hintString(context.l10n)} · ${context.l10n.balloonRowsInShots(until)}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     textAlign: TextAlign.right,
@@ -1111,8 +1161,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         child: IgnorePointer(
                           child: Text(
                             _pierce
-                                ? 'LAZER NİŞAN AKTİF'
-                                : 'TUT · NİŞAN AL · BIRAK',
+                                ? context.l10n.laserAimActive
+                                : context.l10n.holdAimRelease,
                             textAlign: TextAlign.center,
                             maxLines: 1,
                             style: GoogleFonts.nunito(
@@ -1186,12 +1236,12 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
     final overlayWidget = (_over && !_resultShown)
         ? ArcadeResultOverlay(
-            title: 'TAŞTI',
+            title: context.l10n.balloonOverflowTitle,
             message: _statsLine(),
             score: _score,
             best: _best,
             won: false,
-            modeTitle: 'Balon Patlat',
+            modeTitle: context.l10n.shopModeBalloonPop,
             shareLine: _statsLine(),
             retryLabel: 'TEKRAR',
             onRetry: () => setState(_boot),
@@ -1413,7 +1463,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: Text(
-                                'BALON PATLAT',
+                                context.l10n.balloonPopTitle,
                                 maxLines: 1,
                                 softWrap: false,
                                 style: GoogleFonts.baloo2(
@@ -1560,7 +1610,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         width: 64.6,
                         height: 41.0,
                         child: _buildHudStatBox(
-                          label: 'SKOR',
+                          label: context.l10n.gameScoreLabel,
                           value: _fmtDot(_score),
                         ),
                       ),
@@ -1570,7 +1620,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         width: 84,
                         height: 41.0,
                         child: _buildHudStatBox(
-                          label: 'REKOR',
+                          label: context.l10n.gameBestLabel,
                           value: _fmtDot(_best),
                         ),
                       ),
@@ -1580,7 +1630,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         width: 74,
                         height: 41.0,
                         child: _buildHudStatBox(
-                          label: 'SÜRE',
+                          label: context.l10n.timeLabel,
                           value: timeStr,
                         ),
                       ),
@@ -1608,7 +1658,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                             ),
                             child: Center(
                               child: Text(
-                                'BİTİR',
+                                context.l10n.finishCaps,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 12.5,
                                   height: 1.0,

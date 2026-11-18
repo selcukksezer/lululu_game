@@ -117,7 +117,8 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
-  String _hint = 'Halka yeşile dönünce dokun!';
+  String _hint = '';
+  bool _hintSeeded = false;
 
   int _beatStartMs = 0;
   int _beatAtMs = _firstBeatMs;
@@ -153,6 +154,15 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       (_ringOn ? 60 : 0);
 
   bool get _tutorial => OsmantusPacing.isTutorial(_playMs);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.osmantusHintIdle;
+    }
+  }
 
   @override
   void initState() {
@@ -265,13 +275,13 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         _beatAtMs = now + interval;
         _hitThisBeat = false;
         _phase.value = 0;
-        _hint = 'Devam! Halka yeşile dönünce dokun.';
+        _hint = context.l10n.osmantusHintResume;
         setState(() {});
         return;
       }
       if (!_hitThisBeat) {
         if (_tutorial && _score == 0 && _combo == 0 && widget.clockForTesting == null) {
-          _showBand('YEŞİLDE BAS!', bad: false, ms: 900);
+          _showBand(context.l10n.osmantusPressGreen, bad: false, ms: 900);
         } else {
           _miss('KAÇIRDIN');
           if (!_alive) return;
@@ -436,7 +446,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _ringUntilMs = _nowMs + 12000;
-      _showBand('HALKA + AKTİF!', bad: false);
+      _showBand(context.l10n.osmantusRingActive, bad: false);
       _hint = 'Halka + aktif · 12 sn geniş zamanlama penceresi!';
     });
     return true;
@@ -448,7 +458,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _micShield = true;
-      _showBand('MİKROFON KALKANI!', bad: false);
+      _showBand(context.l10n.osmantusMicShieldCallout, bad: false);
       _hint = 'Mikrofon kalkanı hazır · sıradaki kaçışta can gitmez!';
     });
     return true;
@@ -881,10 +891,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                 context: context,
                 builder: (context) => AlertDialog(
                   title: Text(context.l10n.osmantusTitle),
-                  content: const Text(
-                    'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! '
-                    'Zamanında basarak kombo yap ve özel sahne güçlerini kullan.',
-                  ),
+                  content: Text(context.l10n.osmantusRhythmHint),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
@@ -960,7 +967,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                         ],
                       ),
                       child: Text(
-                        'BİTİR',
+                        context.l10n.finishCaps,
                         style: GoogleFonts.baloo2(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w800,
@@ -1052,7 +1059,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       ),
       stockBonusWithResult(
         id: 'ring',
-        label: 'HALKA +',
+        label: context.l10n.powerRingPlus,
         asset: 'assets/icons2/wheel.png',
         effect: () {
           final applied = _useRing();
@@ -1062,7 +1069,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       ),
       stockBonusWithResult(
         id: 'mic',
-        label: 'MİKROFON',
+        label: context.l10n.powerMicrophoneCaps,
         asset: 'assets/icons2/star.png',
         effect: () {
           final applied = _useMic();
@@ -1305,7 +1312,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   Widget _cards() {
-    const subs = ['Tuşçu · işaretçi', 'Makara · dinleyen'];
+    final subs = [context.l10n.osmanRoleSub, context.l10n.tusRoleSub];
     return SizedBox(
       height: 163.16,
       child: Padding(
@@ -1445,7 +1452,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
           ],
         ),
         child: Text(
-          'YEŞİLDE\nBAS!',
+          context.l10n.osmantusPressGreenButton,
           textAlign: TextAlign.center,
           style: GoogleFonts.baloo2(
             fontSize: 12.5,
@@ -1482,7 +1489,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
           ],
         ),
         child: Text(
-          'İKİLİ TUŞ',
+          context.l10n.osmantusDoubleButton,
           style: GoogleFonts.baloo2(
             fontSize: 18,
             fontWeight: FontWeight.w800,

@@ -78,7 +78,9 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       'id': 'viral_watch_0',
       'title': 'Böcek Birleştirme Rekoru! 51.200 Puan',
       'dur': '0:32',
-      'meta': '128 B görüntülenme · 2 gün önce',
+      'viewsK': 128,
+      'agoValue': 2,
+      'agoUnit': 'day',
       'thumb': 'assets/design/ui/studio_watch/video_thumb_1.png',
       'likes': 1248,
     },
@@ -86,7 +88,9 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       'id': 'viral_watch_1',
       'title': "Çığlık Böcek'te KAPI 7'ye Nasıl Geçilir?",
       'dur': '1:04',
-      'meta': '86 B görüntülenme · 5 gün önce',
+      'viewsK': 86,
+      'agoValue': 5,
+      'agoUnit': 'day',
       'thumb': 'assets/design/ui/studio_watch/video_thumb_2.png',
       'likes': 942,
     },
@@ -94,7 +98,9 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       'id': 'viral_watch_2',
       'title': 'Pembe Bornozlu İlk Kez Evrimleşti!',
       'dur': '0:47',
-      'meta': '203 B görüntülenme · 1 hafta önce',
+      'viewsK': 203,
+      'agoValue': 1,
+      'agoUnit': 'week',
       'thumb': 'assets/design/ui/studio_watch/video_thumb_3.png',
       'likes': 2317,
     },
@@ -102,11 +108,21 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       'id': 'viral_watch_3',
       'title': 'Terlik Yağmuru: Kombo x12 Nasıl Yapılır?',
       'dur': '0:58',
-      'meta': '57 B görüntülenme · 2 hafta önce',
+      'viewsK': 57,
+      'agoValue': 2,
+      'agoUnit': 'week',
       'thumb': 'assets/design/ui/studio_watch/video_thumb_4.png',
       'likes': 618,
     },
   ];
+
+  String _videoMeta(Map<String, Object> v) {
+    final l10n = context.l10n;
+    final ago = v['agoUnit'] == 'week'
+        ? l10n.weeksAgo(v['agoValue'] as int)
+        : l10n.daysAgo(v['agoValue'] as int);
+    return '${l10n.videoViewsShort(v['viewsK'] as int)} · $ago';
+  }
 
   String _formatCount(int n) {
     final s = n.toString();
@@ -150,7 +166,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       createdAtMs: DateTime.now().millisecondsSinceEpoch,
       isPublic: true,
       durationText: cur['dur'] as String,
-      metaText: cur['meta'] as String,
+      metaText: _videoMeta(cur),
       thumbnailAsset: cur['thumb'] as String,
       likes: _likes,
       likedByMe: _liked,
@@ -373,7 +389,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                             child: Align(
                               alignment: Alignment.centerLeft,
                               child: Text(
-                                cur['meta'] as String,
+                                _videoMeta(cur),
                                 style: GoogleFonts.nunito(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w700,
@@ -573,7 +589,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                           padding: const EdgeInsets.only(bottom: 9),
                           child: Semantics(
                             button: true,
-                            label: context.l10n.playVideoLabel(_videos[i]['title'] as String, _videos[i]['meta'] as String),
+                            label: context.l10n.playVideoLabel(_videos[i]['title'] as String, _videoMeta(_videos[i])),
                             selected: _activeVideoIndex == i,
                             child: GestureDetector(
                             onTap: () {
@@ -706,7 +722,7 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                       right: 9,
                                       top: i == 2 ? 73.2 : 73.7,
                                       child: Text(
-                                        _videos[i]['meta'] as String,
+                                        _videoMeta(_videos[i]),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: GoogleFonts.nunito(
@@ -2274,29 +2290,52 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
   final _downloads = [
     {
       'title': 'birlesme_rekoru.mp4',
-      'size': '84,2 MB · Bugün 09:12',
+      'size': '84,2 MB',
+      'whenKind': 'today',
+      'whenTime': '09:12',
       'thumb': 'assets/design/ui/studio_downloads/img_1.png',
       'isBug': false,
     },
     {
       'title': 'kapi7_rehberi.mp4',
-      'size': '156,8 MB · Dün 21:40',
+      'size': '156,8 MB',
+      'whenKind': 'yesterday',
+      'whenTime': '21:40',
       'thumb': 'assets/design/ui/studio_downloads/img_2.png',
       'isBug': false,
     },
     {
       'title': 'dans_zamani.gif',
-      'size': '6,4 MB · 28 Ekim',
+      'size': '6,4 MB',
+      'whenKind': 'date',
+      'whenDay': 28,
+      'whenMonth': 10,
       'thumb': 'assets/design/ui/studio_downloads/bugimg.png',
       'isBug': true,
     },
     {
       'title': 'hamam_diva_klip.mp4',
-      'size': '42,1 MB · 25 Ekim',
+      'size': '42,1 MB',
+      'whenKind': 'date',
+      'whenDay': 25,
+      'whenMonth': 10,
       'thumb': 'assets/design/ui/studio_downloads/img_4.png',
       'isBug': false,
     },
   ];
+
+  String _whenText(Map<String, Object> d) {
+    final l10n = context.l10n;
+    final kind = d['whenKind'] as String;
+    if (kind == 'today') return l10n.downloadedTodayAt(d['whenTime'] as String);
+    if (kind == 'yesterday') {
+      return l10n.downloadedYesterdayAt(d['whenTime'] as String);
+    }
+    return l10n.downloadedDayMonth(
+      d['whenDay'] as int,
+      l10n.monthFullName(d['whenMonth'] as int),
+    );
+  }
 
   void _delete(int index) {
     unawaited(AudioManager().playButtonTap());
@@ -2508,7 +2547,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         Text(
-                                          _downloads[i]['size'] as String,
+                                          '${_downloads[i]['size'] as String} · ${_whenText(_downloads[i])}',
                                           style: GoogleFonts.nunito(
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w700,

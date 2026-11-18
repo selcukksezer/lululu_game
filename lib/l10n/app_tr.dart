@@ -2663,4 +2663,199 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String youAsName(String name) => 'SEN · $name';
+
+  @override
+  String get continueWithAd => 'REKLAMLA DEVAM ET';
+
+  @override
+  String get doubleGoldWithAd => 'REKLAMLA 2X ALTIN';
+
+  @override
+  String get ceilingLabel => 'TAVAN';
+
+  @override
+  String get balloonHintDrift => 'balonlar süzülüyor · 3 aynı balon patlar';
+
+  @override
+  String get balloonHintRowDropped =>
+      'balonlar süzülüyor · bir sıra daha indi';
+
+  @override
+  String balloonRowsInShots(int shots) => '$shots atışta sıra iner';
+
+  @override
+  String get holdAimRelease => 'TUT · NİŞAN AL · BIRAK';
+
+  @override
+  String get laserAimActive => 'LAZER NİŞAN AKTİF';
+
+  @override
+  String get slowColorBombActive => 'YAVAŞLAT & RENK BOMBASI AKTİF!';
+
+  @override
+  String get powerTripleArrowCaps => 'ÜÇLÜ OK';
+
+  @override
+  String get powerBombCaps => 'BOMBA';
+
+  @override
+  String get powerHammerCaps => 'ÇEKİÇ';
+
+  @override
+  String get powerHunterCaps => 'AVCI';
+
+  @override
+  String get powerLightningCaps => 'YILDIRIM';
+
+  @override
+  String get powerMagnetCaps => 'MIKNATIS';
+
+  @override
+  String get powerMedicineCaps => 'İLAÇ';
+
+  @override
+  String get powerMicrophoneCaps => 'MİKROFON';
+
+  @override
+  String get powerBeatFreezeCaps => 'BEAT DONDUR';
+
+  @override
+  String get powerAutoReelCaps => 'OTO MAKARA';
+
+  @override
+  String get movesLabelCaps => 'HAMLE';
+
+  @override
+  String get targetTitle => 'HEDEF';
+
+  @override
+  String get movesOutTitle => 'HAMLE BİTTİ';
+
+  @override
+  String targetWithValue(String value) => 'HEDEF $value';
+
+  @override
+  String get linesLabel => 'ÇİZGİ';
+
+
+  @override
+  String get terlikInstruction => 'DELİKTEN ÇIKANI ANINDA EZ!';
+
+
+  @override
+  String missLifeLost(String reason) => '$reason · -1 CAN · KOMBO KIRILDI';
+
+
+  @override
+  String get yuvaBanner => 'YUVA SAVUNMASI · 360°';
+
+  @override
+  String get osmantusDoubleButton => 'İKİLİ TUŞ';
+
+  @override
+  String get osmanRoleSub => 'Tuşçu · işaretçi';
+
+  @override
+  String get tusRoleSub => 'Makara · dinleyen';
+
+  @override
+  String get osmantusRhythmHint =>
+      'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! '
+      'Zamanında basarak kombo yap ve özel sahne güçlerini kullan.';
+
+  @override
+  String screamTapPercent(int percent) => '%$percent · DOKUN';
+
+  @override
+  String get screamSlowStart => ' · İLK 15 SN YAVAŞ';
+
+  @override
+  String get balloonMissedAim => 'Iskaladın. Tekrar nişan al.';
+
+  @override
+  String get balloonNoStickAim => 'Tutunamadı. Tekrar nişan al.';
+
+  @override
+  String balloonPoppedStreak(int streak, int gained) =>
+      'Patladı x$streak · +$gained';
+
+  @override
+  String balloonPiercingShot(int pierced, int streak) =>
+      'Delici atış $pierced balonu deldi · seri x$streak korundu.';
+
+  @override
+  String get balloonStuckNeed3 => 'Yapıştı. 3 aynı lazım.';
+
+  @override
+  String terlikDropSlipper(int count) => ' · terlik+$count';
+
+  @override
+  String terlikDropSpray(int count) => ' · sprey+$count';
+
+  String get balloonCeilingDropped => 'Tavan bir sıra indi.';
+  String get balloonLoseReached => 'Balonlar nişancıya dayandı.';
+  String get balloonLoseCeiling => 'Tavan indi, yer kalmadı.';
+  String get balloonTripleActive => 'Üçlü Ok / Lazer Nişan aktif · 3 balonu deler!';
+  String get balloonWaveActive => 'Renk Dalgası & Yavaşlatma (10 sn) aktif!';
+  String balloonFireballShot(int take) => 'Ateş Topu / Bomba $take balonu uçurdu!';
+
+  String get balloonOverflowTitle => 'TAŞTI';
+  String get balloonComboBrokenMiss => 'KOMBO KIRILDI · ıskaladın';
+  String get balloonFireballMilestone => 'ATEŞ TOPU · BOMBA PATLADI!';
+  String balloonSuperPop(int popped) => 'SÜPER PATLAMA · $popped';
+  String balloonStatsLine(int pop, int fall, int maxStreak, int biggest) =>
+      'Patlama $pop · Düşen $fall · Max streak x$maxStreak · En büyük $biggest';
+
+  @override
+  String videoViewsShort(int thousands) => '$thousands B görüntülenme';
+
+  @override
+  String daysAgo(int days) => '$days gün önce';
+
+  @override
+  String weeksAgo(int weeks) => '$weeks hafta önce';
+
+  @override
+  String downloadedTodayAt(String time) => 'Bugün $time';
+
+  @override
+  String downloadedYesterdayAt(String time) => 'Dün $time';
+
+  @override
+  String downloadedDayMonth(int day, String month) => '$day $month';
+
+  @override
+  String monthShortName(int month) => const [
+    'Oca',
+    'Şub',
+    'Mar',
+    'Nis',
+    'May',
+    'Haz',
+    'Tem',
+    'Ağu',
+    'Eyl',
+    'Eki',
+    'Kas',
+    'Ara',
+  ][(month - 1).clamp(0, 11)];
+
+  @override
+  String monthFullName(int month) => const [
+    'Ocak',
+    'Şubat',
+    'Mart',
+    'Nisan',
+    'Mayıs',
+    'Haziran',
+    'Temmuz',
+    'Ağustos',
+    'Eylül',
+    'Ekim',
+    'Kasım',
+    'Aralık',
+  ][(month - 1).clamp(0, 11)];
+
+  @override
+  String get match3HintIdle => 'Komşuyu kaydır. 3 patlar · 4 = bomba.';
 }

@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 694 getter + 139 metot = 833 anahtar,
+// açıkça sayılır (soyut sınıftaki 735 getter + 158 metot = 893 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -735,6 +735,48 @@ void main() {
         'onlineGuildWarsSubtitle': l10n.onlineGuildWarsSubtitle,
         'onlineTournamentsTitle': l10n.onlineTournamentsTitle,
         'onlineTournamentsSubtitle': l10n.onlineTournamentsSubtitle,
+        // Tam ekran taraması tur 3: mod ekranları + stüdyo i18n (52 anahtar)
+        'continueWithAd': l10n.continueWithAd,
+        'doubleGoldWithAd': l10n.doubleGoldWithAd,
+        'ceilingLabel': l10n.ceilingLabel,
+        'balloonHintDrift': l10n.balloonHintDrift,
+        'balloonHintRowDropped': l10n.balloonHintRowDropped,
+        'holdAimRelease': l10n.holdAimRelease,
+        'laserAimActive': l10n.laserAimActive,
+        'slowColorBombActive': l10n.slowColorBombActive,
+        'powerTripleArrowCaps': l10n.powerTripleArrowCaps,
+        'powerBombCaps': l10n.powerBombCaps,
+        'powerHammerCaps': l10n.powerHammerCaps,
+        'powerHunterCaps': l10n.powerHunterCaps,
+        'powerLightningCaps': l10n.powerLightningCaps,
+        'powerMagnetCaps': l10n.powerMagnetCaps,
+        'powerMedicineCaps': l10n.powerMedicineCaps,
+        'powerMicrophoneCaps': l10n.powerMicrophoneCaps,
+        'powerBeatFreezeCaps': l10n.powerBeatFreezeCaps,
+        'powerAutoReelCaps': l10n.powerAutoReelCaps,
+        'movesLabelCaps': l10n.movesLabelCaps,
+        'targetTitle': l10n.targetTitle,
+        'movesOutTitle': l10n.movesOutTitle,
+        'linesLabel': l10n.linesLabel,
+        'terlikInstruction': l10n.terlikInstruction,
+        'yuvaBanner': l10n.yuvaBanner,
+        'osmantusDoubleButton': l10n.osmantusDoubleButton,
+        'osmanRoleSub': l10n.osmanRoleSub,
+        'tusRoleSub': l10n.tusRoleSub,
+        'osmantusRhythmHint': l10n.osmantusRhythmHint,
+        'screamSlowStart': l10n.screamSlowStart,
+        'balloonMissedAim': l10n.balloonMissedAim,
+        'balloonNoStickAim': l10n.balloonNoStickAim,
+        'balloonStuckNeed3': l10n.balloonStuckNeed3,
+        'balloonCeilingDropped': l10n.balloonCeilingDropped,
+        'balloonLoseReached': l10n.balloonLoseReached,
+        'balloonLoseCeiling': l10n.balloonLoseCeiling,
+        'balloonTripleActive': l10n.balloonTripleActive,
+        'balloonWaveActive': l10n.balloonWaveActive,
+        'balloonOverflowTitle': l10n.balloonOverflowTitle,
+        'balloonComboBrokenMiss': l10n.balloonComboBrokenMiss,
+        'balloonFireballMilestone': l10n.balloonFireballMilestone,
+        'match3HintIdle': l10n.match3HintIdle,
       };
 
   Map<String, String> trStrings(AppLocalizationsTr l10n) => {
@@ -1446,6 +1488,48 @@ void main() {
         'onlineGuildWarsSubtitle': l10n.onlineGuildWarsSubtitle,
         'onlineTournamentsTitle': l10n.onlineTournamentsTitle,
         'onlineTournamentsSubtitle': l10n.onlineTournamentsSubtitle,
+        // Tam ekran taraması tur 3: mod ekranları + stüdyo i18n (52 anahtar)
+        'continueWithAd': l10n.continueWithAd,
+        'doubleGoldWithAd': l10n.doubleGoldWithAd,
+        'ceilingLabel': l10n.ceilingLabel,
+        'balloonHintDrift': l10n.balloonHintDrift,
+        'balloonHintRowDropped': l10n.balloonHintRowDropped,
+        'holdAimRelease': l10n.holdAimRelease,
+        'laserAimActive': l10n.laserAimActive,
+        'slowColorBombActive': l10n.slowColorBombActive,
+        'powerTripleArrowCaps': l10n.powerTripleArrowCaps,
+        'powerBombCaps': l10n.powerBombCaps,
+        'powerHammerCaps': l10n.powerHammerCaps,
+        'powerHunterCaps': l10n.powerHunterCaps,
+        'powerLightningCaps': l10n.powerLightningCaps,
+        'powerMagnetCaps': l10n.powerMagnetCaps,
+        'powerMedicineCaps': l10n.powerMedicineCaps,
+        'powerMicrophoneCaps': l10n.powerMicrophoneCaps,
+        'powerBeatFreezeCaps': l10n.powerBeatFreezeCaps,
+        'powerAutoReelCaps': l10n.powerAutoReelCaps,
+        'movesLabelCaps': l10n.movesLabelCaps,
+        'targetTitle': l10n.targetTitle,
+        'movesOutTitle': l10n.movesOutTitle,
+        'linesLabel': l10n.linesLabel,
+        'terlikInstruction': l10n.terlikInstruction,
+        'yuvaBanner': l10n.yuvaBanner,
+        'osmantusDoubleButton': l10n.osmantusDoubleButton,
+        'osmanRoleSub': l10n.osmanRoleSub,
+        'tusRoleSub': l10n.tusRoleSub,
+        'osmantusRhythmHint': l10n.osmantusRhythmHint,
+        'screamSlowStart': l10n.screamSlowStart,
+        'balloonMissedAim': l10n.balloonMissedAim,
+        'balloonNoStickAim': l10n.balloonNoStickAim,
+        'balloonStuckNeed3': l10n.balloonStuckNeed3,
+        'balloonCeilingDropped': l10n.balloonCeilingDropped,
+        'balloonLoseReached': l10n.balloonLoseReached,
+        'balloonLoseCeiling': l10n.balloonLoseCeiling,
+        'balloonTripleActive': l10n.balloonTripleActive,
+        'balloonWaveActive': l10n.balloonWaveActive,
+        'balloonOverflowTitle': l10n.balloonOverflowTitle,
+        'balloonComboBrokenMiss': l10n.balloonComboBrokenMiss,
+        'balloonFireballMilestone': l10n.balloonFireballMilestone,
+        'match3HintIdle': l10n.match3HintIdle,
       };
 
   // Metot anahtarları: her metot, soyut sınıftaki imzasına uygun
@@ -1606,6 +1690,26 @@ void main() {
         'levelWithValue': l10n.levelWithValue(3),
         // W101-2: leaderboard SEN satırı adı (tek şablon, koşulsuz)
         'youAsName': l10n.youAsName('LülüSever'),
+        // Tam ekran taraması tur 3: mod ekranları + stüdyo i18n (52 anahtar)
+        'balloonRowsInShots': l10n.balloonRowsInShots(3),
+        'targetWithValue': l10n.targetWithValue('X'),
+        'missLifeLost': l10n.missLifeLost('X'),
+        'screamTapPercent': l10n.screamTapPercent(3),
+        'videoViewsShort': l10n.videoViewsShort(3),
+        'daysAgo': l10n.daysAgo(3),
+        'weeksAgo': l10n.weeksAgo(3),
+        'downloadedTodayAt': l10n.downloadedTodayAt('X'),
+        'downloadedYesterdayAt': l10n.downloadedYesterdayAt('X'),
+        'downloadedDayMonth': l10n.downloadedDayMonth(3, 'X'),
+        'monthShortName': l10n.monthShortName(3),
+        'monthFullName': l10n.monthFullName(3),
+        'balloonPoppedStreak': l10n.balloonPoppedStreak(3, 3),
+        'balloonPiercingShot': l10n.balloonPiercingShot(3, 3),
+        'terlikDropSlipper': l10n.terlikDropSlipper(3),
+        'terlikDropSpray': l10n.terlikDropSpray(3),
+        'balloonFireballShot': l10n.balloonFireballShot(3),
+        'balloonSuperPop': l10n.balloonSuperPop(3),
+        'balloonStatsLine': l10n.balloonStatsLine(3, 3, 3, 3),
       };
 
   Map<String, String> trMethodStrings(AppLocalizationsTr l10n) => {
@@ -1761,13 +1865,33 @@ void main() {
         'levelWithValue': l10n.levelWithValue(3),
         // W101-2: leaderboard SEN satırı adı (tek şablon, koşulsuz)
         'youAsName': l10n.youAsName('LülüSever'),
+        // Tam ekran taraması tur 3: mod ekranları + stüdyo i18n (52 anahtar)
+        'balloonRowsInShots': l10n.balloonRowsInShots(3),
+        'targetWithValue': l10n.targetWithValue('X'),
+        'missLifeLost': l10n.missLifeLost('X'),
+        'screamTapPercent': l10n.screamTapPercent(3),
+        'videoViewsShort': l10n.videoViewsShort(3),
+        'daysAgo': l10n.daysAgo(3),
+        'weeksAgo': l10n.weeksAgo(3),
+        'downloadedTodayAt': l10n.downloadedTodayAt('X'),
+        'downloadedYesterdayAt': l10n.downloadedYesterdayAt('X'),
+        'downloadedDayMonth': l10n.downloadedDayMonth(3, 'X'),
+        'monthShortName': l10n.monthShortName(3),
+        'monthFullName': l10n.monthFullName(3),
+        'balloonPoppedStreak': l10n.balloonPoppedStreak(3, 3),
+        'balloonPiercingShot': l10n.balloonPiercingShot(3, 3),
+        'terlikDropSlipper': l10n.terlikDropSlipper(3),
+        'terlikDropSpray': l10n.terlikDropSpray(3),
+        'balloonFireballShot': l10n.balloonFireballShot(3),
+        'balloonSuperPop': l10n.balloonSuperPop(3),
+        'balloonStatsLine': l10n.balloonStatsLine(3, 3, 3, 3),
       };
 
   // İki dilde de aynen kalan meşru değerler. Liste programatik
   // çıkarıldı: app_en.dart / app_tr.dart'taki string literalleri
   // taranıp (tek satırlı `=> '...'` + bitişik string'ler birleştirilerek)
   // EN ve TR değeri birebir aynı olan anahtarların TAMAMI alındı
-  // (21 getter + 9 metot şablonu). Her girdinin gerekçesi yanındadır.
+  // (21 getter + 11 metot şablonu). Her girdinin gerekçesi yanındadır.
   // NOT: `levelBadge` koşullu metot olduğu için listededir ama
   // çalışma zamanı eşitliği denetlenmez (bkz. `conditionalMethods`).
   const allowedIdentical = {
@@ -1803,6 +1927,8 @@ void main() {
     'achievementRewardCompact', // şablon sayı + emoji/sembol
     'stickerLabel', // şablon 'Sticker $index': ortak kelime + sayı
     'shopPowerGroupBonusCount', // şablon '$count bonus': sayı + ortak kelime
+    'downloadedDayMonth', // şablon '$day $month': sayı + argüman, çevrilecek metin yok
+    'monthShortName', // örnek argüman (3) iki dilde de 'Mar'
   };
 
   // Koşullu metotlar: dönüş değeri dala/argümana bağlıdır
@@ -1817,21 +1943,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 833 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 893 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 694);
-    expect(tr.length, 694);
-    expect(enMethods.length, 139);
-    expect(trMethods.length, 139);
+    expect(en.length, 735);
+    expect(tr.length, 735);
+    expect(enMethods.length, 158);
+    expect(trMethods.length, 158);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 833);
+    expect(en.length + enMethods.length, 893);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

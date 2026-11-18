@@ -95,7 +95,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   bool _layoutBootstrapping = false;
   double _groundIdle = 0;
   double _aliveFor = 0;
-  String _hint = 'Spam dokun = zıpla. Terlik · sprey · tava arasından geç!';
+  String _hint = '';
+  bool _hintSeeded = false;
   String _scorePopup = '';
   late final Random _rng;
   final List<_Gate> _gates = [];
@@ -122,6 +123,15 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   bool get _nitro =>
       _nitroUntil != null && DateTime.now().isBefore(_nitroUntil!);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.screamHintIdle;
+    }
+  }
 
   @override
   void initState() {
@@ -1085,7 +1095,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                             child: Text(
                               _voiceInputEnabled || _power >= 0.7
                                   ? context.l10n.screamShoutingPercent((_power * 100).round())
-                                  : '%${(_power * 100).round()} · DOKUN${isTutorialActive ? ' · İLK 15 SN YAVAŞ' : ''}',
+                                  : '${context.l10n.screamTapPercent((_power * 100).round())}${isTutorialActive ? context.l10n.screamSlowStart : ''}',
                               maxLines: 1,
                               textAlign: TextAlign.right,
                               overflow: TextOverflow.ellipsis,

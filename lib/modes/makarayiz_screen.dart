@@ -102,7 +102,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
   // elle duraklatmada da aynı ticker durdurulur; oyun saati (_now) donar.
   bool _paused = false;
   bool _pausedByLifecycle = false;
-  String _hint = 'Nota beat çizgisine gelince şeride dokun ya da kaydır.';
+  String _hint = '';
+  bool _hintSeeded = false;
   String? _comboText;
   String? _breakText;
   String? _gainText;
@@ -150,6 +151,20 @@ class MakarayizScreenState extends State<MakarayizScreen>
   String get debugHint => _hint;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.makaraHintIdle;
+    }
+  }
+
+  void _setIdleHint() {
+    // initState yolundan çağrılırsa tohum didChangeDependencies'te atılır.
+    if (_hintSeeded) _hint = context.l10n.makaraHintIdle;
+  }
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
@@ -189,7 +204,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _breakText = null;
     _gainText = null;
     _freezeUntil = _autoUntil = _x2Until = 0;
-    _hint = 'Nota beat çizgisine gelince şeride dokun ya da kaydır.';
+    _setIdleHint();
   }
 
   Future<void> _loadBest() async {
@@ -452,8 +467,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _freezeUntil = _now + 8000;
-      _hint = 'BEAT DONDUR · 8 sn notalar dondu!';
-      _showText(combo: 'BEAT DONDUR!');
+      _hint = context.l10n.makaraFreezeHint;
+      _showText(combo: context.l10n.makaraFreezeCallout);
     });
     return true;
   }
@@ -464,8 +479,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _autoUntil = _now + 6000;
-      _hint = 'OTO MAKARA · 6 sn otomatik vuruş!';
-      _showText(combo: 'OTO MAKARA!');
+      _hint = context.l10n.makaraAutoHint;
+      _showText(combo: context.l10n.makaraAutoCallout);
     });
     return true;
   }
@@ -476,8 +491,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _x2Until = _now + 12000;
-      _hint = 'PUAN X2 · 12 sn çift puan!';
-      _showText(combo: 'PUAN X2 AKTİF!');
+      _hint = context.l10n.makaraX2Hint;
+      _showText(combo: context.l10n.makaraX2Active);
     });
     return true;
   }
@@ -696,19 +711,19 @@ class MakarayizScreenState extends State<MakarayizScreen>
       bonuses: [
         stockBonusWithResult(
           id: 'beat',
-          label: 'BEAT DONDUR',
+          label: context.l10n.powerBeatFreezeCaps,
           asset: 'assets/icons2/clock.png',
           effect: _useBeatFreeze,
         ),
         stockBonusWithResult(
           id: 'auto',
-          label: 'OTO MAKARA',
+          label: context.l10n.powerAutoReelCaps,
           asset: 'assets/icons2/wheel.png',
           effect: _useAuto,
         ),
         stockBonusWithResult(
           id: 'x2',
-          label: 'PUAN X2',
+          label: context.l10n.powerScoreX2,
           asset: 'assets/icons2/boost_coins.png',
           effect: _useX2,
         ),
@@ -1018,7 +1033,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                'MAKARA %$pct DOLDU',
+                context.l10n.makaraFillPercent(pct),
                 style: GoogleFonts.nunito(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w900,
@@ -1572,7 +1587,7 @@ class _MakarayizChrome extends StatelessWidget {
                       ],
                     ),
                     child: Text(
-                      'BİTİR',
+                      context.l10n.finishCaps,
                       style: GoogleFonts.baloo2(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w900,

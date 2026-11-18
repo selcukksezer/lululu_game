@@ -98,6 +98,11 @@ class _ChatScreenState extends State<ChatScreen> {
         .toUpperCase();
   }
 
+  static String _ownDisplayName(String sender) {
+    const prefix = 'Sen · ';
+    return sender.startsWith(prefix) ? sender.substring(prefix.length) : sender;
+  }
+
   static TextStyle _baloo2({
     required double fontSize,
     FontWeight fontWeight = FontWeight.w800,
@@ -612,7 +617,11 @@ class _ChatScreenState extends State<ChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  _toTurkishUpper(item.sender),
+                  item.isMe
+                      ? context.l10n.youAsName(
+                          _toTurkishUpper(_ownDisplayName(item.sender)),
+                        )
+                      : _toTurkishUpper(item.sender),
                   style: _baloo2(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,

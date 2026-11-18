@@ -2663,4 +2663,200 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String youAsName(String name) => 'YOU · $name';
+
+  @override
+  String get continueWithAd => 'CONTINUE WITH AD';
+
+  @override
+  String get doubleGoldWithAd => '2X GOLD WITH AD';
+
+  @override
+  String get ceilingLabel => 'CEILING';
+
+  @override
+  String get balloonHintDrift =>
+      'balloons drifting · pop 3 matching balloons';
+
+  @override
+  String get balloonHintRowDropped =>
+      'balloons drifting · another row dropped';
+
+  @override
+  String balloonRowsInShots(int shots) => 'a row drops in $shots shots';
+
+  @override
+  String get holdAimRelease => 'HOLD · AIM · RELEASE';
+
+  @override
+  String get laserAimActive => 'LASER AIM ACTIVE';
+
+  @override
+  String get slowColorBombActive => 'SLOW DOWN & COLOR BOMB ACTIVE!';
+
+  @override
+  String get powerTripleArrowCaps => 'TRIPLE ARROW';
+
+  @override
+  String get powerBombCaps => 'BOMB';
+
+  @override
+  String get powerHammerCaps => 'HAMMER';
+
+  @override
+  String get powerHunterCaps => 'HUNTER';
+
+  @override
+  String get powerLightningCaps => 'LIGHTNING';
+
+  @override
+  String get powerMagnetCaps => 'MAGNET';
+
+  @override
+  String get powerMedicineCaps => 'MEDICINE';
+
+  @override
+  String get powerMicrophoneCaps => 'MICROPHONE';
+
+  @override
+  String get powerBeatFreezeCaps => 'BEAT FREEZE';
+
+  @override
+  String get powerAutoReelCaps => 'AUTO REEL';
+
+  @override
+  String get movesLabelCaps => 'MOVES';
+
+  @override
+  String get targetTitle => 'TARGET';
+
+  @override
+  String get movesOutTitle => 'OUT OF MOVES';
+
+  @override
+  String targetWithValue(String value) => 'TARGET $value';
+
+  @override
+  String get linesLabel => 'LINES';
+
+
+  @override
+  String get terlikInstruction => 'SMASH WHAT POPS OUT OF THE HOLE!';
+
+
+  @override
+  String missLifeLost(String reason) => '$reason · -1 LIFE · COMBO BROKEN';
+
+
+  @override
+  String get yuvaBanner => 'NEST DEFENSE · 360°';
+
+  @override
+  String get osmantusDoubleButton => 'DOUBLE BUTTON';
+
+  @override
+  String get osmanRoleSub => 'Button masher · pointer';
+
+  @override
+  String get tusRoleSub => 'Reel · listener';
+
+  @override
+  String get osmantusRhythmHint =>
+      'When the rhythm ring turns green, tap the DOUBLE BUTTON! '
+      'Build combos with well-timed taps and use special stage powers.';
+
+  @override
+  String screamTapPercent(int percent) => '%$percent · TAP';
+
+  @override
+  String get screamSlowStart => ' · SLOW FIRST 15 SEC';
+
+  @override
+  String get balloonMissedAim => 'You missed. Aim again.';
+
+  @override
+  String get balloonNoStickAim => "Didn't stick. Aim again.";
+
+  @override
+  String balloonPoppedStreak(int streak, int gained) =>
+      'Popped x$streak · +$gained';
+
+  @override
+  String balloonPiercingShot(int pierced, int streak) =>
+      'Piercing shot pierced $pierced balloons · streak x$streak kept.';
+
+  @override
+  String get balloonStuckNeed3 => 'Stuck. Need 3 matching.';
+
+  @override
+  String terlikDropSlipper(int count) => ' · slippers +$count';
+
+  @override
+  String terlikDropSpray(int count) => ' · sprays +$count';
+
+  String get balloonCeilingDropped => 'The ceiling dropped a row.';
+  String get balloonLoseReached => 'The balloons reached the shooter.';
+  String get balloonLoseCeiling => 'The ceiling dropped, no room left.';
+  String get balloonTripleActive => 'Triple Arrow / Laser Aim active · pierces 3 balloons!';
+  String get balloonWaveActive => 'Color Wave & Slow (10s) active!';
+  String balloonFireballShot(int take) => 'Fireball / Bomb blasted $take balloons!';
+
+  String get balloonOverflowTitle => 'OVERFLOWED';
+  String get balloonComboBrokenMiss => 'COMBO BROKEN · you missed';
+  String get balloonFireballMilestone => 'FIREBALL · BOMB EXPLODED!';
+  String balloonSuperPop(int popped) => 'SUPER POP · $popped';
+  String balloonStatsLine(int pop, int fall, int maxStreak, int biggest) =>
+      'Popped $pop · Dropped $fall · Max streak x$maxStreak · Biggest $biggest';
+
+  @override
+  String videoViewsShort(int thousands) => '${thousands}K views';
+
+  @override
+  String daysAgo(int days) => days == 1 ? '1 day ago' : '$days days ago';
+
+  @override
+  String weeksAgo(int weeks) => weeks == 1 ? '1 week ago' : '$weeks weeks ago';
+
+  @override
+  String downloadedTodayAt(String time) => 'Today $time';
+
+  @override
+  String downloadedYesterdayAt(String time) => 'Yesterday $time';
+
+  @override
+  String downloadedDayMonth(int day, String month) => '$day $month';
+
+  @override
+  String monthShortName(int month) => const [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ][(month - 1).clamp(0, 11)];
+
+  @override
+  String monthFullName(int month) => const [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ][(month - 1).clamp(0, 11)];
+
+  @override
+  String get match3HintIdle => 'Slide a neighbour. 3 pops · 4 = bomb.';
 }

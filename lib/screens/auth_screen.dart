@@ -177,7 +177,7 @@ class _AuthScreenState extends State<AuthScreen> {
               child: ValueListenableBuilder<AuthUser?>(
                 valueListenable: AuthService.instance.currentUserNotifier,
                 builder: (context, user, _) {
-                  final showSession = !_signedOutExplicitly;
+                  final showSession = !_signedOutExplicitly && user != null && user.isSignedIn;
                   final whoName = (user != null && user.isSignedIn)
                       ? '${user.displayName} · ${user.username}'
                       : 'Apple Oyuncu · apple';

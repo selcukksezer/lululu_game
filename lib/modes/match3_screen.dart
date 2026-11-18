@@ -83,7 +83,8 @@ class _Match3ScreenState extends State<Match3Screen> {
   bool _swiped = false;
   Point<int>? _selected;
   Point<int>? _dragFrom;
-  String _hint = 'Komşuyu kaydır. 3 patlar · 4 = bomba.';
+  String _hint = '';
+  bool _hintSeeded = false;
 
   int _maxChain = 0;
   int _mergeTotal = 0;
@@ -120,6 +121,20 @@ class _Match3ScreenState extends State<Match3Screen> {
           (widget.prototypeVisualState
               ? _prototypeTileColors.length + bombBias
               : kinds + bombBias);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.match3HintIdle;
+    }
+  }
+
+  void _setIdleHint() {
+    // initState yolundan çağrılırsa tohum didChangeDependencies'te atılır.
+    if (_hintSeeded) _hint = context.l10n.match3HintIdle;
+  }
 
   @override
   void initState() {
@@ -235,7 +250,7 @@ class _Match3ScreenState extends State<Match3Screen> {
     _comboText = null;
     _gainText = null;
     _hintCells = [];
-    _hint = 'Komşuyu kaydır. 3 patlar · 4 = bomba.';
+    _setIdleHint();
     _deal();
     setState(() {});
   }
@@ -527,7 +542,7 @@ class _Match3ScreenState extends State<Match3Screen> {
         _grid[bombAt.x][bombAt.y] = base + bombBias;
         _bombsMade++;
         _hint = 'BOMBA oluştu!';
-        _showMilestone('BOMBA');
+        _showMilestone(context.l10n.powerBombCaps);
         bombAt = null;
       }
 
@@ -852,7 +867,7 @@ class _Match3ScreenState extends State<Match3Screen> {
     if (_ended && !_resultShown) _edgeShowResult();
     final overlayWidget = (_ended && !_resultShown)
         ? ArcadeResultOverlay(
-            title: _won ? 'HEDEF' : 'HAMLE BİTTİ',
+            title: _won ? context.l10n.targetTitle : context.l10n.movesOutTitle,
             message: _statsLine(),
             score: _score,
             best: _best,
@@ -899,7 +914,7 @@ class _Match3ScreenState extends State<Match3Screen> {
     final bonusItems = [
       stockBonusWithResult(
         id: 'hammer',
-        label: 'ÇEKİÇ',
+        label: context.l10n.powerHammerCaps,
         asset: 'assets/icons2/hammer.png',
         effect: () {
           final applied = _useHammer();
@@ -909,7 +924,7 @@ class _Match3ScreenState extends State<Match3Screen> {
       ),
       stockBonusWithResult(
         id: 'bomb3',
-        label: 'BOMBA',
+        label: context.l10n.powerBombCaps,
         asset: 'assets/icons2/boom.png',
         effect: () {
           final applied = _useBomb3();
@@ -919,7 +934,7 @@ class _Match3ScreenState extends State<Match3Screen> {
       ),
       stockBonusWithResult(
         id: 'hunter',
-        label: 'AVCI',
+        label: context.l10n.powerHunterCaps,
         asset: 'assets/icons2/gem_blue.png',
         effect: () {
           final applied = _useHunter();
@@ -1057,7 +1072,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'HEDEF 3.000',
+                        context.l10n.targetWithValue('3.000'),
                         style: GoogleFonts.nunito(
                           fontSize: 11,
                           height: 1.55,
@@ -1412,9 +1427,9 @@ class _Match3ScreenState extends State<Match3Screen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    ArcadeStat(label: 'SKOR', value: _formatTrInt(_score)),
-                    ArcadeStat(label: 'REKOR', value: _formatTrInt(_best)),
-                    ArcadeStat(label: 'HAMLE', value: '$_moves'),
+                    ArcadeStat(label: context.l10n.gameScoreLabel, value: _formatTrInt(_score)),
+                    ArcadeStat(label: context.l10n.gameBestLabel, value: _formatTrInt(_best)),
+                    ArcadeStat(label: context.l10n.movesLabelCaps, value: '$_moves'),
                   ],
                 ),
               ),
@@ -1661,7 +1676,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                           width: 104,
                           height: 51,
                           child: _buildHudStatBox(
-                            label: 'SKOR',
+                            label: context.l10n.gameScoreLabel,
                             value: _formatTrInt(_score),
                             valueDx: -1,
                           ),
@@ -1672,7 +1687,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                           width: 84,
                           height: 51,
                           child: _buildHudStatBox(
-                            label: 'REKOR',
+                            label: context.l10n.gameBestLabel,
                             value: _formatTrInt(_best),
                             valueDx: -1,
                           ),
@@ -1683,7 +1698,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                           width: 74,
                           height: 51,
                           child: _buildHudStatBox(
-                            label: 'HAMLE',
+                            label: context.l10n.movesLabelCaps,
                             value: '$_moves',
                           ),
                         ),
@@ -1711,7 +1726,7 @@ class _Match3ScreenState extends State<Match3Screen> {
                                 ],
                               ),
                               child: Text(
-                                'BİTİR',
+                                context.l10n.finishCaps,
                                 style: GoogleFonts.baloo2(
                                   fontSize: 12.5,
                                   height: 1.1,

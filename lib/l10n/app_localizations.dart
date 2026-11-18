@@ -1211,6 +1211,95 @@ abstract class AppLocalizations {
   /// yoksa 'LülüSever' yedeği verilir (leaderboard_service.dart
   /// :577-578'deki yedekle aynı). Tek şablon, koşulsuz metot.
   String youAsName(String name);
+
+  /// Sonuç ekranı reklam düğmeleri (COMING SOON rozeti ayrı gösterilir).
+  String get continueWithAd;
+  String get doubleGoldWithAd;
+
+  /// Balon modu: tavan etiketi, ipucu satırları, nişan etiketi.
+  String get ceilingLabel;
+  String get balloonHintDrift;
+  String get balloonHintRowDropped;
+  String balloonRowsInShots(int shots);
+  String get holdAimRelease;
+  String get laserAimActive;
+  String get slowColorBombActive;
+
+  /// Güçlendirme etiketleri (büyük harf biçimi, oyun içi çubuk).
+  String get powerTripleArrowCaps;
+  String get powerBombCaps;
+  String get powerHammerCaps;
+  String get powerHunterCaps;
+  String get powerLightningCaps;
+  String get powerMagnetCaps;
+  String get powerMedicineCaps;
+  String get powerMicrophoneCaps;
+  String get powerBeatFreezeCaps;
+  String get powerAutoReelCaps;
+
+  /// Match-3: hamle/hedef etiketleri ve diyalog başlıkları.
+  String get movesLabelCaps;
+  String get targetTitle;
+  String get movesOutTitle;
+  String targetWithValue(String value);
+
+  /// Bağlantı modu: çizgi etiketi, zincir/kare geri bildirimleri.
+  String get linesLabel;
+
+  /// Terlik modu: yönerge + can kaybı bildirimi (hız/vuruş/kaçan/
+  /// istatistik/kaçma şablonları mevcut terlik* anahtarlarındadır).
+  String get terlikInstruction;
+  String missLifeLost(String reason);
+
+  /// Yuva savunması: arena başlık bandı.
+  String get yuvaBanner;
+
+  /// Osmantuş: ikili tuş, rol alt yazıları, ritim ipucu.
+  String get osmantusDoubleButton;
+  String get osmanRoleSub;
+  String get tusRoleSub;
+  String get osmantusRhythmHint;
+
+  /// Çığlık modu: ses gücü ipucu (yüzde + dokun + eğitim yavaşlığı).
+  String screamTapPercent(int percent);
+  String get screamSlowStart;
+
+  /// Balon modu: oyun içi ipucu varyantları (ıskalama/yapışma/patlama).
+  String get balloonMissedAim;
+  String get balloonNoStickAim;
+  String balloonPoppedStreak(int streak, int gained);
+  String balloonPiercingShot(int pierced, int streak);
+  String get balloonStuckNeed3;
+
+  /// Terlik modu: düşen güçlendirici sonekleri (ipucu satırı sonu).
+  String terlikDropSlipper(int count);
+  String terlikDropSpray(int count);
+
+  String get balloonCeilingDropped;
+  String get balloonLoseReached;
+  String get balloonLoseCeiling;
+  String get balloonTripleActive;
+  String get balloonWaveActive;
+  String balloonFireballShot(int take);
+
+  String get balloonOverflowTitle;
+  String get balloonComboBrokenMiss;
+  String get balloonFireballMilestone;
+  String balloonSuperPop(int popped);
+  String balloonStatsLine(int pop, int fall, int maxStreak, int biggest);
+
+  /// Stüdyo: video meta satırı (görüntülenme + zaman).
+  String videoViewsShort(int thousands);
+  String daysAgo(int days);
+  String weeksAgo(int weeks);
+
+  /// Stüdyo indirmeler: tarih etiketleri + kısa ay adı.
+  String downloadedTodayAt(String time);
+  String downloadedYesterdayAt(String time);
+  String downloadedDayMonth(int day, String month);
+  String monthShortName(int month);
+  String monthFullName(int month);
+  String get match3HintIdle;
 }
 
 /// [AppLocalizations.of] kısayolu: `context.l10n.play`.

@@ -127,7 +127,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   // yeniden başlatmaz.
   DateTime? _endedAt;
   bool _hitEffectActive = false;
-  String _hint = 'Yuvaya yaklaşan böcekleri durdur!';
+  String _hint = '';
+  bool _hintSeeded = false;
   // W66-3: _hint'in kombo-bitiş mesajı olup olmadığı metnin
   // sabit TR önekiyle karşılaştırılarak okunmaz; dil bağımsız
   // bu bayrakla taşınır. Her _hint atamasında güncellenir.
@@ -150,6 +151,15 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
 
   bool get _isFrozen =>
       _freezeUntil != null && DateTime.now().isBefore(_freezeUntil!);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.yuvaHintIdle;
+    }
+  }
 
   @override
   void initState() {
@@ -1331,6 +1341,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                         context.l10n.yuvaMissedPainter(
                                                           _misses,
                                                         ),
+                                                    bannerLabel:
+                                                        context.l10n.yuvaBanner,
                                                     hint: _hint,
                                                     comboBroken:
                                                         _hintIsComboBroken,
@@ -1659,6 +1671,7 @@ class _DefenseArenaPainter extends CustomPainter {
     required this.bursts,
     required this.hitsLabel,
     required this.missesLabel,
+    required this.bannerLabel,
     this.showRadialRings = false,
   });
 
@@ -1673,6 +1686,7 @@ class _DefenseArenaPainter extends CustomPainter {
   final List<_HitBurst> bursts;
   final String hitsLabel;
   final String missesLabel;
+  final String bannerLabel;
   final bool showRadialRings;
 
   @override
@@ -1774,7 +1788,7 @@ class _DefenseArenaPainter extends CustomPainter {
     }
     final label = comboBroken
         ? hint.toUpperCase()
-        : (combo > 0 ? 'COMBO X$combo!' : 'YUVA SAVUNMASI · 360°');
+        : (combo > 0 ? 'COMBO X$combo!' : bannerLabel);
     final labelPainter = TextPainter(
       text: TextSpan(
         text: label,

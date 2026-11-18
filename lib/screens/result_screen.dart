@@ -868,7 +868,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      context.l10n.continueWithAdSoon,
+                      context.l10n.continueWithAd,
                       maxLines: 1,
                       style: GoogleFonts.baloo2(
                         fontSize: 14.5,
@@ -953,7 +953,7 @@ class _GameResultScreenState extends State<GameResultScreen>
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      context.l10n.doubleGoldAdSoon,
+                      context.l10n.doubleGoldWithAd,
                       maxLines: 1,
                       style: GoogleFonts.baloo2(
                         fontSize: 14.5,

@@ -857,36 +857,6 @@ class _ShopScreenState extends State<ShopScreen> {
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            height: 19,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF7C3AED),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: Transform.translate(
-                                              offset: const Offset(0, -1.0),
-                                              child: Text(
-                                                l10n.comingSoon,
-                                                style: TextStyle(
-                                                  fontFamily: 'Baloo 2',
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w900,
-                                                  fontVariations: [
-                                                    FontVariation('wght', 750)
-                                                  ],
-                                                  color: Colors.white,
-                                                  letterSpacing: 0.75,
-                                                  height: 1.55,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
                                         ],
                                       ),
                                     ),

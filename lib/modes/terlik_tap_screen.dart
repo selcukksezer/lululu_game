@@ -152,7 +152,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   bool _energyRefunded = false;
   int _runId = 0;
   String? _missMessage;
-  String _hint = 'Uçan böceği terlikle ez!';
+  String _hint = '';
+  bool _hintSeeded = false;
   double _spawnAcc = 0;
   double _shake = 0;
   double _hitStop = 0;
@@ -179,6 +180,15 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   bool _doubleNext = false;
   DateTime? _goldUntil;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hintSeeded) {
+      _hintSeeded = true;
+      _hint = context.l10n.terlikHintIdle;
+    }
+  }
 
   @override
   void initState() {
@@ -377,7 +387,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
             _pushFx('TUZAK GEÇTİ', center.dx, center.dy, LululuColors.toxicNeon);
           } else if (!countedMissThisTick) {
             countedMissThisTick = true;
-            _applyMiss('KAÇTI');
+            _applyMiss(context.l10n.terlikEscaped);
             if (_lives <= 0) {
               _die();
               return;
@@ -688,7 +698,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       hit.life = 0.6;
       // Gerçek vuruş: tuzağa basmak da hamledir, iade hakkı biter.
       _hasHit = true;
-      _applyMiss('TUZAĞA BASTIN');
+      _applyMiss(context.l10n.terlikSteppedTrap);
       HapticFeedback.heavyImpact();
       unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
       if (_lives <= 0) {
@@ -776,10 +786,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     );
 
     _hint =
-        'VURUŞ · COMBO X$_combo · +$scoreGain'
+        '${context.l10n.terlikHitHint(_combo, scoreGain)}'
         '${coinDrop > 0 ? ' · +$coinDrop💰' : ''}'
-        '${slipperDrop > 0 ? ' · terlik+$slipperDrop' : ''}'
-        '${sprayDrop > 0 ? ' · sprey+$sprayDrop' : ''}';
+        '${slipperDrop > 0 ? context.l10n.terlikDropSlipper(slipperDrop) : ''}'
+        '${sprayDrop > 0 ? context.l10n.terlikDropSpray(sprayDrop) : ''}';
     _missMessage = null;
 
     // Juice: shake + hit-stop (tier4+ / osman / combo≥4).
@@ -817,13 +827,13 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     final lifeLost = _missed % 3 == 0;
     if (lifeLost) _lives--;
     _missMessage = lifeLost
-        ? '$reason · -1 CAN · KOMBO KIRILDI'
-        : '$reason · KOMBO KIRILDI · ${3 - (_missed % 3)} KAÇIŞA KADAR CAN';
+        ? context.l10n.missLifeLost(reason)
+        : context.l10n.terlikComboBreakLives(reason, 3 - (_missed % 3));
     _hint = lifeLost
-        ? '$reason · -1 CAN · KOMBO KIRILDI · $_lives CAN KALDI'
-        : '$reason · KOMBO KIRILDI · ${3 - (_missed % 3)} KAÇIŞA KADAR CAN';
+        ? context.l10n.terlikComboBreakLifeLost(reason, _lives)
+        : context.l10n.terlikComboBreakLives(reason, 3 - (_missed % 3));
     _pushFx(
-      'KOMBO KIRILDI',
+      context.l10n.comboBrokenShort,
       _arena.width / 2,
       _arena.height / 2,
       LululuColors.mysticRuby,
@@ -834,10 +844,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   /// can gitmez; ıska sayacı ve can hesabı yalnız kaçan böcek / tuzak içindir.
   void _breakComboOnly(String reason) {
     _combo = 0;
-    _missMessage = '$reason · KOMBO KIRILDI';
-    _hint = '$reason · KOMBO KIRILDI';
+    _missMessage = context.l10n.comboBrokenReason(reason);
+    _hint = context.l10n.comboBrokenReason(reason);
     _pushFx(
-      'KOMBO KIRILDI',
+      context.l10n.comboBrokenShort,
       _arena.width / 2,
       _arena.height / 2,
       LululuColors.mysticRuby,
@@ -919,8 +929,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   }
 
   String _stats() =>
-      'Ezilen $_smashed · Kaçan $_missed · Max combo x$_maxCombo\n'
-      '+$_coinsEarned coin · terlik +$_slipperEarned · sprey +$_sprayEarned';
+      context.l10n.terlikStatsLine1(_smashed, _missed, _maxCombo) +
+      context.l10n.terlikStatsLine2(
+        _coinsEarned,
+        _slipperEarned,
+        _sprayEarned,
+      );
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
@@ -930,9 +944,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _doubleNext = true;
-      _hint = 'ÇİFT TERLİK HAZIR · SONRAKİ VURUŞ ÇİFT BÖCEK EZER!';
+      _hint = context.l10n.terlikDoubleReadyHint;
       _pushFx(
-        'ÇİFT TERLİK!',
+        context.l10n.terlikDoubleCallout,
         _arena.width / 2,
         _arena.height / 2,
         LululuColors.cyberFuchsia,
@@ -947,9 +961,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
     setState(() {
       _goldUntil = DateTime.now().add(const Duration(seconds: 20));
-      _hint = 'ALTIN TERLİK AKTİF · 20 SN BOYUNCA 2X PUAN!';
+      _hint = context.l10n.terlikGoldHint;
       _pushFx(
-        'ALTIN TERLİK 2X!',
+        context.l10n.terlikGoldCallout,
         _arena.width / 2,
         _arena.height / 2,
         LululuColors.liquidGold,
@@ -1137,7 +1151,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     final bonusItems = [
       stockBonusWithResult(
         id: 'dblslip',
-        label: 'ÇİFT TERLİK',
+        label: context.l10n.shopPowerDoubleSlipperNameCaps,
         asset: 'assets/icons2/boot.png',
         effect: () {
           final applied = _useDoubleSlip();
@@ -1147,7 +1161,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       ),
       stockBonusWithResult(
         id: 'goldslip',
-        label: 'ALTIN TERLİK',
+        label: context.l10n.shopPowerGoldenSlipperNameCaps,
         asset: 'assets/icons2/premium_token.png',
         effect: () {
           final applied = _useGoldSlip();
@@ -1157,7 +1171,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       ),
       stockBonusWithResult(
         id: 'spraybug',
-        label: 'İLAÇ',
+        label: context.l10n.powerMedicineCaps,
         asset: 'assets/icons2/potion_health.png',
         effect: () {
           final applied = _useBugSpray();
@@ -1335,7 +1349,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
-                                      'YENİ',
+                                      context.l10n.newBadge,
                                       style: GoogleFonts.baloo2(
                                         fontSize: 10.5,
                                         height: 1.0,
@@ -1588,7 +1602,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                     child: Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        'CAN',
+                                        context.l10n.livesLabel,
                                         style: GoogleFonts.nunito(
                                           fontSize: 10,
                                           height: 1,
@@ -1641,7 +1655,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                   ],
                                 ),
                                 child: Text(
-                                  'BİTİR',
+                                  context.l10n.finishCaps,
                                   style: GoogleFonts.baloo2(
                                     fontSize: 12.5,
                                     height: 1,
@@ -1798,8 +1812,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                                       MainAxisAlignment
                                                           .spaceBetween,
                                                   children: [
-                                                    const Text(
-                                                      'DELİKTEN ÇIKANI ANINDA EZ!',
+                                                    Text(
+                                                      context.l10n.terlikInstruction,
                                                       style: TextStyle(
                                                         fontFamily: 'Nunito',
                                                         fontSize: 10.5,
@@ -1812,7 +1826,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                                       ),
                                                     ),
                                                     Text(
-                                                      'HIZ X${(1 + _elapsedSeconds / 30).clamp(1.0, 2.5).toStringAsFixed(1)}',
+                                                      context.l10n.terlikSpeedMultiplier((1 + _elapsedSeconds / 30).clamp(1.0, 2.5).toStringAsFixed(1)),
                                                       style: const TextStyle(
                                                         fontFamily: 'Nunito',
                                                         fontSize: 10.5,
@@ -1833,14 +1847,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                           left: 10,
                                           bottom: 52,
                                           child: _TerlikChip(
-                                            label: 'VURUŞ $_smashed',
+                                            label: context.l10n.terlikHitsChip(_smashed),
                                           ),
                                         ),
                                         Positioned(
                                           right: 12,
                                           bottom: 54,
                                           child: _TerlikCombo(
-                                            label: 'KAÇAN $_missed!',
+                                            label: context.l10n.terlikMissedChip(_missed),
                                             danger: true,
                                           ),
                                         ),

@@ -340,18 +340,15 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                height: 39.2,
-                child: Text(
-                  context.l10n.onlineComingSoonBody,
-                  textAlign: TextAlign.center,
-                  style: _nunito(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF66738A),
-                    letterSpacing: -0.02,
-                    height: 18.6 / 13.5,
-                  ),
+              Text(
+                context.l10n.onlineComingSoonBody,
+                textAlign: TextAlign.center,
+                style: _nunito(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF66738A),
+                  letterSpacing: -0.02,
+                  height: 18.6 / 13.5,
                 ),
               ),
               const SizedBox(height: 16.0),
