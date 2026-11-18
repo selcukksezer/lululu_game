@@ -40,7 +40,7 @@ class _ChatItem {
   /// Misafir yazar rozeti canlı mesajlarda gösterilir.
   final bool isGuestAuthor;
 
-  /// Kaynak servis mesajı (raporla/engelle menüsü buradan okur).
+  /// Kaynak servis mesajı (raporla/engelle/sil menüsü buradan okur).
   final ChatMessage? source;
 }
 
@@ -61,6 +61,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _sendError;
   bool _isSending = false;
   bool _isSendingSticker = false;
+  bool _isDeletingMessage = false;
 
   // Exact initial messages from `#scr-chat` (`reference-chat.png` & `reference-chat-spec.json`)
   final List<_ChatItem> _messages = <_ChatItem>[
@@ -551,11 +552,15 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Başkasının canlı mesajına uzun basma menüsü: raporla / engelle.
-  /// Tohum mesajlarda ve kendi mesajlarında menü açılmaz.
+  /// Canlı mesaj uzun basma menüsü: kendi mesajında yalnız Sil,
+  /// başkasının mesajında raporla / engelle. Tohum mesajlarda (kaynak
+  /// yok) ve sistem mesajlarında menü açılmaz. Kendi-mesaj tespiti
+  /// servisin [ChatService.isOwnMessage] mantığıdır; yeni kimlik
+  /// mantığı uydurulmaz.
   void _openMessageMenu(_ChatItem item) {
     final source = item.source;
     if (source == null || source.isSystem) return;
+    final isOwn = ChatService.instance.isOwnMessage(source);
     AudioManager().playPop();
     showModalBottomSheet<void>(
       context: context,
@@ -568,47 +573,127 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: const Icon(
-                  Icons.flag_outlined,
-                  color: Color(0xFF141B2A),
-                ),
-                title: Text(
-                  ctx.l10n.chatReportAction,
-                  style: _nunito(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF141B2A),
+              if (isOwn)
+                ListTile(
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: Color(0xFFB80F42),
                   ),
-                ),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _openReportDialog(source);
-                },
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.block_outlined,
-                  color: Color(0xFF141B2A),
-                ),
-                title: Text(
-                  ctx.l10n.chatBlockAction,
-                  style: _nunito(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF141B2A),
+                  title: Text(
+                    ctx.l10n.chatDeleteAction,
+                    style: _nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFB80F42),
+                    ),
                   ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _deleteMessage(source);
+                  },
                 ),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  _blockAuthor(source);
-                },
-              ),
+              if (!isOwn)
+                ListTile(
+                  leading: const Icon(
+                    Icons.flag_outlined,
+                    color: Color(0xFF141B2A),
+                  ),
+                  title: Text(
+                    ctx.l10n.chatReportAction,
+                    style: _nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF141B2A),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _openReportDialog(source);
+                  },
+                ),
+              if (!isOwn)
+                ListTile(
+                  leading: const Icon(
+                    Icons.block_outlined,
+                    color: Color(0xFF141B2A),
+                  ),
+                  title: Text(
+                    ctx.l10n.chatBlockAction,
+                    style: _nunito(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF141B2A),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _blockAuthor(source);
+                  },
+                ),
             ],
           ),
         );
       },
     );
+  }
+
+  /// Kendi mesajını silme: onay diyaloğu (rapor deseni: `showDialog` +
+  /// `AlertDialog` + İptal/FilledButton) + kilitli servis çağrısı
+  /// (çift dokunuşta çift silme denemesi yok). Başarıda mesaj servis
+  /// dinleyicisiyle listeden kaybolur ve kısa bildirim gösterilir;
+  /// bulut kopyası kalmışsa ayrı bildirim verilir. Hata/`false`
+  /// durumunda mesaj yerinde kalır ve görünür hata gösterilir.
+  Future<void> _deleteMessage(ChatMessage message) async {
+    if (_isDeletingMessage) return;
+    _isDeletingMessage = true;
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) {
+          return AlertDialog(
+            title: Text(ctx.l10n.chatDeleteTitle),
+            content: Text(ctx.l10n.chatDeleteBody),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(ctx.l10n.cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(ctx.l10n.chatDeleteAction),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true || !mounted) return;
+      bool deleted;
+      try {
+        deleted = await ChatService.instance.deleteMessage(message.id);
+      } catch (e) {
+        debugPrint('[lululu] Mesaj silinemedi: $e');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.chatActionFailed)),
+        );
+        return;
+      }
+      if (!mounted) return;
+      if (!deleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.chatActionFailed)),
+        );
+        return;
+      }
+      final notice = ChatService.instance.lastDeleteCloudFailed
+          ? context.l10n.chatDeleteLocalOnly
+          : context.l10n.chatMessageDeleted;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(notice)),
+      );
+    } finally {
+      _isDeletingMessage = false;
+    }
   }
 
   /// Rapor sebebi seçimi + gönderim; sonuç SnackBar ile bildirilir.
@@ -1461,11 +1546,11 @@ class _ChatScreenState extends State<ChatScreen> {
           : [avatar, const SizedBox(width: 9), bubble],
     );
 
-    // Uzun basma menüsü (raporla/engelle): yalnız başkasının canlı
-    // mesajlarında; tohum mesajlar ve sistem mesajları menüsüz.
-    final canModerate =
-        item.source != null && !item.isMe && !item.source!.isSystem;
-    if (!canModerate) return row;
+    // Uzun basma menüsü: yalnız canlı mesajlarda (kendi mesajında
+    // Sil, başkasında raporla/engelle); tohum ve sistem mesajları
+    // menüsüz.
+    final canShowMenu = item.source != null && !item.source!.isSystem;
+    if (!canShowMenu) return row;
     return GestureDetector(
       onLongPress: () => _openMessageMenu(item),
       child: row,

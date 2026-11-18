@@ -1374,6 +1374,11 @@ abstract class AppLocalizations {
   String get chatOptionsLabel;
   String get chatChangeNameAction;
   String get chatBlockedListAction;
+  String get chatDeleteAction;
+  String get chatDeleteTitle;
+  String get chatDeleteBody;
+  String get chatMessageDeleted;
+  String get chatDeleteLocalOnly;
   String match3StatsLine(int merge, int chain, int made, int fired);
   String match3RocketBombGain(int gained);
   String match3RocketHint(int n);

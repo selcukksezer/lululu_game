@@ -427,6 +427,10 @@ class ChatService extends ChangeNotifier {
   /// Buluta yazımı başarısız olup yalnız yerelde kalan mesaj kimlikleri.
   final Set<String> _cloudFailedIds = <String>{};
 
+  /// Son [deleteMessage] çağrısında bulut kopyası silinemedi mi.
+  /// Anlamı ve sıfırlanma kuralı [lastDeleteCloudFailed] belgesindedir.
+  bool _lastDeleteCloudFailed = false;
+
   /// Kalıcı misafir kimliği (yüklemede okunur, ilk kullanımda oluşur).
   GuestChatIdentity? _guestIdentity;
 
@@ -1354,6 +1358,165 @@ class ChatService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_blockedPrefsKey, jsonEncode(_blockedAuthors));
     notifyListeners();
+  }
+
+  /// Son [deleteMessage] çağrısında bulut kopyası silinemedi mi.
+  ///
+  /// [deleteMessage] `true` döndürdüğünde bile bulut kopyası kalmış
+  /// olabilir: kurallar, göçle bağlanmamış misafir mesajının buluttan
+  /// silinmesine izin vermez (bkz. [_canDeleteCloudMessage]) ve
+  /// çevrimdışı/hatalı bulut silme denemesi yerel silmeyi geri almaz.
+  /// Arayüz, başarılı silmede bu bayrağa bakarak yerel-only bildirimi
+  /// gösterir. Her [deleteMessage] çağrısı başında sıfırlanır;
+  /// `false` dönen çağrıdan sonra her zaman `false`'tur (o çağrıda
+  /// hiçbir şey silinmemiştir).
+  bool get lastDeleteCloudFailed => _lastDeleteCloudFailed;
+
+  /// Kendi mesajını tekli siler (B27).
+  ///
+  /// Sözleşme:
+  /// * Mesaj bulunamazsa, kimlik boşsa veya mesaj çağırana ait değilse
+  ///   ([isOwnMessage]) `false` döner; hiçbir durum değişmez.
+  ///   Başkasının mesajı (sistem/tohum dahil) bu yolla silinemez.
+  /// * Aksi hâlde mesaj bellek listelerinden (`_messages` + bütün
+  ///   `_byChannel` listeleri) çıkarılır, kalıcı kayda yazılır,
+  ///   dinleyicilere bildirilir ve `true` döner. Kalıcı yazım
+  ///   başarısız olursa bellek durumu geri yüklenir ve `false`
+  ///   döner — hata durumunda mesaj yerinde kalır.
+  /// * `true`, YALNIZCA yerel silmenin tamamlandığını söyler. Bulut
+  ///   silme en iyi çabadır: bulut hatası yerel silmeyi geri almaz;
+  ///   bulut kopyasının kalıp kalmadığı [lastDeleteCloudFailed] ile
+  ///   okunur. Dönüş değeri bulut hatasında `false`'a çevrilmez —
+  ///   aksi hâlde arayüz, "mesaj yerinde kalır" varsayımıyla yanlış
+  ///   hata gösterirdi (mesaj yerelden gitmiştir).
+  /// * Bulut kimliği: bulut belgesi
+  ///   `chat_channels/{channel}/messages/{id}` yolundadır; belge
+  ///   kimliği mesaj `id`'sidir (bkz. [_appendAndPersist]). Silme
+  ///   denemesi yalnız [_canDeleteCloudMessage] kapısı açıksa yapılır.
+  /// * Rapor kayıtlarına dokunulmaz (gönderilmiş/kuyruktaki rapor
+  ///   silmeyle geri alınmaz); başarısız bulut yazım işareti
+  ///   ([_cloudFailedIds]) silinen kimlikten temizlenir, böylece
+  ///   retry yolu silinen mesajı yeniden göndermeye kalkmaz.
+  /// * [deleteMessagesByAuthor] toplu hesap-silme yoludur; bu metot
+  ///   onu kullanmaz ve davranışını değiştirmez. Şart onayı aranmaz
+  ///   (raporlamada olduğu gibi, silme gönderim değildir).
+  Future<bool> deleteMessage(String messageId) async {
+    _lastDeleteCloudFailed = false;
+    if (messageId.isEmpty) return false;
+    await ensureLoaded();
+    ChatMessage? target;
+    for (final m in _messages) {
+      if (m.id == messageId) {
+        target = m;
+        break;
+      }
+    }
+    target ??= _findInChannels(messageId);
+    if (target == null || !isOwnMessage(target)) return false;
+    final message = target;
+    // Kalıcı yazım başarısız olursa geri yüklemek için anlık görüntü.
+    final messagesSnapshot = List<ChatMessage>.of(_messages);
+    final byChannelSnapshot = <ChatChannel, List<ChatMessage>>{
+      for (final entry in _byChannel.entries)
+        entry.key: List<ChatMessage>.of(entry.value),
+    };
+    final cloudFailedSnapshot = Set<String>.of(_cloudFailedIds);
+    final wasCloudFailed = _cloudFailedIds.contains(messageId);
+    _messages.removeWhere((m) => m.id == messageId);
+    for (final list in _byChannel.values) {
+      list.removeWhere((m) => m.id == messageId);
+    }
+    _cloudFailedIds.remove(messageId);
+    try {
+      await _save();
+    } catch (e) {
+      _messages
+        ..clear()
+        ..addAll(messagesSnapshot);
+      for (final entry in byChannelSnapshot.entries) {
+        _byChannel[entry.key] = entry.value;
+      }
+      _cloudFailedIds
+        ..clear()
+        ..addAll(cloudFailedSnapshot);
+      _streamController.add(messages);
+      notifyListeners();
+      debugPrint('[lululu] Mesaj silme kalıcı kayda yazılamadı: $e');
+      return false;
+    }
+    if (wasCloudFailed) {
+      await _persistCloudFailedIds();
+    }
+    _streamController.add(messages);
+    notifyListeners();
+    await _deleteCloudMessage(message, wasCloudFailed: wasCloudFailed);
+    return true;
+  }
+
+  /// Kimliği kanal listelerinde arar (`_messages`'ta olmayan, yalnız
+  /// kanal önbelleğindeki mesajlar için — örn. başka cihazdan gelen
+  /// lobi dışı kendi mesajı).
+  ChatMessage? _findInChannels(String messageId) {
+    for (final list in _byChannel.values) {
+      for (final m in list) {
+        if (m.id == messageId) return m;
+      }
+    }
+    return null;
+  }
+
+  /// Bulut kopyasını en iyi çabayla siler; sonucu
+  /// [_lastDeleteCloudFailed] bayrağına yazar. Hiçbir zaman fırlatmaz.
+  /// Buluta hiç ulaşmamış mesajda (yazımı başarısız işaretli) deneme
+  /// yapılmaz ve bayrak kalkmaz — bulut kopyası büyük olasılıkla
+  /// yoktur (kayıp yanıtla yazılmış olma artığı kabul edilir).
+  Future<void> _deleteCloudMessage(
+    ChatMessage message, {
+    required bool wasCloudFailed,
+  }) async {
+    if (wasCloudFailed) return;
+    if (!_canDeleteCloudMessage(message)) {
+      _lastDeleteCloudFailed = true;
+      return;
+    }
+    try {
+      await FirebaseFirestore.instance
+          .collection('chat_channels')
+          .doc(message.channel.id)
+          .collection('messages')
+          .doc(message.id)
+          .delete();
+    } catch (e) {
+      _lastDeleteCloudFailed = true;
+      debugPrint('[lululu] Mesaj buluttan silinemedi: $e');
+    }
+  }
+
+  /// Bulut silme kapısı ([_canPushMessage] aynası + göç bağı):
+  /// * Firebase hazır değilse veya oturum yoksa kapalı (çevrimdışı:
+  ///   bulut kopyası kalır, bayrak kalkar).
+  /// * Kayıtlı kullanıcı mesajında Firebase UID'si yazar kimliğiyle
+  ///   eşleşmeli — kurallar (`isMessageSender`) yalnız gönderene
+  ///   silme izni verir.
+  /// * Misafir mesajında yalnız göçle bağlı kimlik silinebilir:
+  ///   kurallar, bağlanmamış misafir UUID'sini oturum UID'siyle
+  ///   eşleştiremez (`isLinkedGuest` göç eşlemesi ister); deneme
+  ///   kesin reddedilir, o yüzden deneme yapılmaz ve yerel-only
+  ///   bayrağı kalkar. Kural değişimi koordinatör kararıdır
+  ///   (`firestore.rules` salt-okunur).
+  bool _canDeleteCloudMessage(ChatMessage message) {
+    if (!_cloudAuthReady) return false;
+    String? firebaseUid;
+    try {
+      firebaseUid = fb.FirebaseAuth.instance.currentUser?.uid;
+    } catch (_) {
+      return false;
+    }
+    if (firebaseUid == null || firebaseUid.isEmpty) return false;
+    if (message.authorKind == ChatAuthorKind.user) {
+      return firebaseUid == message.authorId;
+    }
+    return _identityLinks[message.authorId] == firebaseUid;
   }
 
   /// Mesajı raporlar: `chat_reports` koleksiyonuna yazılır (bulut

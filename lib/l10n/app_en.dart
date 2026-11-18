@@ -2994,6 +2994,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatOptionsLabel => 'Chat options';
   String get chatChangeNameAction => 'Change name';
   String get chatBlockedListAction => 'View blocked users';
+  String get chatDeleteAction => 'Delete';
+  String get chatDeleteTitle => 'Delete message?';
+  String get chatDeleteBody =>
+      'This message will be deleted. This cannot be undone.';
+  String get chatMessageDeleted => 'Message deleted.';
+  String get chatDeleteLocalOnly =>
+      'Message deleted from this device; a cloud copy may remain.';
   String match3StatsLine(int merge, int chain, int made, int fired) => 'Merges $merge · Max chain x$chain · Bombs $made/$fired';
   String match3RocketBombGain(int gained) => '+$gained ROCKET BOMB!';
   String match3RocketHint(int n) => 'Row Rocket & 3x3 Bomb blasted $n tiles!';

@@ -2990,6 +2990,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get chatOptionsLabel => 'Sohbet seçenekleri';
   String get chatChangeNameAction => 'Adını değiştir';
   String get chatBlockedListAction => 'Engellenenleri gör';
+  String get chatDeleteAction => 'Sil';
+  String get chatDeleteTitle => 'Mesajı sil?';
+  String get chatDeleteBody =>
+      'Bu mesaj silinecek. Bu işlem geri alınamaz.';
+  String get chatMessageDeleted => 'Mesaj silindi.';
+  String get chatDeleteLocalOnly =>
+      'Mesaj bu cihazdan silindi; bulut kopyası kalmış olabilir.';
   String match3StatsLine(int merge, int chain, int made, int fired) => 'Birleşim $merge · Max zincir x$chain · Bomba $made/$fired';
   String match3RocketBombGain(int gained) => '+$gained ROKET BOMBA!';
   String match3RocketHint(int n) => 'Satır Roketi & 3x3 Bomba $n taşı uçurdu!';
