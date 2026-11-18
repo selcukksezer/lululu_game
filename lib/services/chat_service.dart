@@ -258,6 +258,10 @@ class ChatService extends ChangeNotifier {
   /// Buluta yazılamayıp kuyrukta bekleyen raporlar (JSON liste).
   static const _pendingReportsPrefsKey = 'LululuChatPendingReportsV1';
 
+  /// Buluta yazılamayan mesaj kimlikleri (O12): retry listesi
+  /// yeniden başlatmada kaybolmaz, yüklemede geri yüklenir.
+  static const _cloudFailedPrefsKey = 'LululuChatCloudFailedV1';
+
   /// Misafir görünen adı üst sınırı (kural sınırı 32; ekranda 20 yeterli).
   static const int maxGuestDisplayNameLength = 20;
 
@@ -486,6 +490,39 @@ class ChatService extends ChangeNotifier {
     );
   }
 
+  /// Bulut yazımı başarısız mesaj kimliklerini kalıcı kayda yazar
+  /// (O12): liste boşsa anahtar kaldırılır.
+  Future<void> _persistCloudFailedIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_cloudFailedIds.isEmpty) {
+      await prefs.remove(_cloudFailedPrefsKey);
+    } else {
+      await prefs.setStringList(
+        _cloudFailedPrefsKey,
+        _cloudFailedIds.toList(),
+      );
+    }
+  }
+
+  /// Kalıcı başarısız kimlikleri geri yükler; yüklenen mesajlarda
+  /// karşılığı olmayan (budanmış/silinmiş) kimlikler atılır ve
+  /// kayıttan da temizlenir.
+  Future<void> _restoreCloudFailedIds(SharedPreferences prefs) async {
+    _cloudFailedIds.clear();
+    final stored = prefs.getStringList(_cloudFailedPrefsKey);
+    if (stored == null || stored.isEmpty) return;
+    final knownIds = <String>{
+      for (final m in _messages) m.id,
+      for (final list in _byChannel.values) for (final m in list) m.id,
+    };
+    for (final id in stored) {
+      if (knownIds.contains(id)) _cloudFailedIds.add(id);
+    }
+    if (_cloudFailedIds.length != stored.toSet().length) {
+      await _persistCloudFailedIds();
+    }
+  }
+
   /// Buluta gönderilemeyip yalnız yerelde kalan mesajların kimlikleri.
   Set<String> get cloudFailedIds => Set.unmodifiable(_cloudFailedIds);
 
@@ -633,20 +670,31 @@ class ChatService extends ChangeNotifier {
         : safe;
   }
 
+  /// Spam denetimi (Ş11): salt okunur karar — zaman damgası
+  /// KAYDETMEZ. Süresi dolmuş girişlerin temizliği yalnız sayaç
+  /// doğruluğu içindir, yeni gönderim sayılmaz. Kayıt, gönderim
+  /// başarıyla tamamlanınca [_recordSend] ile yapılır; başarısız
+  /// deneme hız sınırını kirletmez.
   bool _isSpamming(String cleanBody) {
     final now = DateTime.now().millisecondsSinceEpoch;
     _recentSendTimestampsMs.removeWhere((ts) => (now - ts) > burstWindowMs);
     if (_recentSendTimestampsMs.length >= maxMessagesPerBurstWindow) {
       return true;
     }
-    if (cleanBody == _lastSentText &&
-        (now - _lastSentAtMs) < duplicateRateLimitMs) {
-      return true;
-    }
+    return cleanBody == _lastSentText &&
+        (now - _lastSentAtMs) < duplicateRateLimitMs;
+  }
+
+  /// Başarılı gönderimin zaman damgasını kaydeder: tekrar ve patlama
+  /// sayaçları yalnız yerel kalıcılığı tamamlanan gönderimleri
+  /// sayar. Bulut yazımı başarısız olsa bile mesaj yerelde
+  /// saklanmışsa gönderim başarılı sayılır — bulut hatası
+  /// [_appendAndPersist] içinde işaretlenir, fırlatılmaz.
+  void _recordSend(String cleanBody) {
+    final now = DateTime.now().millisecondsSinceEpoch;
     _lastSentText = cleanBody;
     _lastSentAtMs = now;
     _recentSendTimestampsMs.add(now);
-    return false;
   }
 
   Future<void> ensureLoaded() async {
@@ -669,16 +717,21 @@ class ChatService extends ChangeNotifier {
     }
   }
 
+  /// Tek mesaj kaydını güvenli çözer: bozuk kayıt null döner,
+  /// fırlatmaz. Kimliksiz kayıt da bozuk sayılır (bulut akışı da
+  /// kimliksiz mesajları atlar — bkz. [_bindCloudStreamIfReady]).
+  static ChatMessage? _tryParseMessage(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    try {
+      final msg = ChatMessage.fromJson(raw);
+      return msg.id.isEmpty ? null : msg;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _loadAsync() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prefsKey);
-    _messages.clear();
-    _lastSentText = '';
-    _lastSentAtMs = 0;
-    _recentSendTimestampsMs.clear();
-    for (final c in ChatChannel.values) {
-      _byChannel[c] = <ChatMessage>[];
-    }
     _guestIdentity = null;
     _termsAccepted = false;
     _blockedAuthors.clear();
@@ -686,16 +739,32 @@ class ChatService extends ChangeNotifier {
     _pendingReports.clear();
     _identityLinks = {};
 
+    // O8 — atomik yükleme: kayıtlar önce geçici listelere okunur,
+    // bozuk kayıtlar tek tek atlanır, canlı durum yalnız tamamlanmış
+    // sonuçla değiştirilir. Tek bozuk kayıt artık `_messages`'ı
+    // boşaltıp `_byChannel`'ı kısmi dolu bırakamaz; kısmi blob da
+    // kanalların bir kısmını eski, bir kısmını yeni bırakamaz.
+    final stagedMessages = <ChatMessage>[];
+    final stagedByChannel = <ChatChannel, List<ChatMessage>>{
+      for (final c in ChatChannel.values) c: <ChatMessage>[],
+    };
+    final raw = prefs.getString(_prefsKey);
     if (raw != null && raw.isNotEmpty) {
       try {
         final list = jsonDecode(raw) as List<dynamic>;
         for (final e in list) {
-          final msg = ChatMessage.fromJson(e as Map<String, dynamic>);
-          _messages.add(msg);
-          _byChannel[msg.channel]?.add(msg);
+          final msg = _tryParseMessage(e);
+          if (msg == null) continue;
+          stagedMessages.add(msg);
+          stagedByChannel[msg.channel]?.add(msg);
         }
       } catch (_) {
-        _messages.clear();
+        // Blob'un tamamı okunamazsa eski kayıtlar çöpe gider ama
+        // kısmi durum oluşmaz: geçici listeler boş kalır.
+        stagedMessages.clear();
+        for (final c in ChatChannel.values) {
+          stagedByChannel[c] = <ChatMessage>[];
+        }
       }
     }
 
@@ -704,14 +773,28 @@ class ChatService extends ChangeNotifier {
       try {
         final decoded = jsonDecode(rawChannels) as Map<String, dynamic>;
         decoded.forEach((key, value) {
+          if (value is! List<dynamic>) return;
           final channel = ChatChannel.fromId(key);
-          final list = (value as List<dynamic>)
-              .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
-              .toList();
-          _byChannel[channel] = list;
+          final parsed = <ChatMessage>[];
+          for (final e in value) {
+            final msg = _tryParseMessage(e);
+            if (msg != null) parsed.add(msg);
+          }
+          stagedByChannel[channel] = parsed;
         });
       } catch (_) {}
     }
+
+    // Taahhüt: canlı durum tek noktada değiştirilir.
+    _messages
+      ..clear()
+      ..addAll(stagedMessages);
+    for (final c in ChatChannel.values) {
+      _byChannel[c] = stagedByChannel[c] ?? <ChatMessage>[];
+    }
+    _lastSentText = '';
+    _lastSentAtMs = 0;
+    _recentSendTimestampsMs.clear();
 
     // Okunmamış yoklaması başlangıcı: önbellekteki mesajlar okunmuş sayılır.
     for (final c in ChatChannel.values) {
@@ -779,10 +862,19 @@ class ChatService extends ChangeNotifier {
     }
     await _loadIdentityLinks(prefs);
 
+    // O12 — kalıcı başarısız kimlikleri geri yükle: yalnız yüklenen
+    // mesajlarda karşılığı olanlar tutulur.
+    await _restoreCloudFailedIds(prefs);
+
     _loaded = true;
     _bindCloudStreamIfReady();
     _streamController.add(messages);
     notifyListeners();
+    // O12 — geri yüklenen başarısız yazımlar mevcut retry yolundan
+    // tekrar denenir (en iyi çaba; kapı kapalıysa işaretli kalır).
+    if (_cloudFailedIds.isNotEmpty) {
+      unawaited(retryFailedCloudPushes());
+    }
   }
 
   /// Hesap silme için yerel sohbet verisini temizler (hesap-silme,
@@ -823,6 +915,7 @@ class ChatService extends ChangeNotifier {
     await prefs.remove(_blockedPrefsKey);
     await prefs.remove(_reportedPrefsKey);
     await prefs.remove(_pendingReportsPrefsKey);
+    await prefs.remove(_cloudFailedPrefsKey);
     _loaded = false;
     _streamController.add(messages);
     notifyListeners();
@@ -1011,12 +1104,20 @@ class ChatService extends ChangeNotifier {
 
   /// Misafir bulut yazımı için anonim Firebase oturumunu sağlar
   /// (en iyi çaba; başarısızlık sessizce yerel-only durumuna düşer).
-  /// Anonim oturum yalnız taşıma kimliğidir, yazar kimliğini
-  /// değiştirmez — atıf her zaman kalıcı misafir UUID'sine yapılır.
+  /// Anonim oturum yalnız TAŞIMA kimliğidir: doğrudan
+  /// `FirebaseAuth` üzerinden açılır ve [AuthService] oturumuna
+  /// DOKUNMAZ — uygulama düzeyi kullanıcı durumu (`_user`, oturum
+  /// prefs'i, `userNotifier`) değişmez, yazar kimliği her zaman
+  /// kalıcı misafir UUID'sidir. (O13: eski kod
+  /// `AuthService.signInAsGuest()` çağırıp sohbet retry'sini sessiz
+  /// bir misafir oturumuna dönüştürüyordu.) `AuthService` Firebase
+  /// auth durumu dinleyicisi kurmadığından anonim oturum uygulama
+  /// oturumuna sıçramaz; Firestore kurallarının istediği
+  /// `request.auth` varlığı ise bu taşıma oturumuyla sağlanır.
   Future<void> _ensureGuestCloudCredential() async {
     if (!FirebaseBootstrap.isAvailable || _cloudAuthReady) return;
     try {
-      await AuthService.instance.signInAsGuest();
+      await fb.FirebaseAuth.instance.signInAnonymously();
     } catch (e) {
       debugPrint('[lululu] Chat guest cloud credential fallback: $e');
     }
@@ -1026,10 +1127,16 @@ class ChatService extends ChangeNotifier {
   /// kurar (girişte bağlan, çıkışta/uyumsuzlukta kapat). Giriş anında
   /// kapı açılır ama kanal değiştirilmezse akışın kendiliğinden
   /// bağlanması için [AuthService] burayı çağırır. Kuyruktaki
-  /// raporlar da bu noktada tekrar denenir.
+  /// raporlar ve bekleyen başarısız yazımlar (O12) da bu noktada
+  /// tekrar denenir.
   void refreshCloudBinding() {
     _bindCloudStreamIfReady();
     unawaited(retryPendingReports());
+    // O12: oturum değişimiyle kapı açılmış olabilir — bekleyen
+    // başarısız yazımlar da mevcut retry yolundan tekrar denensin.
+    if (_cloudFailedIds.isNotEmpty) {
+      unawaited(retryFailedCloudPushes());
+    }
   }
 
   /// Misafir->hesap eşlemesini prefs'ten tazeler (giriş sonrası
@@ -1472,6 +1579,7 @@ class ChatService extends ChangeNotifier {
     );
 
     await _appendAndPersist(msg);
+    _recordSend(cleanBody);
     return msg;
   }
 
@@ -1517,6 +1625,7 @@ class ChatService extends ChangeNotifier {
     );
 
     await _appendAndPersist(msg);
+    _recordSend(bodyText);
     return msg;
   }
 
@@ -1552,6 +1661,7 @@ class ChatService extends ChangeNotifier {
     );
 
     await _appendAndPersist(msg);
+    _recordSend(bodyText);
     return msg;
   }
 
@@ -1580,6 +1690,7 @@ class ChatService extends ChangeNotifier {
     // Mesaj bazında kapı: kullanıcıda UID uyumu, misafirde oturum
     // varlığı. Kapalıysa mesaj yerelde kalır ve başarısız işaretli
     // kalır (çevrimdışı kuyruk, [retryFailedCloudPushes]).
+    final wasMarkedFailed = _cloudFailedIds.contains(msg.id);
     if (_canPushMessage(msg)) {
       try {
         await FirebaseFirestore.instance
@@ -1600,6 +1711,10 @@ class ChatService extends ChangeNotifier {
       _cloudFailedIds.add(msg.id);
       notifyListeners();
     }
+    // O12: işaret değiştiyse kalıcı retry listesi güncellenir.
+    if (_cloudFailedIds.contains(msg.id) != wasMarkedFailed) {
+      await _persistCloudFailedIds();
+    }
   }
 
   /// Buluta gönderilemeyen mesajları yeniden göndermeyi dener.
@@ -1607,6 +1722,7 @@ class ChatService extends ChangeNotifier {
   /// Kapı mesaj bazındadır: kapalı kimlikteki mesajlar kuyrukta kalır.
   Future<bool> retryFailedCloudPushes() async {
     if (_cloudFailedIds.isEmpty) return true;
+    final before = Set<String>.of(_cloudFailedIds);
     final byId = <String, ChatMessage>{};
     for (final m in _messages) {
       byId[m.id] = m;
@@ -1651,6 +1767,11 @@ class ChatService extends ChangeNotifier {
         allOk = false;
         debugPrint('[lululu] Chat cloud retry fallback: $e');
       }
+    }
+    // O12: değişen retry listesi kalıcı kayda yazılır.
+    if (before.length != _cloudFailedIds.length ||
+        !before.containsAll(_cloudFailedIds)) {
+      await _persistCloudFailedIds();
     }
     notifyListeners();
     return allOk;
