@@ -1497,7 +1497,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                 ),
                 Text(
-                  '${_bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore}',
+                  '$_bestScore',
                   style: GoogleFonts.bangers(
                     fontSize: 20,
                     color: Colors.white,
@@ -1581,7 +1581,7 @@ class _GameScreenState extends State<GameScreen>
   static const _protoPanel = Color(0xD9080B12);
 
   Widget _buildArcadeGameHud() {
-    final best = _bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore;
+    final best = _bestScore;
     final hudRow = Row(
       children: [
         Semantics(
@@ -1829,7 +1829,7 @@ class _GameScreenState extends State<GameScreen>
             flex: 3,
             child: _buildCompactStatCard(
               label: context.l10n.gameBestLabel,
-              value: '${_bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore}',
+              value: '$_bestScore',
               accent: LululuColors.mutedTitanium,
             ),
           ),
