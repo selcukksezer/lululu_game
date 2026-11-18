@@ -262,10 +262,20 @@ class ChatService extends ChangeNotifier {
   /// yeniden başlatmada kaybolmaz, yüklemede geri yüklenir.
   static const _cloudFailedPrefsKey = 'LululuChatCloudFailedV1';
 
+  /// Silinen mesaj mezar taşları (5C): [deleteMessage] ile yerelden
+  /// silinmiş mesaj kimlikleri. Bulut kopyası kalmışsa (kapalı kapı /
+  /// çevrimdışı silme) yeniden bağlanmada mesaj geri gelmesin diye
+  /// bulut birleşmesi bu listedeki kimlikleri süzer.
+  static const _tombstonePrefsKey = 'LululuChatTombstonesV1';
+
   /// Misafir görünen adı üst sınırı (kural sınırı 32; ekranda 20 yeterli).
   static const int maxGuestDisplayNameLength = 20;
 
   static const maxMessages = 200;
+
+  /// Mezar taşı kapasitesi (5C): en fazla bu kadar silinmiş kimlik
+  /// tutulur; aşımda en eski kimlikler atılır.
+  static const int maxTombstones = 200;
 
   /// Okunmamış yoklamasının pencere boyutu (S2#19): aktif olmayan her
   /// kanal yalnız son bu kadar mesajla dinlenir; sayaç bu sayıyla
@@ -535,6 +545,68 @@ class ChatService extends ChangeNotifier {
 
   /// En az bir mesaj buluta gönderilememişse true (yerel-only çalışma).
   bool get hasCloudFailures => _cloudFailedIds.isNotEmpty;
+
+  /// Silinmiş mesaj kimlikleri (mezar taşı, 5C): [deleteMessage] ile
+  /// yerelden silinen her mesajın kimliği burada tutulur; bulut
+  /// birleşmesi ([_mergeCloudMessages]) bu kimlikleri süzer, böylece
+  /// bulutta kalan kopya yeniden bağlanmada geri gelmez. Küme ekleme
+  /// sırasını korur (LinkedHashSet): kap aşımında en eski atılır.
+  final Set<String> _tombstoneIds = <String>{};
+
+  /// Mezar taşı kimliklerini kalıcı kayda yazar (5C): liste boşsa
+  /// anahtar kaldırılır ([_persistCloudFailedIds] deseni).
+  Future<void> _persistTombstoneIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_tombstoneIds.isEmpty) {
+      await prefs.remove(_tombstonePrefsKey);
+    } else {
+      await prefs.setStringList(
+        _tombstonePrefsKey,
+        _tombstoneIds.toList(),
+      );
+    }
+  }
+
+  /// Kalıcı mezar taşlarını geri yükler. [_restoreCloudFailedIds]'ten
+  /// FARKLI olarak yüklenen mesajlarda karşılık aranmaz: mezar
+  /// taşının varlık sebebi, mesajın yerelde OLMAMASIDIR — karşılığı
+  /// olmayan kimliği atmak taşı anlamsızlaştırır. Yalnız boş
+  /// kimlikler ve tekrarlar atılır, kap aşımı en eskiden budanır;
+  /// budama/temizlik olduysa kayıt geri yazılır.
+  Future<void> _restoreTombstoneIds(SharedPreferences prefs) async {
+    _tombstoneIds.clear();
+    final stored = prefs.getStringList(_tombstonePrefsKey);
+    if (stored == null || stored.isEmpty) return;
+    final deduped = <String>{};
+    for (final id in stored) {
+      if (id.isNotEmpty) deduped.add(id);
+    }
+    final ordered = deduped.toList();
+    final kept = ordered.length <= maxTombstones
+        ? ordered
+        : ordered.sublist(ordered.length - maxTombstones);
+    _tombstoneIds.addAll(kept);
+    if (_tombstoneIds.length != stored.length) {
+      await _persistTombstoneIds();
+    }
+  }
+
+  /// Kimliği mezar taşına ekler; kap aşılırsa en eski kimlikler
+  /// atılır. Zaten taşta olan kimlik en yeniye taşınır.
+  void _addTombstone(String messageId) {
+    if (messageId.isEmpty) return;
+    _tombstoneIds.remove(messageId);
+    _tombstoneIds.add(messageId);
+    while (_tombstoneIds.length > maxTombstones) {
+      _tombstoneIds.remove(_tombstoneIds.first);
+    }
+  }
+
+  /// Mezar taşındaki silinmiş mesaj kimlikleri.
+  Set<String> get tombstoneIds => Set.unmodifiable(_tombstoneIds);
+
+  /// Mesaj silinmiş (mezar taşında) mı.
+  bool isTombstoned(String messageId) => _tombstoneIds.contains(messageId);
 
   /// Geriye dönük uyumlu mesaj listesi (`ChatScreen` tarafından okunur).
   List<ChatMessage> get messages => List.unmodifiable(_messages);
@@ -870,6 +942,11 @@ class ChatService extends ChangeNotifier {
     // mesajlarda karşılığı olanlar tutulur.
     await _restoreCloudFailedIds(prefs);
 
+    // 5C — kalıcı mezar taşlarını geri yükle: bulut akışı
+    // bağlanmadan ÖNCE yüklenmelidir, yoksa ilk anlık görüntü
+    // silinmiş mesajı geri alır.
+    await _restoreTombstoneIds(prefs);
+
     _loaded = true;
     _bindCloudStreamIfReady();
     _streamController.add(messages);
@@ -884,7 +961,9 @@ class ChatService extends ChangeNotifier {
   /// Hesap silme için yerel sohbet verisini temizler (hesap-silme,
   /// yerel-temizlik): mesajlar, kanal önbellekleri, okunmamış sayaçlar
   /// ve görülen zamanlar (kalıcı anahtarları dahil) silinir; bulut
-  /// abonelikleri kapatılır. Bulut mesajları
+  /// abonelikleri kapatılır. Mezar taşı da silinir (5C): silinen
+  /// hesabın silme kaydı, cihazda sonradan açılacak başka bir hesabın
+  /// verisiyle karışmaz. Bulut mesajları
   /// [deleteMessagesByAuthor] ile silinir (AuthService.deleteAccount
   /// çağırır).
   Future<void> clearLocalData() async {
@@ -901,6 +980,7 @@ class ChatService extends ChangeNotifier {
     }
     _lastSeenTicks.clear();
     _cloudFailedIds.clear();
+    _tombstoneIds.clear();
     _lastSentText = '';
     _lastSentAtMs = 0;
     _recentSendTimestampsMs.clear();
@@ -920,6 +1000,7 @@ class ChatService extends ChangeNotifier {
     await prefs.remove(_reportedPrefsKey);
     await prefs.remove(_pendingReportsPrefsKey);
     await prefs.remove(_cloudFailedPrefsKey);
+    await prefs.remove(_tombstonePrefsKey);
     _loaded = false;
     _streamController.add(messages);
     notifyListeners();
@@ -1397,6 +1478,13 @@ class ChatService extends ChangeNotifier {
   ///   silmeyle geri alınmaz); başarısız bulut yazım işareti
   ///   ([_cloudFailedIds]) silinen kimlikten temizlenir, böylece
   ///   retry yolu silinen mesajı yeniden göndermeye kalkmaz.
+  /// * Başarılı yerel silmede kimlik kalıcı mezar taşına
+  ///   ([_tombstoneIds]) yazılır (5C): bulut kopyası kalmışsa bile
+  ///   bulut birleşmesi ([_mergeCloudMessages]) mesajı geri almaz.
+  ///   Taş, kalıcı yazım başarısız olup silme geri alınırsa
+  ///   yazılmaz; bulut silmesinin sonucuna bakılmaz (bulut silme
+  ///   başarılı olsa bile taş tutulur — kimlik bir daha
+  ///   görünmeyeceğinden zararsızdır, kap aşımında atılır).
   /// * [deleteMessagesByAuthor] toplu hesap-silme yoludur; bu metot
   ///   onu kullanmaz ve davranışını değiştirmez. Şart onayı aranmaz
   ///   (raporlamada olduğu gibi, silme gönderim değildir).
@@ -1446,6 +1534,17 @@ class ChatService extends ChangeNotifier {
     }
     if (wasCloudFailed) {
       await _persistCloudFailedIds();
+    }
+    // 5C — kalıcı yazım başarılı: kimlik mezar taşına yazılır.
+    // Yalnız başarılı silmede yazılır (yukarıdaki hata yolunda
+    // mesaj geri yüklendi, taş yazılmaz). Kalıcı taş yazımı
+    // başarısız olsa bile silme geri alınmaz: taş bellekte kalır
+    // ve bu oturumda bulut birleşmesini süzer.
+    _addTombstone(messageId);
+    try {
+      await _persistTombstoneIds();
+    } catch (e) {
+      debugPrint('[lululu] Mezar taşı kalıcı kayda yazılamadı: $e');
     }
     _streamController.add(messages);
     notifyListeners();
@@ -1594,6 +1693,65 @@ class ChatService extends ChangeNotifier {
     );
   }
 
+  /// Bulut mesajlarını yerel listelerle birleştirir — TEK birleştirme
+  /// yolu (5C): bulut dinleyicisi ([_bindCloudStreamIfReady]) gelen
+  /// her anlık görüntüyü buradan geçirir.
+  ///
+  /// * Kimliksiz mesajlar atlanır.
+  /// * Mezar taşındaki kimlikler ([_tombstoneIds]) SÜZÜLÜR: silinmiş
+  ///   mesaj, bulutta kalan kopyasıyla geri gelmez.
+  /// * Zaten listedeki kimlikler tekrar eklenmez.
+  /// * Lobi mesajları geriye dönük uyumlu `_messages` listesine de
+  ///   eklenir; diğer kanallar yalnız kendi listesine girer.
+  /// * En az bir mesaj eklendiyse kanal okundu sayılır, görülen zaman
+  ///   ilerler, akış + dinleyiciler bilgilendirilir. Kalıcı kayda
+  ///   yazılmaz (önceki dinleyici davranışı korunur: birleşen
+  ///   mesajlar sonraki [_save] ile kalıcılaşır).
+  bool _mergeCloudMessages(
+    Iterable<ChatMessage> incoming,
+    ChatChannel channel,
+  ) {
+    var addedAny = false;
+    final list = _byChannel[channel] ?? <ChatMessage>[];
+    for (final msg in incoming) {
+      if (msg.id.isEmpty) continue;
+      if (_tombstoneIds.contains(msg.id)) continue;
+      if (!list.any((m) => m.id == msg.id)) {
+        list.add(msg);
+        if (channel == ChatChannel.lobby &&
+            !_messages.any((m) => m.id == msg.id)) {
+          _messages.add(msg);
+        }
+        addedAny = true;
+      }
+    }
+    if (addedAny) {
+      // Aktif kanalda görülenler okundu sayılır (S2#19): kanaldan
+      // ayrılınınca yoklama bunları tekrar saymaz.
+      _unreadCounts[channel] = 0;
+      var latest = _lastSeenTicks[channel] ?? 0;
+      for (final m in list) {
+        if (m.utcTicks > latest) latest = m.utcTicks;
+      }
+      final advanced = latest != (_lastSeenTicks[channel] ?? 0);
+      _lastSeenTicks[channel] = latest;
+      if (advanced) unawaited(_persistLastSeenTicks());
+      _streamController.add(messages);
+      notifyListeners();
+    }
+    return addedAny;
+  }
+
+  /// Test köprüsü: bulut yenilemesini Firestore olmadan simüle eder —
+  /// üretim birleştirme yolu ([_mergeCloudMessages]) ile aynı kod
+  /// çalışır, böylece mezar taşı süzmesi testte kanıtlanır.
+  @visibleForTesting
+  bool mergeCloudMessagesForTest(
+    Iterable<ChatMessage> incoming, {
+    ChatChannel channel = ChatChannel.lobby,
+  }) =>
+      _mergeCloudMessages(incoming, channel);
+
   void _bindCloudStreamIfReady() {
     _cloudSub?.cancel();
     _cloudSub = null;
@@ -1609,34 +1767,10 @@ class ChatService extends ChangeNotifier {
           .limitToLast(maxMessages)
           .snapshots()
           .listen((snapshot) {
-        var addedAny = false;
-        final list = _byChannel[_currentChannel] ?? <ChatMessage>[];
-        for (final doc in snapshot.docs) {
-          final msg = ChatMessage.fromJson(doc.data());
-          if (msg.id.isEmpty) continue;
-          if (!list.any((m) => m.id == msg.id)) {
-            list.add(msg);
-            if (_currentChannel == ChatChannel.lobby &&
-                !_messages.any((m) => m.id == msg.id)) {
-              _messages.add(msg);
-            }
-            addedAny = true;
-          }
-        }
-        if (addedAny) {
-          // Aktif kanalda görülenler okundu sayılır (S2#19): kanaldan
-          // ayrılınınca yoklama bunları tekrar saymaz.
-          _unreadCounts[_currentChannel] = 0;
-          var latest = _lastSeenTicks[_currentChannel] ?? 0;
-          for (final m in list) {
-            if (m.utcTicks > latest) latest = m.utcTicks;
-          }
-          final advanced = latest != (_lastSeenTicks[_currentChannel] ?? 0);
-          _lastSeenTicks[_currentChannel] = latest;
-          if (advanced) unawaited(_persistLastSeenTicks());
-          _streamController.add(messages);
-          notifyListeners();
-        }
+        _mergeCloudMessages(
+          snapshot.docs.map((doc) => ChatMessage.fromJson(doc.data())),
+          _currentChannel,
+        );
       }, onError: (Object e) {
         debugPrint('[lululu] Chat cloud stream fallback: $e');
       });
@@ -1697,7 +1831,12 @@ class ChatService extends ChangeNotifier {
       final id = data['id'] as String? ?? doc.id;
       final ticks = (data['utcTicks'] as num?)?.toInt() ?? 0;
       final authorId = data['authorId'] as String? ?? '';
-      if (ticks > seen && authorId != ownId && !knownIds.contains(id)) {
+      // 5C: silinmiş mesaj, kimlik değişimi sonrası başkasının
+      // mesajı gibi görünse bile okunmamış sayılmaz.
+      if (ticks > seen &&
+          authorId != ownId &&
+          !knownIds.contains(id) &&
+          !_tombstoneIds.contains(id)) {
         count++;
       }
     }

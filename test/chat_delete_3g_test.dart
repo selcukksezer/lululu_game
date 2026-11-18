@@ -5,7 +5,10 @@
 // sistem mesajı silinemez, toplu silme API'si (`deleteMessagesByAuthor`)
 // etkilenmez, bulut işareti temizlenir. Bulut silme yolu bu testlerde
 // kapalıdır (Firebase hazır değil); kapı davranışı
-// `lastDeleteCloudFailed` bayrağı üzerinden denetlenir.
+// `lastDeleteCloudFailed` bayrağı üzerinden denetlenir. 5C: silinen
+// kimlik kalıcı mezar taşına yazılır; simüle bulut yenilemesinde
+// (üretim birleştirme yolu) geri gelmez, kap 200'dür, hesap silme
+// temizliği taşı da siler.
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -240,5 +243,147 @@ void main() {
 
     await chat.load();
     expect(chat.hasUserMessages(ChatChannel.clan), isFalse);
+  });
+
+  test('silinen mesaj mezar taşına yazılır ve yeniden yüklemede korunur',
+      () async {
+    final chat = ChatService.instance;
+    final deleted = await chat.send('mezar tasi yazma denemesi');
+    expect(chat.isTombstoned(deleted.id), isFalse);
+
+    expect(await chat.deleteMessage(deleted.id), isTrue);
+    expect(chat.isTombstoned(deleted.id), isTrue);
+    expect(chat.tombstoneIds, contains(deleted.id));
+
+    // Kalıcı kayıt: anahtar adı `_tombstonePrefsKey` değeridir.
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getStringList('LululuChatTombstonesV1'),
+      contains(deleted.id),
+    );
+
+    await chat.load();
+    expect(chat.isTombstoned(deleted.id), isTrue);
+    expect(chat.messages.any((m) => m.id == deleted.id), isFalse);
+  });
+
+  test('mezar taşındaki mesaj simüle bulut yenilemesinde geri gelmez; '
+      'taşta olmayan mesaj birleşir', () async {
+    final chat = ChatService.instance;
+    final lobbyDeleted = await chat.send('lobide silinecek mesaj');
+    final clanDeleted = await chat.send(
+      'klanda silinecek mesaj',
+      channel: ChatChannel.clan,
+    );
+    expect(await chat.deleteMessage(lobbyDeleted.id), isTrue);
+    expect(await chat.deleteMessage(clanDeleted.id), isTrue);
+
+    // Bulut kopyası hâlâ duruyormuş gibi aynı mesajlar + yeni bir
+    // mesaj üretim birleştirme yolundan geçirilir.
+    final fresh = ChatMessage(
+      id: 'fresh_cloud_msg',
+      authorId: 'uid_baskasi',
+      authorName: 'Baskasi',
+      body: 'buluttan yeni mesaj',
+      utcTicks: 999,
+      channel: ChatChannel.lobby,
+      authorKind: ChatAuthorKind.user,
+    );
+    final addedLobby = chat.mergeCloudMessagesForTest(
+      [lobbyDeleted, fresh],
+    );
+    final addedClan = chat.mergeCloudMessagesForTest(
+      [clanDeleted],
+      channel: ChatChannel.clan,
+    );
+
+    expect(addedLobby, isTrue);
+    expect(addedClan, isFalse);
+    expect(chat.messages.any((m) => m.id == lobbyDeleted.id), isFalse);
+    expect(
+      chat.messagesForChannel(ChatChannel.lobby, includeDefaultFeed: false)
+          .any((m) => m.id == lobbyDeleted.id),
+      isFalse,
+    );
+    expect(chat.hasUserMessages(ChatChannel.clan), isFalse);
+    expect(chat.messages.any((m) => m.id == fresh.id), isTrue);
+  });
+
+  test('mezar taşı yeniden yüklemeden sonra da bulut birleşmesini süzer',
+      () async {
+    final chat = ChatService.instance;
+    final deleted = await chat.send('yeniden baglanma direnci denemesi');
+    expect(await chat.deleteMessage(deleted.id), isTrue);
+
+    await chat.load();
+    expect(chat.mergeCloudMessagesForTest([deleted]), isFalse);
+    expect(chat.messages.any((m) => m.id == deleted.id), isFalse);
+  });
+
+  test('başarısız silme mezar taşı yazmaz', () async {
+    final chat = ChatService.instance;
+    const identity = GuestChatIdentity(
+      id: 'guest_abcdef0123456789',
+      displayName: 'Misafir-1234',
+      createdAtMs: 1,
+    );
+    final other = ChatMessage(
+      id: 'other_no_tombstone',
+      authorId: 'uid_baskasi',
+      authorName: 'Baskasi',
+      body: 'baskasinin mesaji',
+      utcTicks: 11,
+      channel: ChatChannel.lobby,
+      authorKind: ChatAuthorKind.user,
+    );
+    await seedStoredMessages([other], identity);
+
+    expect(await chat.deleteMessage(other.id), isFalse);
+    expect(await chat.deleteMessage('olmayan_kimlik'), isFalse);
+    expect(chat.isTombstoned(other.id), isFalse);
+    expect(chat.tombstoneIds, isEmpty);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('LululuChatTombstonesV1'), isNull);
+  });
+
+  test('mezar taşı kapı: 200 kimlikle sınırlı, en eski atılır', () async {
+    expect(ChatService.maxTombstones, 200);
+    final chat = ChatService.instance;
+    // 205 taş tohumla: anahtar adı `_tombstonePrefsKey` değeridir.
+    final prefs = await SharedPreferences.getInstance();
+    final seeded = List.generate(205, (i) => 'tomb_$i');
+    await prefs.setStringList('LululuChatTombstonesV1', seeded);
+    await chat.load();
+
+    expect(chat.tombstoneIds, hasLength(200));
+    for (var i = 0; i < 5; i++) {
+      expect(chat.isTombstoned('tomb_$i'), isFalse);
+    }
+    expect(chat.isTombstoned('tomb_5'), isTrue);
+    expect(chat.isTombstoned('tomb_204'), isTrue);
+    // Budama kalıcı kayda da yansır.
+    expect(prefs.getStringList('LululuChatTombstonesV1'), hasLength(200));
+
+    // Yeni silme, kap doluyken en eski kalanı atar.
+    await chat.ensureGuestIdentity();
+    final deleted = await chat.send('kap asimi silme denemesi');
+    expect(await chat.deleteMessage(deleted.id), isTrue);
+    expect(chat.tombstoneIds, hasLength(200));
+    expect(chat.isTombstoned('tomb_5'), isFalse);
+    expect(chat.isTombstoned('tomb_6'), isTrue);
+    expect(chat.isTombstoned(deleted.id), isTrue);
+  });
+
+  test('hesap silme temizliği mezar taşını da siler', () async {
+    final chat = ChatService.instance;
+    final deleted = await chat.send('temizlikte gidecek mesaj');
+    expect(await chat.deleteMessage(deleted.id), isTrue);
+    expect(chat.isTombstoned(deleted.id), isTrue);
+
+    await chat.clearLocalData();
+    expect(chat.tombstoneIds, isEmpty);
+    expect(chat.isTombstoned(deleted.id), isFalse);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('LululuChatTombstonesV1'), isNull);
   });
 }
