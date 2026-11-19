@@ -14,6 +14,7 @@ import '../models/insect_tier.dart';
 import '../physics/physics_engine.dart';
 import '../services/adaptive_quality_scaler.dart';
 import '../services/audio_manager.dart';
+import '../services/auth_service.dart';
 import '../services/campaign_progression_service.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
@@ -259,6 +260,9 @@ class _GameScreenState extends State<GameScreen>
       if (mounted) _preloadImages();
     });
     _loadBest();
+    // 12I: liderlik değişimleri (auth yeniden bağlama / bulut tazeleme)
+    // rekoru geç güncelleyebilir; ekran dinleyiciyle tazeler.
+    LeaderboardService.instance.addListener(_onLeaderboardChanged);
     _currentDropperTier = _rollDropTier();
     _nextDropperTier = _rollDropTier();
     if (widget.prototypeVisualState) {
@@ -275,15 +279,45 @@ class _GameScreenState extends State<GameScreen>
     _scheduleHisir(const Duration(seconds: 15));
   }
 
+  /// Rekor yükleme (12I): tahta `bestScore`'u kimlik eşleşmesi kaçırırsa
+  /// 0 dönebilir — liderlik servisinin yeniden bağlama adımı yalnız o
+  /// anki `playerId` ile eşleşen kayıtları sayar ve tahta varsa `getBest`
+  /// PM yedeğini okumaz. O yüzden önce PM haritasındaki kalıcı rekor
+  /// hızlı yoldan gösterilir, sonra yüklemeler beklenip iki kaynaktaki
+  /// büyük değerle tazelenir. Tek başına `ensureLoaded` sonrası tekrar
+  /// okuma yetmez: geç yüklenen kimlik tahtayı yeniden bağlamaz.
   Future<void> _loadBest() async {
+    final fastBest = ProgressManager.instance.getModeHighScore(
+      LeaderboardService.modeSuika,
+    );
+    if (mounted && fastBest > _bestScore) {
+      setState(() => _bestScore = fastBest);
+    }
+    await ProgressManager.instance.ensureLoaded();
     await LeaderboardService.instance.ensureLoaded();
+    await AuthService.instance.ensureLoaded();
     if (!mounted) return;
-    setState(() {
-      _bestScore = LeaderboardService.instance.getBest(
-        LeaderboardService.modeSuika,
-      );
-    });
+    _refreshBestFromServices();
   }
+
+  /// Liderlik + PM kaynaklarındaki büyük rekoru HUD'a yazar. Değer
+  /// yalnız büyür (kalıcı rekor tek yönlüdür); kalıcı yazım oyun
+  /// sonundaki [_submitSuikaScore] yolunda aynen kalır.
+  void _refreshBestFromServices() {
+    final saved = max(
+      LeaderboardService.instance.getBest(LeaderboardService.modeSuika),
+      ProgressManager.instance.getModeHighScore(
+        LeaderboardService.modeSuika,
+      ),
+    );
+    if (mounted && saved > _bestScore) {
+      setState(() => _bestScore = saved);
+    }
+  }
+
+  /// Liderlik değişim dinleyicisi (12I): auth yeniden bağlama / bulut
+  /// tazeleme / gönderim sonrası rekoru tazeler.
+  void _onLeaderboardChanged() => _refreshBestFromServices();
 
   /// Weighted bag like classic Suika — mostly tier 1–3.
   InsectTier _rollDropTier() {
@@ -488,6 +522,7 @@ class _GameScreenState extends State<GameScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    LeaderboardService.instance.removeListener(_onLeaderboardChanged);
     // Madde 35: giriş enerjisi tüketildiyse ve oyun bitmeden (zafer/yenilgi
     // olmadan) hiç hamle yapılmadan çıkıldıysa 1 enerjiyi iade et.
     // Kampanya ve doğrudan rota girişlerinde energyConsumed false'tur.
@@ -734,6 +769,9 @@ class _GameScreenState extends State<GameScreen>
         (nextTier.scoreValue * effectiveCombo * heat).round(),
       );
       _score += pointsGained;
+      // 12I: 2048 deseni — birleşme skor verince rekor da canlı büyür
+      // (kalıcı yazım oyun sonunda `_submitSuikaScore` ile aynen kalır).
+      if (_score > _bestScore) _bestScore = _score;
       _mergeTotal++;
       if (_comboCount > _maxCombo) _maxCombo = _comboCount;
 
@@ -968,6 +1006,9 @@ class _GameScreenState extends State<GameScreen>
     setState(() {
       _hisirVisible = false;
       _score += 150;
+      // 12I: Hışır ödülü de rekoru canlı büyütür (zamanlayıcıya ve ses
+      // çağrısına dokunulmadı).
+      if (_score > _bestScore) _bestScore = _score;
     });
     // D4: Hışır dokunuşu (+150) artık sessiz değil — kendi sesi çalar
     // (hisir_zopa.mp3, Selçuk onaylı).
@@ -1204,6 +1245,8 @@ class _GameScreenState extends State<GameScreen>
     final initialAward = initialBlast.length * 180;
     if (initialAward > 0) {
       _score += initialAward;
+      // 12I: ilk patlama ödülü de rekoru canlı büyütür.
+      if (_score > _bestScore) _bestScore = _score;
     }
     _showSpeechBubble(context.l10n.speechAydinlat, durationSeconds: 3);
 
@@ -1273,6 +1316,8 @@ class _GameScreenState extends State<GameScreen>
 
     final vaporized = _engine!.sprayVaporizeSmallest(2);
     _score += vaporized * 300;
+    // 12I: Sprey ödülü de rekoru canlı büyütür (Terlik deseni).
+    if (_score > _bestScore) _bestScore = _score;
 
     AudioManager().playSpray();
     _showSpeechBubble(context.l10n.speechSpray, durationSeconds: 2);
@@ -1668,7 +1713,11 @@ class _GameScreenState extends State<GameScreen>
           ),
         ),
         const SizedBox(width: 8),
-        _buildArcadeScoreBox(context.l10n.gameScoreLabel, '$_score', 104),
+        _buildArcadeScoreBox(
+          context.l10n.gameScoreLabel,
+          _formatArcadeScore(_score),
+          104,
+        ),
         const SizedBox(width: 8),
         _buildArcadeScoreBox(
           context.l10n.gameBestLabel,
