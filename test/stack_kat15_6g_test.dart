@@ -176,6 +176,25 @@ void main() {
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1;
 
+    // 7B — fontsChange teardown artıfaktı düzeltmesi: `setUpAll`'daki
+    // font yüklemeleri (ve test sırasındaki tembel GoogleFonts
+    // yüklemeleri) motorun `fontsChange` bildirimi göndermesine yol
+    // açar; bildirim gövdenin son pump'ından sonra gelirse
+    // `RelayoutWhenSystemFontsChangeMixin`'in bıraktığı transient
+    // frame callback'i `postTest` değişmez denetimine takılır
+    // ("animation is still running"). Üretim kodu hatası değildir:
+    // üretimde callback bir sonraki karede normal çalışır. 6D'de
+    // kanıtlanmış desen — `addTearDown` gövde içinden kaydedildiği
+    // için `postTest`'ten ÖNCE çalışır ve bekleyen callback'leri
+    // işletir (yalıtılmış sonda: boş ağaç bile aynı yığınla düşer,
+    // bu tahliye ile geçer — `zz_7b_fonts_probe_test.dart`).
+    addTearDown(() async {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      for (var i = 0; i < 3 && binding.transientCallbackCount > 0; i++) {
+        await binding.pump();
+      }
+    });
+
     await pumpWithL10n(tester, StackDropScreen(), theme: buildLululuTheme());
     await pumpFrames(tester, 32);
     expect(find.text('KAT 12'), findsOneWidget);
