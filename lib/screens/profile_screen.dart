@@ -569,7 +569,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       const SizedBox(width: 6),
                                       SizedBox(
                                         width:
-                                            displayLevel == 18 ? 13.3 : null,
+                                            displayLevel >= 10 ? 13.3 : null,
                                         child: Transform.translate(
                                           offset: const Offset(0, -1),
                                           child: Transform.scale(

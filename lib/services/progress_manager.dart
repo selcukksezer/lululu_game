@@ -1452,7 +1452,10 @@ class ProgressManager extends ChangeNotifier {
     // verilmezse eski kural (yıldız > 0) aynen korunur.
     final shouldUnlock = victory ?? (earnedStars > 0);
     if (shouldUnlock) {
-      if (levelId >= unlockedLevel && unlockedLevel < maxCampaignLevels) {
+      // 12W: yalnız sınır seviye ilerletir — ilerideki bir seviyenin
+      // tek tamamlanışı seviyeyi sıçratmaz (seviye = bitirilen en
+      // yüksek seviye + 1 değişmezi; harita zaten sırayla açar).
+      if (levelId == unlockedLevel && unlockedLevel < maxCampaignLevels) {
         unlockedLevel = (levelId + 1).clamp(1, maxCampaignLevels);
       }
     }

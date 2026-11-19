@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
+import '../services/campaign_progression_service.dart';
 import '../services/energy_service.dart';
 import '../services/haptic_service.dart';
 import '../services/locale_service.dart';
@@ -49,6 +50,29 @@ class SettingsScreen extends StatefulWidget {
     'lululu_daily_free_energy_claims',
     'lululu_last_free_energy_epoch_ms',
     'lululu_state_integrity_sig',
+    // 12W: kampanya ilerlemesi (v2 anahtarlar) — yoksa sıfırlamadan
+    // sonra harita tamamlanan seviyeler üzerinden açık kalır
+    // (CampaignProgressionService.isLevelUnlocked).
+    'lululu_campaign_stars_v2',
+    'lululu_campaign_scores_v2',
+    'lululu_campaign_completed_v2',
+    'lululu_campaign_boss_cleared_v2',
+    'lululu_campaign_chests_v2',
+    // 12W: LWW alan damgaları + tohum bayrağı — yoksa sıfırlanan
+    // seviye 1 eski damgasıyla kalır ve bulut 18'i geri uygular;
+    // bayrak kalkınca load() damgaları "şimdi" ile yeniden tohumlar,
+    // sonraki senkron 1'i buluta yazar.
+    'lululu_ts_coins',
+    'lululu_ts_energy',
+    'lululu_ts_level',
+    'lululu_ts_f16',
+    'lululu_ts_raid',
+    'lululu_ts_terlik',
+    'lululu_ts_streak',
+    'lululu_ts_tiers',
+    'lululu_ts_display_name',
+    'lululu_ts_extra_powers',
+    'lululu_lww_stamps_seeded_v1',
   ];
 
   const SettingsScreen({
@@ -229,6 +253,10 @@ class SettingsScreen extends StatefulWidget {
       for (final key in _progressResetKeys) {
         await prefs.remove(key);
       }
+      // 12W: kampanya servisinin bellek-içi tamamlanan seviyeleri de
+      // temizlenir (yalnız prefs silmek haritayı açık bırakırdı);
+      // clearLocalData aynı 5 v2 anahtarını kaldırır.
+      await CampaignProgressionService.instance.clearLocalData();
       await ProgressManager.instance.load();
       await EnergyService.instance.refillFull();
       return true;
