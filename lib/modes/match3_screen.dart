@@ -2031,11 +2031,18 @@ class _Match3ScreenState extends State<Match3Screen>
                         // Duraklatma girişi (F3): makara deseninde başlık
                         // bandında, '?' düğmesiyle aynı dairesel dilde;
                         // prototip vitrininde gizli (piksel düzeni bozulmaz).
+                        // 6J: görünür daire 48 px kalır ama dokunma alanı
+                        // 64 px'e genişletildi — daire, REKOR (x<=208) ile
+                        // HAMLE (x>=278.2) kutuları arasındaki boşluğun
+                        // tam ortasında (merkez 243) durur; canlıda
+                        // (215,120) tıklaması dairenin 4 px solundaki ölü
+                        // boşluğa düşüp katman açmamıştı (A8d G45). Geniş
+                        // alan yalnız saydam dolgudur, görsel yer değişmez.
                         if (!widget.prototypeVisualState)
                           Positioned(
-                            left: 219,
+                            left: 211,
                             top: 9.2,
-                            width: 48,
+                            width: 64,
                             height: 48,
                             child: Semantics(
                               button: true,
@@ -2043,26 +2050,30 @@ class _Match3ScreenState extends State<Match3Screen>
                               child: GestureDetector(
                                 onTap: _togglePause,
                                 behavior: HitTestBehavior.opaque,
-                                child: Container(
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xDB080B12),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: const Color(0xB3FFB800),
-                                      width: 2,
-                                    ),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x66000000),
-                                        offset: Offset(0, 3),
+                                child: Center(
+                                  child: Container(
+                                    width: 48,
+                                    height: 48,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xDB080B12),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0xB3FFB800),
+                                        width: 2,
                                       ),
-                                    ],
-                                  ),
-                                  child: const Icon(
-                                    Icons.pause_rounded,
-                                    size: 22,
-                                    color: Color(0xFFFFB800),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Color(0x66000000),
+                                          offset: Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.pause_rounded,
+                                      size: 22,
+                                      color: Color(0xFFFFB800),
+                                    ),
                                   ),
                                 ),
                               ),
