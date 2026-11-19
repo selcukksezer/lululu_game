@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -47,18 +48,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       // Yerel kayıt okunamazsa bile iskelet ekranda takılı kalmasın.
     }
     if (mounted) setState(() => _loading = false);
-  }
-
-  static String _formatScore(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(s[i]);
-    }
-    return buf.toString();
   }
 
   void _handleBack() {
@@ -104,17 +93,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         LeaderboardService.instance,
       ]),
       builder: (context, _) {
-        final int myScoreVal = 7915 + ProgressManager.instance.total11ModesScore;
-        final myScoreText = _formatScore(myScoreVal);
+        // 12A: gerçek değerler — 7915 tabanı kaldırıldı; 0 ilerlemede
+        // SEN satırı 0 puan gösterir.
+        final int myScoreVal = ProgressManager.instance.total11ModesScore;
+        final myScoreText =
+            formatGroupedInt(myScoreVal, Localizations.localeOf(context).languageCode);
 
-        // SEN satırı (W101-2): seviye top_bar.dart:54 +
-        // profile_screen.dart:165'teki formülle aynı
-        // (unlockedLevel > 1 ? 17 + unlockedLevel : 18); ad
+        // SEN satırı (W101-2): seviye top_bar.dart + profile_screen.dart
+        // ile aynı (gerçek seviye: unlockedLevel, 0/1 ise 1); ad
         // AuthService.displayName, giriş yoksa 'LülüSever' yedeği
         // (leaderboard_service.dart:577-578 ile aynı).
-        final int myLevel = ProgressManager.instance.unlockedLevel > 1
-            ? (17 + ProgressManager.instance.unlockedLevel)
-            : 18;
+        final int myLevel = ProgressManager.instance.unlockedLevel < 1
+            ? 1
+            : ProgressManager.instance.unlockedLevel;
         final String myDisplayName = AuthService.instance.isSignedIn
             ? AuthService.instance.displayName
             : 'LülüSever';
@@ -129,8 +120,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         final others = entries
             .where((e) => !e.isLocalPlayer && e.playerId != uid)
             .toList();
-        // SEN satırı: formül (7915 + toplam) AYNEN korunur — yalnız
-        // sıralamadaki yeri gerçek rakip skorlarına göre hesaplanır.
+        // SEN satırı: gerçek toplam skor gösterilir; sıralamadaki yeri
+        // gerçek rakip skorlarına göre hesaplanır.
         // Tahta boşken SEN satırı da gösterilmez, yalnız boş bant görünür.
         final combined = <({int score, bool isMe, LeaderboardEntry? entry})>[
           for (final e in others) (score: e.score, isMe: false, entry: e),
@@ -159,7 +150,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 rank: i + 1,
                 name: combined[i].entry!.playerName,
                 level: _modeSubtitle(context, combined[i].entry!.modeId),
-                score: _formatScore(combined[i].entry!.score),
+                score: formatGroupedInt(
+                  combined[i].entry!.score,
+                  Localizations.localeOf(context).languageCode,
+                ),
                 avatar: _avatarFor(combined[i].entry!.playerName),
                 imgTop: 2.4,
                 imgHeight: 35.2,

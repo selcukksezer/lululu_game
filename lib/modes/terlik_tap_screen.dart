@@ -16,6 +16,7 @@ import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
 import '../widgets/sticker_image.dart';
@@ -1277,10 +1278,11 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     });
   }
 
-  String _formatNumber(int value) {
-    final digits = value.toString();
-    return digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
-  }
+  // 12A: dile duyarlı binlik ayırıcı (TR '.', EN ',').
+  String _formatNumber(int value) => formatGroupedInt(
+        value,
+        Localizations.localeOf(context).languageCode,
+      );
 
   /// Küçük duraklatma düğmesi (madde 37): başlık satırında '?' düğmesinin
   /// yanında, HUD düzenini kaydırmadan durur; prototip vitrininde gizlidir.

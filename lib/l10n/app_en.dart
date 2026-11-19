@@ -555,7 +555,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingVersionLine =>
-      'v3.0 · Touch-friendly on mobile & desktop';
+      'v1.0 · Touch-friendly on mobile & desktop';
 
   // --- Dalga 15 göçü: Açılış ekranı (splash_screen) ---
 

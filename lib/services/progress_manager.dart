@@ -513,6 +513,18 @@ class ProgressManager extends ChangeNotifier {
     return sum;
   }
 
+  /// Bir seviye için gereken XP (12A: şişirme değil, seviye hedefi).
+  static const int xpTargetPerLevel = 2000;
+
+  /// Gerçek XP (12A): kalıcı bir XP alanı yoktur; XP gerçek ilerlemeden
+  /// türetilir — TABAN YOK, 0 ilerlemede 0 XP. Bileşenler: yıldız başına
+  /// 25, günlük 'play' başına 40, toplam skorun 50'ye bölümünün 760
+  /// modülü (eski top_bar formülünün 1240 tabansız hâli).
+  int get xp =>
+      totalStars * 25 +
+      (dailyTaskProgress['play'] ?? 0) * 40 +
+      (total11ModesScore ~/ 50) % 760;
+
   static String _todayKey() {
     final n = DateTime.now();
     return '${n.year}-${n.month}-${n.day}';

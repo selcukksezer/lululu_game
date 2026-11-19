@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/bug_video_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 /// Dile duyarlı büyük-harf dönüşümü.
@@ -2517,16 +2518,18 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
   /// Özet satırındaki toplam boyut, listedeki dosyaların boyutlarının
   /// toplamıdır (sabit "1,21 GB" yazısı liste toplamı ~290 MB ile
   /// çelişiyordu, bulgu #8). Silme sonrası da güncel kalır.
+  /// 12A: ondalık ayırıcı dile duyarlıdır (TR ',', EN '.').
   String _totalSizeText() {
     var totalMb = 0.0;
     for (final d in _downloads) {
       totalMb += (d['sizeMb'] as num?)?.toDouble() ?? 0.0;
     }
+    final languageCode = Localizations.localeOf(context).languageCode;
     if (totalMb >= 1024) {
-      final gb = (totalMb / 1024).toStringAsFixed(2).replaceAll('.', ',');
-      return '$gb GB';
+      final gb = totalMb / 1024;
+      return '${formatDecimal(gb, 2, languageCode)} GB';
     }
-    return '${totalMb.toStringAsFixed(1).replaceAll('.', ',')} MB';
+    return '${formatDecimal(totalMb, 1, languageCode)} MB';
   }
 
   /// Kimlikle silme (2N gözlemi): yerel liste indeksiyle silme,

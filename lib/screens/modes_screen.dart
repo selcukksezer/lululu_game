@@ -6,6 +6,7 @@ import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 
 String _trUpper(String input, Locale locale) {
   if (locale.languageCode != 'tr') {
@@ -43,17 +44,11 @@ class ModesScreen extends StatefulWidget {
 }
 
 class _ModesScreenState extends State<ModesScreen> {
-  String _formatNumber(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
+  // 12A: dile duyarlı binlik ayırıcı (TR '.', EN ',').
+  String _formatNumber(int value) => formatGroupedInt(
+        value,
+        Localizations.localeOf(context).languageCode,
+      );
 
   void _openMode(LululuGameMode mode) {
     AudioManager().playPop();

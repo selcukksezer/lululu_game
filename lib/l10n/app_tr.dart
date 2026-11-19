@@ -561,7 +561,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get onboardingVersionLine =>
-      'v3.0 · Mobil & Masaüstü Dokunmatik Uyumlu';
+      'v1.0 · Mobil & Masaüstü Dokunmatik Uyumlu';
 
   // --- Dalga 15 göçü: Açılış ekranı (splash_screen) ---
 

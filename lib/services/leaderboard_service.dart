@@ -639,15 +639,18 @@ class LeaderboardService extends ChangeNotifier {
     final int myDynamicScore;
     if (category == LeaderboardCategory.total11Modes) {
       final sum = total11ModesScore;
-      myDynamicScore = sum > 0 ? sum : 7915;
+      // 12A: gerçek değer — 7915 yedeği kaldırıldı; 0 ise 0.
+      myDynamicScore = sum;
     } else if (modeId != null && modeId.isNotEmpty) {
       final mScore = getBest(modeId);
-      myDynamicScore = mScore > 0 ? mScore : 7915;
+      // 12A: gerçek değer — 7915 yedeği kaldırıldı; 0 ise 0.
+      myDynamicScore = mScore;
     } else {
       final best = myBestOverall;
       final sum = total11ModesScore;
       final candidate = sum > best ? sum : best;
-      myDynamicScore = candidate > 0 ? candidate : 7915;
+      // 12A: gerçek değer — 7915 yedeği kaldırıldı; 0 ise 0.
+      myDynamicScore = candidate;
     }
 
     final map = <String, LeaderboardEntry>{};

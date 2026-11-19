@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import 'energy_empty_popup.dart';
 
 /// Üst bar: profil avatarı (etrafında dairesel XP barı + alt LVL rozeti),
@@ -28,17 +29,6 @@ class LululuTopBar extends StatelessWidget {
   /// Açık hub temasında (beyaz) zemin ve yazılar açık/koyu ayarlanır.
   final bool light;
 
-  static String _fmt(int n) {
-    final s = n.toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      final fromEnd = s.length - i;
-      buf.write(s[i]);
-      if (fromEnd > 1 && fromEnd % 3 == 1) buf.write('.');
-    }
-    return buf.toString();
-  }
-
   void _showEnergyDialog(BuildContext context) {
     showEnergyEmptyPopup(context);
   }
@@ -50,15 +40,15 @@ class LululuTopBar extends StatelessWidget {
       builder: (context, _) {
         final pm = ProgressManager();
         final displayCoins = pm.coins;
-        final displayStars = pm.totalStars > 0 ? pm.totalStars : 86;
-        final level = pm.unlockedLevel > 1 ? (17 + pm.unlockedLevel) : 18;
-        final rawXp = 1240 +
-            (pm.totalStars * 25) +
-            ((pm.dailyTaskProgress['play'] ?? 0) * 40) +
-            ((pm.total11ModesScore ~/ 50) % 760);
-        const xpTarget = 2000;
-        final xpCurrent = rawXp.clamp(1240, xpTarget);
-        final xpFrac = (xpCurrent / xpTarget).clamp(0.18, 1.0);
+        // 12A: gerçek değerler — yıldız yedeği (86) ve seviye/XP
+        // tabanları kaldırıldı; 0 ilerlemede 0 yıldız / seviye 1 / 0 XP.
+        final displayStars = pm.totalStars;
+        final level = pm.unlockedLevel < 1 ? 1 : pm.unlockedLevel;
+        final rawXp = pm.xp;
+        const xpTarget = ProgressManager.xpTargetPerLevel;
+        final xpCurrent = rawXp.clamp(0, xpTarget);
+        final xpFrac = (xpCurrent / xpTarget).clamp(0.0, 1.0);
+        final localeCode = Localizations.localeOf(context).languageCode;
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -213,7 +203,7 @@ class LululuTopBar extends StatelessWidget {
                               child: Transform.translate(
                                 offset: const Offset(0, -1.0),
                                 child: Text(
-                                  _fmt(displayCoins),
+                                  formatGroupedInt(displayCoins, localeCode),
                                   maxLines: 1,
                                   overflow: TextOverflow.clip,
                                   style: GoogleFonts.nunito(
@@ -229,7 +219,7 @@ class LululuTopBar extends StatelessWidget {
                           else ...[
                             Flexible(
                               child: Text(
-                                _fmt(displayCoins),
+                                formatGroupedInt(displayCoins, localeCode),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.nunito(

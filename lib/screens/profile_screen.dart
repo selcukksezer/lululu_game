@@ -5,6 +5,7 @@ import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/achievement_toast_overlay.dart';
 import '../widgets/invite_redeem_sheet.dart';
 import '../widgets/home/lululu_dock_bar.dart';
@@ -139,18 +140,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  static String _formatDotNumber(int n) {
-    final s = n.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
-
   void _handleDefaultDockSelect(LululuDockTab tab) {
     AudioManager().playPop();
     if (widget.onSelectDockTab != null) {
@@ -195,15 +184,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         final displayCoins = pm.coins;
         final totalBest = pm.total11ModesScore;
-        final displayTotalScore = 7915 + totalBest;
+        // 12A: gerçek değerler — şişirme sabitleri kaldırıldı (0 ilerlemede
+        // 0 skor / 0 oyun / 0 kombo / seviye 1 / tabansız XP).
+        final displayTotalScore = totalBest;
         final playProgress = pm.dailyTaskProgress['play'] ?? 0;
-        final displayGamesPlayed = 48 + playProgress;
+        final displayGamesPlayed = playProgress;
         final comboProgress = pm.dailyTaskProgress['combo'] ?? 0;
-        final displayBestCombo = comboProgress > 6 ? comboProgress : 6;
-        final displayLevel =
-            pm.unlockedLevel > 1 ? (17 + pm.unlockedLevel) : 18;
-        final displayXpCurrent = 1240;
-        const displayXpTarget = 2000;
+        final displayBestCombo = comboProgress;
+        final displayLevel = pm.unlockedLevel < 1 ? 1 : pm.unlockedLevel;
+        final displayXpCurrent = pm.xp;
+        // Seviye başına 2000 XP hedefi: şişirme değil, seviye hedefi
+        // (ProgressManager.xpTargetPerLevel ile aynı değer).
+        final displayXpTarget = ProgressManager.xpTargetPerLevel;
         final xpRatio =
             (displayXpCurrent / displayXpTarget).clamp(0.0, 1.0);
 
@@ -378,7 +370,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       scaleX: 0.96,
                                       scaleY: 1.0,
                                       child: Text(
-                                        _formatDotNumber(displayCoins),
+                                        formatGroupedInt(
+                                          displayCoins,
+                                          Localizations.localeOf(context)
+                                              .languageCode,
+                                        ),
                                         maxLines: 1,
                                         softWrap: false,
                                         style: const TextStyle(
@@ -662,8 +658,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                   children: [
                                                     const TextSpan(text: 'XP '),
                                                     TextSpan(
-                                                      text: _formatDotNumber(
+                                                      text: formatGroupedInt(
                                                         displayXpCurrent,
+                                                        Localizations.localeOf(
+                                                          context,
+                                                        ).languageCode,
                                                       ),
                                                       style: const TextStyle(
                                                         fontFamily: 'Nunito',
@@ -729,7 +728,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 Expanded(
                                   child: _buildStatCard(
                                     iconAsset: 'assets/icons2/trophy.png',
-                                    value: _formatDotNumber(displayTotalScore),
+                                    value: formatGroupedInt(
+                                      displayTotalScore,
+                                      Localizations.localeOf(context)
+                                          .languageCode,
+                                    ),
                                     label: l10n.totalScoreLabel,
                                     isNarrow: isNarrow,
                                   ),
