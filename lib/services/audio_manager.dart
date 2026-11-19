@@ -406,17 +406,36 @@ class AudioManager {
   void Function()? _exclusiveOnComplete;
   bool _exclusiveBusy = false;
 
-  /// Dedicated single-player channel for merge/tier voices (Dalga 11 P2-1).
+  /// Tier voices play on a per-play player (Dalga 12K — 12K-sound-overlap).
   ///
-  /// Merge tier voices used to ride the 8-player SFX pool: after ~3 rapid
-  /// merges the pool wrapped and a later merge's chime/combo stopped the
-  /// player still carrying an earlier merge's tier voice, while 2–3 tier
-  /// voices overlapped — so the ear kept a different tier than the current
-  /// merge. Tier voices now play ONLY here: at most one at a time, and a
-  /// new tier voice first stops the previous one, so what is heard is
-  /// always the latest merge's tier. Merge SFX (chime/combo) and every
-  /// other voice stay on the pool and can never stop this player.
-  AudioPlayer? _voicePlayer;
+  /// Selçuk'un güncel isteği (2026-11-19 20:24, 2048 videosu): bir sonraki
+  /// hamlede önceki ses KESİLMEYECEK, ses tam çalacak; yeni ses eskisinin
+  /// üstüne başlar (örtüşme kabul). Bu, Dalga 11 P2-1'in TERSİDİR (orada
+  /// tek tier-sesi kanalı + yeni ses eskisini durduruyordu).
+  ///
+  /// Her tier sesi [playerFactory] ile yeni bir oyuncuda çalar ve doğal
+  /// bitişte ([onPlayerComplete]) bırakılır — hiçbir çalma başka bir çalmayı
+  /// durdurmaz. Eşzamanlı tier sesi [_maxConcurrentVoices] ile sınırlıdır:
+  /// sınır doluysa YENİ ses düşer (eski ses asla kesilmez). [stopAll] /
+  /// [dispose] yollarındaki kasıtlı susturma aynen durur: onlar bu kümedeki
+  /// her oyuncuyu durdurur/bırakır.
+  final Set<AudioPlayer> _voicePlayers = {};
+
+  /// [_voicePlayers] üyelerinin tamamlanma abonelikleri — bırakma anında
+  /// iptal edilir ([_releaseVoicePlayer]).
+  final Map<AudioPlayer, StreamSubscription<void>> _voiceCompleteSubs = {};
+
+  /// En fazla eşzamanlı tier sesi (12K). Sınır dolunca yeni ses düşer.
+  static const int _maxConcurrentVoices = 4;
+
+  /// SFX havuzunda şu an çalan oyuncular (12K): [playSfx] boş oyuncu
+  /// seçer; havuz doluysa yeni SFX düşer, çalan SFX asla kesilmez.
+  /// Tamamlanma ([onPlayerComplete]) oyuncuyu boşaltır; [stopAll] her
+  /// durdurduğu oyuncuyu buradan çıkarır.
+  final Set<AudioPlayer> _busyPoolPlayers = {};
+
+  /// Havuz oyuncularının tamamlanma abonelikleri ([dispose] iptal eder).
+  final List<StreamSubscription<void>> _poolCompleteSubs = [];
 
   /// True while [playExclusiveSfx] clip is still playing.
   bool get isExclusivePlaying => _exclusiveBusy;
@@ -474,6 +493,13 @@ class AudioManager {
         final p = playerFactory();
         unawaited(p.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
         _playersPool.add(p);
+        // 12K: doğal bitiş oyuncuyu boşaltır — havuz dolunca çalan sesin
+        // üstüne yazılmaz, boş oyuncu beklenir.
+        _poolCompleteSubs.add(
+          p.onPlayerComplete.listen((_) {
+            _busyPoolPlayers.remove(p);
+          }),
+        );
       } catch (_) {}
     }
   }
@@ -494,11 +520,37 @@ class AudioManager {
     }
   }
 
+  /// Kasıtlı susturma (12K: aynen kalır): kümedeki her tier sesi
+  /// oyuncusunu durdurur ve bırakır. Çalma yolundan çağrılmaz.
   Future<void> _stopVoicePlayer() async {
-    final voice = _voicePlayer;
-    if (voice == null) return;
+    if (_voicePlayers.isEmpty) return;
+    final players = _voicePlayers.toList();
+    for (final player in players) {
+      await _releaseVoicePlayer(player, stopFirst: true);
+    }
+  }
+
+  /// [player] oyuncusunu tier sesi kümesinden çıkarır, tamamlanma
+  /// aboneliğini iptal eder ve oyuncuyu bırakır. [stopFirst] ise önce
+  /// durdurur ([stopAll] yolu); yoksa ses zaten doğal bitti.
+  /// İki kez çağrılmak güvenlidir (küme/eşleme çıkarma + yakalanan
+  /// hatalar idempotenttir).
+  Future<void> _releaseVoicePlayer(
+    AudioPlayer player, {
+    bool stopFirst = false,
+  }) async {
+    final sub = _voiceCompleteSubs.remove(player);
     try {
-      await voice.stop();
+      await sub?.cancel();
+    } catch (_) {}
+    _voicePlayers.remove(player);
+    if (stopFirst) {
+      try {
+        await player.stop();
+      } catch (_) {}
+    }
+    try {
+      await player.dispose();
     } catch (_) {}
   }
 
@@ -519,6 +571,9 @@ class AudioManager {
       } catch (_) {
         // Platform / already released
       }
+      // 12K: durdurulan oyuncu boştur — çalma yolunda bir daha
+      // seçilebilsin (stop() tamamlanma olayı üretmez).
+      _busyPoolPlayers.remove(p);
     }
   }
 
@@ -558,6 +613,10 @@ class AudioManager {
     return 'audio/$name';
   }
 
+  /// 12K — çalma öncesi `stop()` yok: seçilen oyuncu çalıyorsa üstüne
+  /// yazılmaz; [_nextFreePoolPlayer] boş oyuncu arar, havuz doluysa yeni
+  /// SFX düşer (çalan ses tam biter). Çalma-sonrası kuşak denetimindeki
+  /// `stop()` kasıtlı susturmadır ([stopAll] araya girdiyse) ve kalır.
   Future<void> playSfx(
     String assetName, {
     double volume = 1.0,
@@ -566,25 +625,48 @@ class AudioManager {
   }) async {
     if (!_canPlayAsset(assetName, isVoiceOverride: isVoice)) return;
     final gen = _playGeneration;
+    AudioPlayer? player;
     try {
       if (_playersPool.isEmpty) initialize();
       if (_playersPool.isEmpty || gen != _playGeneration) return;
-      final player = _playersPool[_poolIndex];
-      _poolIndex = (_poolIndex + 1) % _playersPool.length;
-      await player.stop();
-      if (gen != _playGeneration) return;
+      player = _nextFreePoolPlayer();
+      if (player == null) return;
+      _busyPoolPlayers.add(player);
+      if (gen != _playGeneration) {
+        _busyPoolPlayers.remove(player);
+        return;
+      }
       await player.setVolume(volume.clamp(0.0, 1.0));
       await player.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
-      if (gen != _playGeneration) return;
+      if (gen != _playGeneration) {
+        _busyPoolPlayers.remove(player);
+        return;
+      }
       await player.play(AssetSource(_normalizeAssetPath(assetName)));
       if (gen != _playGeneration) {
         try {
           await player.stop();
         } catch (_) {}
+        _busyPoolPlayers.remove(player);
       }
     } catch (_) {
+      // Çalma kurulamadıysa oyuncu boş sayılır — havuz daralmasın.
+      if (player != null) _busyPoolPlayers.remove(player);
       // Graceful fallback for headless / test / platform audio constraints
     }
+  }
+
+  /// Round-robin sıradaki BOŞ havuz oyuncusu; hepsi çalıyorsa null.
+  /// [_poolIndex] seçilen oyuncunun bir sonrasına ilerler.
+  AudioPlayer? _nextFreePoolPlayer() {
+    for (var i = 0; i < _playersPool.length; i++) {
+      final candidate = _playersPool[(_poolIndex + i) % _playersPool.length];
+      if (!_busyPoolPlayers.contains(candidate)) {
+        _poolIndex = (_poolIndex + i + 1) % _playersPool.length;
+        return candidate;
+      }
+    }
+    return null;
   }
 
   /// One clip at a time. Returns `false` if another exclusive clip is active.
@@ -679,15 +761,17 @@ class AudioManager {
     );
   }
 
-  /// Plays [assetName] on the dedicated single-player tier-voice channel
-  /// ([_voicePlayer], Dalga 11 P2-1) — never on the SFX pool.
+  /// Plays [assetName] on a FRESH per-play player (Dalga 12K) — never on
+  /// the SFX pool and never by stopping another voice.
   ///
-  /// The player is created lazily via [playerFactory] and reused: each
-  /// new tier voice first stops the previous one, so at most one tier
-  /// voice plays at a time and it is always the latest. Merge chime/combo
-  /// and all other sounds use the pool and can never stop this player.
-  /// The [_playGeneration] guard mirrors [playSfx]: an in-flight voice
-  /// aborts after [stopAll] / leave-screen.
+  /// Each call creates its own player via [playerFactory]: a new tier
+  /// voice starts immediately on top of the previous one, and the old one
+  /// finishes on its own ([onPlayerComplete] releases the player). No
+  /// pre-play `stop()` anywhere on this path. At most
+  /// [_maxConcurrentVoices] tier voices overlap; past the cap the NEW
+  /// voice is dropped (the playing ones are never cut). The
+  /// [_playGeneration] guard mirrors [playSfx]: an in-flight voice aborts
+  /// after [stopAll] / leave-screen (intentional silencing, kept).
   Future<void> _playVoiceChannel(
     String assetName, {
     double volume = 1.0,
@@ -695,25 +779,35 @@ class AudioManager {
   }) async {
     if (!_canPlayAsset(assetName, isVoiceOverride: true)) return;
     final gen = _playGeneration;
+    AudioPlayer? player;
     try {
-      if (_voicePlayer == null) {
-        final created = playerFactory();
-        unawaited(created.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
-        _voicePlayer = created;
-      }
-      final player = _voicePlayer!;
-      await player.stop();
-      if (gen != _playGeneration) return;
-      await player.setVolume(volume.clamp(0.0, 1.0));
-      await player.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
-      if (gen != _playGeneration) return;
-      await player.play(AssetSource(_normalizeAssetPath(assetName)));
+      if (_voicePlayers.length >= _maxConcurrentVoices) return;
+      final created = playerFactory();
+      player = created;
+      _voicePlayers.add(created);
+      unawaited(created.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
+      _voiceCompleteSubs[created] = created.onPlayerComplete.listen(
+        (_) => unawaited(_releaseVoicePlayer(created)),
+      );
       if (gen != _playGeneration) {
-        try {
-          await player.stop();
-        } catch (_) {}
+        await _releaseVoicePlayer(created, stopFirst: true);
+        return;
+      }
+      await created.setVolume(volume.clamp(0.0, 1.0));
+      await created.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
+      if (gen != _playGeneration) {
+        await _releaseVoicePlayer(created, stopFirst: true);
+        return;
+      }
+      await created.play(AssetSource(_normalizeAssetPath(assetName)));
+      if (gen != _playGeneration) {
+        await _releaseVoicePlayer(created, stopFirst: true);
       }
     } catch (_) {
+      // Kurulamadı/yarıda kesildi: oyuncu bırakılır — küme daralmasın.
+      if (player != null) {
+        await _releaseVoicePlayer(player);
+      }
       // Graceful fallback for headless / test / platform audio constraints
     }
   }
@@ -741,8 +835,9 @@ class AudioManager {
       plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
     }
     if (_voiceAudible && voiceAsset != null) {
-      // Tier sesi havuza değil özel kanala (Dalga 11 P2-1): chime/combo
-      // onu kesemez, yeni birleşme eskisinin yerini temiz alır.
+      // Tier sesi havuza değil çalma başına oyuncuya (Dalga 12K):
+      // chime/combo onu kesemez, yeni birleşme eskisinin üstüne başlar,
+      // eski ses kendi bitirir.
       plays.add(_playVoiceChannel(voiceAsset));
     }
     if (plays.isNotEmpty) {
@@ -1169,11 +1264,22 @@ class AudioManager {
     try {
       exclusive?.dispose();
     } catch (_) {}
-    final voice = _voicePlayer;
-    _voicePlayer = null;
-    try {
-      voice?.dispose();
-    } catch (_) {}
+    for (final sub in _voiceCompleteSubs.values) {
+      unawaited(sub.cancel().catchError((_) {}));
+    }
+    _voiceCompleteSubs.clear();
+    final voices = _voicePlayers.toList();
+    _voicePlayers.clear();
+    for (final voice in voices) {
+      try {
+        voice.dispose();
+      } catch (_) {}
+    }
+    for (final sub in _poolCompleteSubs) {
+      unawaited(sub.cancel().catchError((_) {}));
+    }
+    _poolCompleteSubs.clear();
+    _busyPoolPlayers.clear();
     for (final p in _playersPool) {
       try {
         p.dispose();
