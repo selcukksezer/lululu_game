@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 846 getter + 183 metot = 1029 anahtar,
+// açıkça sayılır (soyut sınıftaki 859 getter + 183 metot = 1042 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -527,6 +527,17 @@ void main() {
         'shopItemDoubleCoinDesc': l10n.shopItemDoubleCoinDesc,
         'shopItemLuckPotionTitle': l10n.shopItemLuckPotionTitle,
         'shopItemLuckPotionDesc': l10n.shopItemLuckPotionDesc,
+        // 8F: katalog IAP kartları (13 yeni getter).
+        'shopItemCoinsSmallTitle': l10n.shopItemCoinsSmallTitle,
+        'shopItemCoinsSmallDesc': l10n.shopItemCoinsSmallDesc,
+        'shopItemF16PackTitle': l10n.shopItemF16PackTitle,
+        'shopItemF16PackDesc': l10n.shopItemF16PackDesc,
+        'shopItemRaidPackTitle': l10n.shopItemRaidPackTitle,
+        'shopItemRaidPackDesc': l10n.shopItemRaidPackDesc,
+        'shopItemTerlikPackTitle': l10n.shopItemTerlikPackTitle,
+        'shopItemTerlikPackDesc': l10n.shopItemTerlikPackDesc,
+        'shopItemGoldChestIapTitle': l10n.shopItemGoldChestIapTitle,
+        'shopItemGoldChestIapDesc': l10n.shopItemGoldChestIapDesc,
         'shopNotEnoughGoldToast': l10n.shopNotEnoughGoldToast,
         'shopAddedCoinPackToast': l10n.shopAddedCoinPackToast,
         'shopEnergyRegenToast': l10n.shopEnergyRegenToast,
@@ -540,6 +551,10 @@ void main() {
         'shopAddedGoldenChestToast': l10n.shopAddedGoldenChestToast,
         'shopAddedDoubleCoinToast': l10n.shopAddedDoubleCoinToast,
         'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
+        // 8F: yeni IAP güçlendirici kartlarının başarı toast'ları.
+        'shopAddedF16Toast': l10n.shopAddedF16Toast,
+        'shopAddedRaidToast': l10n.shopAddedRaidToast,
+        'shopAddedTerlikToast': l10n.shopAddedTerlikToast,
         'energyPackBoughtToast': l10n.energyPackBoughtToast,
         'energyRefundNotice': l10n.energyRefundNotice,
         'shopPurchaseFailedRefundToast': l10n.shopPurchaseFailedRefundToast,
@@ -1392,6 +1407,17 @@ void main() {
         'shopItemDoubleCoinDesc': l10n.shopItemDoubleCoinDesc,
         'shopItemLuckPotionTitle': l10n.shopItemLuckPotionTitle,
         'shopItemLuckPotionDesc': l10n.shopItemLuckPotionDesc,
+        // 8F: katalog IAP kartları (13 yeni getter).
+        'shopItemCoinsSmallTitle': l10n.shopItemCoinsSmallTitle,
+        'shopItemCoinsSmallDesc': l10n.shopItemCoinsSmallDesc,
+        'shopItemF16PackTitle': l10n.shopItemF16PackTitle,
+        'shopItemF16PackDesc': l10n.shopItemF16PackDesc,
+        'shopItemRaidPackTitle': l10n.shopItemRaidPackTitle,
+        'shopItemRaidPackDesc': l10n.shopItemRaidPackDesc,
+        'shopItemTerlikPackTitle': l10n.shopItemTerlikPackTitle,
+        'shopItemTerlikPackDesc': l10n.shopItemTerlikPackDesc,
+        'shopItemGoldChestIapTitle': l10n.shopItemGoldChestIapTitle,
+        'shopItemGoldChestIapDesc': l10n.shopItemGoldChestIapDesc,
         'shopNotEnoughGoldToast': l10n.shopNotEnoughGoldToast,
         'shopAddedCoinPackToast': l10n.shopAddedCoinPackToast,
         'shopEnergyRegenToast': l10n.shopEnergyRegenToast,
@@ -1405,6 +1431,10 @@ void main() {
         'shopAddedGoldenChestToast': l10n.shopAddedGoldenChestToast,
         'shopAddedDoubleCoinToast': l10n.shopAddedDoubleCoinToast,
         'shopAddedLuckPotionToast': l10n.shopAddedLuckPotionToast,
+        // 8F: yeni IAP güçlendirici kartlarının başarı toast'ları.
+        'shopAddedF16Toast': l10n.shopAddedF16Toast,
+        'shopAddedRaidToast': l10n.shopAddedRaidToast,
+        'shopAddedTerlikToast': l10n.shopAddedTerlikToast,
         'energyPackBoughtToast': l10n.energyPackBoughtToast,
         'energyRefundNotice': l10n.energyRefundNotice,
         'shopPurchaseFailedRefundToast': l10n.shopPurchaseFailedRefundToast,
@@ -2165,7 +2195,7 @@ void main() {
   // çıkarıldı: app_en.dart / app_tr.dart'taki string literalleri
   // taranıp (tek satırlı `=> '...'` + bitişik string'ler birleştirilerek)
   // EN ve TR değeri birebir aynı olan anahtarların TAMAMI alındı
-  // (21 getter + 11 metot şablonu). Her girdinin gerekçesi yanındadır.
+  // (23 getter + 11 metot şablonu). Her girdinin gerekçesi yanındadır.
   // NOT: `levelBadge` koşullu metot olduğu için listededir ama
   // çalışma zamanı eşitliği denetlenmez (bkz. `conditionalMethods`).
   const allowedIdentical = {
@@ -2191,6 +2221,8 @@ void main() {
     'shopModeMakarayiz', // özel ad: 'Makarayız'
     'shopPowerDikkisBoostName', // marka/ünlem ifadesi: 'Dıkkış Boost'
     'shopPowerNitroName', // ortak kelime: 'Nitro'
+    'shopItemF16PackTitle', // 8F: ürün adı + sayı, iki dilde de: 'F16 x3'
+    'shopItemRaidPackTitle', // 8F: ürün adı + sayı, iki dilde de: 'Raid x3'
     // --- Metotlar: EN ve TR şablonu birebir aynı ---
     'tierLabel', // şablon 'Tier $tier': oyun terimi + sayı
     'levelBadge', // koşullu; her iki dalın şablonu da aynı: kısaltma + sayı
@@ -2218,21 +2250,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 1029 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1042 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 846);
-    expect(tr.length, 846);
+    expect(en.length, 859);
+    expect(tr.length, 859);
     expect(enMethods.length, 183);
     expect(trMethods.length, 183);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1029);
+    expect(en.length + enMethods.length, 1042);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

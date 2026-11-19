@@ -1136,6 +1136,100 @@ class _ShopScreenState extends State<ShopScreen> {
                         for (final group in _powerGroups(l10n))
                           _buildPowGroup(group),
 
+                        // 8F: katalog IAP güçlendirici kartları — f16_x3 /
+                        // raid_x3 / terlik_x5 / double_coin / luck_potion.
+                        // Başlık + açıklama + fiyat katalogdan verbatim
+                        // (iap_service.dart storeCatalog); satın alma
+                        // mevcut _buyIapProduct + O1/O2 onay deseniyle.
+                        // double_coin / luck_potion'ın coin kartı
+                        // Sandıklar bölümünde durur; bu kartlar aynı
+                        // ürünün mağaza (₺) yoludur.
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/powerup_aydinlat.png',
+                            title: l10n.shopItemF16PackTitle,
+                            desc: l10n.shopItemF16PackDesc,
+                            priceText: '₺39,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'f16_x3',
+                              itemName: l10n.shopItemF16PackTitle,
+                              priceLabel: '₺39,99',
+                              successToast: l10n.shopAddedF16Toast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/powerup_raid_spreyi.png',
+                            title: l10n.shopItemRaidPackTitle,
+                            desc: l10n.shopItemRaidPackDesc,
+                            priceText: '₺24,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'raid_x3',
+                              itemName: l10n.shopItemRaidPackTitle,
+                              priceLabel: '₺24,99',
+                              successToast: l10n.shopAddedRaidToast,
+                            ),
+                          ),
+                          topPadding: 8,
+                        ),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/powerup_terlik.png',
+                            title: l10n.shopItemTerlikPackTitle,
+                            desc: l10n.shopItemTerlikPackDesc,
+                            priceText: '₺29,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'terlik_x5',
+                              itemName: l10n.shopItemTerlikPackTitle,
+                              priceLabel: '₺29,99',
+                              successToast: l10n.shopAddedTerlikToast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/boost_coins.png',
+                            title: l10n.shopItemDoubleCoinTitle,
+                            desc: l10n.shopItemDoubleCoinDesc,
+                            priceText: '₺39,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'double_coin',
+                              itemName: l10n.shopItemDoubleCoinTitle,
+                              priceLabel: '₺39,99',
+                              successToast: l10n.shopAddedDoubleCoinToast,
+                            ),
+                          ),
+                          topPadding: 8,
+                        ),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/potion_luck.png',
+                            title: l10n.shopItemLuckPotionTitle,
+                            desc: l10n.shopItemLuckPotionDesc,
+                            priceText: '₺19,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'luck_potion',
+                              itemName: l10n.shopItemLuckPotionTitle,
+                              priceLabel: '₺19,99',
+                              successToast: l10n.shopAddedLuckPotionToast,
+                            ),
+                          ),
+                          null,
+                          topPadding: 8,
+                        ),
+
                         // Extra shop grid after #shopPowers
                         _buildShopGridRow(
                           _ShopItemData(
@@ -1219,6 +1313,64 @@ class _ShopScreenState extends State<ShopScreen> {
                           topPadding: 8,
                         ),
 
+                        // 8F: katalog IAP coin kartları — coins_small /
+                        // coins_handful / coins_crate. Başlık + açıklama +
+                        // fiyat katalogdan verbatim (coins_small `packs`'te
+                        // — `findCatalogItem` onu bulmaz, `purchase()` yol
+                        // alır; handful/crate `storeCatalog`'da).
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/coin.png',
+                            title: l10n.shopItemCoinsSmallTitle,
+                            desc: l10n.shopItemCoinsSmallDesc,
+                            priceText: '₺29,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_small',
+                              itemName: l10n.shopItemCoinsSmallTitle,
+                              priceLabel: '₺29,99',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/coin_stack.png',
+                            title: l10n.shopItemHandfulTitle,
+                            desc: l10n.shopItemHandfulDesc,
+                            priceText: '₺59,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_handful',
+                              itemName: l10n.shopItemHandfulTitle,
+                              priceLabel: '₺59,99',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
+                          ),
+                          topPadding: 8,
+                        ),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/money_bag.png',
+                            title: l10n.shopItemCrateTitle,
+                            desc: l10n.shopItemCrateDesc,
+                            priceText: '₺249,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_crate',
+                              itemName: l10n.shopItemCrateTitle,
+                              priceLabel: '₺249,99',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
+                          ),
+                          null,
+                          topPadding: 8,
+                        ),
+
                         // Section: Sandıklar ve İksirler
                         _buildSecHead(title: l10n.shopChestsAndPotionsTitle),
                         _buildShopGridRow(
@@ -1292,6 +1444,68 @@ class _ShopScreenState extends State<ShopScreen> {
                               onSuccess: () => _grantPowerStock('pair', 1),
                             ),
                           ),
+                        ),
+
+                        // 8F: katalog IAP sandık kartları — gold_chest /
+                        // surprise_box / wood_chest. Başlık + açıklama +
+                        // fiyat katalogdan verbatim. gold_chest IAP kartı
+                        // katalog başlığını ('Altın Sandığı') ve
+                        // açıklamasını kullanır — coin kartındaki
+                        // 'Altın Sandık' / 'Garantili nadir ödül içerir'
+                        // metninden farklıdır, ayrı l10n anahtarı
+                        // (shopItemGoldChestIapTitle/Desc) gerekir.
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/chest_gold.png',
+                            title: l10n.shopItemGoldChestIapTitle,
+                            desc: l10n.shopItemGoldChestIapDesc,
+                            priceText: '₺89,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'gold_chest',
+                              itemName: l10n.shopItemGoldChestIapTitle,
+                              priceLabel: '₺89,99',
+                              successToast: l10n.shopAddedGoldenChestToast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/gift_box.png',
+                            title: l10n.shopItemSurpriseBoxTitle,
+                            desc: l10n.shopItemSurpriseBoxDesc,
+                            priceText: '₺34,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'surprise_box',
+                              itemName: l10n.shopItemSurpriseBoxTitle,
+                              priceLabel: '₺34,99',
+                              successToast: l10n.shopAddedSurpriseBoxToast,
+                            ),
+                          ),
+                          topPadding: 8,
+                        ),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/chest_wood.png',
+                            title: l10n.shopItemWoodenChestTitle,
+                            desc: l10n.shopItemWoodenChestDesc,
+                            priceText: '₺19,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'wood_chest',
+                              itemName: l10n.shopItemWoodenChestTitle,
+                              priceLabel: '₺19,99',
+                              successToast: l10n.shopAddedWoodenChestToast,
+                            ),
+                          ),
+                          null,
+                          topPadding: 8,
+                          bottomPadding: 12,
                         ),
 
                         // Section: Kozmetik (K8 — Kraliyet Pelerini:
@@ -1535,6 +1749,13 @@ class _ShopScreenState extends State<ShopScreen> {
                         item.title,
                         item.priceText,
                       ),
+                // 8F: tek kartlı satırda (sağ kart null) başlık +
+                // açıklama + düğme etiketi tek semantics düğümünde
+                // birleşiyordu ('BİR KASA\n...\nBir Kasa satın al...')
+                // — tam eşleşme bulunamıyor, dokunma düğmeye değil
+                // kart ortasına düşüyordu. `container: true` düğümü
+                // sınır yapar: etiket her satırda tek satır kalır.
+                container: true,
                 excludeSemantics: true,
                 child: GestureDetector(
                   // CustomPaint katmanı üzerinden dokunma

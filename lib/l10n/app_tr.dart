@@ -1831,6 +1831,38 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get shopItemLuckPotionDesc => '2048 Çiftleştir x1';
 
+  // 8F: TR değerleri katalogdan verbatim (iap_service.dart).
+  @override
+  String get shopItemCoinsSmallTitle => 'Küçük Torba';
+
+  @override
+  String get shopItemCoinsSmallDesc => '500 coin';
+
+  @override
+  String get shopItemF16PackTitle => 'F16 x3';
+
+  @override
+  String get shopItemF16PackDesc => '3 adet F16 Hava Desteği güçlendiricisi';
+
+  @override
+  String get shopItemRaidPackTitle => 'Raid x3';
+
+  @override
+  String get shopItemRaidPackDesc => '3 adet Raid Sprey güçlendiricisi';
+
+  @override
+  String get shopItemTerlikPackTitle => 'Anne Terliği x5';
+
+  @override
+  String get shopItemTerlikPackDesc => '5 adet Anne Terliği güçlendiricisi';
+
+  @override
+  String get shopItemGoldChestIapTitle => 'Altın Sandığı';
+
+  @override
+  String get shopItemGoldChestIapDesc =>
+      '+1.200 Altın + F16 x1 + Raid x2 + Anne Terliği x2';
+
   @override
   String get shopNotEnoughGoldToast => 'Yetersiz altın! Oyun oynayarak altın kazanabilirsin.';
 
@@ -1869,6 +1901,16 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get shopAddedLuckPotionToast => 'Şans İksiri sepete eklendi';
+
+  // 8F: yeni IAP güçlendirici kartlarının başarı toast'ları.
+  @override
+  String get shopAddedF16Toast => 'F16 x3 sepete eklendi';
+
+  @override
+  String get shopAddedRaidToast => 'Raid x3 sepete eklendi';
+
+  @override
+  String get shopAddedTerlikToast => 'Anne Terliği x5 sepete eklendi';
 
   @override
   String get energyPackBoughtToast => '+5 enerji eklendi!';

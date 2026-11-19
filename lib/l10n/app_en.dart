@@ -1833,6 +1833,38 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get shopItemLuckPotionDesc => '2048 Pair Up x1';
 
+  // 8F: EN karşılıkları (TR katalog değerlerinin çevirisi).
+  @override
+  String get shopItemCoinsSmallTitle => 'Small Pouch';
+
+  @override
+  String get shopItemCoinsSmallDesc => '500 coins';
+
+  @override
+  String get shopItemF16PackTitle => 'F16 x3';
+
+  @override
+  String get shopItemF16PackDesc => '3 F16 Air Support power-ups';
+
+  @override
+  String get shopItemRaidPackTitle => 'Raid x3';
+
+  @override
+  String get shopItemRaidPackDesc => '3 Raid Spray power-ups';
+
+  @override
+  String get shopItemTerlikPackTitle => 'Slipper Shake x5';
+
+  @override
+  String get shopItemTerlikPackDesc => '5 Slipper Shake power-ups';
+
+  @override
+  String get shopItemGoldChestIapTitle => 'Golden Chest';
+
+  @override
+  String get shopItemGoldChestIapDesc =>
+      '+1,200 Gold + F16 x1 + Raid x2 + Slipper Shake x2';
+
   @override
   String get shopNotEnoughGoldToast => 'Not enough gold! Play games to earn gold.';
 
@@ -1871,6 +1903,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shopAddedLuckPotionToast => 'Luck Potion added to cart';
+
+  // 8F: yeni IAP güçlendirici kartlarının başarı toast'ları.
+  @override
+  String get shopAddedF16Toast => 'F16 x3 added to cart';
+
+  @override
+  String get shopAddedRaidToast => 'Raid x3 added to cart';
+
+  @override
+  String get shopAddedTerlikToast => 'Slipper Shake x5 added to cart';
 
   @override
   String get energyPackBoughtToast => '+5 energy added!';

@@ -853,6 +853,22 @@ abstract class AppLocalizations {
   String get shopItemDoubleCoinDesc;
   String get shopItemLuckPotionTitle;
   String get shopItemLuckPotionDesc;
+  // 8F: katalog IAP kartları için yeni başlık/açıklama anahtarları.
+  // TR değerleri katalogdan verbatim (iap_service.dart storeCatalog /
+  // packs); coins_small `packs`'te, diğerleri `storeCatalog`'da.
+  // gold_chest IAP kartı katalog başlığını/açıklamasını kullanır
+  // (coin kartındaki 'Altın Sandık' / 'Garantili nadir ödül içerir'
+  // metninden farklıdır — ayrı anahtar gerekir).
+  String get shopItemCoinsSmallTitle;
+  String get shopItemCoinsSmallDesc;
+  String get shopItemF16PackTitle;
+  String get shopItemF16PackDesc;
+  String get shopItemRaidPackTitle;
+  String get shopItemRaidPackDesc;
+  String get shopItemTerlikPackTitle;
+  String get shopItemTerlikPackDesc;
+  String get shopItemGoldChestIapTitle;
+  String get shopItemGoldChestIapDesc;
   String get shopNotEnoughGoldToast;
   String get shopAddedCoinPackToast;
   String get shopEnergyRegenToast;
@@ -866,6 +882,10 @@ abstract class AppLocalizations {
   String get shopAddedGoldenChestToast;
   String get shopAddedDoubleCoinToast;
   String get shopAddedLuckPotionToast;
+  // 8F: yeni IAP güçlendirici kartlarının başarı toast'ları.
+  String get shopAddedF16Toast;
+  String get shopAddedRaidToast;
+  String get shopAddedTerlikToast;
   String get energyPackBoughtToast;
   String get energyRefundNotice;
   String get shopPurchaseFailedRefundToast;
