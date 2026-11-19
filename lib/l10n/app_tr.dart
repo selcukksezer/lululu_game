@@ -220,10 +220,6 @@ class AppLocalizationsTr extends AppLocalizations {
       '$label kalmadı! Mağazadan alabilirsin.';
 
   @override
-  String levelLockedMessage(int previousLevel) =>
-      'Önce $previousLevel. seviyeyi tamamla.';
-
-  @override
   String taskRewardClaimedSnack(String rewardText) => '$rewardText alındı!';
 
   @override
@@ -835,9 +831,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String chapterLabel(int id) => 'Bölüm $id';
 
   @override
-  String chapterBadgeLabel(int id) => 'B$id';
-
-  @override
   String overflowingCountdown(String seconds) => 'TAŞIYOR! ${seconds}s';
 
   @override
@@ -1090,7 +1083,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get privacySection6Body1 =>
       'Bu metin değişirse güncellenmiş hâli oyun içinde yayınlanır.';
 
-  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen + campaign_map_sheet) ---
+  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen) ---
 
   @override
   String get campaignSuikaHeader => '🪳 SUIKA ARENASI (80 BÖLÜM)';
@@ -1132,24 +1125,6 @@ class AppLocalizationsTr extends AppLocalizations {
       '🎁 $stars⭐ Sandığı Açıldı: +$coins Altın & +$boosterCount $boosterName!';
 
   @override
-  String get campaignSheetTitle => '80 SEVİYE KAMPANYA HARİTASI';
-
-  @override
-  String get campaignSheetSubtitle =>
-      '8 Bölüm · 8 Boss Savaşı · 24 Yıldız Sandığı';
-
-  @override
-  String chapterBannerTitle(int index, String title) =>
-      'BÖLÜM $index: $title';
-
-  @override
-  String bossBannerLine(int id, String bossName, int hp, String hazard) =>
-      '👑 Boss #$id: $bossName ($hp HP) · Tehlike: $hazard';
-
-  @override
-  String levelRangeShort(int start, int end) => 'Sv $start-$end';
-
-  @override
   String chestStarsLabel(int stars) => '$stars⭐ Sandık';
 
   @override
@@ -1157,9 +1132,6 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String chestRewardLine(int coins, int count) => '+$coins🪙 +$count⚡';
-
-  @override
-  String get bossShort => 'BOSS';
 
   // --- Dalga 20 göçü: Sohbet (chat_lobby_screen, chat_screen) ---
 
@@ -2889,10 +2861,6 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String levelTileLabel(int id, int stars, bool locked) =>
       '$id. seviye, $stars yıldız${locked ? ' · Kilitli' : ''}';
-
-  @override
-  String chapterTabLabel(int index, int stars) =>
-      'Bölüm $index, $stars/30 yıldız';
 
   @override
   String chestClaimLabel(int stars, String state) => state == 'claimed'

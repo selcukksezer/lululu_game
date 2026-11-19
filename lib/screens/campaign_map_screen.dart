@@ -27,7 +27,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   final progress = ProgressManager();
 
   /// B15 kanonik kilit tanımı: servis (`ProgressManager` vekâleti +
-  /// `isLevelCompleted(prev)` OR-dalı). Sheet ile aynı tanım.
+  /// `isLevelCompleted(prev)` OR-dalı).
   final _progression = CampaignProgressionService.instance;
   int _selectedChapter = 1;
   bool _isStartingLevel = false;
@@ -35,8 +35,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   bool _chestFeedbackError = false;
 
   /// Sandık ödülü güçlendirici anahtarlarının büyük harfli görünen adları
-  /// (sheet ile aynı eşleme: Dart `toUpperCase()` 'terlik' → 'TERLIK'
-  /// üretir, doğrusu 'TERLİK').
+  /// (Dart `toUpperCase()` 'terlik' → 'TERLIK' üretir, doğrusu 'TERLİK').
   static const Map<String, String> _boosterDisplayNames = {
     'terlik': 'TERLİK',
     'raid': 'RAID',
@@ -224,9 +223,8 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     );
   }
 
-  /// B17-geri: kampanya haritası hub menüsüne bağlı değildir (bağlantı
-  /// kararı bekliyor — bu düğme bağlantı yapmaz, yalnız gezinir):
-  /// geride rota varsa geri döner, yoksa hub yedeğine gider.
+  /// B17-geri + 12B: harita hub'a bağlıdır (hub kartı `goTo('campaign')`
+  /// ile açar); geri düğmesi yığında hub'a döner, yığın yoksa hub'a gider.
   Future<void> _goBack() async {
     AudioManager().playPop();
     final popped = await Navigator.of(context).maybePop();
@@ -390,8 +388,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
 
   /// K3a: bölüm yıldız sandıkları. Harita 4 eski bölge (20'şer seviye)
   /// gösterir; sandıklar 8 temalı bölüme (10'ar seviye) bağlıdır: eski
-  /// bölge N, temalı bölümler [2N-1, 2N]'yi kapsar. Sheet ile aynı servis
-  /// + aynı `canClaimChapterChest` kapısı + aynı null sözleşmesi.
+  /// bölge N, temalı bölümler [2N-1, 2N]'yi kapsar.
   List<int> _themedChaptersForLegacy(int legacyChapter) {
     final first = (legacyChapter * 2) - 1;
     return [first, first + 1];
@@ -759,7 +756,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
       itemCount: levels.length,
       itemBuilder: (context, idx) {
         final level = levels[idx];
-        // B15: kanonik kilit tanımı servistir (sheet ile aynı).
+        // B15: kanonik kilit tanımı servistir.
         final isUnlocked = _progression.isLevelUnlocked(level.id);
         final stars = progress.getStarCount(level.id);
         final isFrontier = isUnlocked && level.id == progress.unlockedLevel;
@@ -816,7 +813,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   /// ilerleme yalnızca oyun sonu uzlaşmasıyla yazılır.
   Future<void> _startLevel(
     CampaignLevel level,
-    BuildContext sheetContext,
+    BuildContext modalContext,
   ) async {
     if (_isStartingLevel) return;
     _isStartingLevel = true;
@@ -825,13 +822,13 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
       final ok = await EnergyService.instance.tryConsume();
       if (!mounted) return;
       if (!ok) {
-        if (sheetContext.mounted) {
-          await showEnergyEmptyPopup(sheetContext);
+        if (modalContext.mounted) {
+          await showEnergyEmptyPopup(modalContext);
         }
         return;
       }
       if (!mounted) return;
-      if (sheetContext.mounted) Navigator.pop(sheetContext);
+      if (modalContext.mounted) Navigator.pop(modalContext);
       await Navigator.push(
         context,
         MaterialPageRoute(

@@ -332,10 +332,7 @@ void main() {
         'levelGoalTitle': l10n.levelGoalTitle,
         'bareTierLabel': l10n.bareTierLabel,
         'upNextLabel': l10n.upNextLabel,
-        'campaignSheetTitle': l10n.campaignSheetTitle,
-        'campaignSheetSubtitle': l10n.campaignSheetSubtitle,
         'claimedPlain': l10n.claimedPlain,
-        'bossShort': l10n.bossShort,
         'messageHint': l10n.messageHint,
         'messageSendFailed': l10n.messageSendFailed,
         'stickerSendFailed': l10n.stickerSendFailed,
@@ -1219,10 +1216,7 @@ void main() {
         'levelGoalTitle': l10n.levelGoalTitle,
         'bareTierLabel': l10n.bareTierLabel,
         'upNextLabel': l10n.upNextLabel,
-        'campaignSheetTitle': l10n.campaignSheetTitle,
-        'campaignSheetSubtitle': l10n.campaignSheetSubtitle,
         'claimedPlain': l10n.claimedPlain,
-        'bossShort': l10n.bossShort,
         'messageHint': l10n.messageHint,
         'messageSendFailed': l10n.messageSendFailed,
         'stickerSendFailed': l10n.stickerSendFailed,
@@ -1824,7 +1818,6 @@ void main() {
         'pausedScoreLine': l10n.pausedScoreLine(3),
         'bossLabel': l10n.bossLabel('X'),
         'chapterLabel': l10n.chapterLabel(3),
-        'chapterBadgeLabel': l10n.chapterBadgeLabel(3),
         'overflowingCountdown': l10n.overflowingCountdown('5'),
         'comboToast': l10n.comboToast(3),
         'boosterCountLabel': l10n.boosterCountLabel('X', 3),
@@ -1838,9 +1831,6 @@ void main() {
         'movesLabel': l10n.movesLabel(3),
         'pointsLabel': l10n.pointsLabel(3),
         'chestUnlockedToast': l10n.chestUnlockedToast(3, 3, 3, 'RAID'),
-        'chapterBannerTitle': l10n.chapterBannerTitle(3, 'X'),
-        'bossBannerLine': l10n.bossBannerLine(3, 'X', 3, 'X'),
-        'levelRangeShort': l10n.levelRangeShort(3, 3),
         'chestStarsLabel': l10n.chestStarsLabel(3),
         'chestRewardLine': l10n.chestRewardLine(3, 3),
         'onlinePlayersCount': l10n.onlinePlayersCount(3),
@@ -1956,7 +1946,6 @@ void main() {
         'gridPauseStats': l10n.gridPauseStats(3, 3, 3),
         // W69-1: semantics eksik 10 (şablonlar)
         'levelTileLabel': l10n.levelTileLabel(3, 3, false),
-        'chapterTabLabel': l10n.chapterTabLabel(3, 3),
         'chestClaimLabel': l10n.chestClaimLabel(3, 'claimable'),
         'channelSelectLabel': l10n.channelSelectLabel('X'),
         'sendStickerLabel': l10n.sendStickerLabel('X'),
@@ -1998,7 +1987,6 @@ void main() {
         'balloonSuperPop': l10n.balloonSuperPop(3),
         'balloonStatsLine': l10n.balloonStatsLine(3, 3, 3, 3),
         'boosterOutOfStockToast': l10n.boosterOutOfStockToast('X'),
-        'levelLockedMessage': l10n.levelLockedMessage(3),
         'taskRewardClaimedSnack': l10n.taskRewardClaimedSnack('X'),
         'dailyChallengeClaimedSnack': l10n.dailyChallengeClaimedSnack(3),
         'dailyChallengeHeadline': l10n.dailyChallengeHeadline('X', 3),
@@ -2025,7 +2013,6 @@ void main() {
         'pausedScoreLine': l10n.pausedScoreLine(3),
         'bossLabel': l10n.bossLabel('X'),
         'chapterLabel': l10n.chapterLabel(3),
-        'chapterBadgeLabel': l10n.chapterBadgeLabel(3),
         'overflowingCountdown': l10n.overflowingCountdown('5'),
         'comboToast': l10n.comboToast(3),
         'boosterCountLabel': l10n.boosterCountLabel('X', 3),
@@ -2039,9 +2026,6 @@ void main() {
         'movesLabel': l10n.movesLabel(3),
         'pointsLabel': l10n.pointsLabel(3),
         'chestUnlockedToast': l10n.chestUnlockedToast(3, 3, 3, 'RAID'),
-        'chapterBannerTitle': l10n.chapterBannerTitle(3, 'X'),
-        'bossBannerLine': l10n.bossBannerLine(3, 'X', 3, 'X'),
-        'levelRangeShort': l10n.levelRangeShort(3, 3),
         'chestStarsLabel': l10n.chestStarsLabel(3),
         'chestRewardLine': l10n.chestRewardLine(3, 3),
         'onlinePlayersCount': l10n.onlinePlayersCount(3),
@@ -2157,7 +2141,6 @@ void main() {
         'gridPauseStats': l10n.gridPauseStats(3, 3, 3),
         // W69-1: semantics eksik 10 (şablonlar)
         'levelTileLabel': l10n.levelTileLabel(3, 3, false),
-        'chapterTabLabel': l10n.chapterTabLabel(3, 3),
         'chestClaimLabel': l10n.chestClaimLabel(3, 'claimable'),
         'channelSelectLabel': l10n.channelSelectLabel('X'),
         'sendStickerLabel': l10n.sendStickerLabel('X'),
@@ -2199,7 +2182,6 @@ void main() {
         'balloonSuperPop': l10n.balloonSuperPop(3),
         'balloonStatsLine': l10n.balloonStatsLine(3, 3, 3, 3),
         'boosterOutOfStockToast': l10n.boosterOutOfStockToast('X'),
-        'levelLockedMessage': l10n.levelLockedMessage(3),
         'taskRewardClaimedSnack': l10n.taskRewardClaimedSnack('X'),
         'dailyChallengeClaimedSnack': l10n.dailyChallengeClaimedSnack(3),
         'dailyChallengeHeadline': l10n.dailyChallengeHeadline('X', 3),
@@ -2227,7 +2209,6 @@ void main() {
     'makarayizTitle', // özel ad (mod adı): 'MAKARAYIZ'
     'campaign2048Header', // marka + sayı + emoji: '🔢 LÜLÜLÜ 2048'
     'bareTierLabel', // oyun terimi, iki dilde de 'Tier'
-    'bossShort', // oyun terimi, ortak kelime: 'BOSS'
     'speedNormal', // ortak kelime: 'NORMAL'
     'shopModeSuikaArena', // mod adı: 'Suika Arena'
     'shopModeGrid2048', // mod adı: '2048 Grid'
@@ -2266,21 +2247,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 1050 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1041 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 866);
-    expect(tr.length, 866);
-    expect(enMethods.length, 184);
-    expect(trMethods.length, 184);
+    expect(en.length, 863);
+    expect(tr.length, 863);
+    expect(enMethods.length, 178);
+    expect(trMethods.length, 178);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1050);
+    expect(en.length + enMethods.length, 1041);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

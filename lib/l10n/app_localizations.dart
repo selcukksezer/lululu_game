@@ -186,7 +186,6 @@ abstract class AppLocalizations {
   String get hbEnergyTag;
   String get chestClaimFailed;
   String boosterOutOfStockToast(String label);
-  String levelLockedMessage(int previousLevel);
   String taskRewardClaimedSnack(String rewardText);
   String get onlineNotifySignupSnack;
   String get seeAllArrow;
@@ -444,11 +443,6 @@ abstract class AppLocalizations {
   String get surviveLabel;
   String bossLabel(String name);
   String chapterLabel(int id);
-
-  /// Kampanya haritası bölüm sekmesindeki kompakt rozet etiketi
-  /// ('B1' / 'C1'): [chapterLabel] tam biçiminden farklıdır, dar
-  /// rozet alanına sığan baş harf kısaltmasıdır.
-  String chapterBadgeLabel(int id);
   String overflowingCountdown(String seconds);
   String get nearLineWarning;
   String comboToast(int count);
@@ -543,7 +537,7 @@ abstract class AppLocalizations {
   String get privacySection6Title;
   String get privacySection6Body1;
 
-  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen + campaign_map_sheet) ---
+  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen) ---
   // Bölüm/boss adları model verisidir (CampaignChapterMeta.titleFor /
   // bossNameFor); burada yalnız şablonlar çevrilir.
 
@@ -569,18 +563,12 @@ abstract class AppLocalizations {
     int boosterCount,
     String boosterName,
   );
-  String get campaignSheetTitle;
-  String get campaignSheetSubtitle;
-  String chapterBannerTitle(int index, String title);
-  String bossBannerLine(int id, String bossName, int hp, String hazard);
-  String levelRangeShort(int start, int end);
   String chestStarsLabel(int stars);
 
   /// Cümle içi yazımlı 'Alındı'; büyük harfli [claimedShort]
   /// ('ALINDI') etiketinden farklıdır.
   String get claimedPlain;
   String chestRewardLine(int coins, int count);
-  String get bossShort;
 
   // --- Dalga 20 göçü: Sohbet (chat_lobby_screen, chat_screen) ---
   // Tohum (seed) mesajlar ve oyuncu adları kullanıcı içeriğidir;
@@ -1281,7 +1269,6 @@ abstract class AppLocalizations {
   /// Seviye karosu erişilebilirlik etiketi: seviye no + yıldız;
   /// kilitliyse ' · Kilitli' eklenir.
   String levelTileLabel(int id, int stars, bool locked);
-  String chapterTabLabel(int index, int stars);
 
   /// Sandık erişilebilirlik etiketi. [state]: 'claimable' (alınabilir),
   /// 'claimed' (alındı) veya 'locked' (kilitli); bilinmeyen değerde

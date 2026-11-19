@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,12 +15,64 @@ import 'package:lululu_game/services/campaign_progression_service.dart';
 import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/theme/lululu_theme.dart';
-import 'package:lululu_game/widgets/campaign_map_sheet.dart';
 
 import 'test_helpers.dart';
 
+/// 6C deseni: gerçek fontlar setUpAll'da yüklenir — ilk widget
+/// testinde font yükleme bildirimi (sistem-fontu transient callback)
+/// sökümde asılı kalıp scheduler hatasına yol açmasın.
+Future<void> _loadCustomFonts() async {
+  final fontMap = <String, List<String>>{
+    'Baloo 2': [
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+    ],
+    'Bangers': [
+      'assets/fonts/Bangers-Regular.ttf',
+    ],
+    'Nunito': [
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+    ],
+    'Exo 2': [
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+    ],
+  };
+
+  for (final entry in fontMap.entries) {
+    final loader = FontLoader(entry.key);
+    for (final path in entry.value) {
+      final file = File(path);
+      if (file.existsSync()) {
+        loader.addFont(
+          Future.value(ByteData.sublistView(file.readAsBytesSync())),
+        );
+      }
+    }
+    await loader.load();
+  }
+
+  for (final w in FontWeight.values) {
+    GoogleFonts.baloo2(fontWeight: w);
+    GoogleFonts.nunito(fontWeight: w);
+    GoogleFonts.bangers(fontWeight: w);
+    GoogleFonts.exo2(fontWeight: w);
+  }
+  await GoogleFonts.pendingFonts();
+}
+
 void main() {
-  setUpAll(() {
+  setUpAll(() async {
+    await _loadCustomFonts();
     GoogleFonts.config.allowRuntimeFetching = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -226,13 +280,10 @@ void main() {
     });
   });
 
-  group('3. CampaignMapSheet Widget Testleri (360x640 ve 430x932 Sıfır Taşma)',
+  group('3. CampaignMapScreen Widget Testleri (360x640 ve 430x932 Sıfır Taşma)',
       () {
-    Future<void> pumpMapAtSize(
-      WidgetTester tester,
-      Size size, {
-      int initialChapter = 1,
-    }) async {
+    Future<void> pumpMapAtSize(WidgetTester tester, Size size) async {
+      AudioManager().isMuted = true;
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -242,20 +293,16 @@ void main() {
 
       await tester.pumpWidget(
         wrapWithL10n(
-          Scaffold(
-            body: SizedBox(
-              width: size.width,
-              height: size.height,
-              child: CampaignMapSheet(initialChapterIndex: initialChapter),
-            ),
-          ),
+          const CampaignMapScreen(),
+          theme: buildLululuTheme(),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
     }
 
     testWidgets(
-        '360x640 dar ekranda 8 bölüm, 10 seviye düğümü, Boss tacı ve sandıklar 0 taşma ile çizilir',
+        '360x640 dar ekranda 20 seviye karosu ve sandıklar 0 taşma ile çizilir, sandık talep edilir',
         (tester) async {
       final service = CampaignProgressionService.instance;
       for (int id = 1; id <= 4; id++) {
@@ -265,43 +312,130 @@ void main() {
       await pumpMapAtSize(tester, const Size(360, 640));
       expect(tester.takeException(), isNull);
 
-      expect(find.byKey(const Key('campaign_map_sheet_root')), findsOneWidget);
-      expect(find.textContaining('Mutfak Tezgahı Baskını'), findsWidgets);
-      expect(find.byKey(const Key('boss_crown_icon_10')), findsOneWidget);
-      expect(find.byKey(const Key('campaign_chest_1_10')), findsOneWidget);
-      expect(find.byKey(const Key('campaign_chest_1_20')), findsOneWidget);
-      expect(find.byKey(const Key('campaign_chest_1_30')), findsOneWidget);
-
+      expect(find.byKey(const Key('campaign_map_chest_bar')), findsOneWidget);
+      expect(find.byKey(const Key('campaign_map_chest_1_10')), findsOneWidget);
+      expect(find.byKey(const Key('campaign_map_chest_1_20')), findsOneWidget);
+      expect(find.byKey(const Key('campaign_map_chest_1_30')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(GridView),
+          matching: find.text('1'),
+        ),
+        findsOneWidget,
+      );
       // 12 yıldızımız olduğu için 10⭐ sandığına tıklayıp ödülü toplayabilmeliyiz
-      await tester.tap(find.byKey(const Key('campaign_chest_1_10')));
-      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('campaign_map_chest_1_10')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(tester.takeException(), isNull);
       expect(service.isChapterChestClaimed(1, 10), isTrue);
       expect(
-        find.byKey(const Key('campaign_chest_feedback_banner')),
+        find.byKey(const Key('campaign_map_chest_feedback_banner')),
         findsOneWidget,
+      );
+
+      // Izgara tembel kurulur (360x640'ta son satır ağaçta yoktur):
+      // 20. karoyu görünür kılana dek kaydır.
+      await tester.scrollUntilVisible(
+        find.descendant(
+          of: find.byType(GridView),
+          matching: find.text('20'),
+        ),
+        200,
+        scrollable: find.descendant(
+          of: find.byType(GridView),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(
+        find.descendant(
+          of: find.byType(GridView),
+          matching: find.text('20'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      // Boş ağaçta drenaj: sistem-fontu transient callback'i test
+      // sonunda asılı kalıp scheduler hatasına yol açabiliyor (K3a
+      // testinde aynı dalgalanma); ağaç boşken pumpAndSettle durulur.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 10),
       );
     });
 
     testWidgets(
-        '430x932 ekranda 8 bölüm sekmesi arasında geçiş ve Boss düğümleri 0 taşma ile çalışır',
+        '430x932 ekranda 4 bölüm arasında geçiş ve seviye aralıkları 0 taşma ile çalışır',
         (tester) async {
       await pumpMapAtSize(tester, const Size(430, 932));
       expect(tester.takeException(), isNull);
 
-      for (int ch = 1; ch <= 8; ch++) {
-        final tabFinder = find.byKey(Key('campaign_chapter_tab_$ch'));
-        await tester.ensureVisible(tabFinder);
-        await tester.tap(tabFinder);
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull);
+      Finder levelInGrid(String number) => find.descendant(
+            of: find.byType(GridView),
+            matching: find.text(number),
+          );
 
-        final bossLevelId = ch * 10;
-        expect(
-          find.byKey(Key('boss_crown_icon_$bossLevelId')),
-          findsOneWidget,
-        );
+      // ensureVisible kaydırma animasyonu bitmeden dokunmak ıskalar:
+      // animasyon durulana dek pump edilir, sonra çipe dokunulur.
+      // Bölüm değişince ızgara kaydırma konumu korunur: en üste dönülür.
+      Future<void> selectChapter(String name) async {
+        final chip = find.text(name);
+        await tester.ensureVisible(chip);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tap(chip);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(tester.takeException(), isNull);
+        await tester.drag(find.byType(GridView), const Offset(0, 800));
+        await tester.pump(const Duration(milliseconds: 200));
       }
+
+      // Aralık denetimi: ilk karo görünür, son karo kaydırılarak
+      // görünür kılınır (tembel ızgara).
+      Future<void> expectLevelRange(String first, String last) async {
+        expect(levelInGrid(first), findsOneWidget);
+        await tester.scrollUntilVisible(
+          levelInGrid(last),
+          200,
+          scrollable: find.descendant(
+            of: find.byType(GridView),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(levelInGrid(last), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+
+      // Bölüm 1: 1-20. seviye.
+      await expectLevelRange('1', '20');
+
+      // Bölüm 2: 21-40. seviye.
+      await selectChapter('Diva Malikanesi');
+      await expectLevelRange('21', '40');
+      expect(levelInGrid('1'), findsNothing);
+
+      // Bölüm 3: 41-60. seviye.
+      await selectChapter('Pikomotions Sahnesi');
+      await expectLevelRange('41', '60');
+
+      // Bölüm 4: 61-80. seviye.
+      await selectChapter('Kongo İstilası');
+      await expectLevelRange('61', '80');
+
+      // Boş ağaçta drenaj (yukarıdaki testle aynı gerekçe).
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 10),
+      );
     });
   });
 
@@ -547,31 +681,9 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('K3b: sheet bölüm bandı boss ilk geçiş bonusunu gösterir',
-        (tester) async {
-      AudioManager().isMuted = true;
-      tester.view.physicalSize = const Size(430, 932);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await tester.pumpWidget(
-        wrapWithL10n(
-          Scaffold(
-            body: SizedBox(
-              width: 430,
-              height: 932,
-              child: CampaignMapSheet(initialChapterIndex: 1),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Boss ilk geçiş bonusu: +250 COIN'),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull);
-    });
+    // NOT (12B): sheet'e özel 'K3b: sheet bölüm bandı boss ilk geçiş
+    // bonusunu gösterir' testi kaldırıldı — aynı iddia (boss ilk geçiş
+    // bonusu görünür) yukarıdaki K3b harita modalı testinde zaten
+    // doğrulanıyor; sheet silindi.
   });
 }
