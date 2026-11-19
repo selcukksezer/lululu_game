@@ -193,6 +193,50 @@ void main() {
       expect(service.calculateStarsForLevel(1, nearStar3, remainingMoves: 3), 3);
     });
 
+    test(
+        '12Q-stars: kampanya eşikleri zorlaştı — hedef yalnız 1 yıldız verir',
+        () {
+      // Seviye 1 (bölüm 1, skor hedefi): hedef 1345.
+      // Eski: 941 / 1345 / 1883. Yeni: 0.85× / 1.2× / 1.8× hedef.
+      final lvl1 = CampaignDatabase.getLevel(1);
+      expect(lvl1.targetScore, 1345);
+      expect(lvl1.star1Score, 1143);
+      expect(lvl1.star2Score, 1614);
+      expect(lvl1.star3Score, 2421);
+      // Hedefi tutturmak (1345) artık 2 değil 1 yıldızdır.
+      final service = CampaignProgressionService.instance;
+      expect(service.calculateStarsForLevel(1, 1345), 1);
+      expect(service.calculateStarsForLevel(1, 1613), 1);
+      expect(service.calculateStarsForLevel(1, 1614), 2);
+      expect(service.calculateStarsForLevel(1, 2421), 3);
+
+      // Seviye 5 (bölüm 1, hayatta kalma, süre 65 sn).
+      // Eski: 780 / 1170 / 1690. Yeni: 14× / 21× / 30× süre.
+      final lvl5 = CampaignDatabase.getLevel(5);
+      expect(lvl5.timeLimitSeconds, 65);
+      expect(lvl5.star1Score, 910);
+      expect(lvl5.star2Score, 1365);
+      expect(lvl5.star3Score, 1950);
+
+      // Seviye 10 (bölüm 1 boss): hedef 2470.
+      // Eski: 2470 / 3211 / 4199. Yeni: 1.0× / 1.5× / 2.0× hedef
+      // (boss geçişi hedefte kalır: hedefi tutturan zafer 0 yıldız
+      // göstermesin).
+      final boss10 = CampaignDatabase.getLevel(10);
+      expect(boss10.targetScore, 2470);
+      expect(boss10.star1Score, 2470);
+      expect(boss10.star2Score, 3705);
+      expect(boss10.star3Score, 4940);
+
+      // Seviye 61 (bölüm 4, skor hedefi): hedef 9505; bölüm
+      // ilerledikçe s2/s3 çarpanı büyür (1.35× / 2.1×).
+      final lvl61 = CampaignDatabase.getLevel(61);
+      expect(lvl61.targetScore, 9505);
+      expect(lvl61.star1Score, 8079);
+      expect(lvl61.star2Score, 12832);
+      expect(lvl61.star3Score, 19961);
+    });
+
     test('calculateBossDamage birleşen kademe ve kombo ile ölçeklenir', () {
       final service = CampaignProgressionService.instance;
       final dmgTier1Combo1 =

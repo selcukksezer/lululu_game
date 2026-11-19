@@ -8,6 +8,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/lululu_game_mode.dart';
 import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
 import '../services/score_share_card.dart';
@@ -54,6 +55,7 @@ Future<bool> showGameResult(
   int merges = ResultScoring.defaultMerges,
   bool coinsAwardedByCaller = true,
   bool won = true,
+  bool isNewRecord = false,
   FirstClearExtras firstClearExtras = const FirstClearExtras(),
 }) async {
   final replay = await Navigator.of(context).push<bool>(
@@ -67,6 +69,7 @@ Future<bool> showGameResult(
         merges: merges,
         coinsAwardedByCaller: coinsAwardedByCaller,
         won: won,
+        isNewRecord: isNewRecord,
         firstClearExtras: firstClearExtras,
       ),
     ),
@@ -85,12 +88,44 @@ abstract final class ResultScoring {
 
   static int coinsFor(int score) => max(0, score ~/ 100);
 
-  static int starsFor({required int score, required int best}) {
+  /// Arcade yıldızı — SABİT ölçek (12Q-stars).
+  ///
+  /// Eski kural (`score >= best` → 3 yıldız) tur-öncesi rekora
+  /// bakıyordu; mod ekranları `_best`'i tur içinde canlı güncellediği
+  /// (G33 deseni) için rekor kıran her tur — ilk tur dahil — otomatik
+  /// 3 yıldız alıyordu. Yeni kuralda [reference] modun sabit 3-yıldız
+  /// çıtasıdır (`LululuGameMode.threeStarScore`): 3 yıldız için çıta
+  /// aşılmalı, 2 yıldız için çıtanın %60'ı, 1 yıldız için skor > 0
+  /// yeterlidir. Rekor kırmak yıldızdan ayrıdır — bkz. [isNewRecord].
+  /// [reference] <= 0 ise (bilinmeyen mod) skor > 0 → 1 yıldız.
+  static int starsFor({required int score, required int reference}) {
     if (score <= 0) return 0;
-    if (best > 0 && score >= best) return 3;
-    if (best > 0 && score >= (best * 0.6).ceil()) return 2;
+    if (reference <= 0) return 1;
+    if (score >= reference) return 3;
+    if (score >= (reference * 0.6).ceil()) return 2;
     return 1;
   }
+
+  /// Mod anahtarıyla (`bestScoreKey` / `modeScoreId`) sabit ölçekli
+  /// yıldız: çıta katalogdaki `threeStarScore`'dur; bilinmeyen
+  /// anahtarda çıta 0 sayılır (skor > 0 → 1 yıldız).
+  static int starsForMode({
+    required int score,
+    required String modeScoreId,
+  }) {
+    final mode = LululuGameMode.byBestScoreKey(modeScoreId);
+    return starsFor(score: score, reference: mode?.threeStarScore ?? 0);
+  }
+
+  /// Rekor kırıldı mı? (12Q-stars — yıldızdan ayrı rozet.)
+  ///
+  /// Çağırıcılar `best` olarak tur içinde canlı güncellenmiş
+  /// `max(tur-öncesi rekor, skor)` değerini geçirir; bu yüzden
+  /// `score >= best` tam olarak "skor tur-öncesi rekoru yakaladı ya
+  /// da geçti" demektir (beraberlik de rekor sayılır). Skor 0 ise
+  /// rekor yoktur.
+  static bool isNewRecord({required int score, required int best}) =>
+      score > 0 && score >= best;
 }
 
 /// Sonuç ekranında gösterilen ilk-tamamlama ekstraları (5B, salt-görünüm).
@@ -157,6 +192,7 @@ class GameResultScreen extends StatefulWidget {
     this.merges = ResultScoring.defaultMerges,
     this.coinsAwardedByCaller = true,
     this.won = true,
+    this.isNewRecord = false,
     this.firstClearExtras = const FirstClearExtras(),
   });
 
@@ -166,6 +202,11 @@ class GameResultScreen extends StatefulWidget {
   final int bestScore;
   final int bestCombo;
   final int merges;
+
+  /// Rekor rozeti (12Q-stars): `true` ise yıldız satırının altında
+  /// "YENİ REKOR!" bandı gösterilir. Yıldızdan bağımsızdır — rekor
+  /// kıran ama çıtanın altında kalan tur 1-2 yıldız + rozet alır.
+  final bool isNewRecord;
 
   /// İlk-tamamlama ekstraları (salt-görünüm): boş değilse skor kartının
   /// altında ayrı bir bantta gösterilir; ödeme yapmaz, [coins] tutarına
@@ -336,6 +377,13 @@ class _GameResultScreenState extends State<GameResultScreen>
                         _buildStarsRow(),
                         const SizedBox(height: 6),
 
+                        // Rekor rozeti (12Q-stars): yıldızdan ayrı,
+                        // yalnız rekor kırıldıysa gösterilir.
+                        if (widget.isNewRecord) ...[
+                          _buildNewRecordBadge(),
+                          const SizedBox(height: 6),
+                        ],
+
                         // Title: SEVİYE TAMAM!
                         _buildTitleBadge(),
                         const SizedBox(height: 7),
@@ -413,6 +461,30 @@ class _GameResultScreenState extends State<GameResultScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Rekor bandı (12Q-stars): altın hap içinde "YENİ REKOR!" yazar.
+  Widget _buildNewRecordBadge() {
+    return Center(
+      child: Container(
+        key: const Key('result_new_record_badge'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          color: const Color(0xFFFFD54A),
+          border: Border.all(color: const Color(0xFFB07534), width: 2),
+        ),
+        child: Text(
+          context.l10n.newRecordBadge,
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.8,
+            color: const Color(0xFF4A2E00),
+          ),
+        ),
       ),
     );
   }

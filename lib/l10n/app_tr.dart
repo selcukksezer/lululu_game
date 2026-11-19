@@ -878,6 +878,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get bestComboResultLabel => 'EN İYİ KOMBO';
 
   @override
+  String get newRecordBadge => 'YENİ REKOR!';
+
+  @override
   String get mergesLabel => 'BİRLEŞTİRME';
 
   @override

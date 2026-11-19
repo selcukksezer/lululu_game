@@ -141,9 +141,12 @@ String _taskTitleFor(AppLocalizations l10n, String taskId) =>
 /// davranışı değiştirmez. Ateşle-unut yolunda da adım hataları log +
 /// telemetride görünür kılınır (`settleStep` hata fırlatmaz).
 ///
-/// [stars] verilmezse `ResultScoring.starsFor(score: score, best: best)`
-/// kullanılır. [bestScore] verilmezse `max(score, best)` (tura ait
-/// gerçek rekor) kullanılır; [bestCombo]/[merges] verilmezse 0
+/// [stars] verilmezse modun sabit 3-yıldız çıtasına göre hesaplanır
+/// (`ResultScoring.starsForMode`, `modeScoreId` anahtarıyla); kişisel
+/// rekor yıldızı belirlemez (12Q-stars). Rekor kırma ayrıca hesaplanır
+/// (`ResultScoring.isNewRecord`) ve sonuç ekranında yıldızdan ayrı bir
+/// rozetle gösterilir. [bestScore] verilmezse `max(score, best)` (tura
+/// ait gerçek rekor) kullanılır; [bestCombo]/[merges] verilmezse 0
 /// gösterilir — tohum varsayılanlar (4820/x6/18) oyun-içi sonuç
 /// ekranına sızmaz (playtest bulgu #3). [ResultScoring] sabitleri
 /// yalnız doğrudan açılan `/result` prototip sayfasının varsayılanı
@@ -184,9 +187,15 @@ Future<bool> finishRun(
   // F10-kuralı: skor > 0 ise varsayılan ödeme en az 1 coindir.
   final effectiveCoins = coins ??
       (score > 0 ? max(1, ResultScoring.coinsFor(score)) : 0);
-  final effectiveStars =
-      stars ?? ResultScoring.starsFor(score: score, best: best);
+  final effectiveStars = stars ??
+      ResultScoring.starsForMode(
+        score: score,
+        modeScoreId: modeScoreId ?? '',
+      );
   final effectiveWon = won ?? score > 0;
+  // 12Q-stars: rekor rozeti yıldızdan ayrı hesaplanır.
+  final effectiveIsNewRecord =
+      ResultScoring.isNewRecord(score: score, best: best);
 
   // Y3: çift-kayıt koruması — anahtar ödeme öncesinde sahiplenilir.
   final explicitKey = idempotencyKey?.trim();
@@ -309,6 +318,7 @@ Future<bool> finishRun(
     bestCombo: bestCombo ?? 0,
     merges: merges ?? 0,
     won: effectiveWon,
+    isNewRecord: effectiveIsNewRecord,
     firstClearExtras: displayExtras,
   );
   // S7: sonuç ekranı kapandıktan sonra görev bildirimi. Ateşle-unut

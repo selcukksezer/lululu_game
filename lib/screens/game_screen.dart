@@ -1033,16 +1033,24 @@ class _GameScreenState extends State<GameScreen>
     return 0;
   }
 
-  /// Arcade yenilgisinde yıldız, oyun öncesi rekora oranla verilir ve
-  /// 2'yi geçemez: yenilgi ekranı asla 3 yıldız göstermez. Rekor henüz
-  /// yüklenmemişse (0) sıfırdan büyük skor 1 yıldız sayılır.
-  int _defeatArcadeStars() {
-    if (_score <= 0) return 0;
-    if (_bestScore <= 0) return 1;
-    final ratio = _score / _bestScore;
-    if (ratio >= 0.9) return 2;
-    if (ratio >= 0.6) return 1;
-    return 0;
+  /// Arcade yenilgisinde yıldız sabit ölçekten verilir ve 2'yi geçemez:
+  /// yenilgi ekranı asla 3 yıldız göstermez. Kampanya yenilgisinde de
+  /// eşik yıldızı 2 ile sınırlanır.
+  ///
+  /// (12Q-stars: eski sürüm tur-öncesi rekora oranlıyordu; `_bestScore`
+  /// tur içinde canlı güncellendiği için rekor kıran her yenilgi 2
+  /// yıldız alıyordu. Artık `starsForMode` sabit çıtasına bakılır.)
+  int _defeatStars() {
+    if (widget.arcade) {
+      return min(
+        2,
+        ResultScoring.starsForMode(
+          score: _score,
+          modeScoreId: LeaderboardService.modeSuika,
+        ),
+      );
+    }
+    return min(2, _calculateStars());
   }
 
   /// Hamleler bitince hedefe bakılır: hedef-kademe seviyesinde bu turda
@@ -1067,7 +1075,15 @@ class _GameScreenState extends State<GameScreen>
 
     // Yıldız gerçek eşiklere bırakılır: hedef karşılansa bile skor yıldız
     // eşiğinin altındaysa 0 gösterilir (dürüst skor, garanti yok).
-    final stars = _calculateStars();
+    // Arcade'de seviye eşiği (mutfak seviye-1) kullanılmaz: sonsuz tur
+    // o eşiği kolay aştığı için her zafer 3 yıldız olurdu (12Q-stars) —
+    // arcade zaferi modun sabit çıtasına (`threeStarScore`) göre verilir.
+    final stars = widget.arcade
+        ? ResultScoring.starsForMode(
+            score: _score,
+            modeScoreId: LeaderboardService.modeSuika,
+          )
+        : _calculateStars();
     final earnedCoins = ResultScoring.coinsFor(_score);
     // Kampanya servisinin iç recordLevelResult çağrısı yalnız yıldız
     // ARTIŞI kadar öder (starGain * 50); önceki yıldız KAYIT ÖNCESİ
@@ -1162,11 +1178,8 @@ class _GameScreenState extends State<GameScreen>
 
     // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(_submitSuikaScore());
-    // Yenilgi asla 3 yıldız göstermez: arcade'de rekora oranla (en çok 2),
-    // kampanyada eşik yıldızı 2 ile sınırlanır.
-    final stars = widget.arcade
-        ? _defeatArcadeStars()
-        : min(2, _calculateStars());
+    // Yenilgi asla 3 yıldız göstermez (12Q-stars: sabit ölçek + 2 kap).
+    final stars = _defeatStars();
     // S1#49: ödeme + görev kaydı + sonuç ekranı finishRun() üzerinden
     // (ateşle-unut ödeme, eski unawaited davranışı). Liderlik gönderimi
     // _submitSuikaScore'da kalır.

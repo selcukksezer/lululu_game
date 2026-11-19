@@ -875,6 +875,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bestComboResultLabel => 'BEST COMBO';
 
   @override
+  String get newRecordBadge => 'NEW RECORD!';
+
+  @override
   String get mergesLabel => 'MERGES';
 
   @override

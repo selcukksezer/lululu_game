@@ -460,6 +460,10 @@ abstract class AppLocalizations {
   /// Sonuç ekranındaki 'EN İYİ KOMBO' etiketi; profil ekranındaki
   /// [bestComboLabel] ('EN YÜKSEK KOMBO') etiketinden farklıdır.
   String get bestComboResultLabel;
+
+  /// Sonuç ekranındaki rekor rozeti (12Q-stars): yıldızdan ayrı,
+  /// yalnız mod rekoru kırıldıysa gösterilir.
+  String get newRecordBadge;
   String get mergesLabel;
   String get goldEarnedLabel;
   String get continueWithAdSoon;
