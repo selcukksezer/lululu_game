@@ -351,7 +351,13 @@ class _GameResultScreenState extends State<GameResultScreen>
                             ],
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        // 6F: alt başlık ↔ skor kartı arası 12px temiz
+                        // bölge. 8px'te koyu ahşap raf kenarı + kart
+                        // üst kenarı satıra yapışıp "kartın altında
+                        // kalıyor" okunuyordu (2 satıra saran uzun alt
+                        // başlıkta da aynı); aralık içerik varyantından
+                        // bağımsız sabittir, metin kısaltılmaz.
+                        const SizedBox(height: 12),
 
                         // Score Card
                         _buildScoreCard(),
@@ -1093,7 +1099,13 @@ class _GameResultScreenState extends State<GameResultScreen>
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        // 6F: "Ödüllü reklamlar yakında…" satırının üstünde 8px,
+        // altında 12px temiz bölge. 4px/8px'te satır iki koyu düğme
+        // arasına sıkışıp ahşap plank kenarıyla birleşiyor ve üst
+        // yarısı ikinci düğmenin altında kalmış gibi okunuyordu
+        // (2 satıra saran dil/varyantta da aynı); aralık sabittir,
+        // metin kısaltılmaz, ödül akışı değişmez.
+        const SizedBox(height: 8),
         Text(
           context.l10n.rewardedAdsComingSoon,
           textAlign: TextAlign.center,
@@ -1110,7 +1122,7 @@ class _GameResultScreenState extends State<GameResultScreen>
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
 
         // REKLAMLA 2X ALTIN · YAKINDA (ödül verilmez, bilgi gösterir)
         LululuPress(
