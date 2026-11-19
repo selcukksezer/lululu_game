@@ -454,6 +454,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     for (final f in _fx) {
       f.life -= dt * 1.6;
       f.y -= 48 * dt;
+      // 6H (G32): pankart bölgesine yükselmesin — çizgide durup solsun.
+      if (f.y < _fxTopClearance) f.y = _fxTopClearance;
     }
     _fx.removeWhere((f) => f.life <= 0);
 
@@ -560,12 +562,28 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     );
   }
 
+  // 6H (G32): yüzen-yazı sınırı + yayılma. Eski mantık
+  // (`y - _fx.length * 16`) hızlı vuruşlarda yazıları sınırsız yukarı
+  // taşıyıp pankartın üstüne yığıyordu: aynı x'te (orta sütun) üst üste
+  // binen yazılar okunmaz kırmızı blok oluşturuyordu. Şimdi aynı anda en
+  // fazla 6 yazı yaşar (yenisi en eskisini atar), yazılar vuruş
+  // noktasından sınırlı bir yelpazeye yayılır (±34 px yatay, 0–32 px
+  // yukarı) ve pankart bölgesine (arena üstü) asla girmez.
+  static const int _maxFx = 6;
+  // FX metni ~13 px: üst kenarı (y - 12) pankart altından (~40 px)
+  // aşağıda kalsın diye merkez y en az 56 px olur; yükselirken de bu
+  // çizgide durup solmaya devam eder.
+  static const double _fxTopClearance = 56;
+
   void _pushFx(String label, double x, double y, Color color) {
-    // Aynı anda yaşayan efekt yazıları üst üste binmesin: her yeni
-    // yazı, o an ekrandaki yazı sayısına göre yukarı kaydırılır
-    // (bulgu #7 — "TIER 12 BONUS" / "KOMBO KIRILDI" çakışması).
-    final stackedY = y - _fx.length * 16.0;
-    _fx.add(_FloatFx(id: _nextFx++, label: label, x: x, y: stackedY, color: color));
+    final slot = _nextFx % 3;
+    final fxX = min(
+      max(x + (slot - 1) * 34.0, 52.0),
+      max(52.0, _arena.width - 52.0),
+    );
+    final fxY = max(_fxTopClearance, y - slot * 16.0);
+    if (_fx.length >= _maxFx) _fx.removeAt(0);
+    _fx.add(_FloatFx(id: _nextFx++, label: label, x: fxX, y: fxY, color: color));
   }
 
   /// Combo / rastgele / Osmantuş damlaları: SADECE biriktirilir, vault'a
@@ -926,6 +944,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     }
 
     _score += scoreGain;
+    // G33: REKOR HUD'da canlı güncellenir (match3 deseni: skor yazılan
+    // her yerde `_best` eşitlenir; kalıcı kayıt `_die` / `_presentResult`
+    // akışında aynen kalır).
+    if (_score > _best) _best = _score;
     _coinsEarned += coinDrop;
     _slipperEarned += slipperDrop;
     _sprayEarned += sprayDrop;
@@ -1151,6 +1173,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
           if (_combo > _maxCombo) _maxCombo = _combo;
           final pts = bug.basePoints + _combo * 10;
           _score += pts;
+          // G33: sprey skoru da REKOR'u canlı günceller (match3 deseni).
+          if (_score > _best) _best = _score;
           final c = _holeCenter(bug.holeIndex);
           _pushFx('+$pts', c.dx, c.dy, LululuColors.toxicNeon);
         }

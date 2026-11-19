@@ -164,6 +164,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
   @visibleForTesting
   int get debugScore => _score;
   @visibleForTesting
+  int get debugBest => _best;
+  @visibleForTesting
   int get debugCombo => _combo;
   @visibleForTesting
   int get debugLives => _lives;
@@ -461,6 +463,10 @@ class MakarayizScreenState extends State<MakarayizScreen>
       _score += 250;
       _lives = min(3, _lives + 1);
     }
+    // G33: REKOR HUD'da canlı güncellenir (match3 deseni: skor yazılan
+    // her yerde `_best` eşitlenir; kalıcı kayıt `_gameOver` /
+    // `finishRun` akışında aynen kalır).
+    if (_score > _best) _best = _score;
     final bug = InsectTier.values[n.tier];
     _bubbleTier = n.tier;
     _hint = bug.viralReplik;
