@@ -7,6 +7,7 @@ import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
+import '../widgets/coin_fly.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 class TasksScreen extends StatefulWidget {
@@ -26,6 +27,15 @@ class TasksScreen extends StatefulWidget {
 }
 
 class _TasksScreenState extends State<TasksScreen> {
+  /// 12N: başlatılan uçuşların tutamakları — ekran kapanırsa uçuşlar
+  /// iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok; iptal sayıyı
+  /// uçuşsuz son değere döndürür).
+  final List<CoinFlightHandle> _coinFlights = <CoinFlightHandle>[];
+
+  void _trackCoinFlight(CoinFlightHandle? handle) {
+    if (handle != null) _coinFlights.add(handle);
+  }
+
   final List<_TaskItem> _tasks = [
     _TaskItem(
       id: 'play3',
@@ -75,6 +85,11 @@ class _TasksScreenState extends State<TasksScreen> {
 
   bool _dailyChallengeClaiming = false;
 
+  /// 12N: son ödül düğmesi dokunma noktası — uçuşun kalkış yeridir
+  /// (claim düğmeleri `onTapDown` ile doldurur; klavye/erişilebilirlik
+  /// ile tetiklenirse null kalır, uçuş ekran ortasından kalkar).
+  Offset? _lastClaimTap;
+
   static String _formatDots(int value) {
     final s = value.toString();
     final buf = StringBuffer();
@@ -97,6 +112,9 @@ class _TasksScreenState extends State<TasksScreen> {
 
   @override
   void dispose() {
+    for (final flight in _coinFlights) {
+      flight.cancel();
+    }
     ProgressManager.instance.removeListener(_handleProgressChanged);
     super.dispose();
   }
@@ -160,6 +178,22 @@ class _TasksScreenState extends State<TasksScreen> {
     setState(() {
       task.claimed = true;
     });
+    // 12N: coin ödülü düğmeden üst bardaki coin simgesine uçar.
+    // Ödeme yukarıda `claimDailyTaskReward` ile yapıldı; uçuş yalnız
+    // görünümü erteler (sayı varışta artar). Enerji ödülünde uçuş yok.
+    if (task.rewardType == 'coin' && task.rewardAmount > 0) {
+      _trackCoinFlight(
+        CoinFlyService.instance.fly(
+          context: context,
+          from: _lastClaimTap ??
+              Offset(
+                MediaQuery.sizeOf(context).width / 2,
+                MediaQuery.sizeOf(context).height / 2,
+              ),
+          amount: task.rewardAmount,
+        ),
+      );
+    }
     AudioManager().playVictorySfx(includeVoice: false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -193,6 +227,20 @@ class _TasksScreenState extends State<TasksScreen> {
         SnackBar(content: Text(context.l10n.errorGeneric)),
       );
       return;
+    }
+    // 12N: günlük challenge coin ödülü de düğmeden üst bara uçar.
+    if (reward > 0) {
+      _trackCoinFlight(
+        CoinFlyService.instance.fly(
+          context: context,
+          from: _lastClaimTap ??
+              Offset(
+                MediaQuery.sizeOf(context).width / 2,
+                MediaQuery.sizeOf(context).height / 2,
+              ),
+          amount: reward,
+        ),
+      );
     }
     AudioManager().playVictorySfx(includeVoice: false);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -228,11 +276,16 @@ class _TasksScreenState extends State<TasksScreen> {
         ProgressManager.instance,
         EnergyService.instance,
         DailyChallengeService.instance,
+        CoinFlyService.instance,
       ]),
       builder: (context, _) {
         final l10n = context.l10n;
+        // 12N: uçuş sürerken başlıktaki sayı artmaz (bekleyen tutar düşülür).
         final rawCoins = ProgressManager.instance.coins;
-        final coinsText = _formatDots(rawCoins);
+        final displayCoins =
+            rawCoins - CoinFlyService.instance.pendingCoins;
+        final coinsText =
+            _formatDots(displayCoins < 0 ? 0 : displayCoins);
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F6FA),
@@ -311,7 +364,9 @@ class _TasksScreenState extends State<TasksScreen> {
                               ),
                             ),
                           ),
-                          Container(
+                          // 12N: başlık coin hapı uçuş hedefi + varış "pop"u.
+                          CoinFlyPop(
+                            child: Container(
                             height: 35,
                             padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
                             decoration: BoxDecoration(
@@ -329,12 +384,14 @@ class _TasksScreenState extends State<TasksScreen> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                Image.asset(
+                                CoinFlyTarget(
+                                  child: Image.asset(
                                   'assets/icons2/coin.png',
                                   width: 25,
                                   height: 25,
                                   fit: BoxFit.contain,
                                   filterQuality: FilterQuality.medium,
+                                  ),
                                 ),
                                 const SizedBox(width: 6),
                                 // Sabit genişlik yok: metin doğal
@@ -366,6 +423,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                   ),
                                 ),
                               ],
+                            ),
                             ),
                           ),
                         ],
@@ -812,6 +870,8 @@ class _TasksScreenState extends State<TasksScreen> {
                       button: true,
                       label: l10n.claimTaskLabel(title, rewardText),
                       child: GestureDetector(
+                      // 12N: uçuş kalkış noktası (dokunma konumu).
+                      onTapDown: (d) => _lastClaimTap = d.globalPosition,
                       onTap: () {
                         _claimTask(context, t);
                       },
@@ -1064,6 +1124,8 @@ class _TasksScreenState extends State<TasksScreen> {
                     label: l10n.claimTaskLabel(title, rewardText),
                     child: GestureDetector(
                       key: const Key('daily_challenge_claim_tasks'),
+                      // 12N: uçuş kalkış noktası (dokunma konumu).
+                      onTapDown: (d) => _lastClaimTap = d.globalPosition,
                       onTap: _dailyChallengeClaiming
                           ? null
                           : _claimDailyChallenge,

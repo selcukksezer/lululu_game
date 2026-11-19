@@ -16,6 +16,7 @@ import '../services/online_notify_service.dart';
 import '../services/progress_manager.dart';
 import '../services/zero_jank_preloader.dart';
 import '../theme/lululu_theme.dart';
+import '../widgets/coin_fly.dart';
 import '../widgets/energy_empty_popup.dart';
 import '../widgets/hb_overlay.dart';
 import '../widgets/invite_redeem_sheet.dart';
@@ -71,11 +72,32 @@ class GameSelectorScreen extends StatefulWidget {
 }
 
 class _GameSelectorScreenState extends State<GameSelectorScreen> {
+  /// 12N: başlatılan uçuşların tutamakları — ekran kapanırsa uçuşlar
+  /// iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok; iptal sayıyı
+  /// uçuşsuz son değere döndürür).
+  final List<CoinFlightHandle> _coinFlights = <CoinFlightHandle>[];
+
+  void _trackCoinFlight(CoinFlightHandle? handle) {
+    if (handle != null) _coinFlights.add(handle);
+  }
+
+  @override
+  void dispose() {
+    for (final flight in _coinFlights) {
+      flight.cancel();
+    }
+    super.dispose();
+  }
+
   // Yalnız oturum-içi/uçuş-sırası koruma: kalıcı talep durumu
   // ProgressManager.canClaimDailyGiftBox'tan türetilir.
   bool _dailyRewardClaimed = false;
   bool _dailyEnergyClaimed = false;
   bool _dailyChallengeClaiming = false;
+
+  /// 12N: son ödül düğmesi dokunma noktaları — uçuş kalkış yeridir.
+  Offset? _lastGiftTap;
+  Offset? _lastChallengeTap;
 
   @override
   void initState() {
@@ -155,6 +177,21 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     // claimDailyGiftBox aynı gün tekrarında null döner: yarış
     // durumunda da ses/snackbar verilmez.
     if (reward == null) return;
+    // 12N: hediye kutusu coinleri düğmeden üst bara uçar (ödeme yukarıda
+    // yapıldı; uçuş yalnız görünümü erteler).
+    if (reward.coins > 0 && mounted) {
+      _trackCoinFlight(
+        CoinFlyService.instance.fly(
+          context: context,
+          from: _lastGiftTap ??
+              Offset(
+                MediaQuery.sizeOf(context).width / 2,
+                MediaQuery.sizeOf(context).height / 2,
+              ),
+          amount: reward.coins,
+        ),
+      );
+    }
     AudioManager().playWin();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -239,6 +276,20 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
         SnackBar(content: Text(context.l10n.errorGeneric)),
       );
       return;
+    }
+    // 12N: günlük challenge coin ödülü düğmeden üst bara uçar.
+    if (reward > 0) {
+      _trackCoinFlight(
+        CoinFlyService.instance.fly(
+          context: context,
+          from: _lastChallengeTap ??
+              Offset(
+                MediaQuery.sizeOf(context).width / 2,
+                MediaQuery.sizeOf(context).height / 2,
+              ),
+          amount: reward,
+        ),
+      );
     }
     AudioManager().playWin();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1026,6 +1077,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         enabled: !claimed,
                         label: claimed ? l10n.claimedShort : l10n.claim500,
                         child: GestureDetector(
+                          // 12N: uçuş kalkış noktası (dokunma konumu).
+                          onTapDown: (d) => _lastGiftTap = d.globalPosition,
                           onTap: claimed ? null : _claimDailyReward,
                       child: CustomPaint(
                         painter: const _RealBoxShadowPainter(
@@ -2110,6 +2163,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     label: claimed ? l10n.claimedShort : l10n.claimReward,
                     child: GestureDetector(
                       key: const Key('daily_challenge_claim_hub'),
+                      // 12N: uçuş kalkış noktası (dokunma konumu).
+                      onTapDown: (d) => _lastChallengeTap = d.globalPosition,
                       onTap: claimable && !_dailyChallengeClaiming
                           ? _claimDailyChallenge
                           : null,

@@ -4,6 +4,7 @@ import '../l10n/app_localizations.dart';
 import '../services/achievement_pass_service.dart';
 import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
+import 'coin_fly.dart';
 
 /// Yeni bir başarım açıldığında ekranın üstünden kayarak gelen altın çerçeveli bildirim banner'ı.
 class AchievementToastBanner extends StatefulWidget {
@@ -296,6 +297,26 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
   late int _tabIndex;
   AchievementCategory? _selectedCategory;
 
+  /// 12N: son kademe düğmesi dokunma noktası (uçuş kalkış yeri).
+  Offset? _lastTierTapPosition;
+
+  /// 12N: başlatılan uçuşların tutamakları — sayfa kapanırsa uçuşlar
+  /// iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok; iptal sayıyı
+  /// uçuşsuz son değere döndürür).
+  final List<CoinFlightHandle> _coinFlights = <CoinFlightHandle>[];
+
+  void _trackCoinFlight(CoinFlightHandle? handle) {
+    if (handle != null) _coinFlights.add(handle);
+  }
+
+  @override
+  void dispose() {
+    for (final flight in _coinFlights) {
+      flight.cancel();
+    }
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -310,6 +331,7 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
     required int tier,
     required bool goldTrack,
     required String rewardLabel,
+    int coins = 0,
   }) async {
     final ok = await AchievementPassService.instance.claimPassTierReward(
       tier,
@@ -321,6 +343,21 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
         SnackBar(content: Text(context.l10n.errorGeneric)),
       );
       return;
+    }
+    // 12N: kademe coin ödülü düğmeden üst bara uçar (ödeme serviste
+    // yapıldı; uçuş yalnız görünümü erteler, coin içermeyen ödülde yok).
+    if (coins > 0) {
+      _trackCoinFlight(
+        CoinFlyService.instance.fly(
+          context: context,
+          from: _lastTierTapPosition ??
+              Offset(
+                MediaQuery.sizeOf(context).width / 2,
+                MediaQuery.sizeOf(context).height / 2,
+              ),
+          amount: coins,
+        ),
+      );
     }
     AudioManager().playWin();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -802,10 +839,12 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                   claimed: freeClaimed,
                   canClaim: canClaimFree,
                   isGold: false,
+                  onTapDown: (d) => _lastTierTapPosition = d.globalPosition,
                   onTap: () => _claimTier(
                     tier: tierDef.tier,
                     goldTrack: false,
                     rewardLabel: tierDef.freeReward.label,
+                    coins: tierDef.freeReward.coins,
                   ),
                 ),
               ),
@@ -818,10 +857,12 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                   claimed: goldClaimed,
                   canClaim: canClaimGold,
                   isGold: true,
+                  onTapDown: (d) => _lastTierTapPosition = d.globalPosition,
                   onTap: () => _claimTier(
                     tier: tierDef.tier,
                     goldTrack: true,
                     rewardLabel: tierDef.goldReward.label,
+                    coins: tierDef.goldReward.coins,
                   ),
                 ),
               ),
@@ -934,6 +975,9 @@ class _PassRewardTrackTile extends StatelessWidget {
   final bool isGold;
   final VoidCallback onTap;
 
+  /// 12N: uçuş kalkış noktası için dokunma konumu (opsiyonel).
+  final ValueChanged<TapDownDetails>? onTapDown;
+
   const _PassRewardTrackTile({
     required this.trackKey,
     required this.trackTitle,
@@ -942,6 +986,7 @@ class _PassRewardTrackTile extends StatelessWidget {
     required this.canClaim,
     required this.isGold,
     required this.onTap,
+    this.onTapDown,
   });
 
   @override
@@ -952,6 +997,7 @@ class _PassRewardTrackTile extends StatelessWidget {
       label: canClaim ? "$trackTitle, ${reward.label}, ${context.l10n.claimReward}" : "$trackTitle, ${reward.label}",
       child: GestureDetector(
         key: trackKey,
+        onTapDown: canClaim ? onTapDown : null,
         onTap: canClaim ? onTap : null,
         child: Container(
           padding: const EdgeInsets.all(6),

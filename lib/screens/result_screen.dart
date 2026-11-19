@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -13,6 +14,7 @@ import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
 import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
+import '../widgets/coin_fly.dart';
 import '../widgets/lululu_press.dart';
 
 Widget _buildExactImage(
@@ -243,6 +245,22 @@ class _GameResultScreenState extends State<GameResultScreen>
   bool _initialCoinsAwarded = false;
   bool _shared = false;
 
+  /// 12N: sandık üstündeki coin hapının konumu (uçuş kalkış noktası).
+  final GlobalKey _chestPillKey = GlobalKey();
+
+  /// 12N: uçuş gecikme zamanlayıcısı + tutamacı — ekran kapanırsa
+  /// ikisi de iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok;
+  /// iptal sayıyı uçuşsuz son değere döndürür).
+  Timer? _coinFlyDelay;
+  CoinFlightHandle? _coinFlight;
+
+  @override
+  void dispose() {
+    _coinFlyDelay?.cancel();
+    _coinFlight?.cancel();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -257,6 +275,31 @@ class _GameResultScreenState extends State<GameResultScreen>
       // 'play' görevi burada KAYDEDİLMEZ: her çağırıcı sonuçtan önce
       // recordTaskProgress('play') çağırıyor (madde 35: giriş kaydı
       // kaldırıldı, tek kayıt bitirme noktasındadır).
+    }
+    // 12N: kazanç sandık hapından üst bara uçar. Ödeme sonuç ekranı
+    // açılmadan ÖNCE (finishRun settle) yapıldı; uçuş yalnız görünümü
+    // erteler: üst bar sayısı varışta artar. Bu ekranda üst bar yoktur,
+    // hedef kayıtlı değilse uçuş sağ üst köşeye gider (yedek hedef);
+    // hub'a dönülünce sayı varmış hâlde görünür. Kısa gecikme: kullanıcı
+    // önce hapı görsün, sonra coinler kalksın.
+    if (widget.coins > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _coinFlyDelay = Timer(const Duration(milliseconds: 350), () {
+          if (!mounted) return;
+          final box = _chestPillKey.currentContext?.findRenderObject();
+          final from = box is RenderBox && box.hasSize
+              ? box.localToGlobal(box.size.center(Offset.zero))
+              : Offset(
+                  MediaQuery.sizeOf(context).width / 2,
+                  MediaQuery.sizeOf(context).height / 2,
+                );
+          _coinFlight = CoinFlyService.instance.fly(
+            context: context,
+            from: from,
+            amount: widget.coins,
+          );
+        });
+      });
     }
     final isTesting =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
@@ -1076,9 +1119,11 @@ class _GameResultScreenState extends State<GameResultScreen>
                 ],
               ),
               // Coin Pill Floating on top of chest
+              // 12N: uçuş kalkış noktası (GlobalKey ile konum okunur).
               Positioned(
                 top: 0,
                 child: Container(
+                  key: _chestPillKey,
                   padding: const EdgeInsets.fromLTRB(6, 4, 13, 4),
                   decoration: BoxDecoration(
                     color: const Color(0xEE2E1A00),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/friend_invite_service.dart';
+import 'coin_fly.dart';
 
 /// 9A — davet sheet'ini açar (profil satırı + hub kartı aynı sheet'i
 /// kullanır; paylaşım akışı aynen korunur, altına kod karşılama
@@ -39,8 +40,23 @@ class _InviteRedeemSheetState extends State<InviteRedeemSheet> {
   InviteRedeemResult? _errorResult;
   bool _busy = false;
 
+  /// 12N: karşılama düğmesi dokunma noktası (uçuş kalkış yeri).
+  Offset? _lastRedeemTap;
+
+  /// 12N: başlatılan uçuşların tutamakları — sayfa kapanırsa uçuşlar
+  /// iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok; iptal sayıyı
+  /// uçuşsuz son değere döndürür).
+  final List<CoinFlightHandle> _coinFlights = <CoinFlightHandle>[];
+
+  void _trackCoinFlight(CoinFlightHandle? handle) {
+    if (handle != null) _coinFlights.add(handle);
+  }
+
   @override
   void dispose() {
+    for (final flight in _coinFlights) {
+      flight.cancel();
+    }
     _codeController.dispose();
     super.dispose();
   }
@@ -72,6 +88,21 @@ class _InviteRedeemSheetState extends State<InviteRedeemSheet> {
     final l10n = context.l10n;
     if (outcome.succeeded) {
       _codeController.clear();
+      // 12N: davet ödülü (100 coin) düğmeden üst bara uçar (ödeme
+      // `redeemCode` içinde yapıldı; uçuş yalnız görünümü erteler).
+      if (outcome.rewardCoins > 0) {
+        _trackCoinFlight(
+          CoinFlyService.instance.fly(
+            context: context,
+            from: _lastRedeemTap ??
+                Offset(
+                  MediaQuery.sizeOf(context).width / 2,
+                  MediaQuery.sizeOf(context).height / 2,
+                ),
+            amount: outcome.rewardCoins,
+          ),
+        );
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(l10n.inviteRedeemSuccess(outcome.rewardCoins)),
@@ -239,6 +270,8 @@ class _InviteRedeemSheetState extends State<InviteRedeemSheet> {
             label: l10n.inviteRedeemButton,
             child: GestureDetector(
               key: const Key('invite_redeem_button'),
+              // 12N: uçuş kalkış noktası (dokunma konumu).
+              onTapDown: (d) => _lastRedeemTap = d.globalPosition,
               onTap: _redeem,
               child: Container(
                 height: 48,

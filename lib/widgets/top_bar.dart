@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
 import '../utils/number_format.dart';
+import 'coin_fly.dart';
 import 'energy_empty_popup.dart';
 
 /// Üst bar: profil avatarı (etrafında dairesel XP barı + alt LVL rozeti),
@@ -36,10 +37,19 @@ class LululuTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: ProgressManager(),
+      listenable: Listenable.merge([
+        ProgressManager(),
+        CoinFlyService.instance,
+      ]),
       builder: (context, _) {
         final pm = ProgressManager();
-        final displayCoins = pm.coins;
+        // 12N coin uçuşu: uçuş sürerken sayı artmaz — ödenmiş ama
+        // henüz varmamış tutar (pendingCoins) görüntüden düşülür;
+        // varışta servis bildirir, sayı artar + hap "pop" yapar.
+        final displayCoins = math.max(
+          0,
+          pm.coins - CoinFlyService.instance.pendingCoins,
+        );
         // 12A: gerçek değerler — yıldız yedeği (86) ve seviye/XP
         // tabanları kaldırıldı; 0 ilerlemede 0 yıldız / seviye 1 / 0 XP.
         final displayStars = pm.totalStars;
@@ -167,6 +177,7 @@ class LululuTopBar extends StatelessWidget {
                   SizedBox(width: gap),
 
               // Coin Pill (.pill: height 34, width 92.9 on 430w, padding 4px 7px 4px 5px)
+              // 12N: uçuş varış noktası (CoinFlyTarget) + varış "pop"u.
               Flexible(
                 flex: 0,
                 child: Semantics(
@@ -175,7 +186,8 @@ class LululuTopBar extends StatelessWidget {
                   child: GestureDetector(
                     onTap: onShopTap,
                   behavior: HitTestBehavior.opaque,
-                  child: SizedBox(
+                  child: CoinFlyPop(
+                    child: SizedBox(
                     width: compact ? null : 92.9,
                     height: 34,
                     child: _Pill(
@@ -187,7 +199,8 @@ class LululuTopBar extends StatelessWidget {
                             compact ? MainAxisSize.min : MainAxisSize.max,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Image.asset(
+                          CoinFlyTarget(
+                            child: Image.asset(
                             'assets/design/ui/icon_coin_exact.png',
                             width: 18,
                             height: 18,
@@ -195,6 +208,7 @@ class LululuTopBar extends StatelessWidget {
                               'assets/design/ui/icon_coin.png',
                               width: 18,
                               height: 18,
+                            ),
                             ),
                           ),
                           const SizedBox(width: 3),
@@ -252,6 +266,7 @@ class LululuTopBar extends StatelessWidget {
                           ),
                         ],
                       ),
+                    ),
                     ),
                   ),
                 ),

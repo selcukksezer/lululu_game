@@ -10,6 +10,7 @@ import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/arena_prop_glb.dart';
+import '../widgets/coin_fly.dart';
 import '../widgets/dot_background.dart';
 import '../widgets/energy_empty_popup.dart';
 import '../widgets/shop_dialog.dart';
@@ -24,6 +25,14 @@ class CampaignMapScreen extends StatefulWidget {
 }
 
 class _CampaignMapScreenState extends State<CampaignMapScreen> {
+  /// 12N: başlatılan uçuşların tutamakları — ekran kapanırsa uçuşlar
+  /// iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok; iptal sayıyı
+  /// uçuşsuz son değere döndürür).
+  final List<CoinFlightHandle> _coinFlights = <CoinFlightHandle>[];
+
+  void _trackCoinFlight(CoinFlightHandle? handle) {
+    if (handle != null) _coinFlights.add(handle);
+  }
   final progress = ProgressManager();
 
   /// B15 kanonik kilit tanımı: servis (`ProgressManager` vekâleti +
@@ -33,6 +42,9 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
   bool _isStartingLevel = false;
   String? _chestFeedback;
   bool _chestFeedbackError = false;
+
+  /// 12N: son sandık düğmesi dokunma noktası (uçuş kalkış yeri).
+  Offset? _lastChestTap;
 
   /// Sandık ödülü güçlendirici anahtarlarının büyük harfli görünen adları
   /// (Dart `toUpperCase()` 'terlik' → 'TERLIK' üretir, doğrusu 'TERLİK').
@@ -56,12 +68,21 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     super.initState();
     progress.addListener(_onProgressUpdated);
     _progression.addListener(_onProgressUpdated);
+    // 12N: uçuş varışında üst bar sayısı güncellensin diye dinlenir.
+    CoinFlyService.instance.addListener(_onProgressUpdated);
   }
 
   @override
   void dispose() {
+    // 12N: ÖNCE listener'lar kaldırılır — uçuş iptali `notifyListeners`
+    // çağırır; kayıtlı listener `setState` ile cevap verirse defunct
+    // element hatası olur (dispose sırasında setState yasaktır).
     progress.removeListener(_onProgressUpdated);
     _progression.removeListener(_onProgressUpdated);
+    CoinFlyService.instance.removeListener(_onProgressUpdated);
+    for (final flight in _coinFlights) {
+      flight.cancel();
+    }
     super.dispose();
   }
 
@@ -243,6 +264,9 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     final narrow = MediaQuery.sizeOf(context).width < 430;
     final pillHPad = narrow ? 8.0 : 10.0;
     final gap = narrow ? 6.0 : 8.0;
+    // 12N: uçuş sürerken sayı artmaz (bekleyen tutar düşülür).
+    final displayCoins =
+        progress.coins - CoinFlyService.instance.pendingCoins;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -335,7 +359,10 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                 ),
               ),
               SizedBox(width: gap),
-              Container(
+              // 12N: coin hapı uçuş hedefi + varış "pop"u; sayı uçuş
+              // sürerken artmaz (bekleyen tutar düşülür).
+              CoinFlyPop(
+                child: Container(
                 padding: EdgeInsets.symmetric(horizontal: pillHPad, vertical: 6),
                 decoration: BoxDecoration(
                   color: LululuColors.carbonVoid.withValues(alpha: 0.72),
@@ -346,10 +373,12 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Text('🪙', style: TextStyle(fontSize: 13)),
+                    CoinFlyTarget(
+                      child: const Text('🪙', style: TextStyle(fontSize: 13)),
+                    ),
                     const SizedBox(width: 4),
                     Text(
-                      '${progress.coins}',
+                      '${displayCoins < 0 ? 0 : displayCoins}',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -357,6 +386,7 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
                       ),
                     ),
                   ],
+                ),
                 ),
               ),
               SizedBox(width: gap),
@@ -408,6 +438,22 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
     final claimedReward = reward;
     if (claimedReward != null) {
       AudioManager().playWin();
+      // 12N: sandık coinleri sandıktan üst bardaki coin hapına uçar
+      // (ödeme `claimChapterChest` içinde yapıldı; uçuş yalnız
+      // görünümü erteler).
+      if (claimedReward.coinsGranted > 0) {
+        _trackCoinFlight(
+          CoinFlyService.instance.fly(
+            context: context,
+            from: _lastChestTap ??
+                Offset(
+                  MediaQuery.sizeOf(context).width / 2,
+                  MediaQuery.sizeOf(context).height / 2,
+                ),
+            amount: claimedReward.coinsGranted,
+          ),
+        );
+      }
       setState(() {
         _chestFeedbackError = false;
         _chestFeedback = context.l10n.chestUnlockedToast(
@@ -528,6 +574,8 @@ class _CampaignMapScreenState extends State<CampaignMapScreen> {
       ),
       child: GestureDetector(
         key: Key('campaign_map_chest_${chapterIndex}_$milestoneStars'),
+        // 12N: uçuş kalkış noktası (dokunma konumu).
+        onTapDown: (d) => _lastChestTap = d.globalPosition,
         onTap: claimable
             ? () => _handleClaimChest(chapterIndex, milestoneStars)
             : null,
