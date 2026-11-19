@@ -127,7 +127,7 @@ const _tierRaritiesEn = <InsectTier, String>{
   InsectTier.dancer: 'Epic',
   InsectTier.diva: 'Legendary',
   InsectTier.can: 'Mythic',
-  InsectTier.kongo: 'Secret',
+  InsectTier.kongo: 'Hidden',
   InsectTier.bed: 'Evolution Crystal',
   InsectTier.milli: 'Super',
   InsectTier.pinkJacket: 'Ultra',

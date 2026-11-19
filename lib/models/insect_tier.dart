@@ -354,7 +354,7 @@ enum InsectTier {
       case InsectTier.can:
         return 'Mythic';
       case InsectTier.kongo:
-        return 'Secret';
+        return 'Hidden';
       case InsectTier.bed:
         return 'Evolution Crystal';
       case InsectTier.milli:
