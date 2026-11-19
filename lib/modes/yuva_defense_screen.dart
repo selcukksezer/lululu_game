@@ -75,6 +75,12 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   late final AnimationController _pulse;
   late final AnimationController _comboPulse;
   Timer? _loop;
+
+  /// Kare bildirimi: [_tick] tam `setState` yerine bunu artırır —
+  /// yalnız `build` içindeki [ValueListenableBuilder] alt-ağacı
+  /// (başlık + arena + güç çubuğu) yenilenir; arka plan, [Scaffold]
+  /// ve [PopScope] kare başına kurulmaz.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
   Timer? _hitEffectTimer;
   DateTime _lastTick = DateTime.now();
   // Duraklatma (madde 37): Osmantuş deseni — arka planda oyun zamanlayıcısı
@@ -257,6 +263,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     _hitEffectTimer?.cancel();
     _pulse.dispose();
     _comboPulse.dispose();
+    _tickNotifier.dispose();
     super.dispose();
   }
 
@@ -502,7 +509,9 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _endGame();
       return;
     }
-    setState(() {});
+    // Kare-başına tam rebuild yok: yalnız [_tickNotifier] dinleyen
+    // alt-ağaç yenilenir (başlık + arena + güç çubuğu).
+    _tickNotifier.value++;
   }
 
   /// S1#48: ölüm sonrası 500 ms geçmeden dokunuşla yeniden başlatma yok.
@@ -708,8 +717,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         stillValid: () => mounted && runId == _runId,
         // Y3: '<mod>:<tur başlangıç damgası>' — damga tur
         // başlangıcında yakalandı (`_runStartedAtMs`), bitiş anı değil.
-        idempotencyKey:
-            '${LeaderboardService.modeYuva}:$_runStartedAtMs',
+        idempotencyKey: '${LeaderboardService.modeYuva}:$_runStartedAtMs',
       );
       if (runId != _runId) return;
       if (!mounted) return;
@@ -974,8 +982,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     _runId++;
     // Y3: yeni tur, yeni idempotency damgası (monoton — aynı
     // milisaniyede iki yeniden başlatma bile çakışmaz).
-    _runStartedAtMs =
-        max(DateTime.now().millisecondsSinceEpoch, _runStartedAtMs + 1);
+    _runStartedAtMs = max(
+      DateTime.now().millisecondsSinceEpoch,
+      _runStartedAtMs + 1,
+    );
     final pm = ProgressManager.instance;
     final doubleSlip = widget.prototypeVisualState
         ? 3
@@ -1131,6 +1141,72 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     final topPad = MediaQuery.paddingOf(context).top;
     final hasHostStatusBar = topPad > 0;
     final wideScreen = MediaQuery.sizeOf(context).width >= 400;
+    // Statik arka plan: kare bildiriminde yeniden kurulmaz --
+    // [ValueListenableBuilder] `child` olarak bir kez kurulur.
+    final background = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (!widget.prototypeVisualState)
+          Positioned(
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0,
+            child: Opacity(
+              opacity: 0,
+              child: Text(context.l10n.shopModeNestDefense.toUpperCase()),
+            ),
+          ),
+        Opacity(
+          opacity: 0.96,
+          child: ColorFiltered(
+            colorFilter: const ColorFilter.matrix(<double>[
+              0.95,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0.95,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0.95,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+            ]),
+            child: Image.asset(
+              'assets/design/backgrounds/terlik_livingroom.webp',
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  const ColoredBox(color: Color(0xFFEAC8A0)),
+            ),
+          ),
+        ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: [0, 0.24, 0.76, 1],
+              colors: [
+                Color(0x4D080B12),
+                Color(0x00080B12),
+                Color(0x00080B12),
+                Color(0x52080B12),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
     return PopScope(
       canPop: _exitConfirmed || !_needsExitConfirm,
       onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
@@ -1140,753 +1216,710 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         removeBottom: true,
         child: Scaffold(
           backgroundColor: const Color(0xFF080B12),
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (!widget.prototypeVisualState)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  width: 0,
-                  height: 0,
-                  child: Opacity(
-                    opacity: 0,
-                    child: Text(context.l10n.shopModeNestDefense.toUpperCase()),
-                  ),
-                ),
-              Opacity(
-                opacity: 0.96,
-                child: ColorFiltered(
-                  colorFilter: const ColorFilter.matrix(<double>[
-                    0.95,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0.95,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0.95,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                  ]),
-                  child: Image.asset(
-                    'assets/design/backgrounds/terlik_livingroom.webp',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const ColoredBox(color: Color(0xFFEAC8A0)),
-                  ),
-                ),
-              ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0, 0.24, 0.76, 1],
-                    colors: [
-                      Color(0x4D080B12),
-                      Color(0x00080B12),
-                      Color(0x00080B12),
-                      Color(0x52080B12),
-                    ],
-                  ),
-                ),
-              ),
-              SafeArea(
-                child: Column(
-                  children: [
-                    if (hasHostStatusBar)
-                      SizedBox(
-                        height: widget.prototypeVisualState ? 35.4 : topPad,
-                      )
-                    else
-                      SizedBox(
-                        height: 35.4,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '09:41',
-                                style: GoogleFonts.nunito(
-                                  fontSize: 12.5,
-                                  height: 1,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
+          body: ValueListenableBuilder<int>(
+            valueListenable: _tickNotifier,
+            builder: (context, _, backgroundChild) => Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(child: backgroundChild!),
+                SafeArea(
+                  child: Column(
+                    children: [
+                      if (hasHostStatusBar)
+                        SizedBox(
+                          height: widget.prototypeVisualState ? 35.4 : topPad,
+                        )
+                      else
+                        SizedBox(
+                          height: 35.4,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '09:41',
+                                  style: GoogleFonts.nunito(
+                                    fontSize: 12.5,
+                                    height: 1,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(
-                                width: 38,
-                                height: 16,
-                                child: CustomPaint(
-                                  painter: _YuvaStatusIndicatorsPainter(),
+                                const SizedBox(
+                                  width: 38,
+                                  height: 16,
+                                  child: CustomPaint(
+                                    painter: _YuvaStatusIndicatorsPainter(),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    SizedBox(
-                      height: wideScreen ? 56.3 : 77.2,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-                        child: Row(
-                          children: [
-                            _RoundAction(
-                              semanticLabel: context.l10n.goBackLabel,
-                              icon: Icons.arrow_back_rounded,
-                              asset: 'assets/icons2/back-prototype.png',
-                              onTap: () => Navigator.maybePop(context),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: wideScreen
-                                    ? Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0x8C080B12),
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                            ),
-                                            child: FittedBox(
-                                              // F-11: `maxLines: 1` +
-                                              // varsayılan softWrap,
-                                              // geniş ekranda ikinci
-                                              // kelimeyi üç nokta
-                                              // olmadan düşürüyordu
-                                              // ("YUVA"). FittedBox
-                                              // (scaleDown) tam başlığı
-                                              // sığdırır.
-                                              fit: BoxFit.scaleDown,
-                                              alignment: Alignment.centerLeft,
-                                              child: Text(
-                                                context.l10n.shopModeNestDefense
-                                                    .toUpperCase(),
-                                                maxLines: 1,
-                                                softWrap: false,
-                                                overflow: TextOverflow.clip,
-                                                style: GoogleFonts.baloo2(
-                                                  fontSize: 20,
-                                                  height: 1.05,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Colors.white,
-                                                  shadows: const [
-                                                    Shadow(
-                                                      color: Color(0xEB000000),
-                                                      offset: Offset(0, 2),
-                                                      blurRadius: 6,
-                                                    ),
-                                                  ],
+                      SizedBox(
+                        height: wideScreen ? 56.3 : 77.2,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                          child: Row(
+                            children: [
+                              _RoundAction(
+                                semanticLabel: context.l10n.goBackLabel,
+                                icon: Icons.arrow_back_rounded,
+                                asset: 'assets/icons2/back-prototype.png',
+                                onTap: () => Navigator.maybePop(context),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: wideScreen
+                                      ? Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 3,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0x8C080B12),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: FittedBox(
+                                                // F-11: `maxLines: 1` +
+                                                // varsayılan softWrap,
+                                                // geniş ekranda ikinci
+                                                // kelimeyi üç nokta
+                                                // olmadan düşürüyordu
+                                                // ("YUVA"). FittedBox
+                                                // (scaleDown) tam başlığı
+                                                // sığdırır.
+                                                fit: BoxFit.scaleDown,
+                                                alignment: Alignment.centerLeft,
+                                                child: Text(
+                                                  context
+                                                      .l10n
+                                                      .shopModeNestDefense
+                                                      .toUpperCase(),
+                                                  maxLines: 1,
+                                                  softWrap: false,
+                                                  overflow: TextOverflow.clip,
+                                                  style: GoogleFonts.baloo2(
+                                                    fontSize: 20,
+                                                    height: 1.05,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: Colors.white,
+                                                    shadows: const [
+                                                      Shadow(
+                                                        color: Color(
+                                                          0xEB000000,
+                                                        ),
+                                                        offset: Offset(0, 2),
+                                                        blurRadius: 6,
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 9,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFE01E5A),
-                                              borderRadius:
-                                                  BorderRadius.circular(999),
-                                            ),
-                                            child: Text(
-                                              context.l10n.newBadge,
-                                              style: GoogleFonts.baloo2(
-                                                fontSize: 10.5,
-                                                height: 1.1,
-                                                fontWeight: FontWeight.w800,
-                                                letterSpacing: 0.735,
-                                                color: Colors.white,
+                                            const SizedBox(height: 3),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 9,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFE01E5A),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                context.l10n.newBadge,
+                                                style: GoogleFonts.baloo2(
+                                                  fontSize: 10.5,
+                                                  height: 1.1,
+                                                  fontWeight: FontWeight.w800,
+                                                  letterSpacing: 0.735,
+                                                  color: Colors.white,
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      )
-                                    : Image.asset(
-                                        'assets/icons2/yuva-title-prototype.png',
-                                        width: 155.2,
-                                        height: 71.3,
-                                        fit: BoxFit.fill,
-                                        semanticLabel:
-                                            context.l10n.yuvaTitleNewSemantic,
-                                      ),
-                              ),
-                            ),
-                            SizedBox(width: wideScreen ? 10 : 20),
-                            if (wideScreen)
-                              Container(
-                                width: 82.5,
-                                height: 35,
-                                padding: const EdgeInsets.fromLTRB(6, 5, 0, 5),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xD1080B12),
-                                  borderRadius: BorderRadius.circular(999),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0x59000000),
-                                      offset: Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Image.asset(
-                                      'assets/icons2/coin.png',
-                                      width: 25,
-                                      height: 25,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        _formatCoins(coins),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.clip,
-                                        softWrap: false,
-                                        style: GoogleFonts.nunito(
-                                          fontSize: 13.5,
-                                          height: 1,
-                                          fontWeight: FontWeight.w900,
-                                          color: Colors.white,
+                                          ],
+                                        )
+                                      : Image.asset(
+                                          'assets/icons2/yuva-title-prototype.png',
+                                          width: 155.2,
+                                          height: 71.3,
+                                          fit: BoxFit.fill,
+                                          semanticLabel:
+                                              context.l10n.yuvaTitleNewSemantic,
                                         ),
-                                      ),
-                                    ),
-                                  ],
                                 ),
-                              )
-                            else
-                              SizedBox(
-                                width: 70,
-                                height: 35,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
+                              ),
+                              SizedBox(width: wideScreen ? 10 : 20),
+                              if (wideScreen)
+                                Container(
+                                  width: 82.5,
+                                  height: 35,
+                                  padding: const EdgeInsets.fromLTRB(
+                                    6,
+                                    5,
+                                    0,
+                                    5,
                                   ),
                                   decoration: BoxDecoration(
                                     color: const Color(0xD1080B12),
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                  child: Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      Positioned(
-                                        left: 3,
-                                        top: 8,
-                                        child: Image.asset(
-                                          'assets/icons2/coin.png',
-                                          width: 19,
-                                          height: 19,
-                                        ),
+                                    borderRadius: BorderRadius.circular(999),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x59000000),
+                                        offset: Offset(0, 3),
                                       ),
-                                      Positioned(
-                                        left: 31,
-                                        top: 8,
-                                        child: SizedBox(
-                                          width: 44,
-                                          child: FittedBox(
-                                            alignment: Alignment.centerLeft,
-                                            fit: BoxFit.scaleDown,
-                                            child: Text(
-                                              _formatCoins(coins),
-                                              style: GoogleFonts.nunito(
-                                                fontSize: 13.5,
-                                                fontWeight: FontWeight.w900,
-                                                color: Colors.white,
-                                              ),
-                                            ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Image.asset(
+                                        'assets/icons2/coin.png',
+                                        width: 25,
+                                        height: 25,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          _formatCoins(coins),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.clip,
+                                          softWrap: false,
+                                          style: GoogleFonts.nunito(
+                                            fontSize: 13.5,
+                                            height: 1,
+                                            fontWeight: FontWeight.w900,
+                                            color: Colors.white,
                                           ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ),
-                            if (!widget.prototypeVisualState) ...[
-                              const SizedBox(width: 10),
-                              _pauseButton(),
-                            ],
-                            const SizedBox(width: 10),
-                            _RoundAction(
-                              semanticLabel: context.l10n.helpButtonLabel,
-                              icon: Icons.help_outline_rounded,
-                              text: '?',
-                              color: _gold,
-                              circular: true,
-                              onTap: () => _showHelpDialog(),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      height: wideScreen ? 58.5 : 79.5,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                        child: LayoutBuilder(
-                          builder: (context, hudBox) {
-                            final hudRow = Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
+                                )
+                              else
                                 SizedBox(
-                                  width: 104,
-                                  child: _HudCard(
-                                    label: context.l10n.gameScoreLabel,
-                                    value: '$_score',
-                                    singleRowHearts: wideScreen,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                SizedBox(
-                                  width: 84,
-                                  child: _HudCard(
-                                    label: context.l10n.gameBestLabel,
-                                    value: _formatCoins(_best),
-                                    singleRowHearts: wideScreen,
-                                  ),
-                                ),
-                                if (wideScreen)
-                                  const Spacer()
-                                else
-                                  const SizedBox(width: 8),
-                                SizedBox(
-                                  width: wideScreen ? 98.4 : 80,
-                                  child: _HudCard(
-                                    label: context.l10n.livesLabel,
-                                    value: '$_lives',
-                                    singleRowHearts: wideScreen,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Semantics(
-                                  button: true,
-                                  label: _ended
-                                      ? context.l10n.playAgainButton
-                                      : context.l10n.finishRoundLabel,
-                                  child: GestureDetector(
-                                    // Tur bitmişse doğrudan yeniden başlat
-                                    // (eski davranış); tur sürüyorsa BİTİR
-                                    // sonuç ekranını açar (bulgu #10).
-                                    onTap: _ended ? _restart : _finishEarly,
-                                    child: Container(
-                                      width: 58,
-                                      height: 48,
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFB800),
-                                        borderRadius: BorderRadius.circular(12),
-                                        boxShadow: const [
-                                          BoxShadow(
-                                            color: Color(0xFFB97A00),
-                                            offset: Offset(0, 3),
+                                  width: 70,
+                                  height: 35,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xD1080B12),
+                                      borderRadius: BorderRadius.circular(24),
+                                    ),
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        Positioned(
+                                          left: 3,
+                                          top: 8,
+                                          child: Image.asset(
+                                            'assets/icons2/coin.png',
+                                            width: 19,
+                                            height: 19,
                                           ),
-                                        ],
-                                      ),
-                                      child: Text(
-                                        _ended
-                                            ? context.l10n.tryAgainCaps
-                                            : context.l10n.finishCaps,
-                                        style: GoogleFonts.baloo2(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w900,
-                                          color: _ink,
                                         ),
-                                      ),
+                                        Positioned(
+                                          left: 31,
+                                          top: 8,
+                                          child: SizedBox(
+                                            width: 44,
+                                            child: FittedBox(
+                                              alignment: Alignment.centerLeft,
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(
+                                                _formatCoins(coins),
+                                                style: GoogleFonts.nunito(
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w900,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
+                              if (!widget.prototypeVisualState) ...[
+                                const SizedBox(width: 10),
+                                _pauseButton(),
                               ],
-                            );
-                            if (hudBox.maxWidth >= 350) return hudRow;
-                            return FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.center,
-                              child: SizedBox(
-                                width: 350,
-                                height: wideScreen ? 50.5 : 71.5,
-                                child: hudRow,
+                              const SizedBox(width: 10),
+                              _RoundAction(
+                                semanticLabel: context.l10n.helpButtonLabel,
+                                icon: Icons.help_outline_rounded,
+                                text: '?',
+                                color: _gold,
+                                circular: true,
+                                onTap: () => _showHelpDialog(),
                               ),
-                            );
-                          },
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            _arenaWidth = constraints.maxWidth - 4;
-                            _arenaHeight = constraints.maxHeight - 4;
-                            return GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTapDown: _tapArena,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: Transform.translate(
-                                  offset: Offset(
-                                    sin(_pulse.value * pi * 20) * _shake * 10,
-                                    cos(_pulse.value * pi * 16) * _shake * 8,
-                                  ),
-                                  child: BackdropFilter(
-                                    filter: ImageFilter.blur(
-                                      sigmaX: 2,
-                                      sigmaY: 2,
+                      SizedBox(
+                        height: wideScreen ? 58.5 : 79.5,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                          child: LayoutBuilder(
+                            builder: (context, hudBox) {
+                              final hudRow = Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 104,
+                                    child: _HudCard(
+                                      label: context.l10n.gameScoreLabel,
+                                      value: '$_score',
+                                      singleRowHearts: wideScreen,
                                     ),
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        gradient: const LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          colors: [
-                                            Color(0x660E1422),
-                                            Color(0x800E1422),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  SizedBox(
+                                    width: 84,
+                                    child: _HudCard(
+                                      label: context.l10n.gameBestLabel,
+                                      value: _formatCoins(_best),
+                                      singleRowHearts: wideScreen,
+                                    ),
+                                  ),
+                                  if (wideScreen)
+                                    const Spacer()
+                                  else
+                                    const SizedBox(width: 8),
+                                  SizedBox(
+                                    width: wideScreen ? 98.4 : 80,
+                                    child: _HudCard(
+                                      label: context.l10n.livesLabel,
+                                      value: '$_lives',
+                                      singleRowHearts: wideScreen,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Semantics(
+                                    button: true,
+                                    label: _ended
+                                        ? context.l10n.playAgainButton
+                                        : context.l10n.finishRoundLabel,
+                                    child: GestureDetector(
+                                      // Tur bitmişse doğrudan yeniden başlat
+                                      // (eski davranış); tur sürüyorsa BİTİR
+                                      // sonuç ekranını açar (bulgu #10).
+                                      onTap: _ended ? _restart : _finishEarly,
+                                      child: Container(
+                                        width: 58,
+                                        height: 48,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFFB800),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Color(0xFFB97A00),
+                                              offset: Offset(0, 3),
+                                            ),
                                           ],
                                         ),
-                                        border: Border.all(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.14,
+                                        child: Text(
+                                          _ended
+                                              ? context.l10n.tryAgainCaps
+                                              : context.l10n.finishCaps,
+                                          style: GoogleFonts.baloo2(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w900,
+                                            color: _ink,
                                           ),
-                                          width: 2,
                                         ),
-                                        borderRadius: BorderRadius.circular(20),
                                       ),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(2),
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            border: Border.all(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.35,
-                                              ),
-                                              width: 1,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              18,
-                                            ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                              if (hudBox.maxWidth >= 350) return hudRow;
+                              return FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.center,
+                                child: SizedBox(
+                                  width: 350,
+                                  height: wideScreen ? 50.5 : 71.5,
+                                  child: hudRow,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              _arenaWidth = constraints.maxWidth - 4;
+                              _arenaHeight = constraints.maxHeight - 4;
+                              return GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTapDown: _tapArena,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Transform.translate(
+                                    offset: Offset(
+                                      sin(_pulse.value * pi * 20) * _shake * 10,
+                                      cos(_pulse.value * pi * 16) * _shake * 8,
+                                    ),
+                                    child: BackdropFilter(
+                                      filter: ImageFilter.blur(
+                                        sigmaX: 2,
+                                        sigmaY: 2,
+                                      ),
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Color(0x660E1422),
+                                              Color(0x800E1422),
+                                            ],
                                           ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              14,
+                                          border: Border.all(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.14,
                                             ),
-                                            child: Stack(
-                                              fit: StackFit.expand,
-                                              children: [
-                                                CustomPaint(
-                                                  painter: _DefenseArenaPainter(
-                                                    combo: _combo,
-                                                    comboProgress:
-                                                        _comboPulse.value,
-                                                    hits: _hits,
-                                                    misses: _misses,
-                                                    hitsLabel: context.l10n
-                                                        .yuvaHitsPainter(_hits),
-                                                    missesLabel: context.l10n
-                                                        .yuvaMissedPainter(
-                                                          _misses,
-                                                        ),
-                                                    bannerLabel:
-                                                        context.l10n.yuvaBanner,
-                                                    hint: _hint,
-                                                    comboBroken:
-                                                        _hintIsComboBroken,
-                                                    bursts: List<_HitBurst>.of(
-                                                      _bursts,
-                                                    ),
-                                                    showRadialRings: !widget
-                                                        .prototypeVisualState,
-                                                  ),
+                                            width: 2,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(2),
+                                          child: DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              border: Border.all(
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.35,
                                                 ),
-                                                for (final bug in _bugs)
-                                                  Positioned(
-                                                    left:
-                                                        bug.x * _arenaWidth -
-                                                        30,
-                                                    top:
-                                                        widget
-                                                            .prototypeVisualState
-                                                        ? _laneTop(
-                                                            bug.lane,
-                                                            _arenaHeight,
-                                                          )
-                                                        : bug.y * _arenaHeight -
-                                                              30,
-                                                    child: IgnorePointer(
-                                                      child: SizedBox(
-                                                        width: 60,
-                                                        height: 60,
-                                                        child: Stack(
-                                                          alignment: Alignment
-                                                              .topCenter,
-                                                          clipBehavior:
-                                                              Clip.none,
-                                                          children: [
-                                                            if (!bug.popping &&
-                                                                _bugDistanceToNest(
-                                                                      bug,
-                                                                    ) <
-                                                                    (widget.prototypeVisualState
-                                                                        ? 0.10
-                                                                        : 0.16))
-                                                              Positioned(
-                                                                left:
-                                                                    widget
-                                                                        .prototypeVisualState
-                                                                    ? 0
-                                                                    : -3.3,
-                                                                top:
-                                                                    widget
-                                                                        .prototypeVisualState
-                                                                    ? 0
-                                                                    : -3.3,
-                                                                child: Transform.scale(
-                                                                  scale:
+                                                width: 1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(18),
+                                            ),
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              child: Stack(
+                                                fit: StackFit.expand,
+                                                children: [
+                                                  CustomPaint(
+                                                    painter: _DefenseArenaPainter(
+                                                      combo: _combo,
+                                                      comboProgress:
+                                                          _comboPulse.value,
+                                                      hits: _hits,
+                                                      misses: _misses,
+                                                      hitsLabel: context.l10n
+                                                          .yuvaHitsPainter(
+                                                            _hits,
+                                                          ),
+                                                      missesLabel: context.l10n
+                                                          .yuvaMissedPainter(
+                                                            _misses,
+                                                          ),
+                                                      bannerLabel: context
+                                                          .l10n
+                                                          .yuvaBanner,
+                                                      hint: _hint,
+                                                      comboBroken:
+                                                          _hintIsComboBroken,
+                                                      bursts:
+                                                          List<_HitBurst>.of(
+                                                            _bursts,
+                                                          ),
+                                                      showRadialRings: !widget
+                                                          .prototypeVisualState,
+                                                    ),
+                                                  ),
+                                                  for (final bug in _bugs)
+                                                    Positioned(
+                                                      left:
+                                                          bug.x * _arenaWidth -
+                                                          30,
+                                                      top:
+                                                          widget
+                                                              .prototypeVisualState
+                                                          ? _laneTop(
+                                                              bug.lane,
+                                                              _arenaHeight,
+                                                            )
+                                                          : bug.y * _arenaHeight -
+                                                                30,
+                                                      child: IgnorePointer(
+                                                        child: SizedBox(
+                                                          width: 60,
+                                                          height: 60,
+                                                          child: Stack(
+                                                            alignment: Alignment
+                                                                .topCenter,
+                                                            clipBehavior:
+                                                                Clip.none,
+                                                            children: [
+                                                              if (!bug.popping &&
+                                                                  _bugDistanceToNest(
+                                                                        bug,
+                                                                      ) <
+                                                                      (widget.prototypeVisualState
+                                                                          ? 0.10
+                                                                          : 0.16))
+                                                                Positioned(
+                                                                  left:
                                                                       widget
                                                                           .prototypeVisualState
-                                                                      ? 1.0
-                                                                      : 1 +
-                                                                            sin(
-                                                                                  _pulse.value *
-                                                                                      pi,
-                                                                                ) *
-                                                                                0.07,
-                                                                  child: Container(
-                                                                    width:
+                                                                      ? 0
+                                                                      : -3.3,
+                                                                  top:
+                                                                      widget
+                                                                          .prototypeVisualState
+                                                                      ? 0
+                                                                      : -3.3,
+                                                                  child: Transform.scale(
+                                                                    scale:
                                                                         widget
                                                                             .prototypeVisualState
-                                                                        ? 60
-                                                                        : 66.6,
-                                                                    height:
-                                                                        widget
-                                                                            .prototypeVisualState
-                                                                        ? 60
-                                                                        : 66.6,
-                                                                    decoration: BoxDecoration(
-                                                                      shape: BoxShape
-                                                                          .circle,
-                                                                      border: Border.all(
-                                                                        color: const Color(
-                                                                          0xFFE52E2E,
+                                                                        ? 1.0
+                                                                        : 1 + sin(_pulse.value * pi) * 0.07,
+                                                                    child: Container(
+                                                                      width:
+                                                                          widget
+                                                                              .prototypeVisualState
+                                                                          ? 60
+                                                                          : 66.6,
+                                                                      height:
+                                                                          widget
+                                                                              .prototypeVisualState
+                                                                          ? 60
+                                                                          : 66.6,
+                                                                      decoration: BoxDecoration(
+                                                                        shape: BoxShape
+                                                                            .circle,
+                                                                        border: Border.all(
+                                                                          color: const Color(
+                                                                            0xFFE52E2E,
+                                                                          ),
+                                                                          width:
+                                                                              3,
                                                                         ),
-                                                                        width:
-                                                                            3,
                                                                       ),
                                                                     ),
                                                                   ),
                                                                 ),
-                                                              ),
-                                                            Positioned(
-                                                              top: 6,
-                                                              left: 6,
-                                                              width: 48,
-                                                              height: 48,
-                                                              child: Transform.rotate(
-                                                                angle:
-                                                                    widget
-                                                                        .prototypeVisualState
-                                                                    ? 0.0
-                                                                    : atan2(
-                                                                            _nestCenterY -
-                                                                                bug.y,
-                                                                            _nestCenterX -
-                                                                                bug.x,
-                                                                          ) *
-                                                                          0.18,
-                                                                child: Transform.scale(
-                                                                  alignment:
-                                                                      Alignment
-                                                                          .topCenter,
-                                                                  scaleX:
-                                                                      bug.popping &&
-                                                                          !widget
-                                                                              .prototypeVisualState
-                                                                      ? 1.25
-                                                                      : 1,
-                                                                  scaleY:
-                                                                      bug.popping &&
-                                                                          !widget
-                                                                              .prototypeVisualState
-                                                                      ? 0.72
-                                                                      : 1,
-                                                                  child: Image.asset(
-                                                                    'assets/bugs/tier${bug.tier.tier}_hd${bug.tier.tier == 5 ? '.webp' : '.png'}',
-                                                                    width: 48,
-                                                                    height: 48,
-                                                                    fit: BoxFit
-                                                                        .contain,
+                                                              Positioned(
+                                                                top: 6,
+                                                                left: 6,
+                                                                width: 48,
+                                                                height: 48,
+                                                                child: Transform.rotate(
+                                                                  angle:
+                                                                      widget
+                                                                          .prototypeVisualState
+                                                                      ? 0.0
+                                                                      : atan2(
+                                                                              _nestCenterY - bug.y,
+                                                                              _nestCenterX - bug.x,
+                                                                            ) *
+                                                                            0.18,
+                                                                  child: Transform.scale(
+                                                                    alignment:
+                                                                        Alignment
+                                                                            .topCenter,
+                                                                    scaleX:
+                                                                        bug.popping &&
+                                                                            !widget.prototypeVisualState
+                                                                        ? 1.25
+                                                                        : 1,
+                                                                    scaleY:
+                                                                        bug.popping &&
+                                                                            !widget.prototypeVisualState
+                                                                        ? 0.72
+                                                                        : 1,
+                                                                    child: Image.asset(
+                                                                      'assets/bugs/tier${bug.tier.tier}_hd${bug.tier.tier == 5 ? '.webp' : '.png'}',
+                                                                      width: 48,
+                                                                      height:
+                                                                          48,
+                                                                      fit: BoxFit
+                                                                          .contain,
+                                                                    ),
                                                                   ),
                                                                 ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  Positioned(
+                                                    left:
+                                                        (_arenaWidth - 160) / 2,
+                                                    top:
+                                                        _arenaHeight * 0.47 -
+                                                        95 +
+                                                        10,
+                                                    width: 160,
+                                                    height: 190,
+                                                    child: IgnorePointer(
+                                                      child: Image.asset(
+                                                        'assets/icons2/yuva-nest-prototype.png',
+                                                        width: 160,
+                                                        height: 190,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  if (_hitEffectActive &&
+                                                      _hitEffectX != null &&
+                                                      _hitEffectLane !=
+                                                          null) ...[
+                                                    Positioned(
+                                                      left:
+                                                          _hitEffectX! *
+                                                              _arenaWidth -
+                                                          12.26,
+                                                      top:
+                                                          (widget.prototypeVisualState
+                                                              ? _laneTop(
+                                                                  _hitEffectLane!,
+                                                                  _arenaHeight,
+                                                                )
+                                                              : (_hitEffectY ??
+                                                                            0.45) *
+                                                                        _arenaHeight -
+                                                                    30) -
+                                                          8.1,
+                                                      child: IgnorePointer(
+                                                        child: Image.asset(
+                                                          'assets/icons2/boom.png',
+                                                          width: 56,
+                                                          height: 56,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Positioned(
+                                                      left:
+                                                          _hitEffectX! *
+                                                              _arenaWidth -
+                                                          12.86,
+                                                      top:
+                                                          (widget.prototypeVisualState
+                                                              ? _laneTop(
+                                                                  _hitEffectLane!,
+                                                                  _arenaHeight,
+                                                                )
+                                                              : (_hitEffectY ??
+                                                                            0.45) *
+                                                                        _arenaHeight -
+                                                                    30) -
+                                                          44.7,
+                                                      width: 87.1,
+                                                      height: 87.1,
+                                                      child: IgnorePointer(
+                                                        child: Center(
+                                                          child: Transform.rotate(
+                                                            angle:
+                                                                -24 * pi / 180,
+                                                            child: Image.asset(
+                                                              'assets/powerup_terlik.png',
+                                                              width: 66,
+                                                              height: 66,
+                                                              fit: BoxFit
+                                                                  .contain,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                  if (_ended)
+                                                    Center(
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets.all(
+                                                              20,
+                                                            ),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.white
+                                                              .withValues(
+                                                                alpha: 0.9,
+                                                              ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                20,
+                                                              ),
+                                                        ),
+                                                        child: Column(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            Text(
+                                                              context
+                                                                  .l10n
+                                                                  .yuvaFellTitle,
+                                                              style: GoogleFonts.baloo2(
+                                                                fontSize: 23,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w900,
+                                                                color: _ink,
+                                                              ),
+                                                            ),
+                                                            Text(
+                                                              context.l10n
+                                                                  .yuvaResultScore(
+                                                                    _score,
+                                                                    _combo,
+                                                                  ),
+                                                              style: GoogleFonts.nunito(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800,
+                                                                color: _ink,
+                                                              ),
+                                                            ),
+                                                            const SizedBox(
+                                                              height: 8,
+                                                            ),
+                                                            FilledButton(
+                                                              onPressed:
+                                                                  _restart,
+                                                              child: Text(
+                                                                context
+                                                                    .l10n
+                                                                    .playAgainButton,
                                                               ),
                                                             ),
                                                           ],
                                                         ),
                                                       ),
                                                     ),
-                                                  ),
-                                                Positioned(
-                                                  left: (_arenaWidth - 160) / 2,
-                                                  top:
-                                                      _arenaHeight * 0.47 -
-                                                      95 +
-                                                      10,
-                                                  width: 160,
-                                                  height: 190,
-                                                  child: IgnorePointer(
-                                                    child: Image.asset(
-                                                      'assets/icons2/yuva-nest-prototype.png',
-                                                      width: 160,
-                                                      height: 190,
-                                                    ),
-                                                  ),
-                                                ),
-                                                if (_hitEffectActive &&
-                                                    _hitEffectX != null &&
-                                                    _hitEffectLane != null) ...[
-                                                  Positioned(
-                                                    left:
-                                                        _hitEffectX! *
-                                                            _arenaWidth -
-                                                        12.26,
-                                                    top:
-                                                        (widget.prototypeVisualState
-                                                            ? _laneTop(
-                                                                _hitEffectLane!,
-                                                                _arenaHeight,
-                                                              )
-                                                            : (_hitEffectY ??
-                                                                          0.45) *
-                                                                      _arenaHeight -
-                                                                  30) -
-                                                        8.1,
-                                                    child: IgnorePointer(
-                                                      child: Image.asset(
-                                                        'assets/icons2/boom.png',
-                                                        width: 56,
-                                                        height: 56,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Positioned(
-                                                    left:
-                                                        _hitEffectX! *
-                                                            _arenaWidth -
-                                                        12.86,
-                                                    top:
-                                                        (widget.prototypeVisualState
-                                                            ? _laneTop(
-                                                                _hitEffectLane!,
-                                                                _arenaHeight,
-                                                              )
-                                                            : (_hitEffectY ??
-                                                                          0.45) *
-                                                                      _arenaHeight -
-                                                                  30) -
-                                                        44.7,
-                                                    width: 87.1,
-                                                    height: 87.1,
-                                                    child: IgnorePointer(
-                                                      child: Center(
-                                                        child: Transform.rotate(
-                                                          angle: -24 * pi / 180,
-                                                          child: Image.asset(
-                                                            'assets/powerup_terlik.png',
-                                                            width: 66,
-                                                            height: 66,
-                                                            fit: BoxFit.contain,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
                                                 ],
-                                                if (_ended)
-                                                  Center(
-                                                    child: Container(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                            20,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.white
-                                                            .withValues(
-                                                              alpha: 0.9,
-                                                            ),
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              20,
-                                                            ),
-                                                      ),
-                                                      child: Column(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          Text(
-                                                            context
-                                                                .l10n
-                                                                .yuvaFellTitle,
-                                                            style:
-                                                                GoogleFonts.baloo2(
-                                                                  fontSize: 23,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w900,
-                                                                  color: _ink,
-                                                                ),
-                                                          ),
-                                                          Text(
-                                                            context.l10n
-                                                                .yuvaResultScore(
-                                                                  _score,
-                                                                  _combo,
-                                                                ),
-                                                            style:
-                                                                GoogleFonts.nunito(
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w800,
-                                                                  color: _ink,
-                                                                ),
-                                                          ),
-                                                          const SizedBox(
-                                                            height: 8,
-                                                          ),
-                                                          FilledButton(
-                                                            onPressed: _restart,
-                                                            child: Text(
-                                                              context
-                                                                  .l10n
-                                                                  .playAgainButton,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1894,63 +1927,66 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                     ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                       ),
-                    ),
-                    SizedBox(
-                      height: 80.9,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              width: 66,
-                              child: _BonusCard(
-                                asset: 'assets/icons2/boot.png',
-                                label:
-                                    context.l10n.shopPowerDoubleSlipperNameCaps,
-                                count:
-                                    '${widget.prototypeVisualState ? 3 : _doubleSlipCount}',
-                                onTap: _useDoubleSlipBonus,
+                      SizedBox(
+                        height: 80.9,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 66,
+                                child: _BonusCard(
+                                  asset: 'assets/icons2/boot.png',
+                                  label: context
+                                      .l10n
+                                      .shopPowerDoubleSlipperNameCaps,
+                                  count:
+                                      '${widget.prototypeVisualState ? 3 : _doubleSlipCount}',
+                                  onTap: _useDoubleSlipBonus,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 20),
-                            SizedBox(
-                              width: 66,
-                              child: _BonusCard(
-                                asset: 'assets/icons2/premium_token.png',
-                                label:
-                                    context.l10n.shopPowerGoldenSlipperNameCaps,
-                                count:
-                                    '${widget.prototypeVisualState ? 2 : _goldSlipCount}',
-                                onTap: _useGoldSlipBonus,
+                              const SizedBox(width: 20),
+                              SizedBox(
+                                width: 66,
+                                child: _BonusCard(
+                                  asset: 'assets/icons2/premium_token.png',
+                                  label: context
+                                      .l10n
+                                      .shopPowerGoldenSlipperNameCaps,
+                                  count:
+                                      '${widget.prototypeVisualState ? 2 : _goldSlipCount}',
+                                  onTap: _useGoldSlipBonus,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 20),
-                            SizedBox(
-                              width: 66,
-                              child: _BonusCard(
-                                asset: 'assets/icons2/shield.png',
-                                label: context.l10n.powerShieldCaps,
-                                count:
-                                    '${widget.prototypeVisualState ? 1 : _shieldCount}',
-                                onTap: _useShieldBonus,
+                              const SizedBox(width: 20),
+                              SizedBox(
+                                width: 66,
+                                child: _BonusCard(
+                                  asset: 'assets/icons2/shield.png',
+                                  label: context.l10n.powerShieldCaps,
+                                  count:
+                                      '${widget.prototypeVisualState ? 1 : _shieldCount}',
+                                  onTap: _useShieldBonus,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              if (_paused && !_ended && !widget.prototypeVisualState)
-                _pauseOverlay(),
-            ],
+                if (_paused && !_ended && !widget.prototypeVisualState)
+                  _pauseOverlay(),
+              ],
+            ),
+            child: background,
           ),
         ),
       ),

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
 import '../models/hisir_character.dart';
@@ -68,6 +70,12 @@ class _GameScreenState extends State<GameScreen>
   CircularPhysicsEngine? _engine;
   late Ticker _ticker;
   Duration _lastElapsed = Duration.zero;
+
+  /// Kare bildirimi: [_onTick] tam `setState` yerine bunu artırır —
+  /// yalnız `build` içindeki [ValueListenableBuilder] alt-ağacı
+  /// (HUD + arena + güç çubuğu + toast bandı) yenilenir; Scaffold,
+  /// arka plan ve [PopScope] kare başına kurulmaz.
+  final ValueNotifier<int> _frameTick = ValueNotifier<int>(0);
 
   late CampaignLevel _currentLevel;
   final progress = ProgressManager();
@@ -244,7 +252,12 @@ class _GameScreenState extends State<GameScreen>
     _survivalTimeRemaining = _currentLevel.timeLimitSeconds.toDouble();
     _remainingMoves = widget.arcade ? -1 : _currentLevel.allowedMoves;
     AudioManager().initialize();
-    _preloadImages();
+    // 13 tier decode'u ilk kare sonrasına ertelenir: resolve
+    // çağrıları ilk kareyle yarışmaz, kare başına 3 tier dilimlenir
+    // ([_preloadImages]); decode zaten asenkrondu, görsel sonuç aynı.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _preloadImages();
+    });
     _loadBest();
     _currentDropperTier = _rollDropTier();
     _nextDropperTier = _rollDropTier();
@@ -301,11 +314,23 @@ class _GameScreenState extends State<GameScreen>
     return InsectTier.dancer;
   }
 
+  /// 13 tier görselini zaman-dilimli çözer: kare başına en fazla 3
+  /// tier `resolve` edilir, kalanı sonraki kareye bırakılır — ilk
+  /// kareler decode işiyle tıkanmaz. İlk kare sonrasında başlar
+  /// (bkz. `initState`); her dinleyici zaten `mounted` korur.
   void _preloadImages() {
-    for (final tier in InsectTier.values) {
-      final imgStream = AssetImage(
-        tier.assetPath,
-      ).resolve(ImageConfiguration.empty);
+    _preloadImagesBatched(0);
+  }
+
+  void _preloadImagesBatched(int start) {
+    if (!mounted) return;
+    const batch = 3;
+    final tiers = InsectTier.values;
+    final end = min(start + batch, tiers.length);
+    for (var i = start; i < end; i++) {
+      final tier = tiers[i];
+      final imgStream = AssetImage(tier.assetPath)
+          .resolve(ImageConfiguration.empty);
       final listener = ImageStreamListener((ImageInfo info, bool _) {
         if (mounted) {
           setState(() {
@@ -315,6 +340,11 @@ class _GameScreenState extends State<GameScreen>
       });
       _insectImageListeners[imgStream] = listener;
       imgStream.addListener(listener);
+    }
+    if (end < tiers.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _preloadImagesBatched(end);
+      });
     }
   }
 
@@ -479,6 +509,7 @@ class _GameScreenState extends State<GameScreen>
     _juiceTimers.clear();
     _hisirTimer?.cancel();
     _hisirHideTimer?.cancel();
+    _frameTick.dispose();
     super.dispose();
   }
 
@@ -582,7 +613,13 @@ class _GameScreenState extends State<GameScreen>
 
     _decayMergeJuice(dt);
 
-    if (mounted) setState(() {});
+    // Kare-başına tam rebuild yok: yalnız [_frameTick] dinleyen
+    // alt-ağaç (HUD + arena + güç çubuğu + toast bandı) yenilenir.
+    // Duraklatma/bitişte de bildirilir — zafer/yenilgi bayrağı
+    // ([_isFinished]) aynı karede görünür kalır (eski `setState`
+    // davranışı); kapsam alt-ağaçla sınırlı olduğu için maliyet
+    // düşüktür.
+    if (mounted) _frameTick.value++;
   }
 
   /// Tier 2+: short hit-stop; tier 4+ 30–50ms (scales with tier).
@@ -911,8 +948,9 @@ class _GameScreenState extends State<GameScreen>
 
   void _onHisirTapDown(TapDownDetails _) {
     // Aynı dokunuşun böcek düşürmesini engelle (500 ms).
-    _hisirTapSuppressUntil =
-        DateTime.now().add(const Duration(milliseconds: 500));
+    _hisirTapSuppressUntil = DateTime.now().add(
+      const Duration(milliseconds: 500),
+    );
     if (!_hisirVisible) return;
     _hisirHideTimer?.cancel();
     setState(() {
@@ -981,12 +1019,14 @@ class _GameScreenState extends State<GameScreen>
     // Kampanya servisinin iç recordLevelResult çağrısı yalnız yıldız
     // ARTIŞI kadar öder (starGain * 50); önceki yıldız KAYIT ÖNCESİ
     // okunmalıdır (kayıt haritayı günceller).
-    final previousStars =
-        widget.arcade ? 0 : progress.getStarCount(_currentLevel.id);
+    final previousStars = widget.arcade
+        ? 0
+        : progress.getStarCount(_currentLevel.id);
     final starGain = widget.arcade ? 0 : max(0, stars - previousStars);
     final starCoins = starGain * 50;
-    final totalCoins =
-        widget.arcade ? earnedCoins : max(earnedCoins, starCoins);
+    final totalCoins = widget.arcade
+        ? earnedCoins
+        : max(earnedCoins, starCoins);
     // Ödenen skor-tabanlı toplam = starCoins + extraCoins = totalCoins.
     // İlk tamamlamada servis ayrıca rewardCoins + boss bonusu öder
     // (K3c) — bu ekstralar sonuç ekranındaki coin hapına dahil değildir;
@@ -1034,8 +1074,8 @@ class _GameScreenState extends State<GameScreen>
           // öder. recordLevelResult ayrıca çağrılmaz (çift ödeme).
           // 5B: çağrı TEK ve argümanları aynıdır; yalnız dönüş özeti
           // beklenip salt-görünüm ekstralarına çevrilir (ödeme değişmez).
-          final summary =
-              await CampaignProgressionService.instance.recordLevelCompletion(
+          final summary = await CampaignProgressionService.instance
+              .recordLevelCompletion(
                 levelNumber: _currentLevel.id,
                 score: _score,
                 explicitStars: stars,
@@ -1153,10 +1193,7 @@ class _GameScreenState extends State<GameScreen>
     if (initialAward > 0) {
       _score += initialAward;
     }
-    _showSpeechBubble(
-      context.l10n.speechAydinlat,
-      durationSeconds: 3,
-    );
+    _showSpeechBubble(context.l10n.speechAydinlat, durationSeconds: 3);
 
     unawaited(progress.persistBoosters());
 
@@ -1370,7 +1407,9 @@ class _GameScreenState extends State<GameScreen>
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: LululuColors.liquidGold.withValues(alpha: 0.35),
+                            color: LululuColors.liquidGold.withValues(
+                              alpha: 0.35,
+                            ),
                             blurRadius: 8,
                             offset: const Offset(0, 3),
                           ),
@@ -1418,22 +1457,24 @@ class _GameScreenState extends State<GameScreen>
             button: true,
             label: context.l10n.pause,
             child: GestureDetector(
-            onTap: _togglePause,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1B2336),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-              ),
-              child: const Icon(
-                Icons.pause_rounded,
-                color: Colors.white,
-                size: 22,
+              onTap: _togglePause,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B2336),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.pause_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
               ),
             ),
-          ),
           ),
           const SizedBox(width: 8),
 
@@ -1552,26 +1593,28 @@ class _GameScreenState extends State<GameScreen>
             button: true,
             label: context.l10n.helpButtonLabel,
             child: GestureDetector(
-            onTap: _showInfoDialog,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF1B2336),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                '?',
-                style: GoogleFonts.exo2(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: LululuColors.liquidGold,
+              onTap: _showInfoDialog,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF1B2336),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '?',
+                  style: GoogleFonts.exo2(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: LululuColors.liquidGold,
+                  ),
                 ),
               ),
             ),
-          ),
           ),
         ],
       ),
@@ -1611,7 +1654,11 @@ class _GameScreenState extends State<GameScreen>
         const SizedBox(width: 8),
         _buildArcadeScoreBox(context.l10n.gameScoreLabel, '$_score', 104),
         const SizedBox(width: 8),
-        _buildArcadeScoreBox(context.l10n.gameBestLabel, _formatArcadeScore(best), 84),
+        _buildArcadeScoreBox(
+          context.l10n.gameBestLabel,
+          _formatArcadeScore(best),
+          84,
+        ),
         const Spacer(),
         Container(
           width: 90,
@@ -1663,35 +1710,32 @@ class _GameScreenState extends State<GameScreen>
           button: true,
           label: context.l10n.helpButtonLabel,
           child: GestureDetector(
-          onTap: _showInfoDialog,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xDB080B12),
-              border: Border.all(
-                color: const Color(0xB3FFB800),
-                width: 2,
+            onTap: _showInfoDialog,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xDB080B12),
+                border: Border.all(color: const Color(0xB3FFB800), width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+                ],
               ),
-              boxShadow: const [
-                BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: const Text(
-              '?',
-              style: TextStyle(
-                fontFamily: 'Baloo 2',
-                fontSize: 22,
-                height: 1,
-                fontWeight: FontWeight.w800,
-                color: LululuColors.liquidGold,
+              alignment: Alignment.center,
+              child: const Text(
+                '?',
+                style: TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 22,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                  color: LululuColors.liquidGold,
+                ),
               ),
             ),
           ),
-        ),
         ),
       ],
     );
@@ -1707,21 +1751,14 @@ class _GameScreenState extends State<GameScreen>
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.center,
-                child: SizedBox(
-                  width: 406,
-                  height: 50.5,
-                  child: hudRow,
-                ),
+                child: SizedBox(width: 406, height: 50.5, child: hudRow),
               ),
             ),
           );
         }
         return Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: SizedBox(
-            height: 50.5,
-            child: hudRow,
-          ),
+          child: SizedBox(height: 50.5, child: hudRow),
         );
       },
     );
@@ -1792,27 +1829,27 @@ class _GameScreenState extends State<GameScreen>
               button: true,
               label: context.l10n.pause,
               child: GestureDetector(
-              onTap: _togglePause,
-              behavior: HitTestBehavior.opaque,
-              child: Center(
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1B2336),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.16),
+                onTap: _togglePause,
+                behavior: HitTestBehavior.opaque,
+                child: Center(
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1B2336),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.16),
+                      ),
                     ),
-                  ),
-                  child: const Icon(
-                    Icons.pause_rounded,
-                    color: Colors.white,
-                    size: 22,
+                    child: const Icon(
+                      Icons.pause_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                   ),
                 ),
               ),
-            ),
             ),
           ),
           const SizedBox(width: 4),
@@ -2244,9 +2281,7 @@ class _GameScreenState extends State<GameScreen>
                     Text(
                       // Bölüm alt başlığı dile göre (EN verisi
                       // CampaignLevel.titleEn'de hazır; bulgu #17).
-                      _currentLevel.titleFor(
-                        Localizations.localeOf(context),
-                      ),
+                      _currentLevel.titleFor(Localizations.localeOf(context)),
                       style: GoogleFonts.exo2(
                         fontSize: 11,
                         color: LululuColors.mutedTitanium,
@@ -2441,16 +2476,58 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   Widget build(BuildContext context) {
-    Widget hudAndPlay = widget.arcade
-        ? _buildArcadeLayout()
-        : _buildClassicLayout();
-
-    if (_isAydinlatActive) {
-      hudAndPlay = ColorFiltered(
-        colorFilter: _aydinlatBwFilter,
-        child: hudAndPlay,
-      );
-    }
+    // Statik arka plan: kare bildiriminde yeniden kurulmaz —
+    // [ValueListenableBuilder] `child` olarak bir kez kurulur, kare
+    // başına yalnız `builder` içindeki oyun alt-ağacı yenilenir.
+    final background = Stack(
+      fit: StackFit.expand,
+      children: [
+        Opacity(
+          opacity: widget.arcade ? 0.94 : 0.62,
+          child: Image.asset(
+            'assets/design/backgrounds/suika_kitchen.webp',
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => Image.asset(
+              _currentLevel.backgroundPath,
+              fit: BoxFit.cover,
+              errorBuilder: (_, error, _) {
+                // Sessiz boşluk yerine yer tutucu + hata kaydı.
+                debugPrint(
+                  '[GameScreen] Seviye arka planı yüklenemedi: '
+                  '${_currentLevel.backgroundPath} ($error)',
+                );
+                return Container(
+                  color: LululuColors.carbonVoid,
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.bug_report_rounded,
+                    size: 72,
+                    color: Color(0x33FFFFFF),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        widget.arcade
+            ? const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0x4D080B12),
+                      Colors.transparent,
+                      Colors.transparent,
+                      Color(0x52080B12),
+                    ],
+                    stops: [0, 0.24, 0.76, 1],
+                  ),
+                ),
+              )
+            : Container(color: LululuColors.carbonVoid.withValues(alpha: 0.5)),
+      ],
+    );
 
     final content = AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -2460,83 +2537,51 @@ class _GameScreenState extends State<GameScreen>
       ),
       child: Scaffold(
         backgroundColor: LululuColors.carbonVoid,
-        body: Transform.translate(
-          offset: _shakeOffset,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Opacity(
-                  opacity: widget.arcade ? 0.94 : 0.62,
-                  child: Image.asset(
-                    'assets/design/backgrounds/suika_kitchen.webp',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Image.asset(
-                      _currentLevel.backgroundPath,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, error, _) {
-                        // Sessiz boşluk yerine yer tutucu + hata kaydı.
-                        debugPrint(
-                          '[GameScreen] Seviye arka planı yüklenemedi: '
-                          '${_currentLevel.backgroundPath} ($error)',
-                        );
-                        return Container(
-                          color: LululuColors.carbonVoid,
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.bug_report_rounded,
-                            size: 72,
-                            color: Color(0x33FFFFFF),
-                          ),
-                        );
-                      },
+        body: ValueListenableBuilder<int>(
+          valueListenable: _frameTick,
+          builder: (context, _, child) {
+            Widget hudAndPlay = widget.arcade
+                ? _buildArcadeLayout()
+                : _buildClassicLayout();
+
+            if (_isAydinlatActive) {
+              hudAndPlay = ColorFiltered(
+                colorFilter: _aydinlatBwFilter,
+                child: hudAndPlay,
+              );
+            }
+
+            return Transform.translate(
+              offset: _shakeOffset,
+              child: Stack(
+                children: [
+                  Positioned.fill(child: child!),
+                  Positioned.fill(child: hudAndPlay),
+                  if (_hisirVisible) _buildHisirOverlay(),
+                  if (widget.prototypeVisualState)
+                    const Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 35.375,
+                      child: IgnorePointer(child: _PrototypeStatusBar()),
                     ),
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: widget.arcade
-                    ? const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0x4D080B12),
-                              Colors.transparent,
-                              Colors.transparent,
-                              Color(0x52080B12),
-                            ],
-                            stops: [0, 0.24, 0.76, 1],
+                  if (_paused && !_isFinished) _buildPauseOverlay(),
+                  if (_mergeFlashStrength > 0)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: _mergeFlashColor.withValues(
+                            alpha: _mergeFlashStrength * 0.35,
                           ),
                         ),
-                      )
-                    : Container(
-                        color: LululuColors.carbonVoid.withValues(alpha: 0.5),
-                      ),
-              ),
-              Positioned.fill(child: hudAndPlay),
-              if (_hisirVisible) _buildHisirOverlay(),
-              if (widget.prototypeVisualState)
-                const Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 35.375,
-                  child: IgnorePointer(child: _PrototypeStatusBar()),
-                ),
-              if (_paused && !_isFinished) _buildPauseOverlay(),
-              if (_mergeFlashStrength > 0)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ColoredBox(
-                      color: _mergeFlashColor.withValues(
-                        alpha: _mergeFlashStrength * 0.35,
                       ),
                     ),
-                  ),
-                ),
-            ],
-          ),
+                ],
+              ),
+            );
+          },
+          child: background,
         ),
       ),
     );
@@ -2565,15 +2610,11 @@ class _GameScreenState extends State<GameScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: const Color(0xE6111923),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: LululuColors.liquidGold,
-                  width: 1,
-                ),
+                border: Border.all(color: LululuColors.liquidGold, width: 1),
               ),
               child: const Text(
                 'Mezarına sıçtığım!',

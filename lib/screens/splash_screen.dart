@@ -37,10 +37,18 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _bubbleProgress;
 
   // Sayfa 3 loading bar & cycling messages
+  // 8C: sahte sayaç gerçek bir yüklemeyi beklemiyor — gerçek
+  // yükleme (Firebase/onboarding) splash sonrasında boot ekranında
+  // yapılır (`main.dart` `_onSplashDone` → `_boot`). Bu yüzden bar
+  // ~0,7 sn'de dolar ve 700 ms bitiş gecikmesi kalkar (önce
+  // ~1,7 sn + 700 ms ≈ 2,4 sn boşa bekleniyordu). %100 kelepçesi
+  // (6I) aynen kalır: 6,0'lık adımlar 102'de durur, ekranda %101
+  // görünmez, bitiş dalı (`>= 100`) aynen çalışır.
+  static const double _loadStep = 6.0;
+
   Timer? _loadTimer;
   Timer? _msgTimer;
   Timer? _soundTimer;
-  Timer? _finishTimer;
   double _progress = 0;
   bool _loading = false;
   bool _done = false;
@@ -76,21 +84,16 @@ class _SplashScreenState extends State<SplashScreen>
     }
 
     _logoBobY = Tween<double>(begin: 0.0, end: -8.0).animate(
-      CurvedAnimation(
-        parent: _logoBobController,
-        curve: Curves.easeInOut,
-      ),
+      CurvedAnimation(parent: _logoBobController, curve: Curves.easeInOut),
     );
 
-    _logoBobAngle = Tween<double>(
-      begin: 1.0 * math.pi / 180.0,
-      end: -1.0 * math.pi / 180.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _logoBobController,
-        curve: Curves.easeInOut,
-      ),
-    );
+    _logoBobAngle =
+        Tween<double>(
+          begin: 1.0 * math.pi / 180.0,
+          end: -1.0 * math.pi / 180.0,
+        ).animate(
+          CurvedAnimation(parent: _logoBobController, curve: Curves.easeInOut),
+        );
 
     // 2. Mascot Entrance Animasyonu (.85s cubic-bezier(.3,1.45,.5,1))
     _mascotController = AnimationController(
@@ -113,8 +116,9 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     // Animasyonları başlat
-    final isTesting =
-        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    final isTesting = WidgetsBinding.instance.runtimeType.toString().contains(
+      'Test',
+    );
     if (isTesting) {
       _mascotController.value = 1.0;
       _bubbleController.value = 1.0;
@@ -143,7 +147,6 @@ class _SplashScreenState extends State<SplashScreen>
     _loadTimer?.cancel();
     _msgTimer?.cancel();
     _soundTimer?.cancel();
-    _finishTimer?.cancel();
     super.dispose();
   }
 
@@ -197,21 +200,17 @@ class _SplashScreenState extends State<SplashScreen>
         t.cancel();
         return;
       }
-      // 6I: 2.4'lük adımlar 100.8'de durur ve ekranda %101 görünür;
+      // 6I: 6,0'lık adımlar 102'de durur ve ekranda %101 görünür;
       // ilerleme 100'de kelepçelenir, bitiş dalı (`>= 100`) aynen çalışır.
-      setState(() => _progress = (_progress + 2.4).clamp(0.0, 100.0));
+      setState(() => _progress = (_progress + _loadStep).clamp(0.0, 100.0));
       if (_progress >= 100) {
         t.cancel();
         _msgTimer?.cancel();
         setState(() => _done = true);
-        // İptal edilebilir Timer: dispose'da iptal edilir, `mounted`
-        // değilse ateşlenmez; GEÇ ile yarışan gecikmeli `_finish`
-        // `_notified` korumasına takılır.
-        _finishTimer?.cancel();
-        _finishTimer = Timer(const Duration(milliseconds: 700), () {
-          if (!mounted) return;
-          _finish();
-        });
+        // 8C: 700 ms bitiş gecikmesi kaldırıldı — sahte sayaç gerçek
+        // yükleme beklemiyor; `_finish` `_notified` korumalıdır,
+        // GEÇ ile yarış güvenli kalır.
+        _finish();
       }
     });
   }
@@ -640,10 +639,7 @@ class _SplashScreenState extends State<SplashScreen>
                 fontWeight: FontWeight.w800,
                 height: 1.08,
                 shadows: [
-                  Shadow(
-                    color: Color(0x8C7A082E),
-                    offset: Offset(0, 3),
-                  ),
+                  Shadow(color: Color(0x8C7A082E), offset: Offset(0, 3)),
                   Shadow(
                     color: Color(0x73000000),
                     offset: Offset(0, 6),
@@ -792,10 +788,7 @@ class _SplashScreenState extends State<SplashScreen>
                       offset: Offset(tx, ty),
                       child: Transform.rotate(
                         angle: rot,
-                        child: Transform.scale(
-                          scale: sc,
-                          child: child,
-                        ),
+                        child: Transform.scale(scale: sc, child: child),
                       ),
                     ),
                   );
@@ -871,10 +864,7 @@ class _SplashScreenState extends State<SplashScreen>
                 fontWeight: FontWeight.w800,
                 height: 1.08,
                 shadows: const [
-                  Shadow(
-                    color: Color(0x8C7A082E),
-                    offset: Offset(0, 3),
-                  ),
+                  Shadow(color: Color(0x8C7A082E), offset: Offset(0, 3)),
                   Shadow(
                     color: Color(0x73000000),
                     offset: Offset(0, 6),
@@ -913,10 +903,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: const Color(0x59FFFFFF),
-                width: 2,
-              ),
+              border: Border.all(color: const Color(0x59FFFFFF), width: 2),
             ),
             child: Stack(
               clipBehavior: Clip.hardEdge,
@@ -935,10 +922,7 @@ class _SplashScreenState extends State<SplashScreen>
                         colors: [Color(0xFFFFD34D), Color(0xFFF59E00)],
                       ),
                       border: Border(
-                        top: BorderSide(
-                          color: Color(0x8CFFFFFF),
-                          width: 3,
-                        ),
+                        top: BorderSide(color: Color(0x8CFFFFFF), width: 3),
                       ),
                     ),
                   ),
@@ -1023,8 +1007,10 @@ class _SplashScreenState extends State<SplashScreen>
     const leads = <double>[0.0, 34.0, 62.0];
     final lead = leads[index];
     final lp = math.max(0.0, _progress - lead * 0.55);
-    return ((lp / 100.0) * 340.0 - (lp * 0.42).roundToDouble())
-        .clamp(0.0, 298.0);
+    return ((lp / 100.0) * 340.0 - (lp * 0.42).roundToDouble()).clamp(
+      0.0,
+      298.0,
+    );
   }
 
   // SAYFA 3: Başlat + Loading Bar
@@ -1077,10 +1063,7 @@ class _SplashScreenState extends State<SplashScreen>
                 fontWeight: FontWeight.w800,
                 height: 1.08,
                 shadows: const [
-                  Shadow(
-                    color: Color(0x8C7A082E),
-                    offset: Offset(0, 3),
-                  ),
+                  Shadow(color: Color(0x8C7A082E), offset: Offset(0, 3)),
                   Shadow(
                     color: Color(0x73000000),
                     offset: Offset(0, 6),
@@ -1141,8 +1124,8 @@ class _SplashScreenState extends State<SplashScreen>
             button: true,
             label: _loading
                 ? (_done
-                    ? l10n.splashStarting
-                    : l10n.splashLoadingPercent(_progress.round()))
+                      ? l10n.splashStarting
+                      : l10n.splashLoadingPercent(_progress.round()))
                 : l10n.splashStartAdventure,
             excludeSemantics: true,
             child: GestureDetector(
@@ -1151,7 +1134,10 @@ class _SplashScreenState extends State<SplashScreen>
               child: Container(
                 constraints: const BoxConstraints(minWidth: 248),
                 height: 56,
-                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 26,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
@@ -1164,10 +1150,7 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: const [
-                    BoxShadow(
-                      color: Color(0xFF7A082E),
-                      offset: Offset(0, 5),
-                    ),
+                    BoxShadow(color: Color(0xFF7A082E), offset: Offset(0, 5)),
                     BoxShadow(
                       color: Color(0x47000000),
                       blurRadius: 18,
@@ -1195,8 +1178,8 @@ class _SplashScreenState extends State<SplashScreen>
                     Text(
                       _loading
                           ? (_done
-                              ? l10n.splashStarting
-                              : l10n.splashLoadingPercent(_progress.round()))
+                                ? l10n.splashStarting
+                                : l10n.splashLoadingPercent(_progress.round()))
                           : l10n.splashStartAdventure,
                       style: GoogleFonts.baloo2(
                         fontSize: 20,
