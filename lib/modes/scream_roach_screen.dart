@@ -21,6 +21,7 @@ import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
+import '../widgets/shop_dialog.dart';
 
 /// Viral “Scream” runner — spam zıplatır; skor yalnız kapı geçişinden gelir.
 class ScreamRoachScreen extends StatefulWidget {
@@ -198,8 +199,19 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _gateSpacing = 250 + (seed % 40).toDouble();
     AudioManager().initialize();
     unawaited(ProgressManager().load());
+    // 12T: bonus bar stoku `ProgressManager` bildirimlerine bağlıdır
+    // — yükleme bitince, mağazadan alınınca ya da stok değişince
+    // `build` yeniden çalışır. Önceden bar yalnız `setState`
+    // çağıran eylemlerde (örn. ilk çığlık dokunuşu) tazeleniyordu:
+    // yükleme bitene kadar 0 gösterip dokunuşu yutuyor, mağazadan
+    // alınan güç de sahneye dönülene kadar görünmüyordu.
+    ProgressManager().addListener(_onProgressChanged);
     _ticker = createTicker(_onTick)..start();
     _loadBest();
+  }
+
+  void _onProgressChanged() {
+    if (mounted) setState(() {});
   }
 
   @visibleForTesting
@@ -218,6 +230,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   @override
   void dispose() {
+    ProgressManager().removeListener(_onProgressChanged);
     WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _noiseSubscription?.cancel();
@@ -363,12 +376,22 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (dt > 0.033) dt = 0.033;
 
     _aliveFor += dt;
-    _power = (_power - dt * 1.15).clamp(0.0, 1.0);
+    // 12T: nitrodayken güç dolu kalır — önceden güç 1,15/sn
+    // eridiği için nitro 1 sn içinde çubukta sönüyor, 8 sn'lik
+    // etki "çalışmıyor" görünüyordu. Nitro bitince erime kaldığı
+    // yerden devam eder.
+    if (_nitro) {
+      _power = 1.0;
+    } else {
+      _power = (_power - dt * 1.15).clamp(0.0, 1.0);
+    }
 
     final tutorial = _aliveFor < _tutorialSeconds;
     final ramp = ((_aliveFor - _tutorialSeconds) / 45).clamp(0.0, 1.0);
     // Keep the opening generous; increase gate speed only after the tutorial.
-    final scroll = (tutorial ? 72 : 104 + 86 * ramp) * (_nitro ? 1.35 : 1);
+    // 12T: nitro kaydırma çarpanı 1,35'ten 1,6'ya — hız farkı artık
+    // gözle görülür, kapı başına +25 skor bonusu aynen durur.
+    final scroll = (tutorial ? 72 : 104 + 86 * ramp) * (_nitro ? 1.6 : 1);
     _world += scroll * dt;
 
     // A fixed gravity and impulse make each tap predictable, like Flappy.
@@ -509,7 +532,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (!_alive) return;
     if (_shield) {
       _shield = false;
-      _vy = -280;
+      // 12T: kurtarış -280 ile sönük bir sekmeydi, böcek hemen
+      // yeniden yere düşüyordu; -520 ile gözle görülür bir sıçrama
+      // olur ve oyuncu kurtulduğunu anlar.
+      _vy = -520;
       _hint = context.l10n.screamShieldSaved;
       setState(() {});
       return;
@@ -748,7 +774,16 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (!_alive || _paused) return false;
     unawaited(AudioManager().playButtonTap());
     setState(() {
-      _vy = -520;
+      // 12T: -520, normal kanat çırpışından (-430) ancak %21
+      // güçlüydü ve açılış süzülüşünde (ilk 3,5 sn) tick her karede
+      // `_vy`'yi sıfırladığı için hiç hissedilmiyordu. -680 ile
+      // yükseliş ~170 px olur (kanat ~68 px) ve seri sayacı
+      // ilerletildiği için süzülüş kırılır, zıplama anında görülür.
+      _vy = -680;
+      _groundIdle = 0;
+      _moveMade = true;
+      _screamStreak++;
+      if (_screamStreak > _maxScreamStreak) _maxScreamStreak = _screamStreak;
       _hop = true;
       _callout = context.l10n.screamMegaJumpCallout;
       _hint = context.l10n.screamMegaJumpHint;
@@ -2049,18 +2084,47 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     );
   }
 
+  /// Boş-stok bildirimi + mağaza eylemi (dar düzendeki
+  /// `ModeBonusBar` ile aynı metin/eylem; 12T: geniş düzende stok 0
+  /// iken düğme sessizce hiçbir şey yapmıyordu — kullanıcı
+  /// "bonus çalışmıyor" sanıyordu).
+  void _showBonusOutOfStock(String label) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.boosterOutOfStockToast(label)),
+          action: SnackBarAction(
+            label: context.l10n.navShop,
+            onPressed: () {
+              if (mounted) ShopDialog.show(context);
+            },
+          ),
+        ),
+      );
+  }
+
   Widget _prototypeBonusButton(ModeBonus item, int count) {
     return Semantics(
       button: true,
       enabled: count > 0,
       label: context.l10n.boosterCountLabel(item.label, count),
       child: GestureDetector(
-        onTap: count > 0 ? item.onTap : null,
+        // 12T: stok 0 iken de dokunuş karşılık bulsun (bildirim +
+        // mağaza); önceden `onTap: null` idi, düğme ölü görünüyordu.
+        onTap: count > 0
+            ? item.onTap
+            : () => _showBonusOutOfStock(item.label),
         behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: 66,
-          height: 62.9,
-          child: Column(
+        child: Opacity(
+          opacity: count > 0 ? 1 : 0.55,
+          child: SizedBox(
+            width: 66,
+            height: 62.9,
+            child: Column(
             children: [
               const SizedBox(height: 2),
               SizedBox(
@@ -2148,6 +2212,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               ),
             ],
           ),
+        ),
         ),
       ),
     );

@@ -788,53 +788,65 @@ class ProgressManager extends ChangeNotifier {
       );
     }
 
-    if (!(prefs.getBool('lululu_power_seed_v1') ?? false)) {
-      const seeds = <String, int>{
-        'raid': 3,
-        'terlik': 5,
-        'f16': 2,
-        'undo': 3,
-        'shuffle': 2,
-        'pair': 1,
-        // B3: 2048 ekranı `*2048` anahtarlarını okur; tohumlar
-        // `putIfAbsent` ile verilir, mevcut stoklar ezilmez.
-        'undo2048': 3,
-        'shuffle2048': 2,
-        'pair2048': 1,
-        'triple': 3,
-        'bombb': 2,
-        'slowb': 1,
-        'hammer': 2,
-        'bomb3': 2,
-        'hunter': 1,
-        'chain': 3,
-        'bolt': 1,
-        'magnet': 1,
-        'freeze': 2,
-        'widen': 3,
-        'slows': 1,
-        'dblslip': 3,
-        'goldslip': 2,
-        'spraybug': 1,
-        'yuva_dblslip': 3,
-        'yuva_goldslip': 2,
-        'nest_shield': 1,
-        'dik': 1,
-        'ring': 2,
-        'mic': 3,
-        'jump': 3,
-        'shield': 2,
-        'nitro': 1,
-        'beat': 2,
-        'auto': 2,
-        'x2': 1,
-      };
-      for (final entry in seeds.entries) {
-        extraPowers.putIfAbsent(entry.key, () => entry.value);
+    // 12T: tohumlar HER yüklemede eksik anahtarlara uygulanır
+    // (`putIfAbsent` — mevcut stok asla ezilmez). Eski kod tohumlamayı
+    // `lululu_power_seed_v1` bayrağına bağlıyordu: bayrak bir kez
+    // konduktan sonra tohum haritasına eklenen yeni güç anahtarları
+    // (jump/shield/nitro) mevcut kurulumlara HİÇ ulaşmıyor, stok 0
+    // kalıyor ve bonus düğmeleri ölü görünüyordu. Bayrak yalnızca
+    // geriye dönük uyumluluk için korunur.
+    const seeds = <String, int>{
+      'raid': 3,
+      'terlik': 5,
+      'f16': 2,
+      'undo': 3,
+      'shuffle': 2,
+      'pair': 1,
+      // B3: 2048 ekranı `*2048` anahtarlarını okur; tohumlar
+      // `putIfAbsent` ile verilir, mevcut stoklar ezilmez.
+      'undo2048': 3,
+      'shuffle2048': 2,
+      'pair2048': 1,
+      'triple': 3,
+      'bombb': 2,
+      'slowb': 1,
+      'hammer': 2,
+      'bomb3': 2,
+      'hunter': 1,
+      'chain': 3,
+      'bolt': 1,
+      'magnet': 1,
+      'freeze': 2,
+      'widen': 3,
+      'slows': 1,
+      'dblslip': 3,
+      'goldslip': 2,
+      'spraybug': 1,
+      'yuva_dblslip': 3,
+      'yuva_goldslip': 2,
+      'nest_shield': 1,
+      'dik': 1,
+      'ring': 2,
+      'mic': 3,
+      'jump': 3,
+      'shield': 2,
+      'nitro': 1,
+      'beat': 2,
+      'auto': 2,
+      'x2': 1,
+    };
+    var seeded = false;
+    for (final entry in seeds.entries) {
+      if (!extraPowers.containsKey(entry.key)) {
+        extraPowers[entry.key] = entry.value;
+        seeded = true;
       }
-      await prefs.setBool('lululu_power_seed_v1', true);
-      await _persistEconomy();
     }
+    if (!(prefs.getBool('lululu_power_seed_v1') ?? false)) {
+      await prefs.setBool('lululu_power_seed_v1', true);
+      seeded = true;
+    }
+    if (seeded) await _persistEconomy();
 
     _syncPrimaryPowersToExtra();
     // Y6/LWW: alan damgalarını prefs'ten yükle; ilk yüklemede
