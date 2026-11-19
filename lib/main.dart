@@ -27,6 +27,7 @@ import 'services/iap_service.dart';
 import 'services/leaderboard_service.dart';
 import 'services/locale_service.dart';
 import 'services/progress_manager.dart';
+import 'services/splash_session.dart';
 import 'services/zero_jank_preloader.dart';
 import 'theme/lululu_theme.dart';
 
@@ -72,7 +73,7 @@ Future<void> main() async {
       unawaited(LocaleService.instance.load());
 
       // Paint immediately — never sit on white native splash waiting for I/O.
-      runApp(const _BootApp());
+      runApp(const BootApp());
     },
     (Object error, StackTrace stack) {
       // Yakalanamayan asenkron hata: kaydet, çökertme.
@@ -121,14 +122,15 @@ void _installGlobalErrorHandlers() {
   };
 }
 
-class _BootApp extends StatefulWidget {
-  const _BootApp();
+/// Uygulama kökü: splash → boot → ana ekran/onboarding.
+class BootApp extends StatefulWidget {
+  const BootApp({super.key});
 
   @override
-  State<_BootApp> createState() => _BootAppState();
+  State<BootApp> createState() => _BootAppState();
 }
 
-class _BootAppState extends State<_BootApp> {
+class _BootAppState extends State<BootApp> {
   Widget? _home;
   String? _bootError;
   bool _splashDone = false;
@@ -142,6 +144,15 @@ class _BootAppState extends State<_BootApp> {
   @override
   void initState() {
     super.initState();
+    // 12H-splash: aynı tarayıcı oturumunda splash atlanır — bayrak varsa
+    // doğrudan `_boot()` yoluna girilir (yalnızca intro animasyonu
+    // atlanır; onboarding/boot akışı aynen çalışır). Bayrak yoksa veya
+    // okunamazsa splash gösterilir. Web-dışı platformlarda bayrak hiç
+    // yazılmadığı için davranış değişmez: her soğuk açılışta splash.
+    if (SplashSession.isSeen) {
+      _splashDone = true;
+      unawaited(_boot());
+    }
     // Firebase hazır olunca bekleyen bulut kuyruğunu boşalt (madde 47).
     // ValueNotifier aynı değerde bildirim göndermez; dinleyici yalnızca
     // false→true geçişinde tetiklenir.
@@ -175,6 +186,20 @@ class _BootAppState extends State<_BootApp> {
     super.dispose();
   }
 
+  /// Kök bağlam `MaterialApp`'in ÜSTÜNDE olduğundan `_rootL10n`
+  /// burada null döner (yerelleştirme `MaterialApp`'in içinde
+  /// kurulur); tablo, ErrorWidget desenindeki gibi doğrudan
+  /// çözümlenir (kullanıcı dil seçimi varsa o, yoksa cihaz dili).
+  /// 12H-splash: bayrak dalında ilk kare boot-yükleme ekranıdır,
+  /// bu çözüm olmadan o kare çöker (önceden `context.l10n.loading`
+  /// null-check hatası veriyordu).
+  AppLocalizations get _rootL10n {
+    final locale =
+        LocaleService.instance.overrideNotifier.value ??
+        WidgetsBinding.instance.platformDispatcher.locale;
+    return AppLocalizations.lookup(locale);
+  }
+
   /// Dil seçimi değişince kök ağacı yeniden kur (yeniden başlatma yok).
   void _onLocaleChanged() {
     if (mounted) setState(() {});
@@ -198,6 +223,9 @@ class _BootAppState extends State<_BootApp> {
   }
 
   void _onSplashDone() {
+    // 12H-splash: splash tamamlandı — oturum bayrağını yaz ki sekme
+    // yenilemede splash atlanıp doğrudan oyuna girilsin.
+    SplashSession.markSeen();
     setState(() => _splashDone = true);
     unawaited(_boot());
   }
@@ -366,7 +394,7 @@ class _BootAppState extends State<_BootApp> {
               ),
               const SizedBox(height: 16),
               Text(
-                context.l10n.loading,
+                _rootL10n.loading,
                 style: const TextStyle(color: LululuColors.mutedTitanium),
               ),
             ],
@@ -445,7 +473,7 @@ class _BootAppState extends State<_BootApp> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  context.l10n.welcomeStatusReadFail,
+                  _rootL10n.welcomeStatusReadFail,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: LululuColors.cream,
@@ -455,14 +483,14 @@ class _BootAppState extends State<_BootApp> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  context.l10n.welcomeSkipFail,
+                  _rootL10n.welcomeSkipFail,
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: LululuColors.mutedTitanium),
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: () => unawaited(_boot()),
-                  child: Text(context.l10n.retry),
+                  child: Text(_rootL10n.retry),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
@@ -472,7 +500,7 @@ class _BootAppState extends State<_BootApp> {
                       _home = const HomeShell();
                     });
                   },
-                  child: Text(context.l10n.continueToHomeAnyway),
+                  child: Text(_rootL10n.continueToHomeAnyway),
                 ),
               ],
             ),
@@ -513,7 +541,7 @@ class _BootAppState extends State<_BootApp> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          context.l10n.offlineWarning,
+                          _rootL10n.offlineWarning,
                           style: const TextStyle(
                             color: LululuColors.cream,
                             fontWeight: FontWeight.w700,
@@ -535,12 +563,12 @@ class _BootAppState extends State<_BootApp> {
                   ),
                   TextButton(
                     onPressed: () => unawaited(_boot()),
-                    child: Text(context.l10n.retry),
+                    child: Text(_rootL10n.retry),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
                     color: LululuColors.mutedTitanium,
-                    tooltip: context.l10n.closeLabel,
+                    tooltip: _rootL10n.closeLabel,
                     onPressed: () => setState(() => _bootError = null),
                   ),
                 ],
