@@ -549,8 +549,15 @@ class IapService extends ChangeNotifier {
   /// Liste en fazla [_maxDeliveredPurchaseIds] kimlik tutar (en eskiler
   /// atılır); kimliği boş olan işlemler işaretlenemez ve her zaman
   /// normal akışla teslim edilir.
+  ///
+  /// IAP-3: kap 200 → 1000. Kimlikler kısa metinlerdir (~20-40 karakter);
+  /// 1000 kimlik SharedPreferences'ta on KB mertebesindedir, büyüme
+  /// sınırlı kalır. 200 kap, sık satın alan bir kullanıcıda eski bir
+  /// işlem kimliğinin atılıp aynı işlemin yeniden teslim edilmesine yol
+  /// açabilirdi; 1000 ile bu eşik pratikte aşılmaz. Kap tamamen
+  /// kaldırılmadı: kalıcı liste sınırsız büyümemelidir.
   static const String _deliveredIdsPrefKey = 'lululu_iap_delivered_ids';
-  static const int _maxDeliveredPurchaseIds = 200;
+  static const int _maxDeliveredPurchaseIds = 1000;
   final Set<String> _deliveredPurchaseIds = <String>{};
   Future<void>? _deliveredIdsFuture;
 
@@ -909,7 +916,37 @@ class IapService extends ChangeNotifier {
 
     final catalogItem = findCatalogItem(key);
     if (catalogItem != null) {
-      await _applyCatalogGrant(catalogItem);
+      // IAP-1: mağaza yolu, coin yolundaki (buyWithCoins, O19) rollback
+      // deseninin aynısını kullanır. Grant yarıda fırlatırsa kısmi
+      // grant [_rollbackCatalogGrant] ile geri alınır ve `false` döner:
+      // işlem kuyrukta kalır, temiz yeniden denemede çift-grant olmaz.
+      final pm = ProgressManager.instance;
+      final coinsBefore = pm.coins;
+      final f16Before = pm.f16Count;
+      final raidBefore = pm.raidCount;
+      final terlikBefore = pm.terlikCount;
+      final powerBefore = catalogItem.powerKey == null
+          ? 0
+          : pm.powerCount(catalogItem.powerKey!);
+      final energyBefore = EnergyService.instance.energy;
+      final hadRoyalCape = pm.hasRoyalCape;
+      try {
+        await _applyCatalogGrant(catalogItem);
+      } catch (e) {
+        debugPrint('[lululu] IAP mağaza teslimat hata, geri alınıyor: $e');
+        await _rollbackCatalogGrant(
+          pm: pm,
+          item: catalogItem,
+          coinsBefore: coinsBefore,
+          f16Before: f16Before,
+          raidBefore: raidBefore,
+          terlikBefore: terlikBefore,
+          powerBefore: powerBefore,
+          energyBefore: energyBefore,
+          hadRoyalCape: hadRoyalCape,
+        );
+        return false;
+      }
       status = '$source · ${catalogItem.title}';
       notifyListeners();
       return true;
@@ -917,10 +954,21 @@ class IapService extends ChangeNotifier {
     return false;
   }
 
+  /// YALNIZCA TEST (IAP-1): `true` iken [_applyCatalogGrant] coin
+  /// grant'ini uyguladıktan sonra fırlatır — grant ortasında kesilme
+  /// simülasyonu. Üretimde her zaman `false` kalır; grant yolları
+  /// (clamp'lı sayaçlar) kendiliğinden fırlatmadığı için deterministik
+  /// bir hata simülasyonunun başka yolu yoktur.
+  @visibleForTesting
+  static bool throwAfterCoinsGrantForTest = false;
+
   Future<void> _applyCatalogGrant(StoreCatalogItem item) async {
     final pm = ProgressManager.instance;
     if (item.coinsGrant > 0) {
       await pm.addCoins(item.coinsGrant);
+    }
+    if (throwAfterCoinsGrantForTest) {
+      throw StateError('IAP-1 test: grant coin adımından sonra kesildi');
     }
     if (item.f16Grant > 0 || item.raidGrant > 0 || item.terlikGrant > 0) {
       await pm.grantArcadeDrop(

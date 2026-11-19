@@ -262,6 +262,13 @@ class ChatService extends ChangeNotifier {
   /// yeniden başlatmada kaybolmaz, yüklemede geri yüklenir.
   static const _cloudFailedPrefsKey = 'LululuChatCloudFailedV1';
 
+  /// Buluta yazılamayan göç eşlemeleri (DEL-1): retry kuyruğu
+  /// yeniden başlatmada kaybolmaz, yüklemede geri yüklenir. JSON
+  /// liste; her kayıt `{'guestId': ..., 'uid': ...}` haritasıdır.
+  /// O12 deseniyle aynı: kap + en-eskisi-atılır.
+  static const _pendingIdentityLinksPrefsKey =
+      'LululuChatPendingIdentityLinksV1';
+
   /// Silinen mesaj mezar taşları (5C): [deleteMessage] ile yerelden
   /// silinmiş mesaj kimlikleri. Bulut kopyası kalmışsa (kapalı kapı /
   /// çevrimdışı silme) yeniden bağlanmada mesaj geri gelmesin diye
@@ -276,6 +283,12 @@ class ChatService extends ChangeNotifier {
   /// Mezar taşı kapasitesi (5C): en fazla bu kadar silinmiş kimlik
   /// tutulur; aşımda en eski kimlikler atılır.
   static const int maxTombstones = 200;
+
+  /// Bekleyen göç eşlemesi kapasitesi (DEL-1): en fazla bu kadar
+  /// `guestId -> uid` kaydı tutulur; aşımda en eski kayıt atılır.
+  /// Göç cihaz başına normalde tek kayıttır; 200, mezar taşı
+  /// kapasitesiyle aynı sınırdır ve kalıcı listeyi sınırlı tutar.
+  static const int maxPendingIdentityLinks = 200;
 
   /// Okunmamış yoklamasının pencere boyutu (S2#19): aktif olmayan her
   /// kanal yalnız son bu kadar mesajla dinlenir; sayaç bu sayıyla
@@ -437,6 +450,11 @@ class ChatService extends ChangeNotifier {
   /// Buluta yazımı başarısız olup yalnız yerelde kalan mesaj kimlikleri.
   final Set<String> _cloudFailedIds = <String>{};
 
+  /// Buluta yazılamayıp retry kuyruğunda bekleyen göç eşlemeleri
+  /// (DEL-1): (guestId, uid) çiftleri, ekleme sırasıyla tutulur.
+  /// Kap aşımında en eski kayıt atılır.
+  final List<({String guestId, String uid})> _pendingIdentityLinks = [];
+
   /// Son [deleteMessage] çağrısında bulut kopyası silinemedi mi.
   /// Anlamı ve sıfırlanma kuralı [lastDeleteCloudFailed] belgesindedir.
   bool _lastDeleteCloudFailed = false;
@@ -539,6 +557,90 @@ class ChatService extends ChangeNotifier {
 
   /// Buluta gönderilemeyip yalnız yerelde kalan mesajların kimlikleri.
   Set<String> get cloudFailedIds => Set.unmodifiable(_cloudFailedIds);
+
+  /// Buluta yazılamayıp retry kuyruğunda bekleyen göç eşlemeleri
+  /// (DEL-1): (guestId, uid) çiftleri, ekleme sırasıyla.
+  List<({String guestId, String uid})> get pendingIdentityLinks =>
+      List.unmodifiable(_pendingIdentityLinks);
+
+  /// En az bir göç eşlemesi buluta yazılamayıp kuyrukta bekliyor mu.
+  bool get hasPendingIdentityLinks => _pendingIdentityLinks.isNotEmpty;
+
+  /// Bekleyen göç eşlemelerini kalıcı kayda yazar (DEL-1, O12 deseni):
+  /// liste boşsa anahtar kaldırılır.
+  Future<void> _persistPendingIdentityLinks() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_pendingIdentityLinks.isEmpty) {
+      await prefs.remove(_pendingIdentityLinksPrefsKey);
+    } else {
+      await prefs.setString(
+        _pendingIdentityLinksPrefsKey,
+        jsonEncode([
+          for (final entry in _pendingIdentityLinks)
+            {'guestId': entry.guestId, 'uid': entry.uid},
+        ]),
+      );
+    }
+  }
+
+  /// Kalıcı bekleyen göç eşlemelerini geri yükler (DEL-1): boş
+  /// kimlikler ve tekrarlar atılır, kap aşımı en eskiden budanır;
+  /// budama/temizlik olduysa kayıt geri yazılır.
+  Future<void> _restorePendingIdentityLinks(SharedPreferences prefs) async {
+    _pendingIdentityLinks.clear();
+    final raw = prefs.getString(_pendingIdentityLinksPrefsKey);
+    if (raw == null || raw.isEmpty) return;
+    var dirty = false;
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      final seen = <String>{};
+      for (final e in decoded) {
+        if (e is! Map<String, dynamic>) {
+          dirty = true;
+          continue;
+        }
+        final guestId = (e['guestId'] as String?)?.trim() ?? '';
+        final uid = (e['uid'] as String?)?.trim() ?? '';
+        if (guestId.isEmpty || uid.isEmpty || !seen.add(guestId)) {
+          dirty = true;
+          continue;
+        }
+        _pendingIdentityLinks.add((guestId: guestId, uid: uid));
+      }
+    } catch (_) {
+      dirty = true;
+    }
+    if (_pendingIdentityLinks.length > maxPendingIdentityLinks) {
+      _pendingIdentityLinks.removeRange(
+        0,
+        _pendingIdentityLinks.length - maxPendingIdentityLinks,
+      );
+      dirty = true;
+    }
+    if (dirty) await _persistPendingIdentityLinks();
+  }
+
+  /// Göç eşlemesini retry kuyruğuna ekler (DEL-1): aynı misafir
+  /// zaten kuyruktaysa ilk kayıt korunur (üzerine yazılmaz, kuralın
+  /// ilk-yazım-kazanır ilkesiyle aynı); kap aşılırsa en eski atılır.
+  Future<void> _enqueuePendingIdentityLink(String guestId, String uid) async {
+    if (guestId.isEmpty || uid.isEmpty) return;
+    if (_pendingIdentityLinks.any((e) => e.guestId == guestId)) return;
+    _pendingIdentityLinks.add((guestId: guestId, uid: uid));
+    while (_pendingIdentityLinks.length > maxPendingIdentityLinks) {
+      _pendingIdentityLinks.removeAt(0);
+    }
+    await _persistPendingIdentityLinks();
+  }
+
+  /// Kuyruktaki göç eşlemesini siler (başarılı yazımda çağrılır).
+  Future<void> _removePendingIdentityLink(String guestId) async {
+    final before = _pendingIdentityLinks.length;
+    _pendingIdentityLinks.removeWhere((e) => e.guestId == guestId);
+    if (_pendingIdentityLinks.length != before) {
+      await _persistPendingIdentityLinks();
+    }
+  }
 
   /// Belirli bir mesajın buluta gönderilemediğini bildirir.
   bool isCloudFailed(String messageId) => _cloudFailedIds.contains(messageId);
@@ -947,6 +1049,9 @@ class ChatService extends ChangeNotifier {
     // silinmiş mesajı geri alır.
     await _restoreTombstoneIds(prefs);
 
+    // DEL-1 — kalıcı bekleyen göç eşlemelerini geri yükle.
+    await _restorePendingIdentityLinks(prefs);
+
     _loaded = true;
     _bindCloudStreamIfReady();
     _streamController.add(messages);
@@ -955,6 +1060,11 @@ class ChatService extends ChangeNotifier {
     // tekrar denenir (en iyi çaba; kapı kapalıysa işaretli kalır).
     if (_cloudFailedIds.isNotEmpty) {
       unawaited(retryFailedCloudPushes());
+    }
+    // DEL-1 — uygulama açılışında bekleyen göç eşlemeleri de
+    // tekrar denenir (en iyi çaba; Firebase kapalıysa kuyrukta kalır).
+    if (_pendingIdentityLinks.isNotEmpty) {
+      unawaited(retryPendingIdentityLinks());
     }
   }
 
@@ -981,6 +1091,7 @@ class ChatService extends ChangeNotifier {
     _lastSeenTicks.clear();
     _cloudFailedIds.clear();
     _tombstoneIds.clear();
+    _pendingIdentityLinks.clear();
     _lastSentText = '';
     _lastSentAtMs = 0;
     _recentSendTimestampsMs.clear();
@@ -1001,6 +1112,7 @@ class ChatService extends ChangeNotifier {
     await prefs.remove(_pendingReportsPrefsKey);
     await prefs.remove(_cloudFailedPrefsKey);
     await prefs.remove(_tombstonePrefsKey);
+    await prefs.remove(_pendingIdentityLinksPrefsKey);
     _loaded = false;
     _streamController.add(messages);
     notifyListeners();
@@ -1036,10 +1148,20 @@ class ChatService extends ChangeNotifier {
     }
   }
 
+  /// YALNIZCA TEST (DEL-1): ayarlıysa göç eşlemesinin bulut yazımı
+  /// gerçek Firestore yerine bu yazıcıyla yapılır; yazıcı `true`
+  /// dönerse yazım başarılı sayılır. Üretimde her zaman `null` kalır.
+  /// Firestore test ortamında başlatılamadığı için çevrimiçi yazımın
+  /// başarı yolu ancak bu kancayla doğrulanabilir.
+  @visibleForTesting
+  static Future<bool> Function(String guestId, String uid)?
+      debugCloudLinkWriter;
+
   /// Göç eşlemesini buluta yazar (`guest_identity_links/{guestId}`).
   /// Kurallar ilk yazımı korur (mevcut belge üzerine yazılamaz);
-  /// istemci de önce varlığı kontrol eder. Firebase hazır değilse
-  /// hiçbir şey yapmaz; hatalar yutulur — yerel eşleme
+  /// istemci de önce varlığı kontrol eder. Yazım başarısızsa
+  /// (Firebase hazır değil / çevrimdışı / hata) kayıt kalıcı retry
+  /// kuyruğuna alınır (DEL-1); yerel eşleme
   /// (LululuGuestIdentityLinksV1) asıl kaynaktır, bulut kopyası
   /// yalnız hesap silmede eski misafir mesajlarının silinebilmesi
   /// için kuralların okuduğu kanıttır.
@@ -1047,20 +1169,61 @@ class ChatService extends ChangeNotifier {
     String guestId,
     String uid,
   ) async {
-    if (!FirebaseBootstrap.isAvailable) return;
+    final ok = await _writeIdentityLinkCloud(guestId, uid);
+    if (ok) {
+      await _removePendingIdentityLink(guestId);
+    } else {
+      await _enqueuePendingIdentityLink(guestId, uid);
+    }
+  }
+
+  /// Göç eşlemesini buluta tek seferde yazmayı dener; başarıda `true`
+  /// döner. Belge zaten varsa yazmadan başarılı sayılır (kural
+  /// ilk-yazım-kazanır). Firebase hazır değilse veya yazım
+  /// fırlatırsa `false` döner — çağıran kuyruğa alır.
+  Future<bool> _writeIdentityLinkCloud(String guestId, String uid) async {
+    final override = debugCloudLinkWriter;
+    if (override != null) return override(guestId, uid);
+    if (!FirebaseBootstrap.isAvailable) return false;
     try {
       final ref = FirebaseFirestore.instance
           .collection('guest_identity_links')
           .doc(guestId);
       final snap = await ref.get();
-      if (snap.exists) return;
+      if (snap.exists) return true;
       await ref.set({
         'uid': uid,
         'createdAt': FieldValue.serverTimestamp(),
       });
+      return true;
     } catch (e) {
       debugPrint('[lululu] göç eşlemesi buluta yazılamadı: $e');
+      return false;
     }
+  }
+
+  /// Kuyruktaki göç eşlemelerini buluta yazmayı dener (DEL-1).
+  /// Tümü yazılırsa `true` döner; başarısız kalanlar kuyrukta kalır.
+  /// Kapı yazım bazındadır: Firebase kapalıyken hiçbir kayıt
+  /// düşürülmez.
+  Future<bool> retryPendingIdentityLinks() async {
+    if (_pendingIdentityLinks.isEmpty) return true;
+    var allOk = true;
+    var changed = false;
+    for (final entry in _pendingIdentityLinks.toList()) {
+      final ok = await _writeIdentityLinkCloud(entry.guestId, entry.uid);
+      if (ok) {
+        _pendingIdentityLinks.remove(entry);
+        changed = true;
+      } else {
+        allOk = false;
+      }
+    }
+    if (changed) {
+      await _persistPendingIdentityLinks();
+      notifyListeners();
+    }
+    return allOk;
   }
 
   /// Hesap silmede göç eşleme belgelerini buluttan siler (silinen
@@ -1222,6 +1385,10 @@ class ChatService extends ChangeNotifier {
     if (_cloudFailedIds.isNotEmpty) {
       unawaited(retryFailedCloudPushes());
     }
+    // DEL-1: bağlantı dönünce bekleyen göç eşlemeleri de denensin.
+    if (_pendingIdentityLinks.isNotEmpty) {
+      unawaited(retryPendingIdentityLinks());
+    }
   }
 
   /// Misafir->hesap eşlemesini prefs'ten tazeler (giriş sonrası
@@ -1229,6 +1396,11 @@ class ChatService extends ChangeNotifier {
   Future<void> refreshIdentityLinks() async {
     final prefs = await SharedPreferences.getInstance();
     await _loadIdentityLinks(prefs);
+    // DEL-1: giriş/göç sonrası kapı açılmış olabilir — bekleyen
+    // göç eşlemeleri de tekrar denensin.
+    if (_pendingIdentityLinks.isNotEmpty) {
+      unawaited(retryPendingIdentityLinks());
+    }
     notifyListeners();
   }
 
