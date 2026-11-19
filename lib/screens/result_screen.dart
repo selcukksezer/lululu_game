@@ -56,6 +56,9 @@ Future<bool> showGameResult(
   bool coinsAwardedByCaller = true,
   bool won = true,
   bool isNewRecord = false,
+  // 12P: bitiş sebebi (örn. can bitmesi / erken bitirme); verilmezse
+  // kazanma durumuna göre varsayılan alt başlık gösterilir.
+  String? resultLine,
   FirstClearExtras firstClearExtras = const FirstClearExtras(),
 }) async {
   final replay = await Navigator.of(context).push<bool>(
@@ -70,6 +73,7 @@ Future<bool> showGameResult(
         coinsAwardedByCaller: coinsAwardedByCaller,
         won: won,
         isNewRecord: isNewRecord,
+        resultLine: resultLine,
         firstClearExtras: firstClearExtras,
       ),
     ),
@@ -193,6 +197,7 @@ class GameResultScreen extends StatefulWidget {
     this.coinsAwardedByCaller = true,
     this.won = true,
     this.isNewRecord = false,
+    this.resultLine,
     this.firstClearExtras = const FirstClearExtras(),
   });
 
@@ -212,6 +217,10 @@ class GameResultScreen extends StatefulWidget {
   /// altında ayrı bir bantta gösterilir; ödeme yapmaz, [coins] tutarına
   /// eklenmez.
   final FirstClearExtras firstClearExtras;
+
+  /// Bitiş sebebi satırı (12P, salt-görünüm): verilmezse kazanma
+  /// durumuna göre varsayılan alt başlık gösterilir.
+  final String? resultLine;
 
   /// `false` ise kayıp/0-skor başlığı gösterilir ("OYUN BİTTİ!"):
   /// canlar bitince veya skor 0'ken BİTİR'e basınca "SEVİYE TAMAM!"
@@ -298,7 +307,11 @@ class _GameResultScreenState extends State<GameResultScreen>
           widget.won ? l10n.levelCompleteTitle : l10n.resultGameOverTitle,
       score: widget.score,
       best: widget.bestScore,
-      line: widget.won ? l10n.resultSubtitle : l10n.resultGameOverSubtitle,
+      line:
+          widget.resultLine ??
+          (widget.won
+              ? l10n.resultSubtitle
+              : l10n.resultGameOverSubtitle),
     );
     if (!mounted) return;
     if (shared) {
@@ -390,9 +403,10 @@ class _GameResultScreenState extends State<GameResultScreen>
 
                         // Subtitle (.res-sub)
                         Text(
-                          widget.won
-                              ? context.l10n.resultSubtitle
-                              : context.l10n.resultGameOverSubtitle,
+                          widget.resultLine ??
+                              (widget.won
+                                  ? context.l10n.resultSubtitle
+                                  : context.l10n.resultGameOverSubtitle),
                           textAlign: TextAlign.center,
                           style: GoogleFonts.nunito(
                             fontSize: 13.5,

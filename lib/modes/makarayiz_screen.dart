@@ -95,6 +95,21 @@ class MakarayizScreenState extends State<MakarayizScreen>
   bool _alive = true;
   bool _resultShown = false;
 
+  /// 12P: tur sayacı — sahne giriş animasyonu her turda yeniden
+  /// oynar (`TweenAnimationBuilder` anahtarı). `_boot` artırır.
+  int _roundId = 0;
+
+  /// 12P: bitiş sebebi satırı — sonuç ekranının alt başlığında
+  /// görünür (can bitmesi / erken bitirme). `_gameOver` can bitmesi
+  /// sebebini yazar, `_finishEarly` erken bitirme sebebini.
+  String? _endReason;
+
+  /// 12P: BİTİR onay diyaloğu açıkken ticker bu bayrakla durdurulur;
+  /// iptalde yalnız bu bayrak set edildiyse devam edilir (yardım /
+  /// çıkış-onayı deseni).
+  bool _pausedForFinishConfirm = false;
+  bool _finishConfirmShowing = false;
+
   /// Y3 idempotency damgası: tur başlangıcında bir kez alınır
   /// (`_boot`); aynı turun tüm bitiş yolları aynı anahtarı kullanır,
   /// yeni tur yeni damga alır. Bitiş anında `DateTime.now()` alınmaz.
@@ -182,6 +197,26 @@ class MakarayizScreenState extends State<MakarayizScreen>
   String? get debugBreakText => _breakText;
   @visibleForTesting
   String get debugHint => _hint;
+  @visibleForTesting
+  int get debugRoundId => _roundId;
+  @visibleForTesting
+  String? get debugEndReason => _endReason;
+  @visibleForTesting
+  bool get debugResultShown => _resultShown;
+  @visibleForTesting
+  bool get debugPausedForFinishConfirm => _pausedForFinishConfirm;
+
+  /// 12P: dondurma gücünün test yolu — yalnız `_freezeUntil`
+  /// yazar (ses/ipucu yok); güç envanteri testte 0 olduğu için
+  /// düğme üzerinden tetiklenemez.
+  @visibleForTesting
+  void debugApplyFreeze(double durationMs) {
+    _freezeUntil = _now + durationMs;
+  }
+
+  /// 12P: yeniden başlatmanın test yolu.
+  @visibleForTesting
+  void debugRestart() => _restart();
 
   @override
   void didChangeDependencies() {
@@ -240,6 +275,10 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _paused = false;
     _pausedByLifecycle = false;
     _pausedForHelp = false;
+    _roundId++;
+    _endReason = null;
+    _pausedForFinishConfirm = false;
+    _finishConfirmShowing = false;
     _lastElapsed = null;
     _comboText = null;
     _breakText = null;
@@ -416,6 +455,14 @@ class MakarayizScreenState extends State<MakarayizScreen>
       _breakText = null;
       _gainText = null;
     }
+    // 12P: canlar bu yolda (kaçan nota) biterse `_gameOver` çalışır
+    // ama dış `build()` çalışmadığı için `build()` içindeki
+    // `_edgeShowResult` kenarı hiç tetiklenmezdi — sonuç ekranı
+    // açılmaz, `_alive == false` olduğu için `_onTick` erken döner
+    // ve oyun sonsuza dek donardı (video: ~10. sn donma, ~14. sn
+    // BİTİR'e basınca sonuç). Sonucu buradan da tetikle; bayrak
+    // (`_resultShown`) çift sunumu engeller.
+    if (!_alive && !_resultShown) _edgeShowResult();
     if (mounted) _tickNotifier.value++;
   }
 
@@ -450,6 +497,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _moveMade = true;
     _alive = false;
     _hint = context.l10n.makaraReelOut;
+    // 12P: bitiş sebebi sonuç ekranında görünür.
+    _endReason = context.l10n.makaraReelOut;
     // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
       LeaderboardService.instance.submitScore(
@@ -601,6 +650,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
         best: _best,
         bestCombo: _bestCombo,
         won: won ?? false,
+        // 12P: bitiş sebebi sonuç ekranının alt başlığında görünür.
+        resultLine: _endReason,
         leaderboardMode: LeaderboardService.modeMakarayiz,
         // K16: mod skoru kimliği liderlik kimliğiyle aynıdır
         // (`lululu_game_mode.dart` bestScoreKey: 'makarayiz').
@@ -727,13 +778,70 @@ class MakarayizScreenState extends State<MakarayizScreen>
     }
   }
 
-  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
-  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
-  /// belirlenir (skor 0 ise kayıp başlığı).
+  /// BİTİR: 12P — tek dokunuşla tur bitmez; onay istenir (video:
+  /// donan oyundan çıkmak için BİTİR'e basılınca skor > 0 diye
+  /// "SEVİYE TAMAM!" açılmıştı — Makarayız'da seviye hedefi yok).
+  /// Onayda tur kazanıldı sayılmaz (`won: false`) ve erken-bitirme
+  /// sebebi sonuç ekranında görünür. Onay diyaloğu açıkken ticker
+  /// durur (yardım/çıkış-onayı deseni); iptalde oyun kaldığı yerden
+  /// devam eder.
   Future<void> _finishEarly() async {
-    if (_resultShown) return;
+    if (_resultShown || _finishConfirmShowing) return;
+    _finishConfirmShowing = true;
+    _pauseForFinishConfirm();
+    final confirmed = await _confirmFinishRound();
+    _finishConfirmShowing = false;
+    if (!mounted) return;
+    if (!confirmed) {
+      _resumeAfterFinishConfirm();
+      return;
+    }
     _resultShown = true;
-    await _presentResult(won: _score > 0);
+    // Canlar zaten bittiyse sebep can bitmesidir, erken bitirme değil.
+    if (_alive) _endReason = context.l10n.makaraFinishedEarlyReason;
+    await _presentResult(won: false);
+  }
+
+  /// BİTİR onay diyaloğu (N7 çıkış-onayı deseni).
+  Future<bool> _confirmFinishRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.makaraFinishConfirmTitle),
+        content: Text(ctx.l10n.makaraFinishConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.confirm),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// BİTİR onayı duraklatması (yardım deseni: yalnız ticker durur,
+  /// `_paused` bayrağı konmaz, duraklatma kaplaması açılmaz).
+  void _pauseForFinishConfirm() {
+    if (widget.prototypeVisualState || !_alive || _paused) return;
+    if (_ticker.isActive) {
+      _ticker.stop();
+      _pausedForFinishConfirm = true;
+    }
+  }
+
+  void _resumeAfterFinishConfirm() {
+    if (widget.prototypeVisualState || !_pausedForFinishConfirm) return;
+    _pausedForFinishConfirm = false;
+    _lastElapsed = null;
+    if (_alive && !_paused && !_pausedByLifecycle && !_ticker.isActive) {
+      _ticker.start();
+    }
   }
 
   void _edgeShowResult() {
@@ -995,35 +1103,58 @@ class MakarayizScreenState extends State<MakarayizScreen>
                         );
                   if (cand.isNotEmpty) tryHit(cand.first.lane);
                 },
-                child: Stack(
-                  children: [
-                    Column(
-                      children: [
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, c) {
-                              final h = c.maxHeight - 12 - 74 - 2;
-                              return Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  12,
-                                  16,
-                                  74,
-                                ),
-                                child: Row(
-                                  children: [
-                                    for (var i = 0; i < 3; i++) ...[
-                                      if (i > 0) const SizedBox(width: 7),
-                                      _lane(i, h, wideScreen: wideScreen),
-                                    ],
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
+                child: TweenAnimationBuilder<double>(
+                  // 12P: sahne girişi — şeritler ("boru") + beat çizgisi
+                  // + makara, rota açılışında aniden belirmek yerine
+                  // 600 ms'de solarak + hafifçe yükselerek girer
+                  // (video: f02 liste → f03 sahne, sıfır geçiş).
+                  // Anahtar tur sayacıdır: TEKRAR OYNA'da da yeniden
+                  // oynar. Aynı turda kare yenilemeleri animasyonu
+                  // başlatmaz (tween/anahtar değişmez). Prototip
+                  // vitrininde (`prototypeVisualState`) giriş
+                  // oynatılmaz: piksel yakalama statik kareyi
+                  // değişmeden alır (begin == end → ilk karede tam
+                  // görünür).
+                  key: ValueKey<int>(_roundId),
+                  tween: Tween<double>(begin: proto ? 1.0 : 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 600),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) => Opacity(
+                    opacity: t,
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - t) * 28),
+                      child: child,
                     ),
+                  ),
+                  child: Stack(
+                    children: [
+                      Column(
+                        children: [
+                          Expanded(
+                            child: LayoutBuilder(
+                              builder: (context, c) {
+                                final h = c.maxHeight - 12 - 74 - 2;
+                                return Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    12,
+                                    16,
+                                    74,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      for (var i = 0; i < 3; i++) ...[
+                                        if (i > 0) const SizedBox(width: 7),
+                                        _lane(i, h, wideScreen: wideScreen),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
                     Positioned(
                       left: 12,
                       right: 12,
@@ -1076,14 +1207,27 @@ class MakarayizScreenState extends State<MakarayizScreen>
                       Positioned(
                         right: 12,
                         top: 10,
+                        // 12P: biten can `♡` ince kontur olarak açık
+                        // zemin üstünde görünmez oluyordu (video:
+                        // m10/m12'de kalp yok sanıldı). Biten can da
+                        // aynı dolu glifle, yalnız soluk renkte çizilir;
+                        // 3 yuva her zaman görünür.
                         child: IgnorePointer(
-                          child: Text(
-                            '${'♥' * _lives}${'♡' * (3 - _lives)}',
-                            style: const TextStyle(
-                              fontSize: 15,
-                              color: Color(0xFFE01E5A),
-                              height: 1,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (var i = 0; i < 3; i++)
+                                Text(
+                                  '♥',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: const Color(
+                                      0xFFE01E5A,
+                                    ).withValues(alpha: i < _lives ? 1 : 0.3),
+                                    height: 1,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -1134,7 +1278,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
                           child: _bubble(hero, wideScreen: wideScreen),
                         ),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },

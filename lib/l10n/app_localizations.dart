@@ -1011,6 +1011,11 @@ abstract class AppLocalizations {
   String get makaraWrongLane;
   String get makaraEarlyTap;
   String get makaraFreezeHint;
+
+  // 12P: BİTİR onayı + bitiş sebebi (can bitmesi / erken bitirme).
+  String get makaraFinishConfirmTitle;
+  String get makaraFinishConfirmBody;
+  String get makaraFinishedEarlyReason;
   String get makaraFreezeCallout;
   String get makaraAutoHint;
   String get makaraAutoCallout;

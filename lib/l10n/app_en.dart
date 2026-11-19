@@ -2172,6 +2172,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get makaraFreezeHint => 'BEAT FREEZE · notes frozen for 8 sec!';
 
   @override
+  String get makaraFinishConfirmTitle => 'End the round?';
+
+  @override
+  String get makaraFinishConfirmBody =>
+      'Your score is saved and the result screen opens. An early finish does not count as a level win.';
+
+  @override
+  String get makaraFinishedEarlyReason => 'You ended the round early.';
+
+  @override
   String get makaraFreezeCallout => 'BEAT FREEZE!';
 
   @override

@@ -182,6 +182,8 @@ Future<bool> finishRun(
   bool Function()? stillValid,
   String? idempotencyKey,
   FirstClearExtras Function()? firstClearExtras,
+  // 12P: bitiş sebebi satırı; sonuç ekranının alt başlığında gösterilir.
+  String? resultLine,
 }) async {
   final pm = ProgressManager.instance;
   // F10-kuralı: skor > 0 ise varsayılan ödeme en az 1 coindir.
@@ -320,6 +322,7 @@ Future<bool> finishRun(
     won: effectiveWon,
     isNewRecord: effectiveIsNewRecord,
     firstClearExtras: displayExtras,
+    resultLine: resultLine,
   );
   // S7: sonuç ekranı kapandıktan sonra görev bildirimi. Ateşle-unut
   // yolunda settle hâlâ sürüyor olabilir; bildirimden önce tamamlanması

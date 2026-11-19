@@ -620,6 +620,9 @@ void main() {
         'makaraWrongLane': l10n.makaraWrongLane,
         'makaraEarlyTap': l10n.makaraEarlyTap,
         'makaraFreezeHint': l10n.makaraFreezeHint,
+        'makaraFinishConfirmTitle': l10n.makaraFinishConfirmTitle,
+        'makaraFinishConfirmBody': l10n.makaraFinishConfirmBody,
+        'makaraFinishedEarlyReason': l10n.makaraFinishedEarlyReason,
         'makaraFreezeCallout': l10n.makaraFreezeCallout,
         'makaraAutoHint': l10n.makaraAutoHint,
         'makaraAutoCallout': l10n.makaraAutoCallout,
@@ -1505,6 +1508,9 @@ void main() {
         'makaraWrongLane': l10n.makaraWrongLane,
         'makaraEarlyTap': l10n.makaraEarlyTap,
         'makaraFreezeHint': l10n.makaraFreezeHint,
+        'makaraFinishConfirmTitle': l10n.makaraFinishConfirmTitle,
+        'makaraFinishConfirmBody': l10n.makaraFinishConfirmBody,
+        'makaraFinishedEarlyReason': l10n.makaraFinishedEarlyReason,
         'makaraFreezeCallout': l10n.makaraFreezeCallout,
         'makaraAutoHint': l10n.makaraAutoHint,
         'makaraAutoCallout': l10n.makaraAutoCallout,
@@ -2255,15 +2261,15 @@ void main() {
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 864);
-    expect(tr.length, 864);
+    expect(en.length, 867);
+    expect(tr.length, 867);
     expect(enMethods.length, 178);
     expect(trMethods.length, 178);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1042);
+    expect(en.length + enMethods.length, 1045);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

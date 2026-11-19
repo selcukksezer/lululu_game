@@ -2170,6 +2170,16 @@ class AppLocalizationsTr extends AppLocalizations {
   String get makaraFreezeHint => 'BEAT DONDUR · 8 sn notalar dondu!';
 
   @override
+  String get makaraFinishConfirmTitle => 'Turu bitirilsin mi?';
+
+  @override
+  String get makaraFinishConfirmBody =>
+      'Skorun kaydedilir ve sonuç ekranı açılır. Erken bitirilen tur seviye tamam sayılmaz.';
+
+  @override
+  String get makaraFinishedEarlyReason => 'Turu erken bitirdin.';
+
+  @override
   String get makaraFreezeCallout => 'BEAT DONDUR!';
 
   @override
