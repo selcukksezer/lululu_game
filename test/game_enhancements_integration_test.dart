@@ -130,7 +130,7 @@ void main() {
     });
   });
 
-  group('AppLifecycleGuard — Lifecycle, Audio Pause & Accessibility Tests', () {
+  group('AppLifecycleGuard — Lifecycle & Audio Pause Tests', () {
     test('pauses AudioManager, triggers auto-pause & syncs on background/call',
         () async {
       final guard = AppLifecycleGuard.instance;
@@ -208,45 +208,6 @@ void main() {
       expect(guard.isInBackground, isFalse);
       expect(guard.currentState, AppLifecycleState.resumed);
       expect(AudioManager.instance.isMuted, isFalse);
-    });
-
-    test('persists and reloads AccessibilityPreferences via SharedPreferences',
-        () async {
-      final guard = AppLifecycleGuard.instance;
-
-      expect(guard.reducedMotion, isFalse);
-      expect(guard.highContrast, isFalse);
-      expect(guard.colorblindAssist, isFalse);
-      expect(guard.largeTouchTargets, isFalse);
-      expect(guard.accessibility.touchTargetScale, 1.0);
-
-      await guard.setReducedMotion(true);
-      await guard.setHighContrast(true);
-      await guard.setColorblindAssist(true);
-      await guard.setLargeTouchTargets(true);
-
-      expect(guard.reducedMotion, isTrue);
-      expect(guard.highContrast, isTrue);
-      expect(guard.colorblindAssist, isTrue);
-      expect(guard.largeTouchTargets, isTrue);
-      expect(guard.accessibility.touchTargetScale, 1.25);
-      expect(guard.accessibility.minTouchTargetSize, 56.0);
-      expect(guard.accessibility.animationDurationScale, 0.25);
-      expect(guard.accessibility.symbolForTier(1), isNotEmpty);
-      expect(
-        guard.accessibility.symbolForTier(1),
-        isNot(equals(guard.accessibility.symbolForTier(2))),
-      );
-
-      // Reset in-memory state and reload from SharedPreferences
-      guard.resetForTesting();
-      expect(guard.reducedMotion, isFalse);
-
-      final loaded = await guard.loadAccessibilityPreferences();
-      expect(loaded.reducedMotion, isTrue);
-      expect(loaded.highContrast, isTrue);
-      expect(loaded.colorblindAssist, isTrue);
-      expect(loaded.largeTouchTargets, isTrue);
     });
   });
 

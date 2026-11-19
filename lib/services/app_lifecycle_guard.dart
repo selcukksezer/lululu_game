@@ -1,177 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_manager.dart';
 import 'cloud_sync_service.dart';
 import 'game_telemetry_service.dart';
 import 'progress_manager.dart';
 
-/// Erişilebilirlik Ayarları (`AccessibilityPreferences`).
-///
-/// Desteklenen kalıcı seçenekler:
-/// - [reducedMotion]: Azaltılmış Hareket (sarsıntı, yoğun parçacık ve animasyonları azaltır)
-/// - [highContrast]: Yüksek Kontrast (kenarlık ve metin kontrastını güçlendirir)
-/// - [colorblindAssist]: Renk Körlüğü Sembol Desteği (böcek/balon/taş tiplerine ek sembol/etiket sağlar)
-/// - [largeTouchTargets]: Büyük Dokunma Hedefi (buton ve etkileşim alanlarını büyütür)
-@immutable
-class AccessibilityPreferences {
-  const AccessibilityPreferences({
-    this.reducedMotion = false,
-    this.highContrast = false,
-    this.colorblindAssist = false,
-    this.largeTouchTargets = false,
-  });
+// Not (2026-11-19): Dört tercihli ayar grubu kaldırıldı; bu dosya
+// yalnız yaşam döngüsü bekçisidir.
 
-  static const String keyReducedMotion = 'lululu_a11y_reduced_motion';
-  static const String keyHighContrast = 'lululu_a11y_high_contrast';
-  static const String keyColorblindAssist = 'lululu_a11y_colorblind_assist';
-  static const String keyLargeTouchTargets = 'lululu_a11y_large_touch_targets';
-  static const String keyBundleJson = 'lululu_a11y_preferences_v1';
-
-  final bool reducedMotion;
-  final bool highContrast;
-  final bool colorblindAssist;
-  final bool largeTouchTargets;
-
-  /// Dokunma hedefleri için çarpan (`largeTouchTargets` aktifken `1.25`, değilse `1.0`).
-  double get touchTargetScale => largeTouchTargets ? 1.25 : 1.0;
-
-  /// Minimum dokunma alanı boyutu (`largeTouchTargets` aktifken `56.0`, değilse `48.0`).
-  double get minTouchTargetSize => largeTouchTargets ? 56.0 : 48.0;
-
-  /// Animasyon süresi ölçeği (`reducedMotion` aktifken `0.25`, değilse `1.0`).
-  double get animationDurationScale => reducedMotion ? 0.25 : 1.0;
-
-  /// Herhangi bir erişilebilirlik modunun açık olup olmadığı.
-  bool get hasAnyEnabled =>
-      reducedMotion || highContrast || colorblindAssist || largeTouchTargets;
-
-  AccessibilityPreferences copyWith({
-    bool? reducedMotion,
-    bool? highContrast,
-    bool? colorblindAssist,
-    bool? largeTouchTargets,
-  }) {
-    return AccessibilityPreferences(
-      reducedMotion: reducedMotion ?? this.reducedMotion,
-      highContrast: highContrast ?? this.highContrast,
-      colorblindAssist: colorblindAssist ?? this.colorblindAssist,
-      largeTouchTargets: largeTouchTargets ?? this.largeTouchTargets,
-    );
-  }
-
-  Map<String, Object?> toJson() => <String, Object?>{
-        'reducedMotion': reducedMotion,
-        'highContrast': highContrast,
-        'colorblindAssist': colorblindAssist,
-        'largeTouchTargets': largeTouchTargets,
-      };
-
-  factory AccessibilityPreferences.fromJson(Map<String, Object?> json) {
-    return AccessibilityPreferences(
-      reducedMotion: json['reducedMotion'] == true,
-      highContrast: json['highContrast'] == true,
-      colorblindAssist: json['colorblindAssist'] == true,
-      largeTouchTargets: json['largeTouchTargets'] == true,
-    );
-  }
-
-  /// `SharedPreferences` üzerinden erişilebilirlik tercihlerini yükler.
-  static Future<AccessibilityPreferences> load([
-    SharedPreferences? providedPrefs,
-  ]) async {
-    final prefs = providedPrefs ?? await SharedPreferences.getInstance();
-    final hasIndividualKeys = prefs.containsKey(keyReducedMotion) ||
-        prefs.containsKey(keyHighContrast) ||
-        prefs.containsKey(keyColorblindAssist) ||
-        prefs.containsKey(keyLargeTouchTargets);
-
-    if (hasIndividualKeys) {
-      return AccessibilityPreferences(
-        reducedMotion: prefs.getBool(keyReducedMotion) ?? false,
-        highContrast: prefs.getBool(keyHighContrast) ?? false,
-        colorblindAssist: prefs.getBool(keyColorblindAssist) ?? false,
-        largeTouchTargets: prefs.getBool(keyLargeTouchTargets) ?? false,
-      );
-    }
-
-    final rawJson = prefs.getString(keyBundleJson);
-    if (rawJson != null && rawJson.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(rawJson);
-        if (decoded is Map<String, Object?>) {
-          return AccessibilityPreferences.fromJson(decoded);
-        }
-        if (decoded is Map) {
-          return AccessibilityPreferences.fromJson(
-            decoded.map((k, v) => MapEntry(k.toString(), v)),
-          );
-        }
-      } catch (_) {}
-    }
-
-    return const AccessibilityPreferences();
-  }
-
-  /// Erişilebilirlik tercihlerini `SharedPreferences` içine kalıcı olarak yazar.
-  Future<void> save([SharedPreferences? providedPrefs]) async {
-    final prefs = providedPrefs ?? await SharedPreferences.getInstance();
-    await prefs.setBool(keyReducedMotion, reducedMotion);
-    await prefs.setBool(keyHighContrast, highContrast);
-    await prefs.setBool(keyColorblindAssist, colorblindAssist);
-    await prefs.setBool(keyLargeTouchTargets, largeTouchTargets);
-    await prefs.setString(keyBundleJson, jsonEncode(toJson()));
-  }
-
-  /// Renk körlüğü desteği için böcek/taş tier'ına (`1..13`) karşılık gelen sembol etiketi.
-  String symbolForTier(int tier) {
-    const symbols = <String>[
-      '●', // 1
-      '▲', // 2
-      '■', // 3
-      '◆', // 4
-      '★', // 5
-      '✦', // 6
-      '⬢', // 7
-      '♛', // 8
-      '❖', // 9
-      '✪', // 10
-      '⚡', // 11
-      '☀️', // 12
-      '👑', // 13
-    ];
-    final idx = (tier - 1).clamp(0, symbols.length - 1);
-    return symbols[idx];
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is AccessibilityPreferences &&
-          reducedMotion == other.reducedMotion &&
-          highContrast == other.highContrast &&
-          colorblindAssist == other.colorblindAssist &&
-          largeTouchTargets == other.largeTouchTargets;
-
-  @override
-  int get hashCode => Object.hash(
-        reducedMotion,
-        highContrast,
-        colorblindAssist,
-        largeTouchTargets,
-      );
-
-  @override
-  String toString() =>
-      'AccessibilityPreferences(reducedMotion: $reducedMotion, '
-      'highContrast: $highContrast, colorblindAssist: $colorblindAssist, '
-      'largeTouchTargets: $largeTouchTargets)';
-}
-
-/// Uygulama Yaşam Döngüsü, Çağrı Kesintisi & Erişilebilirlik Koruması.
+/// Uygulama Yaşam Döngüsü ve Çağrı Kesintisi Koruması.
 ///
 /// Sorumluluklar:
 /// 1. `WidgetsBindingObserver` üzerinden `AppLifecycleState` değişimlerini
@@ -185,9 +24,6 @@ class AccessibilityPreferences {
 /// 3. Uygulama tekrar öne geldiğinde (`AppLifecycleState.resumed`):
 ///    - Ses durumunu önceki kullanıcı tercihlerine göre geri yükler (`onAppResumed`),
 ///    - Arka planda geçen oturum süresini ve saat bütünlüğünü doğrular.
-/// 4. `AccessibilityPreferences` (`reducedMotion`, `highContrast`,
-///    `colorblindAssist`, `largeTouchTargets`) tercihlerini `SharedPreferences`
-///    ile kalıcı olarak yönetir.
 class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
   AppLifecycleGuard._internal();
 
@@ -213,8 +49,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
   int _pauseCount = 0;
   int _resumeCount = 0;
   int _syncTriggerCount = 0;
-
-  AccessibilityPreferences _accessibility = const AccessibilityPreferences();
 
   /// Güncel uygulama yaşam döngüsü durumu.
   AppLifecycleState get currentState => _currentState;
@@ -277,19 +111,9 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
   /// Arka plana geçişte tetiklenen toplam senkronizasyon sayısı.
   int get syncTriggerCount => _syncTriggerCount;
 
-  /// Güncel erişilebilirlik tercihleri.
-  AccessibilityPreferences get accessibility => _accessibility;
-
-  /// Kısa erişilebilirlik getter'ları.
-  bool get reducedMotion => _accessibility.reducedMotion;
-  bool get highContrast => _accessibility.highContrast;
-  bool get colorblindAssist => _accessibility.colorblindAssist;
-  bool get largeTouchTargets => _accessibility.largeTouchTargets;
-
-  /// `WidgetsBinding` gözlemcisini bağlar ve erişilebilirlik ayarlarını yükler.
+  /// `WidgetsBinding` gözlemcisini bağlar.
   Future<void> initialize() async {
     attachObserver();
-    await loadAccessibilityPreferences();
   }
 
   /// `WidgetsBinding.instance` üzerine gözlemci olarak kaydolur.
@@ -481,63 +305,7 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
   }
 
-  // ---------------------------------------------------------------------------
-  // ERİŞİLEBİLİRLİK TERCİHLERİ YÖNETİMİ
-  // ---------------------------------------------------------------------------
-
-  /// `SharedPreferences` içinden erişilebilirlik tercihlerini yükler.
-  Future<AccessibilityPreferences> loadAccessibilityPreferences([
-    SharedPreferences? providedPrefs,
-  ]) async {
-    _accessibility = await AccessibilityPreferences.load(providedPrefs);
-    notifyListeners();
-    return _accessibility;
-  }
-
-  /// Tüm erişilebilirlik tercihlerini tek seferde günceller ve kalıcı kaydeder.
-  Future<void> updateAccessibilityPreferences(
-    AccessibilityPreferences next, [
-    SharedPreferences? providedPrefs,
-  ]) async {
-    _accessibility = next;
-    await _accessibility.save(providedPrefs);
-    GameTelemetryService.instance.recordBreadcrumb(
-      'accessibility',
-      'preferences_updated',
-      meta: _accessibility.toJson(),
-    );
-    notifyListeners();
-  }
-
-  /// Azaltılmış Hareket (`reducedMotion`) ayarını günceller.
-  Future<void> setReducedMotion(bool enabled) async {
-    await updateAccessibilityPreferences(
-      _accessibility.copyWith(reducedMotion: enabled),
-    );
-  }
-
-  /// Yüksek Kontrast (`highContrast`) ayarını günceller.
-  Future<void> setHighContrast(bool enabled) async {
-    await updateAccessibilityPreferences(
-      _accessibility.copyWith(highContrast: enabled),
-    );
-  }
-
-  /// Renk Körlüğü Sembol Desteği (`colorblindAssist`) ayarını günceller.
-  Future<void> setColorblindAssist(bool enabled) async {
-    await updateAccessibilityPreferences(
-      _accessibility.copyWith(colorblindAssist: enabled),
-    );
-  }
-
-  /// Büyük Dokunma Hedefi (`largeTouchTargets`) ayarını günceller.
-  Future<void> setLargeTouchTargets(bool enabled) async {
-    await updateAccessibilityPreferences(
-      _accessibility.copyWith(largeTouchTargets: enabled),
-    );
-  }
-
-  /// Testler için yaşam döngüsü ve erişilebilirlik durumunu sıfırlar.
+  /// Testler için yaşam döngüsü durumunu sıfırlar.
   void resetForTesting() {
     _currentState = AppLifecycleState.resumed;
     _shouldAutoPauseGame = false;
@@ -553,7 +321,6 @@ class AppLifecycleGuard extends ChangeNotifier with WidgetsBindingObserver {
     _pauseCount = 0;
     _resumeCount = 0;
     _syncTriggerCount = 0;
-    _accessibility = const AccessibilityPreferences();
     notifyListeners();
   }
 }
