@@ -245,7 +245,14 @@ class _DockVisualOverlay extends StatelessWidget {
                             return Stack(
                               clipBehavior: Clip.none,
                               children: [
-                                Positioned(
+                                // 12O: hap EN ARKADA kayar — AnimatedPositioned
+                                // Row'dan ÖNCE gelir; simge+yazı katmanı her
+                                // zaman hapın üstünde boyanır. (Eskiden statik
+                                // Positioned idi: sekme değişiminde hap
+                                // zıplıyor, kayma hissi yoktu.)
+                                AnimatedPositioned(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeOutBack,
                                   left: selected.index * tabWidth,
                                   top: 0,
                                   width: tabWidth,
