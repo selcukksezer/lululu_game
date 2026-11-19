@@ -1270,6 +1270,8 @@ class _GameScreenState extends State<GameScreen>
     });
 
     unawaited(AudioManager().playF16Sfx());
+    // 12S: jet tam ekran uçar (prototip v4); ses + fizik aynen durur.
+    unawaited(playF16Flyover(context));
     final initialBlast = _engine!.f16Bombardment(maxCount: 3);
     final initialAward = initialBlast.length * 180;
     if (initialAward > 0) {
