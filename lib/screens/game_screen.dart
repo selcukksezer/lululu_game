@@ -970,6 +970,12 @@ class _GameScreenState extends State<GameScreen>
 
   /// Hışır Suika'da: tier dışı sürpriz hedef (Selçuk, 2026-11-18).
   /// Belirdiğinde "mezarına sıçtığım" der; dokunulursa +150 bonus.
+  ///
+  /// 12J: kapı geçici kapalıyken kısa yeniden deneme aralığı. Motor
+  /// henüz kurulmadıysa ya da oyun duraklatıldıysa ilk görünme 20 sn
+  /// ötelenmesin; kapı açılınca en geç bu sürede Hışır belirir.
+  static const Duration _hisirRetryDelay = Duration(seconds: 3);
+
   void _scheduleHisir(Duration delay) {
     _hisirTimer?.cancel();
     _hisirTimer = Timer(delay, _showHisir);
@@ -979,8 +985,18 @@ class _GameScreenState extends State<GameScreen>
     // Bağlı değilse (dispose sonrası) zamanlama yapılmaz: aksi hâlde
     // ölü durumda her 20 saniyede bir yeniden zamanlanan timer sızar (D4).
     if (!mounted) return;
-    if (_engine == null || _isFinished || _paused) {
-      _scheduleHisir(const Duration(seconds: 20));
+    if (_isFinished) {
+      // Oyun bitti: artık spawn yok — zamanlayıcı kurulmaz, sızıntı yok.
+      // Yeni tur [_restartLevel] ile 15 sn'lik zamanlamayı kurar.
+      return;
+    }
+    if (_engine == null || _paused) {
+      // Geçici kapı: motor kurulumu bekliyor ya da oyun duraklatılmış
+      // (yaşam döngüsü duraklatması DEVAM beklerken de). 20 sn erteleme
+      // yerine kısa aralıkla yeniden dene: duraklatma açılınca Hışır
+      // en geç 3 sn içinde belirir. Tek zamanlayıcıdır, dispose'da
+      // iptal edilir; duraklatma sürerken gösterim denenmez.
+      _scheduleHisir(_hisirRetryDelay);
       return;
     }
     setState(() {
