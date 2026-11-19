@@ -393,10 +393,10 @@ class ZeroJankPreloader {
   /// Pre-warms critical voice and SFX audio byte buffers in time-sliced jobs.
   ///
   /// Warms from the single canonical folder `assets/audio/` only, via
-  /// [GameAudio.allAssets] (which already includes the `tier*_ses.mp3` clips
-  /// listed in [criticalSoundAssets]). The byte-identical copies under
-  /// `assets/design/sounds/` are NOT warmed separately: warming both
-  /// folders loaded every `tier1..8_ses.mp3` twice.
+  /// [GameAudio.allAssets] (which includes the `tier*_ses.mp3` clips
+  /// listed in [criticalSoundAssets]). Since 12A removed the byte-identical
+  /// `voice_tierN.mp3` duplicates from [GameAudio.allAssets], each tier
+  /// clip is warmed exactly once — no clip is loaded twice.
   void enqueueAudioWarmup() {
     for (final audioFile in GameAudio.allAssets) {
       final captured = 'assets/audio/$audioFile';

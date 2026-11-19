@@ -536,7 +536,7 @@ void main() {
         expect(t.name, isNotEmpty);
         expect(t.title, isNotEmpty);
         expect(t.viralReplik, isNotEmpty);
-        expect(t.voiceFile, endsWith('.mp3'));
+        expect(t.soundFile, endsWith('.mp3'));
         expect(t.assetPath, startsWith('assets/'));
         expect(t.radius, greaterThan(0));
         expect(t.mass, greaterThan(0));

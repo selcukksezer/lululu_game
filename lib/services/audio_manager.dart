@@ -32,19 +32,6 @@ abstract final class GameAudio {
   static const sfxVictory = 'sfx_victory.mp3';
 
   static const voiceAydinlat = 'voice_aydinlat.mp3';
-  static const voiceTier1 = 'voice_tier1.mp3';
-  static const voiceTier2 = 'voice_tier2.mp3';
-  static const voiceTier3 = 'voice_tier3.mp3';
-  static const voiceTier4 = 'voice_tier4.mp3';
-  static const voiceTier5 = 'voice_tier5.mp3';
-  static const voiceTier6 = 'voice_tier6.mp3';
-  static const voiceTier7 = 'voice_tier7.mp3';
-  static const voiceTier8 = 'voice_tier8.mp3';
-  static const voiceTier9 = 'voice_tier9.mp3';
-  static const voiceTier10 = 'voice_tier10.mp3';
-  static const voiceTier11 = 'voice_tier11.mp3';
-  static const voiceTier12 = 'voice_tier12.mp3';
-  static const voiceTier13 = 'voice_tier13.mp3';
 
   /// Prototype design sound naming (`tier1_ses.mp3`..`tier13_ses.mp3`).
   static const tier1Ses = 'tier1_ses.mp3';
@@ -109,19 +96,6 @@ abstract final class GameAudio {
     voiceOsmanA,
     voiceOsmanB,
     ...viralOneShots,
-    voiceTier1,
-    voiceTier2,
-    voiceTier3,
-    voiceTier4,
-    voiceTier5,
-    voiceTier6,
-    voiceTier7,
-    voiceTier8,
-    voiceTier9,
-    voiceTier10,
-    voiceTier11,
-    voiceTier12,
-    voiceTier13,
     tier1Ses,
     tier2Ses,
     tier3Ses,
@@ -137,78 +111,49 @@ abstract final class GameAudio {
     tier13Ses,
   ];
 
-  /// Verified `voice_tierN.mp3` for merge tier 1–13; null if out of range.
-  static String? voiceForTier(int tier) {
-    switch (tier) {
-      case 1:
-        return voiceTier1;
-      case 2:
-        return voiceTier2;
-      case 3:
-        return voiceTier3;
-      case 4:
-        return voiceTier4;
-      case 5:
-        return voiceTier5;
-      case 6:
-        return voiceTier6;
-      case 7:
-        return voiceTier7;
-      case 8:
-        return voiceTier8;
-      case 9:
-        return voiceTier9;
-      case 10:
-        return voiceTier10;
-      case 11:
-        return voiceTier11;
-      case 12:
-        return voiceTier12;
-      case 13:
-        return voiceTier13;
-      default:
-        return null;
-    }
-  }
-
-  /// Prototype `tierN_ses.mp3` for tier 1–13; null if out of range.
+  /// Design sound `tierN_ses.mp3` for tier 1–13; null if out of range.
   ///
-  /// Merge/tier playback prefers this over [voiceForTier] (see
-  /// `AudioManager._resolveMergeVoice`); `voice_tierN.mp3` is the fallback.
+  /// The single canonical tier-voice set (12A): the byte-identical
+  /// `voice_tierN.mp3` duplicates were deleted, so every tier/merge
+  /// voice resolves here (see `AudioManager._resolveMergeVoice`).
   static String? designSoundForTier(int tier) {
     if (tier < 1 || tier > 13) return null;
     return 'tier${tier}_ses.mp3';
   }
 
   /// Tap/squash character id → voice filename under `assets/audio/`.
+  ///
+  /// `tier_N` ids resolve to the tier's design sound (`tierN_ses.mp3`,
+  /// [designSoundForTier]); the byte-identical `voice_tierN.mp3`
+  /// duplicates were deleted in 12A.
   static String? voiceForCharacterId(String characterId) {
     switch (characterId) {
       case 'tier_1':
-        return voiceTier1;
+        return designSoundForTier(1);
       case 'tier_2':
-        return voiceTier2;
+        return designSoundForTier(2);
       case 'tier_3':
-        return voiceTier3;
+        return designSoundForTier(3);
       case 'tier_4':
-        return voiceTier4;
+        return designSoundForTier(4);
       case 'tier_5':
-        return voiceTier5;
+        return designSoundForTier(5);
       case 'tier_6':
-        return voiceTier6;
+        return designSoundForTier(6);
       case 'tier_7':
-        return voiceTier7;
+        return designSoundForTier(7);
       case 'tier_8':
-        return voiceTier8;
+        return designSoundForTier(8);
       case 'tier_9':
-        return voiceTier9;
+        return designSoundForTier(9);
       case 'tier_10':
-        return voiceTier10;
+        return designSoundForTier(10);
       case 'tier_11':
-        return voiceTier11;
+        return designSoundForTier(11);
       case 'tier_12':
-        return voiceTier12;
+        return designSoundForTier(12);
       case 'tier_13':
-        return voiceTier13;
+        return designSoundForTier(13);
       case 'osman_a':
       case 'osman':
         return voiceOsmanA;
@@ -709,8 +654,7 @@ class AudioManager {
   /// Plays the viral insect voice for [tier] (1..8+, up to 13+).
   ///
   /// Same resolution as the merge flow ([_resolveMergeVoice]): the tier's
-  /// design sound (`tierN_ses.mp3`) first, `voice_tierN.mp3` fallback.
-  /// Tiers > 13 gracefully clamp to tier 13.
+  /// design sound (`tierN_ses.mp3`). Tiers > 13 gracefully clamp to tier 13.
   Future<void> playTierVoice(
     int tier, {
     double volume = 1.0,
@@ -719,7 +663,7 @@ class AudioManager {
     if (tier < 1 || !_voiceAudible) return;
     final clampedTier = tier.clamp(1, 13);
     final voiceAsset =
-        _resolveMergeVoice(tierNumber: clampedTier) ?? GameAudio.voiceTier8;
+        _resolveMergeVoice(tierNumber: clampedTier) ?? GameAudio.tier8Ses;
     await _playVoiceChannel(
       voiceAsset,
       volume: volume,
@@ -767,7 +711,7 @@ class AudioManager {
   }
 
   /// Merge juice: merge SFX (+ optional combo) together with the new tier's
-  /// sound (design sound first, `voice_tierN` fallback — [_resolveMergeVoice]).
+  /// design sound ([_resolveMergeVoice]).
   ///
   /// Prefer [tier]; else [tierNumber] 1–13 resolves the same way.
   Future<void> playMerge({
@@ -814,22 +758,14 @@ class AudioManager {
       );
 
   /// Resolves the sound for a merge/tier event: the tier's design sound
-  /// (`InsectTier.soundFile`, `tierN_ses.mp3`) first, falling back to the
-  /// verified `voice_tierN.mp3` and then to `InsectTier.voiceFile`.
-  ///
-  /// The two file families currently hold byte-identical audio on disk, so
-  /// preferring the design sound changes no audible behaviour; it makes
-  /// `soundFile` / [GameAudio.designSoundForTier] live instead of dead.
-  /// All names stay bare filenames — [_normalizeAssetPath] joins them.
+  /// (`InsectTier.soundFile`, `tierN_ses.mp3`) — the single canonical
+  /// tier-voice set since 12A deleted the byte-identical `voice_tierN.mp3`
+  /// duplicates. All names stay bare filenames — [_normalizeAssetPath]
+  /// joins them.
   String? _resolveMergeVoice({InsectTier? tier, int? tierNumber}) {
     if (tier != null) {
       if (GameAudio.allAssets.contains(tier.soundFile)) {
         return tier.soundFile;
-      }
-      final fromTier = GameAudio.voiceForTier(tier.tier);
-      if (fromTier != null) return fromTier;
-      if (GameAudio.allAssets.contains(tier.voiceFile)) {
-        return tier.voiceFile;
       }
       return null;
     }
@@ -839,7 +775,7 @@ class AudioManager {
       if (design != null && GameAudio.allAssets.contains(design)) {
         return design;
       }
-      return GameAudio.voiceForTier(clamped);
+      return null;
     }
     return null;
   }
@@ -867,7 +803,7 @@ class AudioManager {
     final plays = <Future<void>>[
       if (_sfxEnabled) playSfx(GameAudio.sfxVictory, isVoice: false),
       if (includeVoice && _voiceAudible)
-        playSfx(GameAudio.voiceTier8, isVoice: true),
+        playSfx(GameAudio.tier8Ses, isVoice: true),
     ];
     if (plays.isNotEmpty) {
       await Future.wait(plays);
@@ -1061,8 +997,10 @@ class AudioManager {
     if (vibrationEnabled) {
       unawaited(HapticService.instance.onScreamRoach(power: power));
     }
-    final asset = bug?.voiceFile ??
-        (tier != null ? GameAudio.voiceForTier(tier.clamp(1, 13)) : null) ??
+    final asset = bug?.soundFile ??
+        (tier != null
+            ? GameAudio.designSoundForTier(tier.clamp(1, 13))
+            : null) ??
         GameAudio.sfxScreamRoach;
     final volume = (0.82 + power.clamp(0.0, 1.0) * 0.18).clamp(0.0, 1.0);
     final rate = (playbackRate ?? (0.92 + power.clamp(0.0, 1.0) * 0.22))
@@ -1130,8 +1068,10 @@ class AudioManager {
           isVoice: false,
         ),
     ];
-    final voice = bug?.voiceFile ??
-        (tier != null ? GameAudio.voiceForTier(tier.clamp(1, 13)) : null);
+    final voice = bug?.soundFile ??
+        (tier != null
+            ? GameAudio.designSoundForTier(tier.clamp(1, 13))
+            : null);
     if (voice != null && _voiceAudible) {
       plays.add(
         playSfx(
