@@ -1349,7 +1349,23 @@ class _StackDropScreenState extends State<StackDropScreen>
   }
 
   Widget _slabWidget(_Slab slab, double top, {double bounce = 1.0}) {
-    if (top > _arenaH || top + slabH < -slabH) return const SizedBox.shrink();
+    // 6G (KAT-15 çıkmazı): kırpılan dilim konumlandırılmamış çocuk
+    // (`SizedBox.shrink`) olarak dönerse arena `Stack`'i (loose fit)
+    // `RenderStack._computeSize` gereği en büyük konumlandırılmamış
+    // çocuğa (0x0) küçülür: ilk kırpma anında (KAT 15 — alt tohum
+    // dilim arena altına kayar) arena 0 genişliğe düşer, kule +
+    // hareketli blok görünmez olur, dokunuşlar ıskalanır. Kırpılan
+    // dilim sıfır boyutlu KONUMLANDIRILMIŞ kutu olarak döner: Stack
+    // `constraints.biggest` boyutunu korur, dilim çizilmez.
+    if (top > _arenaH || top + slabH < -slabH) {
+      return const Positioned(
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        child: SizedBox.shrink(),
+      );
+    }
     final insect = InsectTier.values[(slab.tier - 1).clamp(0, 7)];
     return Positioned(
       left: slab.center - slab.width / 2,
