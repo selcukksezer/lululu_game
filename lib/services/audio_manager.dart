@@ -245,6 +245,15 @@ class AudioManager {
   int _poolIndex = 0;
   static const int _poolSize = 8;
 
+  /// Test dikişi (Dalga 11 P2-1): oyuncu fabrikası + testte çalmayı
+  /// zorlayan bayrak. Üretim varsayılanları: gerçek [AudioPlayer]'lar,
+  /// zorlama kapalı — üretim davranışı değişmez.
+  @visibleForTesting
+  AudioPlayer Function() playerFactory = AudioPlayer.new;
+
+  @visibleForTesting
+  bool forcePlaybackForTesting = false;
+
   bool _isMuted = false;
   bool _sfxEnabled = true;
   bool _voiceEnabled = true;
@@ -444,6 +453,18 @@ class AudioManager {
   void Function()? _exclusiveOnComplete;
   bool _exclusiveBusy = false;
 
+  /// Dedicated single-player channel for merge/tier voices (Dalga 11 P2-1).
+  ///
+  /// Merge tier voices used to ride the 8-player SFX pool: after ~3 rapid
+  /// merges the pool wrapped and a later merge's chime/combo stopped the
+  /// player still carrying an earlier merge's tier voice, while 2–3 tier
+  /// voices overlapped — so the ear kept a different tier than the current
+  /// merge. Tier voices now play ONLY here: at most one at a time, and a
+  /// new tier voice first stops the previous one, so what is heard is
+  /// always the latest merge's tier. Merge SFX (chime/combo) and every
+  /// other voice stay on the pool and can never stop this player.
+  AudioPlayer? _voicePlayer;
+
   /// True while [playExclusiveSfx] clip is still playing.
   bool get isExclusivePlaying => _exclusiveBusy;
 
@@ -469,7 +490,11 @@ class AudioManager {
     if (!_isTestEnvironment) {
       unawaited(syncWithProgressManager());
     }
-    if (_initialized || _isMuted || _isTestEnvironment) return;
+    if (_initialized ||
+        _isMuted ||
+        (_isTestEnvironment && !forcePlaybackForTesting)) {
+      return;
+    }
     _initialized = true;
 
     // iOS AudioSession çakışmalarını (Code 561015905) önlemek için global ambient/mixWithOthers context ayarla
@@ -493,7 +518,7 @@ class AudioManager {
 
     for (int i = 0; i < _poolSize; i++) {
       try {
-        final p = AudioPlayer();
+        final p = playerFactory();
         unawaited(p.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
         _playersPool.add(p);
       } catch (_) {}
@@ -516,6 +541,14 @@ class AudioManager {
     }
   }
 
+  Future<void> _stopVoicePlayer() async {
+    final voice = _voicePlayer;
+    if (voice == null) return;
+    try {
+      await voice.stop();
+    } catch (_) {}
+  }
+
   /// Stop every pooled player. Call from game-screen [State.dispose]
   /// so SFX / voice do not leak into home / menu after route pop.
   ///
@@ -524,6 +557,7 @@ class AudioManager {
     _playGeneration++;
     final gen = _playGeneration;
     await _stopExclusivePlayer();
+    await _stopVoicePlayer();
     if (_playersPool.isEmpty) return;
     for (final p in _playersPool) {
       if (gen != _playGeneration) return;
@@ -544,7 +578,7 @@ class AudioManager {
   }
 
   bool _canPlayAsset(String assetName, {bool? isVoiceOverride}) {
-    if (_isTestEnvironment) return false;
+    if (_isTestEnvironment && !forcePlaybackForTesting) return false;
     final isVoice = isVoiceOverride ?? GameAudio.isVoiceAsset(assetName);
     // S2#9: a voice clip needs only the voice channel (plus master mute,
     // folded into [_voiceAudible]); requiring SFX as well made the voice
@@ -686,12 +720,50 @@ class AudioManager {
     final clampedTier = tier.clamp(1, 13);
     final voiceAsset =
         _resolveMergeVoice(tierNumber: clampedTier) ?? GameAudio.voiceTier8;
-    await playSfx(
+    await _playVoiceChannel(
       voiceAsset,
       volume: volume,
       playbackRate: playbackRate,
-      isVoice: true,
     );
+  }
+
+  /// Plays [assetName] on the dedicated single-player tier-voice channel
+  /// ([_voicePlayer], Dalga 11 P2-1) — never on the SFX pool.
+  ///
+  /// The player is created lazily via [playerFactory] and reused: each
+  /// new tier voice first stops the previous one, so at most one tier
+  /// voice plays at a time and it is always the latest. Merge chime/combo
+  /// and all other sounds use the pool and can never stop this player.
+  /// The [_playGeneration] guard mirrors [playSfx]: an in-flight voice
+  /// aborts after [stopAll] / leave-screen.
+  Future<void> _playVoiceChannel(
+    String assetName, {
+    double volume = 1.0,
+    double playbackRate = 1.0,
+  }) async {
+    if (!_canPlayAsset(assetName, isVoiceOverride: true)) return;
+    final gen = _playGeneration;
+    try {
+      if (_voicePlayer == null) {
+        final created = playerFactory();
+        unawaited(created.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
+        _voicePlayer = created;
+      }
+      final player = _voicePlayer!;
+      await player.stop();
+      if (gen != _playGeneration) return;
+      await player.setVolume(volume.clamp(0.0, 1.0));
+      await player.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
+      if (gen != _playGeneration) return;
+      await player.play(AssetSource(_normalizeAssetPath(assetName)));
+      if (gen != _playGeneration) {
+        try {
+          await player.stop();
+        } catch (_) {}
+      }
+    } catch (_) {
+      // Graceful fallback for headless / test / platform audio constraints
+    }
   }
 
   /// Merge juice: merge SFX (+ optional combo) together with the new tier's
@@ -717,7 +789,9 @@ class AudioManager {
       plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
     }
     if (_voiceAudible && voiceAsset != null) {
-      plays.add(playSfx(voiceAsset, isVoice: true));
+      // Tier sesi havuza değil özel kanala (Dalga 11 P2-1): chime/combo
+      // onu kesemez, yeni birleşme eskisinin yerini temiz alır.
+      plays.add(_playVoiceChannel(voiceAsset));
     }
     if (plays.isNotEmpty) {
       await Future.wait(plays);
@@ -1147,6 +1221,11 @@ class AudioManager {
     _exclusivePlayer = null;
     try {
       exclusive?.dispose();
+    } catch (_) {}
+    final voice = _voicePlayer;
+    _voicePlayer = null;
+    try {
+      voice?.dispose();
     } catch (_) {}
     for (final p in _playersPool) {
       try {
