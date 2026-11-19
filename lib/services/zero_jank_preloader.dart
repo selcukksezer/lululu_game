@@ -194,11 +194,13 @@ class ZeroJankPreloader {
   ///
   /// [ResizeImage] aynı mantıksal görsel için farklı bir önbellek anahtarı
   /// üretir: bu sağlayıcıyla precache edilen giriş, yalnızca aynı
-  /// sağlayıcıyı isteyen widget'larla eşleşir. Düz `AssetImage` kullanan
-  /// widget'lar ilk gösterimde tam çözünürlükte decode eder; toplam bellek
-  /// `main.dart`'taki [ImageCache] sınırlarıyla bağlıdır. Bu yardımcı
-  /// public'tir ki sonraki dalgalar widget'larda aynı sağlayıcıyı kullanıp
-  /// önbellek isabetini sağlayabilsin.
+  /// sağlayıcıyı isteyen widget'larla eşleşir. Widget'ların tamamı düz
+  /// `AssetImage` (`Image.asset`) kullandığı için [precacheCriticalAssets]
+  /// artık bu yardımcıyı KULLANMAZ — düz `AssetImage` ile precache eder;
+  /// sized precache + düz widget isteği çift decode + çift önbellek
+  /// girişi demekti (8B). Bu yardımcı saklanır: bir widget gerçekten bu
+  /// sağlayıcıyla isterse (aynı hedef boyutla) o zaman isabet sağlar;
+  /// precache tarafında tek başına kullanılmamalıdır.
   static ImageProvider sizedImageProvider(String resolvedPath) {
     return ResizeImage(
       AssetImage(resolvedPath),
@@ -275,8 +277,22 @@ class ZeroJankPreloader {
 
   /// Precaches critical sticker, banner, and background images into Flutter's
   /// [ImageCache] via [precacheImage], time-sliced across frames.
-  /// Decode hedef boyutla yapılır ([sizedImageProvider], madde 53): HD
-  /// görseller tam çözünürlükte decode edilmez.
+  ///
+  /// Düz `AssetImage` anahtarıyla yapılır (8B): widget'ların tamamı düz
+  /// `AssetImage` (`Image.asset`) istediği için precache edilen girişle
+  /// aynı anahtar eşleşir ve ilk gösterim önbellekten gelir. Önceden
+  /// [sizedImageProvider] (`ResizeImage`) kullanılıyordu — o anahtarı
+  /// hiçbir widget istemediği için precache boşa gidiyor, her görsel ilk
+  /// gösterimde bir de tam çözünürlükte decode ediliyordu. Tam çözünürlük
+  /// decode'u widget'ların bugünkü davranışıdır (değişiklik yok); toplam
+  /// bellek `main.dart`'taki [ImageCache] sınırlarıyla (100 giriş / 100 MB)
+  /// bağlıdır.
+  ///
+  /// Tek bilinen istisna: `splash_screen.dart` splash arka planını
+  /// `cacheWidth: 860, cacheHeight: 1911` ile ister — o tek site kendi
+  /// `ResizeImage` anahtarıyla decode eder (bilinçli boyut sınırı,
+  /// dokunulmadı); `bg_splash.webp` yine de onboarding'deki düz istekle
+  /// eşleşir.
   Future<void> precacheCriticalAssets(
     BuildContext context, {
     List<String>? extraImagePaths,
@@ -307,7 +323,10 @@ class ZeroJankPreloader {
           var failed = false;
           try {
             await precacheImage(
-              sizedImageProvider(resolved),
+              // Düz AssetImage (8B): widget'larla aynı önbellek anahtarı.
+              // sizedImageProvider/ResizeImage burada kullanılmaz — o
+              // anahtarı hiçbir widget istemez, precache boşa giderdi.
+              AssetImage(resolved),
               context,
               onError: (_, _) {
                 failed = true;
