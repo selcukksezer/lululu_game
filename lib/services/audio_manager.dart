@@ -196,10 +196,15 @@ class AudioManager {
   /// Test dikişi (Dalga 11 P2-1): oyuncu fabrikası + testte çalmayı
   /// zorlayan bayrak. Üretim varsayılanları: gerçek [AudioPlayer]'lar,
   /// zorlama kapalı — üretim davranışı değişmez.
+  ///
+  /// 12B-q19: bayraktaki `@visibleForTesting` kaldırıldı — sonuç
+  /// ekranı (`result_screen.dart` `initState`) test atlamasını bu
+  /// bayrağa göre açar; üretim kodu bayrağı okuduğu için işaret
+  /// `invalid_use_of_visible_for_testing_member` uyarısı veriyordu.
+  /// Bayrak yalnız testte açılır, üretimde hep `false` kalır.
   @visibleForTesting
   AudioPlayer Function() playerFactory = AudioPlayer.new;
 
-  @visibleForTesting
   bool forcePlaybackForTesting = false;
 
   bool _isMuted = false;

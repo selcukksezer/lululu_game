@@ -210,7 +210,10 @@ class _GameResultScreenState extends State<GameResultScreen>
     }
     final isTesting =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
-    if (!isTesting) {
+    // 12B-q19: test dikişi (`forcePlaybackForTesting`, Dalga 11 P2-1)
+    // açıkken testte de çalınır — tek-çalma kanıt testi bu yoldan
+    // sayar. Üretimde bayrak varsayılanı kapalıdır, davranış aynıdır.
+    if (!isTesting || AudioManager().forcePlaybackForTesting) {
       if (widget.won) {
         AudioManager().playWin();
       } else {
