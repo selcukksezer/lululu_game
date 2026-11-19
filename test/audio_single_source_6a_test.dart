@@ -231,22 +231,25 @@ void main() {
       }
     });
 
-    test('playButtonTap sayıları: 3+3+3+2+4 = 15', () {
+    test('playButtonTap sayıları: 4+4+4+3+4 = 19', () {
+      // 10D: her dosyaya bir _togglePause playButtonTap eklendi (+1);
+      // yuva kalkan kurtarması playButtonTap → playSlipperSmash (−1),
+      // net yuva 4'te kaldı.
       expect(
         count(read('lib/modes/makarayiz_screen.dart'), 'playButtonTap()'),
-        3,
+        4,
       );
       expect(
         count(read('lib/modes/osmantus_screen.dart'), 'playButtonTap()'),
-        3,
+        4,
       );
       expect(
         count(read('lib/modes/scream_roach_screen.dart'), 'playButtonTap()'),
-        3,
+        4,
       );
       expect(
         count(read('lib/modes/terlik_tap_screen.dart'), 'playButtonTap()'),
-        2,
+        3,
       );
       expect(
         count(read('lib/modes/yuva_defense_screen.dart'), 'playButtonTap()'),

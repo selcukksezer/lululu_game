@@ -323,6 +323,9 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   /// ve doğma sayacı donar.
   void _togglePause() {
     if (widget.prototypeVisualState || _ended || _resultShown) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    unawaited(AudioManager().playButtonTap());
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
@@ -489,7 +492,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
               y: _nestCenterY * _arenaHeight,
             ),
           );
-          unawaited(AudioManager().playButtonTap());
+          // 10D P1-4: kalkan kurtarması savunma başarısıdır — UI tık
+          // sesi (playButtonTap) yerine isabet deseni playSlipperSmash
+          // (terlik tokadı + onSlipperSlap, tek impuls; titreşim yoktu).
+          unawaited(AudioManager().playSlipperSmash());
           _hint = context.l10n.yuvaShieldSaved;
           _hintIsComboBroken = false;
           continue;
@@ -500,6 +506,17 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         _combo = 0;
         _hint = context.l10n.yuvaBugEntered(_lives);
         _hintIsComboBroken = false;
+        // 10D P0-1: yuva kaçışı tamamen sessizdi (yalnız ipucu).
+        // İsabet deseni: yuvada _HitBurst + sarsıntı + terlik tokadı
+        // (playSlipperSmash içi onSlipperSlap, tek impuls).
+        _bursts.add(
+          _HitBurst(
+            x: _nestCenterX * _arenaWidth,
+            y: _nestCenterY * _arenaHeight,
+          ),
+        );
+        _shake = 0.35;
+        unawaited(AudioManager().playSlipperSmash());
         escaped = true;
         break;
       }
@@ -931,6 +948,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         _hint = context.l10n.yuvaMissHint;
         _hintIsComboBroken = true;
         unawaited(HapticService.instance.selectionClick());
+        // 10D P0-2: ıska sesi — playDrop (kapılı lightImpact;
+        // yukarıdaki selectionClick ile aynı tick'te 18 ms kapısına
+        // takılıp düşer — toplam 1 impuls).
+        unawaited(AudioManager().playDrop());
         setState(() {});
         return;
       }
@@ -949,6 +970,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hint = context.l10n.yuvaMissHint;
       _hintIsComboBroken = true;
       unawaited(HapticService.instance.selectionClick());
+      // 10D P0-2: ıska sesi — playDrop (kapılı lightImpact;
+      // yukarıdaki selectionClick ile aynı tick'te 18 ms kapısına
+      // takılıp düşer — toplam 1 impuls).
+      unawaited(AudioManager().playDrop());
       setState(() {});
       return;
     }
@@ -968,6 +993,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hint = context.l10n.yuvaMissHint;
       _hintIsComboBroken = true;
       unawaited(HapticService.instance.selectionClick());
+      // 10D P0-2: ıska sesi — playDrop (kapılı lightImpact;
+      // yukarıdaki selectionClick ile aynı tick'te 18 ms kapısına
+      // takılıp düşer — toplam 1 impuls).
+      unawaited(AudioManager().playDrop());
       setState(() {});
       return;
     }

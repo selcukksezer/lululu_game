@@ -613,6 +613,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     if (_busy || _ended || _paused) return;
     if (_path.length < minLen) {
       _clearPath();
+      // 10D P0-2: kısa zincir ıskası — bu dalda ses de titreşim de
+      // yoktu; playDrop ikisini de tek çağrıda verir (1 impuls).
+      AudioManager().playDrop();
       setState(() {
         _streak = 0;
         _setHint(_ConnectHint.minLink, a: minLen);
@@ -686,6 +689,11 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     if (loop) {
       _gridBurst = 1.08;
       unawaited(AudioManager().playMerge(tierNumber: tier, comboCount: 3));
+    } else {
+      // 10D P1-2: normal bırakmada ses commit anında çalar (eskiden
+      // 130 ms sonraki çökme beklemesinden sonraydı — titreşim sesten
+      // önce geliyordu). 130 ms bekleme görsel çökme için aynen kalır.
+      AudioManager().playMerge(tierNumber: tier);
     }
     setState(() {});
     await Future<void>.delayed(Duration(milliseconds: loop ? 200 : 130));
@@ -702,7 +710,6 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
       }
     }
     if (!_hasGroup()) _fill();
-    if (!loop) AudioManager().playMerge(tierNumber: tier);
     await _endCheck(epoch);
   }
 
@@ -725,6 +732,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
 
   void _togglePause() {
     if (_ended || _busy) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    AudioManager().playButtonTap();
     setState(() {
       _paused = !_paused;
       if (_paused) {
@@ -789,6 +799,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
         _showMilestone(context.l10n.scoreMilestone(m));
+        // 10D P1-1: kilometre taşı bandına hafif ses (yalnız eşik
+        // ilk aşıldığında).
+        AudioManager().playPop();
         break;
       }
     }

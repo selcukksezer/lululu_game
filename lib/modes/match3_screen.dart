@@ -612,6 +612,11 @@ class _Match3ScreenState extends State<Match3Screen>
     if (matches.isEmpty) {
       _swap(r0, c0, r1, c1);
       unawaited(HapticService.instance.selectionClick());
+      // 10D P0-2: ıska sesi — playDrop (alçak, nötr tık; playPop
+      // başarı/ödül çağrışımı yapar, ıskada kullanılmaz). Ses çağrısı
+      // kapılı lightImpact içerir; yukarıdaki selectionClick ile aynı
+      // tick'te 18 ms kapısına takılıp düşer — toplam 1 impuls.
+      AudioManager().playDrop();
       setState(() {
         _busy = false;
         _comboMeter = max(0, _comboMeter - 0.2);
@@ -708,6 +713,9 @@ class _Match3ScreenState extends State<Match3Screen>
 
   void _togglePause() {
     if (_ended || _busy) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    AudioManager().playButtonTap();
     if (_paused) {
       setState(() {
         _paused = false;
@@ -736,6 +744,10 @@ class _Match3ScreenState extends State<Match3Screen>
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
         _showMilestone(context.l10n.scoreMilestone(m));
+        // 10D P1-1: kilometre taşı bandına hafif ses (yalnız eşik
+        // ilk aşıldığında; playPop içi lightImpact, yakınındaki
+        // birleşme titreşimiyle aynı tick'te kapıya takılır — 1 impuls).
+        AudioManager().playPop();
         break;
       }
     }

@@ -167,6 +167,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
   /// verilmez. Gerçek SDK eklendiğinde reklam dalları gerçek reklam
   /// akışına bağlanmalıdır; sahte (mock) reklamla ödül verilmez (madde 4).
   void _showRewardsComingSoon() {
+    // 10D P1-5: 2× ödül + enerji-bitti dalları sessizdi (yalnız
+    // snackbar) — dokunuşa ses + titreşim (playButtonTap tek çağrıda).
+    AudioManager().playButtonTap();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(context.l10n.rewardedAdsComingSoon),

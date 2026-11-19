@@ -456,6 +456,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   void _togglePause() {
     if (_over) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    AudioManager().playButtonTap();
     setState(() {
       _paused = !_paused;
       if (!_paused) {
@@ -509,6 +512,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
         _showMilestone(context.l10n.scoreMilestone(m));
+        // 10D P1-1: kilometre taşı bandına hafif ses (yalnız eşik
+        // ilk aşıldığında). _showMilestone'un kendisine eklenmedi:
+        // aynı fonksiyon KOMBO KIRILDI gibi olumsuz bantlarda da
+        // kullanılır (balon :621) — orada pop sesi yanlış olurdu.
+        AudioManager().playPop();
         break;
       }
     }
@@ -698,6 +706,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   void _flashMiss() {
     unawaited(HapticService.instance.heavyImpact());
+    // 10D P0-2: ıska sesi — playDrop. Ses çağrısı kapılı lightImpact
+    // içerir; yukarıdaki heavyImpact ile aynı tick'te 18 ms kapısına
+    // takılıp düşer — toplam 1 impuls (ağır olan korunur).
+    AudioManager().playDrop();
     _missTimer?.cancel();
     _missFlash = true;
     _missTimer = Timer(const Duration(milliseconds: 220), () {

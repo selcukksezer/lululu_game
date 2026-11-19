@@ -354,6 +354,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   /// ve doğma sayacı donar; tek-ödeme mantığına dokunulmaz.
   void _togglePause() {
     if (widget.prototypeVisualState || !_alive) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    unawaited(AudioManager().playButtonTap());
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
@@ -874,6 +877,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       }
       _breakComboOnly(context.l10n.terlikMissedHit);
       unawaited(HapticService.instance.selectionClick());
+      // 10D P0-2: ıska sesi — playDrop. Ses çağrısı kapılı lightImpact
+      // içerir; yukarıdaki selectionClick ile aynı tick'te 18 ms
+      // kapısına takılıp düşer — toplam 1 impuls.
+      unawaited(AudioManager().playDrop());
       setState(() {});
       return;
     }

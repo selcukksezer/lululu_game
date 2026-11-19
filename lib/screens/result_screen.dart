@@ -224,6 +224,9 @@ class _GameResultScreenState extends State<GameResultScreen>
   /// reklam akışına bağlanmalıdır; sahte (mock) reklamla ödül verilmez
   /// (madde 4). Düğmeye dokunmak yalnızca bilgi gösterir.
   void _showRewardsComingSoon() {
+    // 10D P1-5: reklam düğmeleri sessizdi (yalnız snackbar) —
+    // dokunuşa ses + titreşim (playButtonTap tek çağrıda).
+    AudioManager().playButtonTap();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -308,10 +311,12 @@ class _GameResultScreenState extends State<GameResultScreen>
             ),
           ),
 
-          // Confetti Layer
-          const Positioned.fill(
-            child: IgnorePointer(child: _ConfettiLayer()),
-          ),
+          // Confetti Layer — 10D P0-5: yalnız zaferde yağar; kayıp
+          // ekranında konfeti kutlama-yanlış-an olurdu.
+          if (widget.won)
+            const Positioned.fill(
+              child: IgnorePointer(child: _ConfettiLayer()),
+            ),
 
           // Main Scrollable Inner
           SafeArea(

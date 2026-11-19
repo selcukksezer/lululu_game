@@ -296,6 +296,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
   /// Elle duraklatma / devam (madde 37): ticker durur, oyun saati donar.
   void _togglePause() {
     if (widget.prototypeVisualState || !_alive) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    unawaited(AudioManager().playButtonTap());
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
@@ -424,6 +427,11 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _hint = context.l10n.makaraMissWindow(reason, windowMs.round());
     _showText(brk: had >= 2 ? context.l10n.makaraComboBroken(reason) : reason);
     unawaited(HapticService.instance.heavyImpact());
+    // 10D P0-2: ıska sesi — playDrop. Ses çağrısı kapılı lightImpact
+    // içerir; yukarıdaki heavyImpact ile aynı tick'te 18 ms kapısına
+    // takılıp düşer — toplam 1 impuls (ağır olan korunur). Bu tek
+    // _breakCombo erken/yanlış/kaçan üç ıska yolunu da kapsar.
+    AudioManager().playDrop();
     if (loseLife) {
       _lives -= 1;
       if (_lives <= 0) _gameOver();

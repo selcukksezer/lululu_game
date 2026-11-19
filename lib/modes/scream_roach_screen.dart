@@ -273,6 +273,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// Elle duraklatma / devam (madde 37): ticker durur, fizik ve kapılar donar.
   void _togglePause() {
     if (widget.prototypeVisualState || !_alive) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    unawaited(AudioManager().playButtonTap());
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
@@ -422,6 +425,11 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         _callout = context.l10n.screamGateStreak(_screamStreak);
         _scorePopup = '+$gain X$_screamStreak';
         unawaited(HapticService.instance.lightImpact());
+        // 10D P1-3: kapı geçişi ödül anına hafif ses — playPop.
+        // Ses çağrısı kapılı lightImpact içerir; yukarıdaki
+        // lightImpact ile aynı tick'te 18 ms kapısına takılıp düşer
+        // — toplam 1 impuls.
+        unawaited(AudioManager().playPop());
         _hint = '${g.kind.passLineFor(context.l10n)} · spam x$_screamStreak';
         unawaited(
           DailyChallengeService.instance.tryCompleteWithScore(

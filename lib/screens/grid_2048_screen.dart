@@ -155,6 +155,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   Timer? _speechTimer;
   Timer? _popTimer;
 
+  /// 10D P0-2: geçersiz kaydırma sarsıntısı — tahtanın yatay ötelemesi
+  /// (±6 px, iki adımda gidip döner; Timer/setState deseni, mevcut
+  /// `_popTimer` ile aynı kalıp). Varsayılan 0 = sarsıntı yok.
+  double _invalidShakeX = 0;
+  Timer? _invalidShakeTimer;
+
   int _undoCount = 3;
   int _shuffleCount = 2;
   int _pairCount = 1;
@@ -189,6 +195,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     _overlayTimer?.cancel();
     _speechTimer?.cancel();
     _popTimer?.cancel();
+    _invalidShakeTimer?.cancel();
+    _invalidShakeX = 0;
     _history.clear();
     _mergedCells = <Point<int>>{};
     _lastSpawned = null;
@@ -242,6 +250,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     _overlayTimer?.cancel();
     _speechTimer?.cancel();
     _popTimer?.cancel();
+    _invalidShakeTimer?.cancel();
     _focusNode.dispose();
     AudioManager().stopAll();
     super.dispose();
@@ -320,6 +329,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
 
   void _togglePause() {
     if (_gameOver) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    AudioManager().playButtonTap();
     setState(() {
       _paused = !_paused;
       if (!_paused) _pausedByLifecycle = false;
@@ -460,6 +472,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
 
     if (!moved) {
       unawaited(HapticService.instance.selectionClick());
+      // 10D P0-2: geçersiz kaydırmada ses yoktu + görsel de yoktu.
+      // playDrop (kapılı lightImpact; yukarıdaki selectionClick ile
+      // aynı tick'te 18 ms kapısına takılıp düşer — toplam 1 impuls)
+      // + mevcut Timer/setState deseninde hafif tahta sarsıntısı.
+      AudioManager().playDrop();
+      _flashInvalidShake();
       return;
     }
 
@@ -576,6 +594,22 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         setState(() => _speechBubble = null);
       });
     }
+  }
+
+  /// Geçersiz kaydırma sarsıntısı (10D P0-2): tahta +6 px, −6 px,
+  /// 0 — her adım 70 ms (toplam 140 ms). Timer/setState deseni;
+  /// yeni animasyon denetleyicisi yok.
+  void _flashInvalidShake() {
+    _invalidShakeTimer?.cancel();
+    setState(() => _invalidShakeX = 6);
+    _invalidShakeTimer = Timer(const Duration(milliseconds: 70), () {
+      if (!mounted) return;
+      setState(() => _invalidShakeX = -6);
+      _invalidShakeTimer = Timer(const Duration(milliseconds: 70), () {
+        if (!mounted) return;
+        setState(() => _invalidShakeX = 0);
+      });
+    });
   }
 
   /// Etkisiz güçlendirici denemesinde oyuncuya nedeni mevcut konuşma
@@ -707,7 +741,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         origin: MediaQuery.sizeOf(context).center(Offset.zero),
       ),
     );
-    AudioManager().triggerMediumHaptic();
+    // 10D P1-5: Geri Al'a ses — playButtonTap tek çağrıda ses +
+    // titreşim verir. Yanındaki kapısız triggerMediumHaptic
+    // kaldırıldı: ikisi bir arada 2 impuls olurdu (baypas kapıya
+    // takılmaz). Titreşim mediumImpact'tan selectionClick'e hafifler;
+    // tek impuls kuralı korunur.
+    AudioManager().playButtonTap();
   }
 
   /// En küçük taşı temizler; silinen taş yoksa `false` döner.
@@ -1653,8 +1692,11 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                       ),
                     ),
                   // Ortalanmış `.g2048` (`[64, 353.5, 302, 302]`)
-                  Center(
-                    child: Container(
+                  // 10D P0-2: geçersiz kaydırma sarsıntısı (_invalidShakeX).
+                  Transform.translate(
+                    offset: Offset(_invalidShakeX, 0),
+                    child: Center(
+                      child: Container(
                       width: boardSide,
                       height: boardSide,
                       decoration: widget.prototypeVisualState
@@ -1685,6 +1727,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                           }),
                         ),
                       ),
+                    ),
                     ),
                   ),
 

@@ -710,6 +710,9 @@ class _StackDropScreenState extends State<StackDropScreen>
   void _togglePause() {
     if (widget.prototypeVisualState) return;
     if (_phase == _Phase.failed || _phase == _Phase.falling) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    AudioManager().playButtonTap();
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
@@ -772,6 +775,11 @@ class _StackDropScreenState extends State<StackDropScreen>
       if (_floors >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
         _showMilestone(context.l10n.stackMilestoneFloors(m));
+        // 10D P1-1: kat kilometre taşı bandına hafif ses (yalnız
+        // eşik ilk aşıldığında). _showMilestone'un kendisine
+        // eklenmedi: aynı fonksiyon COMBO ve güçlendirici bantlarında
+        // da kullanılır — ses yalnız kat taşına aittir.
+        AudioManager().playPop();
         break;
       }
     }

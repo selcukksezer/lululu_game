@@ -763,9 +763,12 @@ class _GameScreenState extends State<GameScreen>
       unawaited(
         AudioManager().playMerge(tier: nextTier, comboCount: _comboCount),
       );
-      if (_comboCount >= 3) {
-        AudioManager().triggerHeavyHaptic();
-      }
+      // 10D: kombo≥3 ağırlaştırması kaldırıldı — playMerge zaten
+      // onMerge(tier, combo) ile kombo≥3'te ağır titreşim verir
+      // (HapticService.onMerge: custom vibrator'da birincil + ikincil,
+      // yedekte heavyImpact); yanındaki kapısız triggerHeavyHaptic
+      // ikinci impuls demekti. Juice yolundaki _triggerMergeVibration
+      // kapılıdır (18 ms kapı düşürür), çifte sayılmaz.
       // Büyük kombo eşiği zincir başına bir kez çalınır.
       if (_comboCount == 8) {
         unawaited(AudioManager().playKanka());
@@ -845,8 +848,9 @@ class _GameScreenState extends State<GameScreen>
     // geri çağrısında değil — 280 ms içinde çıkılsa bile hamle sayılır.
     _dropsMade++;
 
+    // 10D: playDrop zaten lightImpact verir; yanındaki kapısız
+    // triggerHaptic ikinci hafif impuls demekti — kaldırıldı.
     AudioManager().playDrop();
-    AudioManager().triggerHaptic();
     if (!widget.arcade && _currentLevel.isBossLevel && !_bossIntroPlayed) {
       _bossIntroPlayed = true;
       unawaited(AudioManager().playDuktur());
@@ -887,6 +891,9 @@ class _GameScreenState extends State<GameScreen>
 
   void _togglePause() {
     if (_isFinished) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick).
+    AudioManager().playButtonTap();
     // Devama geçişte yaşam döngüsü bayrağı temizlenir (Osmantus deseni):
     // DEVAM / YENİDEN BAŞLAT / OYUNU BİTİR hep bu yoldan geçer.
     if (_paused) _pausedByLifecycle = false;
