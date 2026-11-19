@@ -474,6 +474,30 @@ abstract final class LululuRoutes {
         scaleTransition: true,
       );
     }
+    // 6I: isimli-rota splash'i — `resolveScreen('splash')` bağlamsız
+    // çağrılırsa `onDone` ölü doğar (`context == null` → hiçbir yere
+    // gitmez) ve `_finish` tek-atımlık kilidi (`_notified`) tükendiği
+    // için splash %101 "BAŞLIYOR!"da kalıcı donar (GEÇ de aynı kilide
+    // takılır). Splash `Builder` altında kurulur: `onDone` canlı,
+    // bağlı bir Navigator bağlamı alır ve hub'a geçiş çalışır.
+    // `goTo` ile bağlamlı çözülen splash (`resolveScreen` + context)
+    // aynen durur; bu dal yalnız `onGenerateRoute` yolunu kapsar.
+    if (normalized == splash) {
+      return buildZeroJankRoute<dynamic>(
+        child: Builder(
+          builder: (context) => SplashScreen(
+            onDone: () {
+              if (context.mounted) {
+                goTo(context, hub, replace: true);
+              }
+            },
+          ),
+        ),
+        routeName: normalized,
+        duration: LululuMotion.screenTransitionDuration,
+        reverseDuration: LululuMotion.screenReverseDuration,
+      );
+    }
     final screen = resolveScreen(name);
     if (screen == null) {
       debugPrint('[LululuRoutes] bilinmeyen rota: "$name" -> ana sayfa (hub)');

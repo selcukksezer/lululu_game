@@ -197,7 +197,9 @@ class _SplashScreenState extends State<SplashScreen>
         t.cancel();
         return;
       }
-      setState(() => _progress += 2.4);
+      // 6I: 2.4'lük adımlar 100.8'de durur ve ekranda %101 görünür;
+      // ilerleme 100'de kelepçelenir, bitiş dalı (`>= 100`) aynen çalışır.
+      setState(() => _progress = (_progress + 2.4).clamp(0.0, 100.0));
       if (_progress >= 100) {
         t.cancel();
         _msgTimer?.cancel();
@@ -268,7 +270,30 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ),
 
-          // GEÇ butonu (üst sağ)
+          // İçerik sayfaları (ob-viewport: top: 0, bottom: 122 -> 810px on 430x932)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 122,
+            child: PageView(
+              controller: _pageController,
+              onPageChanged: _onPageChanged,
+              children: [
+                _wrapPageViewport(_buildPage1()),
+                _wrapPageViewport(_buildPage2()),
+                _wrapPageViewport(_buildPage3()),
+              ],
+            ),
+          ),
+
+          // GEÇ butonu (üst sağ) — 6I: PageView'UN ALTINDA çiziliyordu;
+          // Stack isabet sırası sondan başa olduğundan PageView
+          // (y 0-810) hapın dokunuşunu yutuyor, `_skipToEnd` hiç
+          // ateşlenmiyordu (widget testinde de kanıtlandı: hap üstü
+          // PageView'de 0 dokunma). Hap PageView'UN ÜSTÜNE alınır;
+          // köşesinde sayfa içeriğiyle çakışan öğe yoktur
+          // (kicker/logo ortalıdır), görsel değişmez.
           Positioned(
             top: 44,
             right: 14,
@@ -303,23 +328,6 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ),
-            ),
-          ),
-
-          // İçerik sayfaları (ob-viewport: top: 0, bottom: 122 -> 810px on 430x932)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 122,
-            child: PageView(
-              controller: _pageController,
-              onPageChanged: _onPageChanged,
-              children: [
-                _wrapPageViewport(_buildPage1()),
-                _wrapPageViewport(_buildPage2()),
-                _wrapPageViewport(_buildPage3()),
-              ],
             ),
           ),
 
