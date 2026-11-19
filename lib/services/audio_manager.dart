@@ -258,6 +258,14 @@ class AudioManager {
   /// channel preferences — [toggleMute] flips only [_isMuted], so unmuting
   /// restores exactly the mix the user had before muting. Every playback
   /// gate in this file derives from these getters (S2#7 / S2#9).
+  ///
+  /// 7C: [_isMuted] is a TRANSIENT lifecycle mute — its only writer is
+  /// [AppLifecycleGuard] (pause → mute, resume → restore) plus
+  /// [toggleMute]. No settings toggle reads or writes it, so the
+  /// `!_isMuted` factor here cannot collapse the two channels into one
+  /// switch: SFX off never silences voice and voice off never silences
+  /// SFX outside a lifecycle pause. The settings-screen `isMuted` reads
+  /// (initState + `_loadPrefs` fallback) were removed for the same reason.
   bool get _sfxAudible => !_isMuted && _sfxEnabled;
   bool get _voiceAudible => !_isMuted && _voiceEnabled;
 
@@ -351,15 +359,18 @@ class AudioManager {
     }
   }
 
-  /// Master mute flag (kept in sync with settings toggles and test overrides).
+  /// Master mute flag — transient lifecycle mute, NOT a settings toggle.
   ///
   /// The single mute switch (S2#7): setting it never rewrites
   /// [sfxEnabled]/[voiceEnabled] — those stay as user
   /// preferences and take effect again on unmute via the derived
   /// [_sfxAudible]/[_voiceAudible] gates. Callers that snapshot/restore
   /// around lifecycle pauses (AppLifecycleGuard) rely on this.
+  /// 7C: no-change writes are no-ops (guard restores can re-write the
+  /// same value without re-stopping playback).
   bool get isMuted => _isMuted;
   set isMuted(bool value) {
+    if (_isMuted == value) return;
     _isMuted = value;
     if (value) {
       unawaited(stopAll());
@@ -369,6 +380,9 @@ class AudioManager {
   /// Settings screen toggle: Sound Effects (`sfxEnabled`).
   bool get sfxEnabled => _sfxEnabled;
   set sfxEnabled(bool value) {
+    // 7C: no-change writes are no-ops — the setter is idempotent, so
+    // `_loadPrefs` / toggle repeats never re-persist or re-notify.
+    if (_sfxEnabled == value) return;
     _sfxEnabled = value;
     if (!value && !_voiceEnabled) {
       unawaited(stopAll());
@@ -387,6 +401,8 @@ class AudioManager {
   /// Settings screen toggle: Viral Bug Voices (`voiceEnabled`).
   bool get voiceEnabled => _voiceEnabled;
   set voiceEnabled(bool value) {
+    // 7C: no-change writes are no-ops (see [sfxEnabled]).
+    if (_voiceEnabled == value) return;
     _voiceEnabled = value;
     if (!value && _exclusiveBusy) {
       unawaited(_stopExclusivePlayer());
@@ -399,6 +415,8 @@ class AudioManager {
   /// Settings screen toggle: Haptic Vibration (`vibrationEnabled`).
   bool get vibrationEnabled => _vibrationEnabled;
   set vibrationEnabled(bool value) {
+    // 7C: no-change writes are no-ops (see [sfxEnabled]).
+    if (_vibrationEnabled == value) return;
     _vibrationEnabled = value;
     final pm = ProgressManager.instance;
     if (pm.vibrationEnabled != value) {

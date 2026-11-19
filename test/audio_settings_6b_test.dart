@@ -254,6 +254,120 @@ void main() {
     );
   });
 
+  group('7C — Settings isMuted okumaları kalktı + koşullu yazımlar', () {
+    testWidgets(
+      'isMuted açıkken Ayarlar açılırsa SFX açık görünür, pref yazılmaz',
+      (tester) async {
+        final audio = AudioManager();
+        // Yaşam-döngüsü master mute'unu simüle et (pause durumu):
+        // bu, SFX tercihi DEĞİLDİR — eski kod SFX anahtarını kapatıp
+        // `false` yazıyordu.
+        audio.isMuted = true;
+        expect(audio.sfxEnabled, isTrue);
+        expect(audio.voiceEnabled, isTrue);
+
+        await pumpSettings(tester);
+
+        // Anahtarlar yalnız kendi tercihlerinden beslenir.
+        expect(audio.sfxEnabled, isTrue);
+        expect(audio.voiceEnabled, isTrue);
+        // Anahtar UI'da da açık görünür (initState isMuted okumaz):
+        // SFX satırındaki anahtar yeşildir (açık = 0xFF12B76A).
+        final sfxRow = find.ancestor(
+          of: find.text('Ses Efektleri'),
+          matching: find.byType(Row),
+        );
+        final sfxSwitch = find.descendant(
+          of: sfxRow,
+          matching: find.byType(AnimatedContainer),
+        );
+        expect(sfxSwitch, findsOneWidget);
+        final switchWidget = tester.widget<AnimatedContainer>(sfxSwitch);
+        final switchDecoration = switchWidget.decoration as BoxDecoration?;
+        expect(switchDecoration?.color, const Color(0xFF12B76A));
+        // Değer değişmediği için hiçbir ses anahtarı yazılmadı.
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getBool('LululuSetSfx'), isNull);
+        expect(prefs.getBool('lululu_sfx_enabled'), isNull);
+        expect(prefs.getBool('LululuSetVoice'), isNull);
+        expect(prefs.getBool('lululu_voice_enabled'), isNull);
+
+        audio.isMuted = false;
+        await flushEngineNotifications(tester);
+      },
+    );
+
+    testWidgets(
+      'tek anahtar yazılıysa _loadPrefs diğer anahtara geri-yazma yapmaz',
+      (tester) async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('LululuSetSfx', true);
+        await prefs.setBool('LululuSetVoice', true);
+
+        await pumpSettings(tester);
+
+        // Değerler bellek-içi değerle aynı → hiç yazım yok, yedek
+        // anahtarlar boş kalır (eski koşulsuz yazım ikisini de yazardı).
+        expect(prefs.getBool('lululu_sfx_enabled'), isNull);
+        expect(prefs.getBool('lululu_voice_enabled'), isNull);
+        expect(AudioManager().sfxEnabled, isTrue);
+        expect(AudioManager().voiceEnabled, isTrue);
+
+        await flushEngineNotifications(tester);
+      },
+    );
+
+    testWidgets(
+      'SFX anahtarı voice kanalına yazmaz',
+      (tester) async {
+        await pumpSettings(tester);
+        final audio = AudioManager();
+        expect(audio.voiceEnabled, isTrue);
+
+        await tester.ensureVisible(find.text('Ses Efektleri'));
+        await tester.tap(find.text('Ses Efektleri'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(audio.sfxEnabled, isFalse);
+        expect(audio.voiceEnabled, isTrue);
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getBool('LululuSetSfx'), isFalse);
+        expect(prefs.getBool('lululu_sfx_enabled'), isFalse);
+        // Voice kanalı hiç yazılmadı.
+        expect(prefs.getBool('LululuSetVoice'), isNull);
+        expect(prefs.getBool('lululu_voice_enabled'), isNull);
+
+        await flushEngineNotifications(tester);
+      },
+    );
+
+    testWidgets(
+      'voice anahtarı SFX kanalına yazmaz',
+      (tester) async {
+        await pumpSettings(tester);
+        final audio = AudioManager();
+        expect(audio.sfxEnabled, isTrue);
+
+        await tester.ensureVisible(find.text('Böcek Seslendirmeleri'));
+        await tester.tap(find.text('Böcek Seslendirmeleri'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(audio.voiceEnabled, isFalse);
+        expect(audio.sfxEnabled, isTrue);
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getBool('LululuSetVoice'), isFalse);
+        expect(prefs.getBool('lululu_voice_enabled'), isFalse);
+        // SFX kanalı hiç yazılmadı.
+        expect(prefs.getBool('LululuSetSfx'), isNull);
+        expect(prefs.getBool('lululu_sfx_enabled'), isNull);
+
+        await flushEngineNotifications(tester);
+      },
+    );
+  });
+
   group('D6 (F8) — Mağaza başarı / başarısızlık dalları', () {
     setUp(() async {
       final prefs = await SharedPreferences.getInstance();
@@ -546,7 +660,9 @@ void main() {
       final loadPrefs = sliceBetween(
         code,
         'Future<void> _loadPrefs()',
-        'Future<void> _savePref(',
+        // 7C: `_savePref` kaldırıldı (setter'lar çift anahtarı yazar);
+        // `_loadPrefs`'i artık `_onSfxChanged` izler.
+        'void _onSfxChanged',
       );
       final vibRead = sliceBetween(
         loadPrefs,
@@ -633,6 +749,100 @@ void main() {
         Directory('${root.path}/assets/design/sounds').existsSync(),
         isFalse,
       );
+    });
+
+    test('7C: settings_screen kodunda isMuted okuması yok', () {
+      final code = codeOnly(
+        readSource('lib/screens/settings_screen.dart'),
+      );
+      // Yorum satırları codeOnly ile atılır: kalan `isMuted` bir
+      // okuma/yazım olurdu. initState + `_loadPrefs` yedeği kalktı;
+      // `isMuted` artık yalnız AppLifecycleGuard'da yazılır.
+      expect(code.contains('isMuted'), isFalse);
+    });
+
+    test('7C: _loadPrefs SFX/voice yalnız değişimde yazar', () {
+      final code = codeOnly(
+        readSource('lib/screens/settings_screen.dart'),
+      );
+      final loadPrefs = sliceBetween(
+        code,
+        'Future<void> _loadPrefs()',
+        'void _onSfxChanged',
+      );
+      expect(loadPrefs.contains('sfxEnabled != sfx'), isTrue);
+      expect(loadPrefs.contains('voiceEnabled != voice'), isTrue);
+      // Yedek yoksa bellek-içi değer korunur (isMuted varsayılanı yok).
+      expect(loadPrefs.contains('_audio.sfxEnabled'), isTrue);
+      expect(loadPrefs.contains('_audio.voiceEnabled'), isTrue);
+    });
+
+    test('7C: AudioManager setter\'ları değişim yoksa yazmaz', () {
+      final code = codeOnly(readSource('lib/services/audio_manager.dart'));
+      final sfxSetter = sliceBetween(
+        code,
+        'set sfxEnabled(bool value) {',
+        'set voiceEnabled(bool value) {',
+      );
+      expect(sfxSetter.contains('if (_sfxEnabled == value) return;'), isTrue);
+      final voiceSetter = sliceBetween(
+        code,
+        'set voiceEnabled(bool value) {',
+        'set vibrationEnabled(bool value) {',
+      );
+      expect(
+        voiceSetter.contains('if (_voiceEnabled == value) return;'),
+        isTrue,
+      );
+      final vibSetter = sliceBetween(
+        code,
+        'set vibrationEnabled(bool value) {',
+        'void setSfxEnabled(bool enabled)',
+      );
+      expect(
+        vibSetter.contains('if (_vibrationEnabled == value) return;'),
+        isTrue,
+      );
+      final muteSetter = sliceBetween(
+        code,
+        'set isMuted(bool value) {',
+        'bool get sfxEnabled',
+      );
+      expect(muteSetter.contains('if (_isMuted == value) return;'), isTrue);
+    });
+
+    test('7C: toggle handler\'ları yalnız kendi setter\'ını yazar', () {
+      final code = codeOnly(
+        readSource('lib/screens/settings_screen.dart'),
+      );
+      final sfxHandler = sliceBetween(
+        code,
+        'void _onSfxChanged',
+        'void _onVoiceChanged',
+      );
+      expect(sfxHandler.contains('setSfxEnabled(v)'), isTrue);
+      expect(sfxHandler.contains('ProgressManager'), isFalse);
+      expect(sfxHandler.contains('_savePref'), isFalse);
+      final voiceHandler = sliceBetween(
+        code,
+        'void _onVoiceChanged',
+        'void _onVibrationChanged',
+      );
+      expect(voiceHandler.contains('setVoiceEnabled(v)'), isTrue);
+      expect(voiceHandler.contains('_savePref'), isFalse);
+      final vibHandler = sliceBetween(
+        code,
+        'void _onVibrationChanged',
+        'void _onLanguageChanged',
+      );
+      expect(vibHandler.contains('setVibrationEnabled(v)'), isTrue);
+      // Titreşim servisi ayrıdır, setter'a girmez — korunur.
+      expect(
+        vibHandler.contains('HapticService.instance.setEnabled(v)'),
+        isTrue,
+      );
+      expect(vibHandler.contains('_savePref'), isFalse);
+      expect(vibHandler.contains('ProgressManager'), isFalse);
     });
   });
 }

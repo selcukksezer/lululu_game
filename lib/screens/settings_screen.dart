@@ -255,7 +255,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _sfxOn = _pm.sfxEnabled && !_audio.isMuted;
+    // 7C: SFX anahtarı yalnız SFX tercihini okur. Eski
+    // `_pm.sfxEnabled && !_audio.isMuted` okuması, geçici
+    // yaşam-döngüsü master mute'unu (AppLifecycleGuard pause/resume)
+    // SFX tercihi gibi gösteriyordu; `isMuted` burada artık okunmaz.
+    _sfxOn = _audio.sfxEnabled;
     _voiceOn = _audio.voiceEnabled;
     _vibOn = false;
     _localeCode = LocaleService.instance.effectiveCode();
@@ -274,12 +278,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     bool vib;
     try {
       final prefs = await SharedPreferences.getInstance();
+      // 7C: yedek anahtar yoksa bellek-içi değer korunur; geçici
+      // `isMuted` (yaşam-döngüsü master mute) artık SFX/voice
+      // varsayılanı olarak okunmaz.
       sfx = prefs.getBool('LululuSetSfx') ??
           prefs.getBool('lululu_sfx_enabled') ??
-          !_audio.isMuted;
+          _audio.sfxEnabled;
       voice = prefs.getBool('LululuSetVoice') ??
           prefs.getBool('lululu_voice_enabled') ??
-          true;
+          _audio.voiceEnabled;
       // D3 (F4): `lululu_vibration_enabled` yedek anahtarı da okunur ve
       // varsayılan `true`'dur (ProgressManager/AudioManager varsayılanıyla
       // tutarlı). Eski `?? false`, Ayarlar her açılışında titreşimi
@@ -292,10 +299,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    _audio.setSfxEnabled(sfx);
+    // 7C: SFX/voice yalnız DEĞİŞİMDE yazılır (titreşim D3 deseniyle
+    // aynı). Setter'lar `SharedPreferences`'a kalıcı yazdığı için,
+    // okunan değeri koşulsuz geri yazmak Ayarlar ekranını açmayı
+    // ayarları ezecek bir yan etkiye dönüştürüyordu; ayrıca bir
+    // kanalın yazımı diğer kanala dokunmaz.
+    if (_audio.sfxEnabled != sfx) {
+      _audio.setSfxEnabled(sfx);
+    }
     // Ses ve sesli anahtarları bağımsızdır: her bayrak yalnız kendi
     // saklanan değerinden beslenir (SFX kapalıyken voice ezilmez).
-    _audio.setVoiceEnabled(voice);
+    if (_audio.voiceEnabled != voice) {
+      _audio.setVoiceEnabled(voice);
+    }
     // D3 (F4): titreşim yalnız DEĞİŞİMDE yazılır. Setter'lar
     // `SharedPreferences`'a kalıcı yazdığı için, okunan değeri koşulsuz
     // geri yazmak Ayarlar ekranını açmayı titreşim ayarını ezecek bir
@@ -314,50 +330,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
-  Future<void> _savePref(String key, bool value) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(key, value);
-    } catch (_) {
-      // Fire-and-forget yazım: kalıcılık başarısız olursa anahtar
-      // yalnız bu oturumda etkili olur; akışı bozma.
-    }
-  }
-
   void _onSfxChanged(bool v) {
     // D2 (F3): SFX anahtarı yalnız SFX kanalını yazar. Eski
     // `_audio.isMuted = !v` yazımı master mute'u çevirdiği için SFX'i
     // kapatmak voice'u da susturuyordu (`_voiceAudible =
     // !_isMuted && _voiceEnabled`); `isMuted` yalnız yaşam-döngüsü
     // koruması (AppLifecycleGuard) tarafından yazılır.
+    // 7C: değişim yoksa yazım yok; tek yazım yolu `setSfxEnabled`
+    // (PM aynası + çift anahtar kalıcılığı setter'da yapılır;
+    // buradaki `pm.setSfxEnabled` + `_savePref` tekrarları kaldırıldı).
+    if (_sfxOn == v) return;
     setState(() {
       _sfxOn = v;
     });
     AudioManager().setSfxEnabled(v);
     // SFX anahtarı voice bayrağına dokunmaz: voice yalnız kendi
     // anahtarından yazılır (AudioManager'daki çalma kapısı da bağımsızdır).
-    unawaited(ProgressManager.instance.setSfxEnabled(v));
     if (v) {
       AudioManager().playPop();
     }
-    unawaited(_savePref('LululuSetSfx', v));
   }
 
   void _onVoiceChanged(bool v) {
+    // 7C: değişim yoksa yazım yok; `setVoiceEnabled` çift anahtarı
+    // kalıcı yazar, buradaki `_savePref` tekrarları kaldırıldı.
+    if (_voiceOn == v) return;
     AudioManager().playPop();
     setState(() => _voiceOn = v);
     AudioManager().setVoiceEnabled(v);
-    unawaited(_savePref('LululuSetVoice', v));
-    unawaited(_savePref('lululu_voice_enabled', v));
   }
 
   void _onVibrationChanged(bool v) {
+    // 7C: değişim yoksa yazım yok; `setVibrationEnabled` PM aynası +
+    // çift anahtarı yazar, buradaki tekrarlar kaldırıldı.
+    // `HapticService.setEnabled` ayrı servistir, setter'a girmez.
+    if (_vibOn == v) return;
     AudioManager().playPop();
     setState(() => _vibOn = v);
     AudioManager().setVibrationEnabled(v);
     unawaited(HapticService.instance.setEnabled(v));
-    unawaited(ProgressManager.instance.setVibrationEnabled(v));
-    unawaited(_savePref('LululuSetVib', v));
   }
 
   void _onLanguageChanged(String code) {
