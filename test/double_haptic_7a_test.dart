@@ -1,0 +1,188 @@
+// Dalga 7A — çift-haptic tekilleştirme kilidi (Faz 3 6A bayrağı: D8+D9).
+//
+// D9, 15 doğrudan `playSfx(buttonTap)` çağrısını `playButtonTap()`'e
+// çevirdi; `playButtonTap()` kendi haptic'ini (`selectionClick`) zaten
+// tetiklediği için çağrı yerlerindeki açık `triggerMediumHaptic()` /
+// `heavyImpact()` satırları çift titreşime dönüştü. D8'de terlik tuzak
+// (`playSlipper()`), smash (`playSlipperSmash()`) ve sprey (`playSpray()`)
+// çağrılarının yanındaki açık haptic satırları da aynı çifti üretiyordu
+// (üç ses yöntemi de kendi haptic'ini tetikler: `onSlipperSlap` /
+// `onRaidSpray`, bkz. lib/services/audio_manager.dart).
+//
+// Bu dosya KAYNAK düzeyinde kilitler (6A deseni — ses test ortamında
+// duyulamaz, titreşim ölçülemediği için sayı + bitişiklik denetlenir):
+//   (a) açık haptic çağrı satırı sayısı lib genelinde 37'dir (önce 57;
+//       7A'da 20 satır silindi: 15 D9 + terlik tuzak/sprey 2 + smash
+//       if/else bloğu 2 + yuva smash 1).
+//   (b) 5 mod dosyasında haptic-carrying ses çağrısının bitişiğinde
+//       açık haptic satırı kalmadı (bitişiklik: önceki 3 anlamlı satır).
+//   (c) ses çağrıları aynen durur: playButtonTap 15, playSlipper 1,
+//       playSlipperSmash 2, playSpray 1 (davranış: tek titreşim, ses
+//       tarafında; ses susturulmadı, haptic yöntemi silinmedi).
+//
+// KAPSAM DIŞI (bilinçli dokunulmadı, koordinatör kararı bekler):
+// `playMerge` bitişiğindeki açık haptic satırları (balon 3, connect 4,
+// match3 3, stack 3 = 13 site) + osmantus beat-hit üçlüsü
+// (`triggerHaptic` + `triggerMediumHaptic` + `playOsmantusBeat`,
+// osmantus_screen.dart _onTapDown) — çekirdek oyun hissi, ayrı dalga.
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  final Directory projectRoot = _resolveProjectRoot();
+
+  String read(String relativePath) {
+    final file = File('${projectRoot.path}/$relativePath');
+    expect(file.existsSync(), isTrue, reason: '$relativePath bulunamadı');
+    return file.readAsStringSync();
+  }
+
+  int count(String source, String needle) => needle.allMatches(source).length;
+
+  /// Açık haptic çağrı satırları: servis tanımlarının dışındaki
+  /// `triggerMediumHaptic()`, `triggerHeavyHaptic()` ve
+  /// `HapticService.instance.heavyImpact()` çağrıları.
+  int explicitHapticLines(String source) {
+    var n = 0;
+    for (final line in source.split('\n')) {
+      final t = line.trim();
+      if (t.startsWith('//')) continue;
+      if (t.contains('triggerMediumHaptic()') ||
+          t.contains('triggerHeavyHaptic()') ||
+          t.contains('HapticService.instance.heavyImpact()')) {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /// Haptic-carrying ses çağrısının bitişiğinde açık haptic var mı?
+  /// Bitişiklik: ses satırından önceki 3 anlamlı (boş/yorum olmayan)
+  /// satırdan birinde açık haptic çağrısı.
+  List<String> adjacentHapticPairs(String source, String path) {
+    final lines = source.split('\n');
+    final found = <String>[];
+    bool isHaptic(String line) {
+      final t = line.trim();
+      if (t.startsWith('//')) return false;
+      return t.contains('triggerMediumHaptic()') ||
+          t.contains('triggerHeavyHaptic()') ||
+          t.contains('HapticService.instance.heavyImpact()') ||
+          t.contains('triggerHaptic()');
+    }
+
+    bool isSound(String line) =>
+        line.contains('playButtonTap(') ||
+        line.contains('playSlipper(') ||
+        line.contains('playSlipperSmash(') ||
+        line.contains('playSpray(');
+    for (var i = 0; i < lines.length; i++) {
+      if (!isSound(lines[i])) continue;
+      var checked = 0;
+      var j = i - 1;
+      while (j >= 0 && checked < 3) {
+        final t = lines[j].trim();
+        if (t.isEmpty || t.startsWith('//')) {
+          j--;
+          continue;
+        }
+        checked++;
+        if (isHaptic(lines[j])) {
+          found.add('$path:${j + 1} -> ses ${i + 1}');
+        }
+        j--;
+      }
+    }
+    return found;
+  }
+
+  const touchedFiles = <String>[
+    'lib/modes/makarayiz_screen.dart',
+    'lib/modes/osmantus_screen.dart',
+    'lib/modes/scream_roach_screen.dart',
+    'lib/modes/terlik_tap_screen.dart',
+    'lib/modes/yuva_defense_screen.dart',
+  ];
+
+  const allLibFiles = <String>[
+    'lib/modes/balloon_pop_screen.dart',
+    'lib/modes/connect_pop_screen.dart',
+    'lib/modes/makarayiz_screen.dart',
+    'lib/modes/match3_screen.dart',
+    'lib/modes/osmantus_screen.dart',
+    'lib/modes/scream_roach_screen.dart',
+    'lib/modes/stack_drop_screen.dart',
+    'lib/modes/terlik_tap_screen.dart',
+    'lib/modes/yuva_defense_screen.dart',
+    'lib/screens/game_screen.dart',
+    'lib/screens/grid_2048_screen.dart',
+  ];
+
+  group('7A — çift-haptic tekilleştirme (D8+D9)', () {
+    test('açık haptic satırı sayısı lib genelinde 37 (önce 57)', () {
+      var total = 0;
+      final perFile = <String, int>{};
+      for (final path in allLibFiles) {
+        final n = explicitHapticLines(read(path));
+        perFile[path] = n;
+        total += n;
+      }
+      expect(total, 37, reason: 'per-file: $perFile');
+      // Dokunulan 5 dosyanın kalan sayıları (yalnız tekil haptic'ler):
+      expect(perFile['lib/modes/makarayiz_screen.dart'], 2);
+      expect(perFile['lib/modes/osmantus_screen.dart'], 2);
+      expect(perFile['lib/modes/scream_roach_screen.dart'], 1);
+      expect(perFile['lib/modes/terlik_tap_screen.dart'], 1);
+      expect(perFile['lib/modes/yuva_defense_screen.dart'], 1);
+    });
+
+    test('5 dosyada ses bitişiğinde açık haptic kalmadı', () {
+      for (final path in touchedFiles) {
+        final pairs = adjacentHapticPairs(read(path), path);
+        expect(pairs, isEmpty, reason: '$path çiftleri: $pairs');
+      }
+    });
+
+    test('ses çağrıları aynen durur (tek titreşim ses tarafında)', () {
+      var buttonTap = 0;
+      var slipper = 0;
+      var smash = 0;
+      var spray = 0;
+      for (final path in touchedFiles) {
+        final src = read(path);
+        buttonTap += count(src, 'playButtonTap()');
+        slipper += count(src, 'AudioManager().playSlipper()');
+        smash += count(src, 'playSlipperSmash(');
+        spray += count(src, 'AudioManager().playSpray()');
+      }
+      expect(buttonTap, 15, reason: 'D9: 15 playButtonTap çevrimi');
+      expect(slipper, 1, reason: 'D8: terlik tuzak sesi');
+      expect(smash, 2, reason: 'terlik smash + yuva splash smash');
+      expect(spray, 1, reason: 'D8: sprey güçlendirici sesi');
+    });
+
+    test('dokunulmayan dosyalarda haptic sayısı değişmedi', () {
+      expect(explicitHapticLines(read('lib/modes/balloon_pop_screen.dart')), 7);
+      expect(explicitHapticLines(read('lib/modes/connect_pop_screen.dart')), 7);
+      expect(explicitHapticLines(read('lib/modes/match3_screen.dart')), 6);
+      expect(explicitHapticLines(read('lib/modes/stack_drop_screen.dart')), 5);
+      expect(explicitHapticLines(read('lib/screens/game_screen.dart')), 1);
+      expect(explicitHapticLines(read('lib/screens/grid_2048_screen.dart')), 4);
+    });
+  });
+}
+
+Directory _resolveProjectRoot() {
+  var dir = Directory.current;
+  while (!File('${dir.path}/pubspec.yaml').existsSync()) {
+    final parent = dir.parent;
+    if (parent.path == dir.path) {
+      throw StateError('pubspec.yaml bulunamadı: ${Directory.current.path}');
+    }
+    dir = parent;
+  }
+  return dir;
+}

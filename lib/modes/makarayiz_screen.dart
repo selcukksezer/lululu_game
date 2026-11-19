@@ -535,7 +535,6 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useBeatFreeze() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _freezeUntil = _now + 8000;
@@ -547,7 +546,6 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useAuto() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _autoUntil = _now + 6000;
@@ -559,7 +557,6 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useX2() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _x2Until = _now + 12000;

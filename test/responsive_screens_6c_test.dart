@@ -6,11 +6,12 @@
 // denetimi RenderParagraph.didExceedMaxLines ile yapılır: kesilen metin
 // `true` döner, FittedBox scaleDown ile tam sığan metin `false`.
 //
-// Bilinen kapsam-dışı baz hata: CampaignMapScreen 360x640'ta seviye
-// ızgarası karo içeriği 7.2px taşar (karo Column'u, ClipRRect altında;
-// F-04'a girmez, atanmış bulgu değildir — 6C raporunda bayraklıdır).
-// Kampanya testleri bu tek imzayı izin listesinde tutar, başka hiçbir
-// FlutterError'a izin vermez.
+// Bilinen kapsam-dışı baz hata YOKTUR — 7A'da kapatıldı: CampaignMapScreen
+// 360x640'ta seviye ızgarası karo içeriği 7.2px taşıyordu (karo Column'u,
+// ClipRRect altında). Düzeltme: karo içeriği FittedBox (scaleDown) içinde
+// (lib/screens/campaign_map_screen.dart); 360'ta taşma sıfır, 430 düzeni
+// aynen. Bu dosyadaki kampanya testleri artık HİÇBİR FlutterError'a izin
+// vermez (izin listesi 7A'da kaldırıldı).
 
 import 'dart:io';
 
@@ -168,13 +169,6 @@ void _expectNoEllipsis(WidgetTester tester, Finder finder, String label) {
     );
   }
 }
-
-/// Kapsam-dışı baz hata: seviye ızgarası karo taşması (yalnız 360).
-/// İmza, karo Column'unun ClipRRect altındaki yaratıcı zinciridir
-/// (satır numarası düzenleme ile kayar, zincir kaymaz).
-bool _isKnownGridTileOverflow(String error) =>
-    error.contains('overflowed') &&
-    (error.contains('ClipRRect') || error.contains('7.2 pixels'));
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -350,13 +344,11 @@ void main() {
             );
           },
         );
-        final unexpected =
-            errors.where((e) => !_isKnownGridTileOverflow(e)).toList();
         expect(
-          unexpected,
+          errors,
           isEmpty,
-          reason: 'F-04 campaign at $deviceLabel had unexpected '
-              'errors/overflows:\n${unexpected.join('\n---\n')}',
+          reason: 'F-04 campaign at $deviceLabel had errors/overflows:\n'
+              '${errors.join('\n---\n')}',
         );
       },
     );
@@ -392,13 +384,88 @@ void main() {
         expect(chipRect.right, closeTo(368.2, 0.6));
       },
     );
-    final unexpected =
-        errors.where((e) => !_isKnownGridTileOverflow(e)).toList();
     expect(
-      unexpected,
+      errors,
       isEmpty,
-      reason: 'F-04 campaign 430 had unexpected errors:\n'
-          '${unexpected.join('\n---\n')}',
+      reason: 'F-04 campaign 430 had errors:\n'
+          '${errors.join('\n---\n')}',
+    );
+  });
+
+  testWidgets('7A shop YAKINDA button height >=44 at 360/390/430', (
+    tester,
+  ) async {
+    // A9 canlı notu "40 px" widget ağacında üremedi: düğme kapsayıcısı
+    // 48px, görünür yüz 44px (360/390/430 probe ölçümü). Bu test
+    // 44px kılavuzunu kilitler: YAKINDA metninin Container atalarının
+    // düğme yüzleri (kartın kendisi hariç) 44px'in altına inemez.
+    for (final w in [360.0, 390.0, 430.0]) {
+      final errors = await _pumpAndAssert(
+        tester,
+        Size(w, 932),
+        const ShopScreen(embedded: true),
+        () {
+          final textFinder = find.text('YAKINDA');
+          expect(textFinder, findsOneWidget, reason: 'YAKINDA @$w');
+          final containers = find.ancestor(
+            of: textFinder,
+            matching: find.byType(Container),
+          );
+          final heights = <double>[];
+          for (final el in containers.evaluate()) {
+            final rect = tester.getRect(find.byWidget(el.widget));
+            // Kartın kendisi (~250px) hariç: yalnız düğme yüzleri.
+            if (rect.height < 100) heights.add(rect.height);
+          }
+          expect(heights, isNotEmpty, reason: 'düğme yüzü bulunamadı @$w');
+          for (final h in heights) {
+            expect(
+              h,
+              greaterThanOrEqualTo(44),
+              reason: 'YAKINDA düğme yüzü $h px < 44px @$w',
+            );
+          }
+        },
+      );
+      expect(
+        errors,
+        isEmpty,
+        reason: 'shop YAKINDA @$w had errors:\n${errors.join('\n---\n')}',
+      );
+    }
+  });
+
+  testWidgets('7A campaign frontier tile with modifier dots fits at 360', (
+    tester,
+  ) async {
+    // Sınır durum: sınır seviyesi 5 (hayatta kalma) değiştirici
+    // noktalı karodur — 7A öncesi 360'ta ~18px taşardı (yalnız
+    // sınır=1 durumu 6C'de bayraklıydı). FittedBox düzeltmesi her
+    // sınır + nokta birleşiminde sığmayı garanti eder.
+    SharedPreferences.setMockInitialValues({
+      'LululuOnboardingDoneV1': true,
+      'LululuCoinBalance': 12450,
+      'LululuEnergyCount': 5,
+      'LululuDiamondBalance': 86,
+      'LululuAuthV1':
+          '{"uid":"apple-123","displayName":"Apple Oyuncu","provider":"apple"}',
+      'lululu_coins': 12450,
+      'lululu_unlocked_level': 5,
+    });
+    await ProgressManager().load();
+    final errors = await _pumpAndAssert(
+      tester,
+      const Size(360, 640),
+      const CampaignMapScreen(),
+      () {
+        // Sınır karosu (seviye 5) ekranda, numarası kesiksiz.
+        _expectNoEllipsis(tester, find.text('5'), 'frontier tile number');
+      },
+    );
+    expect(
+      errors,
+      isEmpty,
+      reason: 'frontier+dots 360 had errors:\n${errors.join('\n---\n')}',
     );
   });
 }

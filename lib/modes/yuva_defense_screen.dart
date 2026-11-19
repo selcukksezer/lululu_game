@@ -482,7 +482,6 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
               y: _nestCenterY * _arenaHeight,
             ),
           );
-          AudioManager().triggerMediumHaptic();
           unawaited(AudioManager().playButtonTap());
           _hint = context.l10n.yuvaShieldSaved;
           _hintIsComboBroken = false;
@@ -783,7 +782,6 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       }
     }
     _shake = min(0.35, 0.12 + _combo * 0.025);
-    AudioManager().triggerMediumHaptic();
     unawaited(
       AudioManager().playSlipperSmash(
         characterId: GameAudio.characterIdForTier(bug.tier),
@@ -820,7 +818,6 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hint = context.l10n.yuvaDoubleHint;
       _hintIsComboBroken = false;
     });
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     final nearest = _bugs.where((b) => !b.popping).toList()
       ..sort((a, b) => _bugDistanceToNest(a).compareTo(_bugDistanceToNest(b)));
@@ -846,7 +843,6 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hint = context.l10n.yuvaGoldHint;
       _hintIsComboBroken = false;
     });
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     final nearest = _bugs.where((b) => !b.popping).toList()
       ..sort((a, b) => _bugDistanceToNest(a).compareTo(_bugDistanceToNest(b)));
@@ -896,7 +892,6 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hint = context.l10n.yuvaShieldIceHint;
       _hintIsComboBroken = false;
     });
-    unawaited(HapticService.instance.heavyImpact());
     unawaited(AudioManager().playButtonTap());
   }
 

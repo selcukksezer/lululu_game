@@ -484,7 +484,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   bool _useDikkis() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _boostUntilMs = _nowMs + 12000;
@@ -496,7 +495,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   bool _useRing() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _ringUntilMs = _nowMs + 12000;
@@ -508,7 +506,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   bool _useMic() {
     if (!_alive || _paused || _micShield) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _micShield = true;

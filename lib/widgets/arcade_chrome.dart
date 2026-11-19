@@ -333,8 +333,11 @@ class ArcadeScreen extends StatelessWidget {
                                   crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Container(
+                                      // 7A: yatay iç boşluk 10→6 — başlık
+                                      // metnine +8px kazandırır (390'da
+                                      // BAĞLA PATLAT ~10px'ten ~12.5px'e).
                                       padding: EdgeInsets.symmetric(
-                                        horizontal: 10,
+                                        horizontal: 6,
                                         vertical: isCompactH ? 0 : 3,
                                       ),
                                       decoration: BoxDecoration(
@@ -391,10 +394,13 @@ class ArcadeScreen extends StatelessWidget {
                             flex: 0,
                             child: Container(
                               height: 35,
+                              // 7A: coin hapı daraltıldı (simge 25→20,
+                              // sağ iç boşluk 12→8 / 8→6) — başlık satırına
+                              // +10px kazandırır, dokunma hedefi aynı (35).
                               padding: EdgeInsets.fromLTRB(
                                 isCompactW ? 5 : 6,
                                 5,
-                                isCompactW ? 8 : 12,
+                                isCompactW ? 6 : 8,
                                 5,
                               ),
                               decoration: BoxDecoration(
@@ -414,8 +420,8 @@ class ArcadeScreen extends StatelessWidget {
                                   children: [
                                     Image.asset(
                                       'assets/icons2/coin.png',
-                                      width: 25,
-                                      height: 25,
+                                      width: 20,
+                                      height: 20,
                                       errorBuilder: (_, _, _) => const Icon(
                                         Icons.monetization_on_rounded,
                                         size: 18,

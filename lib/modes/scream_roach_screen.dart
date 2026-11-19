@@ -709,7 +709,6 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useJump() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _vy = -520;
@@ -722,7 +721,6 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   bool _useShield() {
     if (!_alive || _paused || _shield) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _shield = true;
@@ -734,7 +732,6 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   bool _useNitro() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _nitroUntil = DateTime.now().add(const Duration(seconds: 8));

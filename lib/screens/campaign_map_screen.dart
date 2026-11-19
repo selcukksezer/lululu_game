@@ -1280,92 +1280,103 @@ class _LevelMapTileState extends State<_LevelMapTile> {
                   ),
                   Padding(
                     padding:
-                        const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (widget.isUnlocked) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: LululuColors.carbonVoid.withValues(
-                                alpha: 0.32,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: LululuColors.mutedTitanium.withValues(
-                                  alpha: 0.18,
+                        const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    // 7A: dar karo (360) içeriği 7.2px taşıyordu — Column
+                    // artık FittedBox (scaleDown) içinde: sığmayan karo
+                    // (sınır + SIRADAKİ + değiştirici noktaları) orantılı
+                    // küçülür, metin kesilmez; sığan karo aynen kalır.
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.center,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (widget.isUnlocked) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 2,
                                 ),
-                              ),
-                            ),
-                            child: Text(
-                              '${widget.level.id}',
-                              style: TextStyle(
-                                fontSize: widget.isFrontier ? 20 : 18,
-                                fontWeight: FontWeight.w900,
-                                color: LululuColors.warningSolar,
-                                shadows: [
-                                  Shadow(
-                                    color: LululuColors.carbonVoid.withValues(
-                                      alpha: 0.45,
-                                    ),
-                                    blurRadius: 4,
+                                decoration: BoxDecoration(
+                                  color: LululuColors.carbonVoid.withValues(
+                                    alpha: 0.32,
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (widget.isFrontier) ...[
-                            const SizedBox(height: 3),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: LululuColors.cyberFuchsia.withValues(
-                                  alpha: 0.35,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: LululuColors.mutedTitanium.withValues(
+                                      alpha: 0.18,
+                                    ),
+                                  ),
                                 ),
-                                borderRadius: BorderRadius.circular(8),
+                                child: Text(
+                                  '${widget.level.id}',
+                                  style: TextStyle(
+                                    fontSize: widget.isFrontier ? 20 : 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: LululuColors.warningSolar,
+                                    shadows: [
+                                      Shadow(
+                                        color: LululuColors.carbonVoid.withValues(
+                                          alpha: 0.45,
+                                        ),
+                                        blurRadius: 4,
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              child: Text(
-                                context.l10n.upNextLabel,
+                              if (widget.isFrontier) ...[
+                                const SizedBox(height: 3),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: LululuColors.cyberFuchsia.withValues(
+                                      alpha: 0.35,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    context.l10n.upNextLabel,
+                                    style: TextStyle(
+                                      fontSize: 7,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.8,
+                                      color: LululuColors.warningSolar,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ] else ...[
+                              Icon(
+                                Icons.lock_rounded,
+                                color: LululuColors.mutedTitanium.withValues(
+                                  alpha: 0.55,
+                                ),
+                                size: 26,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${widget.level.id}',
                                 style: TextStyle(
-                                  fontSize: 7,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.8,
-                                  color: LululuColors.warningSolar,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: LululuColors.mutedTitanium.withValues(
+                                    alpha: 0.45,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
+                            const SizedBox(height: 5),
+                            _buildStarRow(),
+                            _buildModifierDots(),
                           ],
-                        ] else ...[
-                          Icon(
-                            Icons.lock_rounded,
-                            color: LululuColors.mutedTitanium.withValues(
-                              alpha: 0.55,
-                            ),
-                            size: 26,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${widget.level.id}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: LululuColors.mutedTitanium.withValues(
-                                alpha: 0.45,
-                              ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 5),
-                        _buildStarRow(),
-                        _buildModifierDots(),
-                      ],
+                        ),
+                      ),
                     ),
                   ),
                 ],

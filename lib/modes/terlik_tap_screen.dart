@@ -866,7 +866,6 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       // Gerçek vuruş: tuzağa basmak da hamledir, iade hakkı biter.
       _hasHit = true;
       _applyMiss(context.l10n.terlikSteppedTrap);
-      unawaited(HapticService.instance.heavyImpact());
       // D8: tuzak sesi sprey DEĞİL terlik tokadı — tuzağa basmak fiziksel
       // bir darbedir; sprey sesi güçlendiriciye aittir (F13).
       unawaited(AudioManager().playSlipper());
@@ -972,12 +971,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _hitStop = max(_hitStop, juiceTier >= 6 || hit.isOsman ? 0.05 : 0.03);
     }
 
-    if (_combo >= 5 || hit.isOsman) {
-      AudioManager().triggerHeavyHaptic();
-    } else {
-      AudioManager().triggerMediumHaptic();
-    }
-
+    // 7A: açık haptic kaldırıldı — playSlipperSmash kendi haptic'ini
+    // (onSlipperSlap, komboya göre) zaten tetikler; çift titreşimdi.
     unawaited(
       AudioManager().playSlipperSmash(
         characterId: hit.characterId,
@@ -1114,7 +1109,6 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useDoubleSlip() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _doubleNext = true;
@@ -1131,7 +1125,6 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   bool _useGoldSlip() {
     if (!_alive || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     unawaited(AudioManager().playButtonTap());
     setState(() {
       _goldUntil = DateTime.now().add(const Duration(seconds: 20));
@@ -1157,7 +1150,6 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       });
       return false;
     }
-    unawaited(HapticService.instance.heavyImpact());
     // D8: sprey güçlendirici sesi haptic'li yoldan çalar.
     unawaited(AudioManager().playSpray());
     setState(() {

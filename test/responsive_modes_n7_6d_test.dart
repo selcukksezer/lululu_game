@@ -184,12 +184,24 @@ void main() {
         final rect = tester.getRect(f);
         expect(rect.left, greaterThanOrEqualTo(0));
         expect(rect.right, lessThanOrEqualTo(vp.$1));
-        // 390 px'te ölçülen ölçek 0.561 (20 px taban + en uzun başlık;
-        // ~11 px kalın büyük harf, tam metin, kırpma yok). 360/430'da 0.6
-        // üstü ölçüldü.
+        // 7A: 390 px'te ölçek 0.499, etkin boyut ~10.0px idi (20 px taban
+        // + en uzun başlık; coin 12.450 ile). Düzeltme: başlık çipi iç
+        // boşluğu 10→6 + coin hapı daraltması (simge 25→20) başlığa
+        // ~17px kazandırdı — ölçek 0.626, etkin boyut 12.51px.
+        // Eşik: ölçek ≥0.6 (okunabilirlik tabanı) VE etkin boyut ≥12px.
+        // Taban yazı boyutu düşürülmedi: ölçeği şişirir ama etkin
+        // boyutu değiştirmez, okunabilirliğe katkısı yoktur.
+        final scale = titleScale(
+          tester,
+          f,
+          'BAĞLA PATLAT',
+          vp.$1 < 372 ? 16 : 20,
+        );
+        expect(scale, greaterThanOrEqualTo(0.6));
         expect(
-          titleScale(tester, f, 'BAĞLA PATLAT', vp.$1 < 372 ? 16 : 20),
-          greaterThanOrEqualTo(vp.$1 == 390 ? 0.5 : 0.6),
+          scale * (vp.$1 < 372 ? 16 : 20),
+          greaterThanOrEqualTo(12),
+          reason: 'connect başlığı etkin boyutu <12px @${vp.$1}',
         );
         await flushFontCallbacks(tester);
         expect(tester.takeException(), isNull);
