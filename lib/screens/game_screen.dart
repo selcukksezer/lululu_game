@@ -949,8 +949,7 @@ class _GameScreenState extends State<GameScreen>
       _hisirVisible = true;
       _hisirXFraction = 0.15 + _rng.nextDouble() * 0.7;
     });
-    // D4: Hışır belirince kendi sesi çalar. NOT: husur_aday.mp3 kulakla
-    // doğrulanmamış adaydır (transkriptte "huşur"); Selçuk sorusu açık.
+    // D4: Hışır belirince kendi sesi çalar (hisir_zopa.mp3, Selçuk onaylı).
     unawaited(AudioManager().playHusurAday());
     _hisirHideTimer?.cancel();
     _hisirHideTimer = Timer(const Duration(seconds: 7), () {
@@ -970,8 +969,8 @@ class _GameScreenState extends State<GameScreen>
       _hisirVisible = false;
       _score += 150;
     });
-    // D4: Hışır dokunuşu (+150) artık sessiz değil — kendi sesi çalar.
-    // NOT: husur_aday.mp3 kulakla doğrulanmamış adaydır; Selçuk sorusu açık.
+    // D4: Hışır dokunuşu (+150) artık sessiz değil — kendi sesi çalar
+    // (hisir_zopa.mp3, Selçuk onaylı).
     unawaited(AudioManager().playHusurAday());
   }
 

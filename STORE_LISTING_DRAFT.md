@@ -110,9 +110,6 @@ LÜLÜLÜ — merge them all!
 - **"Tamamen çevrimdışı" iddiası yok.** Taslakta yalnızca "misafir oyna, ilerleme
   cihazında saklanır" yazıyor; `README.md` "tamamen çevrimdışı" demiyor, kod
   çevrimdışı-öncelikli + isteğe bağlı bulut eşitlemeli.
-- **Hışır'ın sesi iddia edilmedi.** `GameAudio.husurAday` doğrulanmamış adaydır
-  (transkriptte "huşur" diye geçti — `lib/models/hisir_character.dart` başlığı).
-  Taslakta Hışır yalnızca görünümü ve Terlik Tap görünümüyle anılıyor.
 - **İngilizce/Türkçe arayüz iddiası yok.** `lib/main.dart` EN + TR
   altyapısını bağlıyor (`localizationsDelegates` + `supportedLocales`) ve
   çeviri tablosu kapsaması EN/TR eşliği `test/l10n_parity_test.dart`'ta

@@ -38,18 +38,20 @@ Klip → kaynak eşleşmesi (`GameAudio` sabiti parantez içinde):
 | `lululu_nakarat.mp3` (`lululuNakarat`) | original_3 (video3) | 0–2.9 | Lülülü nakaratı |
 | `duktur.mp3` (`duktur`) | original_2 (video2) | 0–14 | Duktur repliği |
 | `kanka.mp3` (`kanka`) | original_5 (video5) | 5.4–13.9 | Kanka ikilisi |
-| `husur_aday.mp3` (`husurAday`) | sim_bocekalem.i_7704406490743901448 | 2.16–3.62 | **DOĞRULANMAMIŞ ADAY** — bkz. aşağıda |
+| `hisir_zopa.mp3` (`hisirZopa`) | sim_bocekalem.i_7706225030606146834 | 16.6–22.1 | **ONAYLI Hışır sesi** — Selçuk kulakla onayladı (2026-11-19 19:49: "evet bu kısım doğru seste") |
 
-## UYARI: `husur_aday.mp3` doğrulanmamış adaydır
+## Hışır sesi: `hisir_zopa.mp3` (ONAYLI)
 
-63 transkriptin hiçbirinde "hışır" kelimesi geçmiyor. Bu klip, benzer bir
-klipte 2,64 sn'de transkripte "huşur" diye geçen sesin kesimidir; "hışır"
-olduğu kulakla teyit EDİLMEDİ. Hışır karakterinin sesi olarak bu aday
-bağlıdır; gerçek "hışır" sesi bulunursa/tespit edilirse bu dosya (ve
-`GameAudio.husurAday` sabiti) yenisiyle değiştirilmelidir.
+Hışır'ın sesi `hisir_zopa.mp3`'tür: sim_bocekalem.i_7706225030606146834
+videosunun 16.6–22.1 sn kesimi — "Gemü'ne sıçtığımın garısı, şimdi şahadet
+getir, sonra zopayı getir" (5.5 sn). Selçuk kulakla onayladı (2026-11-19
+19:49: "evet bu kısım doğru seste"). `GameAudio.hisirZopa` sabiti ve
+`voiceForCharacterId('hisir')` bu dosyayı çözer.
 
-6. kaynak link (ZSpnBpRLe) TikTok girişi istediği için indirilemedi;
-"hışır" sesinin o videoda olma ihtimali var.
+Eski aday `husur_aday.mp3` (sim_bocekalem.i_7704406490743901448, 2.16–3.62;
+transkripte "huşur" diye geçen sesin kesimi) artık hiçbir yerde
+referanslanmıyor. Dosya assets'te duruyor; silinip silinmeyeceğine
+koordinatör karar verecek.
 
 ## Telif notu
 

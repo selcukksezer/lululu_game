@@ -62,9 +62,12 @@ abstract final class GameAudio {
   static const duktur = 'duktur.mp3';
   static const kanka = 'kanka.mp3';
 
-  /// UNVERIFIED candidate: transcript heard "huşur", not confirmed by ear as
-  /// "hışır". Wired as Hışır's voice with that caveat (see ASSETS_NOTE.md).
-  static const husurAday = 'husur_aday.mp3';
+  /// Hışır'ın sesi — onaylı klip: sim_bocekalem.i_7706225030606146834
+  /// 16.6–22.1 sn kesimi ("Gemü'ne sıçtığımın garısı, şimdi şahadet getir,
+  /// sonra zopayı getir"). Selçuk kulakla onayladı (2026-11-19 19:49:
+  /// "evet bu kısım doğru seste"). Eski aday `husur_aday.mp3` artık
+  /// kullanılmıyor; dosya assets'te duruyor, silme kararı koordinatörde.
+  static const hisirZopa = 'hisir_zopa.mp3';
 
   /// Viral one-shot clips, spread into [allAssets] for warmup + integrity checks.
   static const viralOneShots = [
@@ -74,7 +77,7 @@ abstract final class GameAudio {
     lululuNakarat,
     duktur,
     kanka,
-    husurAday,
+    hisirZopa,
   ];
 
   static const allAssets = [
@@ -161,7 +164,7 @@ abstract final class GameAudio {
       case 'tus':
         return voiceOsmanB;
       case 'hisir':
-        return husurAday;
+        return hisirZopa;
       default:
         return null;
     }
@@ -861,17 +864,16 @@ class AudioManager {
   /// Viral one-shot: Kanka ikilisi (TikTok video5 kesimi).
   Future<void> playKanka() => playSfx(GameAudio.kanka, isVoice: true);
 
-  /// Hışır'ın sesi — tek Hışır ses yolu. UNVERIFIED aday: transkriptte
-  /// "huşur" diye geçti, "hışır" olduğu kulakla teyit edilmedi (bkz.
-  /// assets/audio/ASSETS_NOTE.md).
+  /// Hışır'ın sesi — tek Hışır ses yolu. Onaylı klip `hisir_zopa.mp3`
+  /// (Selçuk kulakla onayladı, 2026-11-19; bkz. assets/audio/ASSETS_NOTE.md).
   ///
   /// Resolves through [GameAudio.voiceForCharacterId] (`'hisir'`), the same
-  /// map Terlik Tap uses via [playSlipperSmash]; the [GameAudio.husurAday]
+  /// map Terlik Tap uses via [playSlipperSmash]; the [GameAudio.hisirZopa]
   /// constant is only the fallback if the map ever drops the id. The clip
   /// stays preloaded via [GameAudio.viralOneShots] / [GameAudio.allAssets].
   Future<void> playHusurAday() async {
     final asset =
-        GameAudio.voiceForCharacterId('hisir') ?? GameAudio.husurAday;
+        GameAudio.voiceForCharacterId('hisir') ?? GameAudio.hisirZopa;
     await playSfx(asset, isVoice: true);
   }
 

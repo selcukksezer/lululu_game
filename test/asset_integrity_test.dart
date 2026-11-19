@@ -156,7 +156,7 @@ void main() {
           'lululu_nakarat.mp3',
           'duktur.mp3',
           'kanka.mp3',
-          'husur_aday.mp3',
+          'hisir_zopa.mp3',
         },
       );
       expect(GameAudio.viralOneShots.length, 7);

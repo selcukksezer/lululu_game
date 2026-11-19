@@ -547,7 +547,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       return;
     }
 
-    // ~8% Hışır özel hedefi (tier dışı; sesi 'hisir' kimliğiyle husur_aday).
+    // ~8% Hışır özel hedefi (tier dışı; sesi 'hisir' kimliğiyle hisir_zopa).
     if (_rng.nextDouble() < 0.08) {
       _bugs.add(
         _Bug(

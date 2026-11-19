@@ -152,8 +152,9 @@ void main() {
       );
       expect(count(show, 'playHusurAday()'), 1);
       expect(show.contains('playMezarinaSiktigim'), isFalse);
-      // Doğrulanmamış-aday notu kod yorumunda korunur.
-      expect(show.contains('doğrulanmamış aday'), isTrue);
+      // Onaylı-klip notu kod yorumunda korunur (12C: Selçuk kulakla
+      // onayladı, 2026-11-19 — eski "doğrulanmamış aday" notu kalktı).
+      expect(show.contains('hisir_zopa'), isTrue);
     });
 
     test('_onHisirTapDown Hışır sesini çalar', () {
