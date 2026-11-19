@@ -428,8 +428,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
           ? context.l10n.osmantusEarlyBy(delta)
           : context.l10n.osmantusLateBy(delta);
       if (perfect) _hint = context.l10n.osmantusJustInTime;
-      AudioManager().triggerHaptic();
-      AudioManager().triggerMediumHaptic();
       unawaited(
         AudioManager().playOsmantusBeat(
           isPersonB: _speakerIndex == 1,

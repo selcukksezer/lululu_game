@@ -481,9 +481,6 @@ class MakarayizScreenState extends State<MakarayizScreen>
         playbackRate: 0.95 + _rng.nextDouble() * 0.2,
       ),
     );
-    // H1: kapılı orta darbe (AudioManager.triggerMediumHaptic titreşim
-    // ayarına + test ortamına duyarlıdır).
-    AudioManager().triggerMediumHaptic();
   }
 
   /// Şerit vuruşu: pencere içindeki en yakın nota, çizgiye bağlıdır.

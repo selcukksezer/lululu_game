@@ -504,10 +504,6 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       unawaited(
         AudioManager().playMerge(tier: tierEnum, comboCount: _streak),
       );
-      // H1: HapticService'te mediumImpact karşılığı yok; kapılı
-      // `triggerMediumHaptic` kullanılır (titreşim ayarı + test
-      // ortamı korumalı).
-      AudioManager().triggerMediumHaptic();
       unawaited(
         ProgressManager.instance.recordTaskProgress(
           'merge',
@@ -532,7 +528,6 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     } else {
       _streak = 0;
       AudioManager().playDrop();
-      unawaited(HapticService.instance.lightImpact());
     }
 
     _popTimer?.cancel();
@@ -772,7 +767,6 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       ),
     );
     AudioManager().playDrop();
-    AudioManager().triggerMediumHaptic();
   }
 
   /// Güçlendirici 3: ÇİFTLEŞTİR / 2X BİRLEŞİM (aynı tier iki böceği anında birleştirir)
@@ -846,7 +840,11 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         origin: MediaQuery.sizeOf(context).center(Offset.zero),
       ),
     );
-    unawaited(HapticService.instance.heavyImpact());
+    // P0-4: eşleşen çiftte playMerge zaten haptic tetikler; heavyImpact
+    // yalnız eşleşmesiz yükseltmede tek impuls olarak kalır.
+    if (!plan.matched) {
+      unawaited(HapticService.instance.heavyImpact());
+    }
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {

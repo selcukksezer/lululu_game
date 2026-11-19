@@ -581,7 +581,6 @@ class _StackDropScreenState extends State<StackDropScreen>
     _phase = _Phase.falling;
     _fallY = 16;
     AudioManager().playDrop();
-    AudioManager().triggerHaptic();
     setState(() {});
   }
 
@@ -651,7 +650,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       _score += gain;
       _showFeedback(context.l10n.stackPerfectHit(_combo));
       AudioManager().playMerge(tierNumber: _tier, comboCount: _combo);
-      AudioManager().triggerMediumHaptic();
       if (_combo == 3 || _combo == 5 || _combo == 8) {
         _showMilestone('COMBO x$_combo');
       }
@@ -663,7 +661,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       _score += gain;
       _showFeedback(context.l10n.stackNearCallout(gain));
       AudioManager().playMerge(tierNumber: _tier);
-      unawaited(HapticService.instance.lightImpact());
     } else {
       _combo = 0;
       _comboMeter = max(0, _comboMeter - 0.25);
@@ -671,7 +668,6 @@ class _StackDropScreenState extends State<StackDropScreen>
       _score += gain;
       _showFeedback(context.l10n.stackEdgeCutCallout(gain));
       AudioManager().playMerge(tierNumber: _tier);
-      unawaited(HapticService.instance.selectionClick());
     }
 
     if (_score > _best) _best = _score;
@@ -790,7 +786,6 @@ class _StackDropScreenState extends State<StackDropScreen>
     // F7: duraklatılmışken veya düşüş ortasında kullanım reddedilir
     // (stok `stockBonusWithResult` ile iade edilir).
     if (_paused || _phase != _Phase.ready) return false;
-    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _tier);
     setState(() {
       if (_stack.isNotEmpty) {
@@ -807,7 +802,6 @@ class _StackDropScreenState extends State<StackDropScreen>
   bool _useWiden() {
     // F7: duraklatılmışken veya düşüş ortasında kullanım reddedilir.
     if (_paused || _phase != _Phase.ready || _arenaW <= 0) return false;
-    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _tier);
     setState(() {
       // F8: yalnız hareketli dilim genişler; yerleşmiş dilim
@@ -824,7 +818,6 @@ class _StackDropScreenState extends State<StackDropScreen>
   bool _useSlowDrop() {
     // F7: duraklatılmışken veya düşüş ortasında kullanım reddedilir.
     if (_paused || _phase != _Phase.ready) return false;
-    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _tier);
     setState(() {
       // F8: `_speed`'e yazılmaz; yalnız 8 saniyelik geçici çarpan

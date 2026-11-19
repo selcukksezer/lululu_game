@@ -685,10 +685,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     });
     if (loop) {
       _gridBurst = 1.08;
-      unawaited(HapticService.instance.heavyImpact());
       unawaited(AudioManager().playMerge(tierNumber: tier, comboCount: 3));
-    } else {
-      AudioManager().triggerMediumHaptic();
     }
     setState(() {});
     await Future<void>.delayed(Duration(milliseconds: loop ? 200 : 130));
@@ -879,7 +876,6 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
   /// boşa çıkarırdı.
   bool _useChain() {
     if (_ended || _paused) return false;
-    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: 2);
     setState(() {
       _lines += 3;
@@ -904,7 +900,6 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
       }
     }
     if (best.isEmpty) return false;
-    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: 4);
     final gained = best.length * 28;
     setState(() {
@@ -941,7 +936,6 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     for (var i = 2; i <= maxKinds; i++) {
       if (counts[i] > counts[tier]) tier = i;
     }
-    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: tier);
     setState(() {
       for (var i = 0; i < 4 && 1 + i < cols; i++) {

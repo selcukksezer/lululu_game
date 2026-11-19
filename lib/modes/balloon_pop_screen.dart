@@ -451,7 +451,6 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _vel = _aim * shotSpeed;
     _flying = true;
     AudioManager().playDrop();
-    AudioManager().triggerHaptic();
     setState(() {});
   }
 
@@ -633,11 +632,6 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _score += gained;
       if (_score > _best) _best = _score;
       _checkScoreMilestones();
-      if (popped >= 6) {
-        unawaited(HapticService.instance.heavyImpact());
-      } else {
-        AudioManager().triggerMediumHaptic();
-      }
       AudioManager().playMerge(tierNumber: shotTier);
       final insect = InsectTier.values[(shotTier - 1).clamp(0, 7)];
       _comboTimer?.cancel();
@@ -912,7 +906,6 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     // Duraklatmada veya atış uçuşurken güç reddedilir (F7):
     // `false` stoğu iade eder, güç harcanmaz.
     if (_over || _paused || _flying) return false;
-    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _current);
     setState(() {
       _pierce = true;
@@ -937,7 +930,6 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     if (spots.isEmpty) return false;
     spots.shuffle(_rng);
     final hex = _hex;
-    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: min(8, _current + 1));
     setState(() {
       final take = min(8, spots.length);
@@ -970,7 +962,6 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     // `false` stoğu iade eder, güç harcanmaz.
     if (_over || _paused || _flying) return false;
     final hex = _hex;
-    AudioManager().triggerMediumHaptic();
     AudioManager().playMerge(tierNumber: _current);
     setState(() {
       _slowUntilElapsed = _elapsed + 10;

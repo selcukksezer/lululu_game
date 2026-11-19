@@ -622,8 +622,6 @@ class _Match3ScreenState extends State<Match3Screen>
       return;
     }
 
-    AudioManager().triggerMediumHaptic();
-
     _moves--;
     var chain = 0;
     var voiceTier = 1;
@@ -902,7 +900,6 @@ class _Match3ScreenState extends State<Match3Screen>
     if (_ended || _paused || _busy) return false;
     final cell = _selected ?? _firstFilled();
     if (cell == null) return false;
-    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: max(1, _base(_grid[cell.x][cell.y])));
     setState(() {
       _selected = null;
@@ -922,7 +919,6 @@ class _Match3ScreenState extends State<Match3Screen>
   bool _useBomb3() {
     if (_ended || _paused || _busy) return false;
     final cell = _selected ?? const Point<int>(3, 3);
-    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: 4);
     setState(() {
       _selected = null;
@@ -968,7 +964,6 @@ class _Match3ScreenState extends State<Match3Screen>
       if (counts[i] > counts[best]) best = i;
     }
     if (counts[best] == 0) return false;
-    unawaited(HapticService.instance.heavyImpact());
     AudioManager().playMerge(tierNumber: best);
     setState(() {
       _selected = null;

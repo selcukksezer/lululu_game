@@ -11,9 +11,10 @@
 //
 // Bu dosya KAYNAK düzeyinde kilitler (6A deseni — ses test ortamında
 // duyulamaz, titreşim ölçülemediği için sayı + bitişiklik denetlenir):
-//   (a) açık haptic çağrı satırı sayısı lib genelinde 37'dir (önce 57;
-//       7A'da 20 satır silindi: 15 D9 + terlik tuzak/sprey 2 + smash
-//       if/else bloğu 2 + yuva smash 1).
+//   (a) açık haptic çağrı satırı sayısı lib genelinde 15'tir (7A'da 37'ydi;
+//       10C'de 22 satır silindi: match3 4 + connect 5 + balon 5 + makara 1 +
+//       osmantus 1 + stack 4 + 2048 2; 7A'da 20 satır silinmişti: 15 D9 +
+//       terlik tuzak/sprey 2 + smash if/else bloğu 2 + yuva smash 1).
 //   (b) 5 mod dosyasında haptic-carrying ses çağrısının bitişiğinde
 //       açık haptic satırı kalmadı (bitişiklik: önceki 3 anlamlı satır).
 //   (c) ses çağrıları aynen durur: playButtonTap 15, playSlipper 1,
@@ -25,6 +26,14 @@
 // match3 3, stack 3 = 13 site) + osmantus beat-hit üçlüsü
 // (`triggerHaptic` + `triggerMediumHaptic` + `playOsmantusBeat`,
 // osmantus_screen.dart _onTapDown) — çekirdek oyun hissi, ayrı dalga.
+//
+// 10C (Faz 4 Dalga 10C — P0-4): o "ayrı dalga" budur; yukarıdaki 13 site +
+// osmantus üçlüsü + 2048/makara/balon-fırlatma/stack-bırakma çiftleri
+// tekilleştirildi. Sayı kilidi 37 -> 15 (10C'de 22 açık satır silindi;
+// `triggerHaptic()` satırları bu sayımda yok — osmantus üçlüsündeki
+// `triggerHaptic` + `triggerMediumHaptic` ikilisinden yalnız ikincisi
+// sayılır). Kalan tek istisna: Suika (game_screen.dart, 1 satır) — 10B
+// aynı dosyada çalıştığı için 10D'ye kaldı, dokunulmadı.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -122,7 +131,7 @@ void main() {
   ];
 
   group('7A — çift-haptic tekilleştirme (D8+D9)', () {
-    test('açık haptic satırı sayısı lib genelinde 37 (önce 57)', () {
+    test('açık haptic satırı sayısı lib genelinde 15 (7A: 37, önce 57)', () {
       var total = 0;
       final perFile = <String, int>{};
       for (final path in allLibFiles) {
@@ -130,10 +139,11 @@ void main() {
         perFile[path] = n;
         total += n;
       }
-      expect(total, 37, reason: 'per-file: $perFile');
+      expect(total, 15, reason: 'per-file: $perFile');
       // Dokunulan 5 dosyanın kalan sayıları (yalnız tekil haptic'ler):
-      expect(perFile['lib/modes/makarayiz_screen.dart'], 2);
-      expect(perFile['lib/modes/osmantus_screen.dart'], 2);
+      // 10C: makara isabet + osmantus beat-hit çiftleri de tekilleşti.
+      expect(perFile['lib/modes/makarayiz_screen.dart'], 1);
+      expect(perFile['lib/modes/osmantus_screen.dart'], 1);
       expect(perFile['lib/modes/scream_roach_screen.dart'], 1);
       expect(perFile['lib/modes/terlik_tap_screen.dart'], 1);
       expect(perFile['lib/modes/yuva_defense_screen.dart'], 1);
@@ -164,13 +174,15 @@ void main() {
       expect(spray, 1, reason: 'D8: sprey güçlendirici sesi');
     });
 
-    test('dokunulmayan dosyalarda haptic sayısı değişmedi', () {
-      expect(explicitHapticLines(read('lib/modes/balloon_pop_screen.dart')), 7);
-      expect(explicitHapticLines(read('lib/modes/connect_pop_screen.dart')), 7);
-      expect(explicitHapticLines(read('lib/modes/match3_screen.dart')), 6);
-      expect(explicitHapticLines(read('lib/modes/stack_drop_screen.dart')), 5);
+    // 10C: 7A'da "dokunulmayan" sayılan bu dosyalar 10C kapsamıdır
+    // (yalnız game_screen.dart/Suika dokunulmadı — 10D'ye kaldı).
+    test('10C dosyalarında haptic sayısı tekilleştirilmiş değerlerde', () {
+      expect(explicitHapticLines(read('lib/modes/balloon_pop_screen.dart')), 2);
+      expect(explicitHapticLines(read('lib/modes/connect_pop_screen.dart')), 2);
+      expect(explicitHapticLines(read('lib/modes/match3_screen.dart')), 2);
+      expect(explicitHapticLines(read('lib/modes/stack_drop_screen.dart')), 1);
       expect(explicitHapticLines(read('lib/screens/game_screen.dart')), 1);
-      expect(explicitHapticLines(read('lib/screens/grid_2048_screen.dart')), 4);
+      expect(explicitHapticLines(read('lib/screens/grid_2048_screen.dart')), 2);
     });
   });
 }
