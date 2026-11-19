@@ -59,6 +59,11 @@ class InsectBody {
   double spawnScale;
   double mergeSquash;
 
+  /// Kademe-bağımlı açısal sönüm (60 Hz kare başına çarpan; küçük
+  /// kademeler daha uzun döner, büyükler daha çabuk durur). Motor
+  /// [CircularPhysicsEngine.angularDampingFor] ile doldurur.
+  double angularDamping;
+
   InsectBody({
     required this.id,
     required this.tier,
@@ -71,6 +76,7 @@ class InsectBody {
     this.isMarkedForRemoval = false,
     this.spawnScale = 0.2,
     this.mergeSquash = 0,
+    this.angularDamping = CircularPhysicsEngine.defaultAngularDamping,
   }) : prevX = prevX ?? x,
        prevY = prevY ?? y;
 
@@ -81,14 +87,17 @@ class InsectBody {
     required InsectTier nextTier,
     required double nx,
     required double ny,
+    double initialAngle = 0.0,
+    double initialAngularVelocity = 0.0,
   }) {
     tier = nextTier;
     x = nx;
     y = ny;
     prevX = nx;
     prevY = ny - 4.5;
-    angle = 0;
-    angularVelocity = 0;
+    angle = initialAngle;
+    angularVelocity = initialAngularVelocity;
+    angularDamping = CircularPhysicsEngine.angularDampingFor(nextTier);
     isMarkedForRemoval = false;
     spawnScale = 0.2;
     mergeSquash = 0;
@@ -131,6 +140,59 @@ class CircularPhysicsEngine {
 
   static const double maxAngularVelocity = 3.5;
   static const double _angularDamping = 0.62;
+
+  /// Eski varsayılan açısal sönüm (kademe tablosu öncesi davranışın
+  /// orta noktası); [InsectBody.angularDamping] başlangıç değeri.
+  static const double defaultAngularDamping = _angularDamping;
+
+  // ------------------------------------------------------------------
+  // 10B — Suika doğal düşüş: kademe-bağımlı düşüş parametreleri.
+  //
+  // Hepsi kademe numarasından (1 = en küçük, 11+ = en büyük) doğrusal
+  // türetilir; sabit sayı sihirli değil, tablonun iki ucudur:
+  // küçük kademeler çevik (daha çok sapma / eğim / dönüş, daha az
+  // sönüm), büyük kademeler ağır/hantal (az sapma, çabuk duran dönüş).
+  // ------------------------------------------------------------------
+
+  /// Kademe numarasını tablo aralığına kelepçeler.
+  static int _tierIndex(InsectTier tier) => tier.tier.clamp(1, 11);
+
+  /// Bırakmada x sapması (± px): kademe 1'de 7.0, kademe 11'de 2.0.
+  static double dropJitterPx(InsectTier tier) =>
+      7.0 - (_tierIndex(tier) - 1) * 0.5;
+
+  /// Bırakmada başlangıç eğimi (± radyan): kademe 1'de 0.22, 11'de 0.06.
+  static double dropTiltRad(InsectTier tier) =>
+      0.22 - (_tierIndex(tier) - 1) * 0.016;
+
+  /// Bırakmada başlangıç açısal hızı (± rad/s): 1'de 1.6, 11'de 0.5.
+  static double dropSpin(InsectTier tier) =>
+      1.6 - (_tierIndex(tier) - 1) * 0.11;
+
+  /// Açısal sönüm (60 Hz kare başına çarpan; BÜYÜK = daha uzun dönüş):
+  /// kademe 1'de 0.72, kademe 11'de 0.50 (eski sabit 0.62 orta nokta).
+  static double angularDampingFor(InsectTier tier) =>
+      0.72 - (_tierIndex(tier) - 1) * 0.022;
+
+  /// Yığındaki üst gövdenin yana yuvarlanma isteği (eski 2.6 px
+  /// itkinin çarpanı): kademe 1'de 1.15, kademe 11'de 0.60.
+  static double tierRollFactor(InsectTier tier) =>
+      1.15 - (_tierIndex(tier) - 1) * 0.055;
+
+  /// Tohumlu bırakma rastgeleliği: oyun her tur başında
+  /// [setDropSeed] ile tohumlanır; aynı tohum + aynı bırakma sırası
+  /// aynı düşüşü verir. Çıplak `Random()` kullanılmaz.
+  int _dropSeed = 0;
+  Random _dropRng = Random(0);
+
+  /// Bırakma rastgeleliğini [seed] ile sıfırlar. Oyun her tur başında
+  /// tur damgasıyla çağırır; testler sabit tohumla determinizmi sınar.
+  void setDropSeed(int seed) {
+    _dropSeed = seed;
+    _dropRng = Random(seed);
+  }
+
+  int get dropSeed => _dropSeed;
 
   /// Below this Verlet step length, body sleeps (stops micro-jitter).
   static const double _sleepSpeed = 0.55;
@@ -317,16 +379,66 @@ class CircularPhysicsEngine {
     return worst;
   }
 
-  void addBody(InsectTier tier, double x, double y) {
+  void addBody(
+    InsectTier tier,
+    double x,
+    double y, {
+    double initialAngle = 0.0,
+    double initialAngularVelocity = 0.0,
+  }) {
     final InsectBody body;
     if (_pool.isNotEmpty) {
       body = _pool.removeLast();
-      body.respawn(nextTier: tier, nx: x, ny: y);
+      body.respawn(
+        nextTier: tier,
+        nx: x,
+        ny: y,
+        initialAngle: initialAngle,
+        initialAngularVelocity: initialAngularVelocity,
+      );
     } else {
-      body = InsectBody(id: _nextId++, tier: tier, x: x, y: y, spawnScale: 0.2);
+      body = InsectBody(
+        id: _nextId++,
+        tier: tier,
+        x: x,
+        y: y,
+        spawnScale: 0.2,
+        angle: initialAngle,
+        angularVelocity: initialAngularVelocity,
+        angularDamping: angularDampingFor(tier),
+      );
       body.prevY = y - 4.5;
     }
     bodies.add(body);
+  }
+
+  /// Doğal bırakma: [aimX] çevresinde tohumlu küçük x sapması +
+  /// başlangıç eğimi / dönüş (kademe tablosundan). Sapmış x, doğma
+  /// taşması payıyla (yarıçap × 1.06 + 2 px) arena sınırları içinde
+  /// kelepçelenir — bırakma asla duvar dışına taşmaz.
+  InsectBody addDropBody(InsectTier tier, double aimX, double y) {
+    final jitter = dropJitterPx(tier);
+    final dx = (_dropRng.nextDouble() * 2 - 1) * jitter;
+    final tilt = (_dropRng.nextDouble() * 2 - 1) * dropTiltRad(tier);
+    final spin = (_dropRng.nextDouble() * 2 - 1) * dropSpin(tier);
+    var x = aimX + dx;
+    final margin = tier.radius * 1.06 + 2.0;
+    if (squareArena) {
+      final minX = arenaBounds.left + margin;
+      final maxX = arenaBounds.right - margin;
+      x = minX > maxX ? (minX + maxX) / 2 : x.clamp(minX, maxX);
+    } else {
+      final dxc = x - arenaCenter.dx;
+      final dyc = y - arenaCenter.dy;
+      final maxR = arenaRadius - margin;
+      final distSq = dxc * dxc + dyc * dyc;
+      if (distSq > maxR * maxR && distSq > 0.0001) {
+        final dist = sqrt(distSq);
+        x = arenaCenter.dx + dxc / dist * maxR;
+      }
+    }
+    addBody(tier, x, y, initialAngle: tilt, initialAngularVelocity: spin);
+    return bodies.last;
   }
 
   void spawnParticles(double x, double y, Color color, {int count = 15}) {
@@ -391,7 +503,6 @@ class CircularPhysicsEngine {
     // Damping is defined per 60 Hz frame; scale it to this step's dt so
     // behaviour is identical at any step rate.
     final damping = pow(0.972, dt * 60).toDouble();
-    final angularDamping = pow(_angularDamping, dt * 60).toDouble();
     final restDampingX = pow(0.9, dt * 60).toDouble();
     final restDampingY = pow(0.94, dt * 60).toDouble();
 
@@ -422,7 +533,8 @@ class CircularPhysicsEngine {
       b.y += vy;
 
       b.angle += b.angularVelocity * dt;
-      b.angularVelocity *= angularDamping;
+      // Kademe-bağımlı açısal sönüm (küçük kademe daha uzun döner).
+      b.angularVelocity *= pow(b.angularDamping, dt * 60).toDouble();
       if (b.angularVelocity.abs() < 0.18) {
         b.angularVelocity = 0;
       } else {
@@ -470,6 +582,16 @@ class CircularPhysicsEngine {
       _pool.add(b);
       bodies.removeAt(i);
     }
+  }
+
+  /// 10B — yumuşak iniş: sert temas anında (iniş hızına bağlı) kısa
+  /// squash bırakır; çizici bunu mevcut `mergeSquash` deseniyle çizer
+  /// (aynı alan, yeni asset yok). [closingSpeed] adım başına px'tir
+  /// (4 px/adım ≈ 480 px/s); altı sessiz temas sayılır, squash yok.
+  void _registerImpact(InsectBody b, double closingSpeed) {
+    if (closingSpeed <= 4.0) return;
+    final s = (closingSpeed / 14.0).clamp(0.0, 0.85);
+    if (s > b.mergeSquash) b.mergeSquash = s;
   }
 
   void _resolveBlocks() {
@@ -525,6 +647,8 @@ class CircularPhysicsEngine {
         // Kill most bounce energy so bowl walls don't ping-pong the pile.
         final vx = b.x - b.prevX;
         final vy = b.y - b.prevY;
+        final vnOut = vx * nx + vy * ny;
+        if (vnOut > 0) _registerImpact(b, vnOut);
         b.prevX = b.x - vx * 0.28;
         b.prevY = b.y - vy * 0.22;
       }
@@ -549,6 +673,8 @@ class CircularPhysicsEngine {
       }
       if (b.y > floorY - r) {
         final vx = b.x - b.prevX;
+        final vy = b.y - b.prevY;
+        if (vy > 0) _registerImpact(b, vy);
         b.y = floorY - r;
         b.prevY = b.y;
         b.prevX = b.x - vx * 0.9;
@@ -596,6 +722,8 @@ class CircularPhysicsEngine {
             final midY = (b1.y + b2.y) / 2;
 
             b1.tier = next;
+            // Birleşen gövde yeni kademenin dönüş karakterini alır.
+            b1.angularDamping = angularDampingFor(next);
             // One merge per body per frame — lock b1 for this frame.
             // A locked pair falls through to separation below instead.
             _mergedThisFrame.add(b1);
@@ -624,6 +752,16 @@ class CircularPhysicsEngine {
           final nx = coincident ? 1.0 : dx / dist;
           final ny = coincident ? 0.0 : dy / dist;
 
+          // Yaklaşma hızı (normal bileşen): sert iniş/temas squash'ı
+          // + aşağıdaki yavaş-temas sönümü aynı değerden beslenir.
+          final rvx = (b2.x - b2.prevX) - (b1.x - b1.prevX);
+          final rvy = (b2.y - b2.prevY) - (b1.y - b1.prevY);
+          final vn = rvx * nx + rvy * ny;
+          if (vn < 0) {
+            _registerImpact(b1, -vn);
+            _registerImpact(b2, -vn);
+          }
+
           if (overlap > 0) {
             final totalMass = b1.mass + b2.mass;
             final m1Ratio = b2.mass / totalMass;
@@ -648,7 +786,9 @@ class CircularPhysicsEngine {
             final balance = lower.radius * 0.38;
             if (dxOff.abs() < balance) {
               final dir = dxOff.abs() < 0.6 ? _freerSide(upper) : dxOff.sign;
-              upper.prevX = upper.x - dir * 2.6;
+              // 10B: küçük kademe daha istekli yuvarlanır, büyük daha
+              // ağır oturur — boşluklar ızgara gibi değil, organik dolar.
+              upper.prevX = upper.x - dir * 2.6 * tierRollFactor(upper.tier);
             } else {
               // Keep rolling off the shoulder; light friction only.
               final ux = upper.x - upper.prevX;
@@ -658,9 +798,6 @@ class CircularPhysicsEngine {
 
           // Kill bounce (normal), keep tangential settle.
           if (b1.speed < 2.2 && b2.speed < 2.2) {
-            final rvx = (b2.x - b2.prevX) - (b1.x - b1.prevX);
-            final rvy = (b2.y - b2.prevY) - (b1.y - b1.prevY);
-            final vn = rvx * nx + rvy * ny;
             if (vn < 0) {
               b1.prevX = b1.x - ((b1.x - b1.prevX) - nx * vn * 0.55);
               b1.prevY = b1.y - ((b1.y - b1.prevY) - ny * vn * 0.55);

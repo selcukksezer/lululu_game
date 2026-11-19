@@ -388,6 +388,7 @@ class _GameScreenState extends State<GameScreen>
       _engine!.layoutBlocks(
         !widget.arcade && _currentLevel.hasObstacles ? 3 : 0,
       );
+      _engine!.setDropSeed(_runStartStamp);
       _dropperX = center.dx;
     } else {
       _engine!.remountLayout(
@@ -422,6 +423,9 @@ class _GameScreenState extends State<GameScreen>
   void _restartLevel(CampaignLevel level) {
     // Yeni tur, yeni Y3 anahtarı: eski turun anahtarı tüketilmiş kalır.
     _runStartStamp = DateTime.now().microsecondsSinceEpoch;
+    // 10B: bırakma rastgeleliği bu tur damgasıyla tohumlanır — aynı
+    // tohum aynı düşüş dizisini verir, turlar arası tekrar yoktur.
+    _engine?.setDropSeed(_runStartStamp);
     _dropTimer?.cancel();
     _movesEndTimer?.cancel();
     _bonusPulseTimer?.cancel();
@@ -834,7 +838,9 @@ class _GameScreenState extends State<GameScreen>
     });
 
     final dropY = _engine!.arenaBounds.top + 18;
-    _engine!.addBody(_currentDropperTier, _dropperX, dropY);
+    // 10B: doğal bırakma — tohumlu küçük x sapması + başlangıç eğimi /
+    // dönüş; sapma arena sınırları içinde kelepçelenir (motorda).
+    _engine!.addDropBody(_currentDropperTier, _dropperX, dropY);
     // Enerji iadesi sayacı (madde 35): düşürme anında sayılır, zamanlayıcı
     // geri çağrısında değil — 280 ms içinde çıkılsa bile hamle sayılır.
     _dropsMade++;
