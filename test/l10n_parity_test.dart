@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 859 getter + 183 metot = 1042 anahtar,
+// açıkça sayılır (soyut sınıftaki 866 getter + 184 metot = 1050 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -151,6 +151,13 @@ void main() {
         'profileInviteRowTitle': l10n.profileInviteRowTitle,
         'profileInviteRowSub': l10n.profileInviteRowSub,
         'profileInviteFailed': l10n.profileInviteFailed,
+        'inviteRedeemTitle': l10n.inviteRedeemTitle,
+        'inviteRedeemHint': l10n.inviteRedeemHint,
+        'inviteRedeemButton': l10n.inviteRedeemButton,
+        'inviteRedeemLocalNote': l10n.inviteRedeemLocalNote,
+        'inviteRedeemErrorInvalid': l10n.inviteRedeemErrorInvalid,
+        'inviteRedeemErrorOwn': l10n.inviteRedeemErrorOwn,
+        'inviteRedeemErrorUsed': l10n.inviteRedeemErrorUsed,
         'profileRoyalCapeBadge': l10n.profileRoyalCapeBadge,
         'lockedLabel': l10n.lockedLabel,
         'onboardingTagline': l10n.onboardingTagline,
@@ -1031,6 +1038,13 @@ void main() {
         'profileInviteRowTitle': l10n.profileInviteRowTitle,
         'profileInviteRowSub': l10n.profileInviteRowSub,
         'profileInviteFailed': l10n.profileInviteFailed,
+        'inviteRedeemTitle': l10n.inviteRedeemTitle,
+        'inviteRedeemHint': l10n.inviteRedeemHint,
+        'inviteRedeemButton': l10n.inviteRedeemButton,
+        'inviteRedeemLocalNote': l10n.inviteRedeemLocalNote,
+        'inviteRedeemErrorInvalid': l10n.inviteRedeemErrorInvalid,
+        'inviteRedeemErrorOwn': l10n.inviteRedeemErrorOwn,
+        'inviteRedeemErrorUsed': l10n.inviteRedeemErrorUsed,
         'profileRoyalCapeBadge': l10n.profileRoyalCapeBadge,
         'lockedLabel': l10n.lockedLabel,
         'onboardingTagline': l10n.onboardingTagline,
@@ -1989,6 +2003,7 @@ void main() {
         'dailyChallengeClaimedSnack': l10n.dailyChallengeClaimedSnack(3),
         'dailyChallengeHeadline': l10n.dailyChallengeHeadline('X', 3),
         'taskCompletedSnack': l10n.taskCompletedSnack('X'),
+        'inviteRedeemSuccess': l10n.inviteRedeemSuccess(100),
       };
 
   Map<String, String> trMethodStrings(AppLocalizationsTr l10n) => {
@@ -2189,6 +2204,7 @@ void main() {
         'dailyChallengeClaimedSnack': l10n.dailyChallengeClaimedSnack(3),
         'dailyChallengeHeadline': l10n.dailyChallengeHeadline('X', 3),
         'taskCompletedSnack': l10n.taskCompletedSnack('X'),
+        'inviteRedeemSuccess': l10n.inviteRedeemSuccess(100),
       };
 
   // İki dilde de aynen kalan meşru değerler. Liste programatik
@@ -2250,21 +2266,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 1042 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1050 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 859);
-    expect(tr.length, 859);
-    expect(enMethods.length, 183);
-    expect(trMethods.length, 183);
+    expect(en.length, 866);
+    expect(tr.length, 866);
+    expect(enMethods.length, 184);
+    expect(trMethods.length, 184);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1042);
+    expect(en.length + enMethods.length, 1050);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

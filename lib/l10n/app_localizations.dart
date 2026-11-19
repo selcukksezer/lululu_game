@@ -269,6 +269,18 @@ abstract class AppLocalizations {
   String get profileInviteRowTitle;
   String get profileInviteRowSub;
   String get profileInviteFailed;
+
+  /// 9A — davet kodu karşılama (redeem) sheet'i.
+  String get inviteRedeemTitle;
+  String get inviteRedeemHint;
+  String get inviteRedeemButton;
+  String get inviteRedeemLocalNote;
+  String get inviteRedeemErrorInvalid;
+  String get inviteRedeemErrorOwn;
+  String get inviteRedeemErrorUsed;
+
+  /// Başarı mesajı; ödül tutarı parametrelidir.
+  String inviteRedeemSuccess(int coins);
   String get profileRoyalCapeBadge;
 
   /// Rozet sayacı: '2/6 KAZANILDI' biçimi korunur.

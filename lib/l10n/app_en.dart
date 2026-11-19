@@ -437,6 +437,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileInviteFailed => 'The invite could not be shared. Try again.';
 
   @override
+  String get inviteRedeemTitle => 'Redeem an Invite Code';
+
+  @override
+  String get inviteRedeemHint => 'Enter a friend’s invite code';
+
+  @override
+  String get inviteRedeemButton => 'Redeem Code';
+
+  @override
+  String get inviteRedeemLocalNote =>
+      'Codes are checked only on this device; there is no server verification.';
+
+  @override
+  String get inviteRedeemErrorInvalid =>
+      'Invalid code format. Example: LULU-AB12345';
+
+  @override
+  String get inviteRedeemErrorOwn => 'You can’t use your own code.';
+
+  @override
+  String get inviteRedeemErrorUsed => 'This code was already used.';
+
+  @override
+  String inviteRedeemSuccess(int coins) => 'Nice! You earned +$coins coins.';
+
+  @override
   String get profileRoyalCapeBadge => 'Royal Cape';
 
   @override

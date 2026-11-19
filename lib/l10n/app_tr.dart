@@ -442,6 +442,32 @@ class AppLocalizationsTr extends AppLocalizations {
   String get profileInviteFailed => 'Davet paylaşılamadı. Tekrar dene.';
 
   @override
+  String get inviteRedeemTitle => 'Davet Kodunu Kullan';
+
+  @override
+  String get inviteRedeemHint => 'Arkadaşının davet kodunu gir';
+
+  @override
+  String get inviteRedeemButton => 'Kodu Kullan';
+
+  @override
+  String get inviteRedeemLocalNote =>
+      'Kodlar yalnızca bu cihazda denetlenir; sunucu doğrulaması yoktur.';
+
+  @override
+  String get inviteRedeemErrorInvalid =>
+      'Kod biçimi hatalı. Örnek: LULU-AB12345';
+
+  @override
+  String get inviteRedeemErrorOwn => 'Kendi kodunu kullanamazsın.';
+
+  @override
+  String get inviteRedeemErrorUsed => 'Bu kod zaten kullanıldı.';
+
+  @override
+  String inviteRedeemSuccess(int coins) => 'Harika! +$coins coin kazandın.';
+
+  @override
   String get profileRoyalCapeBadge => 'Kral Pelerini';
 
   @override

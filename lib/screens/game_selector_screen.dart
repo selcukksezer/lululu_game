@@ -11,7 +11,6 @@ import '../services/audio_manager.dart';
 import '../services/chat_service.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/energy_service.dart';
-import '../services/friend_invite_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/online_notify_service.dart';
 import '../services/progress_manager.dart';
@@ -19,6 +18,7 @@ import '../services/zero_jank_preloader.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/energy_empty_popup.dart';
 import '../widgets/hb_overlay.dart';
+import '../widgets/invite_redeem_sheet.dart';
 import '../widgets/top_bar.dart';
 import 'chat_screen.dart';
 import 'modes_screen.dart';
@@ -276,20 +276,11 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     await goTo(context, 'campaign');
   }
 
-  /// K17-hub — davet paylaşımı; profil ekranındaki desenin aynısı:
-  /// servis `Future<void>` döner, sheet'in kapatılması hata sayılmaz,
-  /// yalnız istisnada hata bildirimi gösterilir. Redeem akışı YOKTUR
-  /// (karar bekliyor).
-  Future<void> _shareInvite() async {
+  /// K17-hub + 9A — davet sheet'i: profil satırıyla AYNI sheet açılır
+  /// (paylaşım + kod karşılama). Hub kartı sheet'e bağlandı.
+  void _openInviteSheet() {
     AudioManager().playPop();
-    try {
-      await FriendInviteService.instance.shareInvite();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.profileInviteFailed)),
-      );
-    }
+    showInviteRedeemSheet(context);
   }
 
   @override
@@ -2308,8 +2299,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     );
   }
 
-  // Davet girişi (K17-hub): profil satırıyla aynı başlık/alt yazı;
-  // paylaşım FriendInviteService.shareInvite() ile yapılır.
+  // Davet girişi (K17-hub + 9A): profil satırıyla aynı başlık/alt yazı;
+  // dokununca profil ile aynı sheet açılır (paylaşım + kod karşılama).
   Widget _buildInviteEntryCard() {
     final l10n = context.l10n;
     return Semantics(
@@ -2317,7 +2308,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       label: l10n.profileInviteRowTitle,
       child: GestureDetector(
         key: const Key('hub_invite_entry'),
-        onTap: _shareInvite,
+        onTap: _openInviteSheet,
         behavior: HitTestBehavior.opaque,
         child: Container(
           padding: const EdgeInsets.all(14),

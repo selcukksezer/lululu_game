@@ -4,9 +4,9 @@ import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
-import '../services/friend_invite_service.dart';
 import '../services/progress_manager.dart';
 import '../widgets/achievement_toast_overlay.dart';
+import '../widgets/invite_redeem_sheet.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -65,21 +65,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// K17: davet paylaşımı. Servis `Future<void>` döner ve SharePlus
-  /// sonucunu (paylaşıldı/kapatıldı ayrımını) döndürmez; sheet'in
-  /// kapatılması "hata" sayılmaz, başarı sessiz varsayılır — yalnız
-  /// istisnada hata bildirimi gösterilir. Redeem akışı YOKTUR
-  /// (redeem kararı bekliyor).
-  Future<void> _shareInvite() async {
+  /// K17 + 9A: davet sheet'i — paylaşım + kod karşılama aynı yerde.
+  /// Paylaşım akışı aynen kalır (sheet içindeki Paylaş düğmesi eski
+  /// `shareInvite` yolunu kullanır); redeem sheet'in alt bölümündedir.
+  void _openInviteSheet() {
     AudioManager().playPop();
-    try {
-      await FriendInviteService.instance.shareInvite();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.profileInviteFailed)),
-      );
-    }
+    showInviteRedeemSheet(context);
   }
 
   /// Misafir çağrısı: giriş yap / kayıt ol düğmesi + kısa açıklama.
@@ -872,7 +863,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             emoji: '✉️',
                             title: l10n.profileInviteRowTitle,
                             subtitle: l10n.profileInviteRowSub,
-                            onTap: _shareInvite,
+                            onTap: _openInviteSheet,
                           ),
                           const SizedBox(height: 8),
                         ],
