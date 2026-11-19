@@ -73,6 +73,11 @@ class MakarayizScreenState extends State<MakarayizScreen>
   static const _beatInset = 44.0; // beat çizgisi şerit tabanından yukarıda
 
   late final Ticker _ticker;
+
+  /// Kare sayacı (10E, 8C VLB deseni): `advance` yalnız bu sayacı
+  /// artırır; sahne [ValueListenableBuilder] ile yenilenir. Tick
+  /// sıklığı ve vuruş penceresi (140-230 ms) aynen korunur.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
   final _rng = Random();
 
   final List<_Note> _notes = [];
@@ -264,6 +269,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
       AudioManager().stopAll();
       _ticker.dispose();
     }
+    _tickNotifier.dispose();
     super.dispose();
   }
 
@@ -410,7 +416,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
       _breakText = null;
       _gainText = null;
     }
-    if (mounted) setState(() {});
+    if (mounted) _tickNotifier.value++;
   }
 
   void _showText({String? combo, String? brk, String? gain}) {
@@ -479,7 +485,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _bubbleTier = n.tier;
     _hint = bug.viralReplik;
     _showText(
-      combo: _combo >= 2 ? 'COMBO X$_combo!' : (perfect ? context.l10n.perfectCaps : null),
+      combo: _combo >= 2
+          ? 'COMBO X$_combo!'
+          : (perfect ? context.l10n.perfectCaps : null),
       gain: '+$gain X$_combo',
     );
     unawaited(
@@ -596,8 +604,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
         // Y3: tur başlangıç damgalı anahtar; bu turun tüm bitiş
         // yolları (_finishEarly + _edgeShowResult) aynı anahtarı
         // paylaşır, çift ödeme/gösterim engellenir.
-        idempotencyKey:
-            '${LeaderboardService.modeMakarayiz}:$_runStartedAtUs',
+        idempotencyKey: '${LeaderboardService.modeMakarayiz}:$_runStartedAtUs',
       );
     } catch (_) {
       if (mounted) _resultShown = false;
@@ -750,9 +757,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     if (wideScreen) {
       final topPad = (tier == 3 || tier == 4)
           ? 3.15
-          : (tier == 2
-                ? 5.9
-                : (tier == 1 ? 7.2 : (tier == 5 ? 5.5 : 5.3)));
+          : (tier == 2 ? 5.9 : (tier == 1 ? 7.2 : (tier == 5 ? 5.5 : 5.3)));
       return Positioned(
         top: top,
         left: 0,
@@ -872,200 +877,265 @@ class MakarayizScreenState extends State<MakarayizScreen>
     if (!_alive && !_resultShown) _edgeShowResult();
     final proto = widget.prototypeVisualState;
     final wideScreen = MediaQuery.sizeOf(context).width >= 400;
-    final pulse = proto ? 0.0 : (1 - ((_now - _pulseAt) / 220).clamp(0.0, 1.0));
-    final pct = (_reel * 100).round();
-    final hero = InsectTier.values[proto ? 2 : _bubbleTier];
 
+    // Statik arka plan: kare bildiriminde yeniden kurulmaz --
+    // [ValueListenableBuilder] `child` olarak bir kez kurulur.
+    final background = Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: Opacity(
+            opacity: wideScreen ? 0.96 : 1,
+            child: Image.asset(
+              'assets/design/backgrounds/makarayiz_stage.webp',
+              fit: BoxFit.cover,
+              alignment: wideScreen ? Alignment.center : Alignment.centerLeft,
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: wideScreen
+                    ? const [0, 0.24, 0.76, 1]
+                    : const [0, 0.3, 0.58, 1],
+                colors: wideScreen
+                    ? const [
+                        Color(0x4D080B12),
+                        Color(0x00080B12),
+                        Color(0x00080B12),
+                        Color(0x52080B12),
+                      ]
+                    : const [
+                        Color(0x7A080B12),
+                        Color(0x00080B12),
+                        Color(0x00080B12),
+                        Color(0x94080B12),
+                      ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
     return PopScope(
       canPop: _exitConfirmed || !_needsExitConfirm,
       onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
-      child: _MakarayizChrome(
-        score: _score,
-      best: _best,
-      combo: _combo,
-      hint: _hint,
-      onRestart: _finishEarly,
-      prototypeVisualState: proto,
-      showPauseButton: !proto,
-      onPausePressed: _togglePause,
-      onHelpOpened: _pauseForHelpDialog,
-      onHelpClosed: _resumeAfterHelpDialog,
-      // F6: tek sonuç yolu finishRun diyaloğudur (_edgeShowResult);
-      // ölü ArcadeResultOverlay dalı kaldırıldı.
-      overlay: _paused ? _pauseOverlay() : null,
-      bonuses: [
-        stockBonusWithResult(
-          id: 'beat',
-          label: context.l10n.powerBeatFreezeCaps,
-          asset: 'assets/icons2/clock.png',
-          effect: _useBeatFreeze,
-        ),
-        stockBonusWithResult(
-          id: 'auto',
-          label: context.l10n.powerAutoReelCaps,
-          asset: 'assets/icons2/wheel.png',
-          effect: _useAuto,
-        ),
-        stockBonusWithResult(
-          id: 'x2',
-          label: context.l10n.powerScoreX2,
-          asset: 'assets/icons2/boost_coins.png',
-          effect: _useX2,
-        ),
-      ],
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragEnd: (d) {
-          final v = d.primaryVelocity ?? 0;
-          if (v.abs() < 200) return;
-          // Kaydırma: en yakın nota şeridini yöne göre seç.
-          final cand =
-              _notes
-                  .where((n) => !n.done && (_now - n.hitMs).abs() <= windowMs)
-                  .toList()
-                ..sort(
-                  (a, b) =>
-                      (a.hitMs - _now).abs().compareTo((b.hitMs - _now).abs()),
-                );
-          if (cand.isNotEmpty) tryHit(cand.first.lane);
-        },
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, c) {
-                      final h = c.maxHeight - 12 - 74 - 2;
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 74),
-                        child: Row(
-                          children: [
-                            for (var i = 0; i < 3; i++) ...[
-                              if (i > 0) const SizedBox(width: 7),
-                              _lane(i, h, wideScreen: wideScreen),
-                            ],
-                          ],
+      child: ValueListenableBuilder<int>(
+        valueListenable: _tickNotifier,
+        child: background,
+        builder: (context, _, backgroundChild) {
+          // Kare başına değişen değerler burada, VLB içinde okunur
+          // (dış `build` yalnız olay `setState`'lerinde çalışır).
+          final pulse = proto
+              ? 0.0
+              : (1 - ((_now - _pulseAt) / 220).clamp(0.0, 1.0));
+          final pct = (_reel * 100).round();
+          final hero = InsectTier.values[proto ? 2 : _bubbleTier];
+          return _MakarayizChrome(
+            score: _score,
+            best: _best,
+            combo: _combo,
+            hint: _hint,
+            onRestart: _finishEarly,
+            prototypeVisualState: proto,
+            showPauseButton: !proto,
+            onPausePressed: _togglePause,
+            onHelpOpened: _pauseForHelpDialog,
+            onHelpClosed: _resumeAfterHelpDialog,
+            // F6: tek sonuç yolu finishRun diyaloğudur (_edgeShowResult);
+            // ölü ArcadeResultOverlay dalı kaldırıldı.
+            overlay: _paused ? _pauseOverlay() : null,
+            bonuses: [
+              stockBonusWithResult(
+                id: 'beat',
+                label: context.l10n.powerBeatFreezeCaps,
+                asset: 'assets/icons2/clock.png',
+                effect: _useBeatFreeze,
+              ),
+              stockBonusWithResult(
+                id: 'auto',
+                label: context.l10n.powerAutoReelCaps,
+                asset: 'assets/icons2/wheel.png',
+                effect: _useAuto,
+              ),
+              stockBonusWithResult(
+                id: 'x2',
+                label: context.l10n.powerScoreX2,
+                asset: 'assets/icons2/boost_coins.png',
+                effect: _useX2,
+              ),
+            ],
+            background: backgroundChild!,
+            stageBuilder: () {
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragEnd: (d) {
+                  final v = d.primaryVelocity ?? 0;
+                  if (v.abs() < 200) return;
+                  // Kaydırma: en yakın nota şeridini yöne göre seç.
+                  final cand =
+                      _notes
+                          .where(
+                            (n) =>
+                                !n.done && (_now - n.hitMs).abs() <= windowMs,
+                          )
+                          .toList()
+                        ..sort(
+                          (a, b) => (a.hitMs - _now).abs().compareTo(
+                            (b.hitMs - _now).abs(),
+                          ),
+                        );
+                  if (cand.isNotEmpty) tryHit(cand.first.lane);
+                },
+                child: Stack(
+                  children: [
+                    Column(
+                      children: [
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, c) {
+                              final h = c.maxHeight - 12 - 74 - 2;
+                              return Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  16,
+                                  74,
+                                ),
+                                child: Row(
+                                  children: [
+                                    for (var i = 0; i < 3; i++) ...[
+                                      if (i > 0) const SizedBox(width: 7),
+                                      _lane(i, h, wideScreen: wideScreen),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 118,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      boxShadow: pulse > 0
-                          ? [
-                              BoxShadow(
-                                color: const Color(
-                                  0xFFFFD700,
-                                ).withValues(alpha: 0.7 * pulse),
-                                blurRadius: 10,
+                      ],
+                    ),
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 118,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            height: 3,
+                            decoration: BoxDecoration(
+                              boxShadow: pulse > 0
+                                  ? [
+                                      BoxShadow(
+                                        color: const Color(
+                                          0xFFFFD700,
+                                        ).withValues(alpha: 0.7 * pulse),
+                                        blurRadius: 10,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: CustomPaint(
+                              size: const Size(double.infinity, 3),
+                              painter: _DashPainter(),
+                            ),
+                          ),
+                          Positioned(
+                            right: 0,
+                            top: -19,
+                            child: Text(
+                              'BEAT',
+                              style: GoogleFonts.nunito(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                                color: const Color(0xFFFFD700),
                               ),
-                            ]
-                          : null,
-                    ),
-                    child: CustomPaint(
-                      size: const Size(double.infinity, 3),
-                      painter: _DashPainter(),
-                    ),
-                  ),
-                  Positioned(
-                    right: 0,
-                    top: -19,
-                    child: Text(
-                      'BEAT',
-                      style: GoogleFonts.nunito(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.8,
-                        color: const Color(0xFFFFD700),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 8,
-              child: _reelWrap(hero, pct, wideScreen: wideScreen),
-            ),
-            if (!proto)
-              Positioned(
-                right: 12,
-                top: 10,
-                child: IgnorePointer(
-                  child: Text(
-                    '${'♥' * _lives}${'♡' * (3 - _lives)}',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: Color(0xFFE01E5A),
-                      height: 1,
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 8,
+                      child: _reelWrap(hero, pct, wideScreen: wideScreen),
                     ),
-                  ),
-                ),
-              ),
-            if (_comboText != null || _breakText != null)
-              Positioned(
-                left: 12,
-                top: 10,
-                child: IgnorePointer(
-                  child: _breakText != null
-                      ? Text(
-                          _breakText!,
-                          style: _bangers(
-                            21,
-                            const Color(0xFFE52E2E),
-                            const Color(0xFFFFD700),
-                          ),
-                        )
-                      : Text(
-                          _comboText!,
-                          style: _bangers(
-                            23,
-                            const Color(0xFFFFB800),
-                            const Color(0xFFFF6B35),
+                    if (!proto)
+                      Positioned(
+                        right: 12,
+                        top: 10,
+                        child: IgnorePointer(
+                          child: Text(
+                            '${'♥' * _lives}${'♡' * (3 - _lives)}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              color: Color(0xFFE01E5A),
+                              height: 1,
+                            ),
                           ),
                         ),
+                      ),
+                    if (_comboText != null || _breakText != null)
+                      Positioned(
+                        left: 12,
+                        top: 10,
+                        child: IgnorePointer(
+                          child: _breakText != null
+                              ? Text(
+                                  _breakText!,
+                                  style: _bangers(
+                                    21,
+                                    const Color(0xFFE52E2E),
+                                    const Color(0xFFFFD700),
+                                  ),
+                                )
+                              : Text(
+                                  _comboText!,
+                                  style: _bangers(
+                                    23,
+                                    const Color(0xFFFFB800),
+                                    const Color(0xFFFF6B35),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    if (_gainText != null && !proto)
+                      Positioned(
+                        left: 126,
+                        top: 58,
+                        child: IgnorePointer(
+                          child: Text(
+                            _gainText!,
+                            style: _bangers(
+                              20,
+                              const Color(0xFFFFB800),
+                              const Color(0xFFFF6B35),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (proto || (_combo >= 2 && _alive))
+                      Positioned(
+                        right: 12,
+                        bottom: 158,
+                        child: IgnorePointer(
+                          child: _bubble(hero, wideScreen: wideScreen),
+                        ),
+                      ),
+                  ],
                 ),
-              ),
-            if (_gainText != null && !proto)
-              Positioned(
-                left: 126,
-                top: 58,
-                child: IgnorePointer(
-                  child: Text(
-                    _gainText!,
-                    style: _bangers(
-                      20,
-                      const Color(0xFFFFB800),
-                      const Color(0xFFFF6B35),
-                    ),
-                  ),
-                ),
-              ),
-            if (proto || (_combo >= 2 && _alive))
-              Positioned(
-                right: 12,
-                bottom: 158,
-                child: IgnorePointer(
-                  child: _bubble(hero, wideScreen: wideScreen),
-                ),
-              ),
-          ],
-        ),
-      ),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -1101,7 +1171,10 @@ class MakarayizScreenState extends State<MakarayizScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+                ArcadeButton(
+                  label: context.l10n.continueAction,
+                  onPressed: _togglePause,
+                ),
                 const SizedBox(height: 12),
                 // N6: duraklatmadan çıkış — mevcut geri yolu
                 // (`maybePop`); iade kuralları PopScope handler'da
@@ -1126,10 +1199,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
       children: [
         Container(
           constraints: const BoxConstraints(maxWidth: 176),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 11,
-            vertical: 6,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
             color: const Color(0xF0080B12),
             borderRadius: BorderRadius.circular(14),
@@ -1274,7 +1344,8 @@ class _MakarayizChrome extends StatelessWidget {
     required this.onRestart,
     required this.prototypeVisualState,
     required this.bonuses,
-    required this.child,
+    required this.stageBuilder,
+    required this.background,
     this.overlay,
     this.showPauseButton = false,
     this.onPausePressed,
@@ -1289,7 +1360,8 @@ class _MakarayizChrome extends StatelessWidget {
   final VoidCallback onRestart;
   final bool prototypeVisualState;
   final List<ModeBonus> bonuses;
-  final Widget child;
+  final Widget Function() stageBuilder;
+  final Widget background;
   final Widget? overlay;
   final bool showPauseButton;
   final VoidCallback? onPausePressed;
@@ -1338,44 +1410,7 @@ class _MakarayizChrome extends StatelessWidget {
         body: Stack(
           fit: StackFit.expand,
           children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: wideScreen ? 0.96 : 1,
-                child: Image.asset(
-                  'assets/design/backgrounds/makarayiz_stage.webp',
-                  fit: BoxFit.cover,
-                  alignment: wideScreen
-                      ? Alignment.center
-                      : Alignment.centerLeft,
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: wideScreen
-                        ? const [0, 0.24, 0.76, 1]
-                        : const [0, 0.3, 0.58, 1],
-                    colors: wideScreen
-                        ? const [
-                            Color(0x4D080B12),
-                            Color(0x00080B12),
-                            Color(0x00080B12),
-                            Color(0x52080B12),
-                          ]
-                        : const [
-                            Color(0x7A080B12),
-                            Color(0x00080B12),
-                            Color(0x00080B12),
-                            Color(0x94080B12),
-                          ],
-                  ),
-                ),
-              ),
-            ),
+            background,
             Column(
               children: [
                 _statusBar(
@@ -1405,7 +1440,7 @@ class _MakarayizChrome extends StatelessWidget {
                     ),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                      child: child,
+                      child: stageBuilder(),
                     ),
                   ),
                 ),
@@ -1571,9 +1606,7 @@ class _MakarayizChrome extends StatelessWidget {
                     const SizedBox(width: 6),
                     Text(
                       _format(
-                        prototypeVisualState
-                            ? 12450
-                            : ProgressManager().coins,
+                        prototypeVisualState ? 12450 : ProgressManager().coins,
                       ),
                       style: GoogleFonts.nunito(
                         fontSize: 13.5,
@@ -1714,16 +1747,10 @@ class _MakarayizChrome extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.asset(
-                    'assets/icons2/coin.png',
-                    width: 20,
-                    height: 20,
-                  ),
+                  Image.asset('assets/icons2/coin.png', width: 20, height: 20),
                   const SizedBox(width: 6),
                   Text(
-                    _format(
-                      ProgressManager().coins,
-                    ),
+                    _format(ProgressManager().coins),
                     style: GoogleFonts.nunito(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w900,
@@ -1763,19 +1790,32 @@ class _MakarayizChrome extends StatelessWidget {
     return SizedBox(
       height: wideScreen ? 58.5 : 60,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(wideScreen ? 12 : 11, 8, wideScreen ? 12 : 8, 0),
+        padding: EdgeInsets.fromLTRB(
+          wideScreen ? 12 : 11,
+          8,
+          wideScreen ? 12 : 8,
+          0,
+        ),
         child: LayoutBuilder(
           builder: (context, hudBox) {
             final row = Row(
               children: [
                 SizedBox(
                   width: wideScreen ? 104 : 108,
-                  child: _stat(context.l10n.gameScoreLabel, _format(score), wideScreen: wideScreen),
+                  child: _stat(
+                    context.l10n.gameScoreLabel,
+                    _format(score),
+                    wideScreen: wideScreen,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 84,
-                  child: _stat(context.l10n.gameBestLabel, _format(best), wideScreen: wideScreen),
+                  child: _stat(
+                    context.l10n.gameBestLabel,
+                    _format(best),
+                    wideScreen: wideScreen,
+                  ),
                 ),
                 const Spacer(),
                 SizedBox(
@@ -1787,32 +1827,32 @@ class _MakarayizChrome extends StatelessWidget {
                   button: true,
                   label: context.l10n.finishRoundLabel,
                   child: GestureDetector(
-                  onTap: onRestart,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    width: wideScreen ? 57.8 : 58,
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFB800),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0xFFB97A00),
-                          offset: Offset(0, 3),
+                    onTap: onRestart,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      width: wideScreen ? 57.8 : 58,
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFB800),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0xFFB97A00),
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        context.l10n.finishCaps,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w900,
+                          color: const Color(0xFF4A2E00),
                         ),
-                      ],
-                    ),
-                    child: Text(
-                      context.l10n.finishCaps,
-                      style: GoogleFonts.baloo2(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF4A2E00),
                       ),
                     ),
                   ),
-                ),
                 ),
               ],
             );
@@ -1838,9 +1878,7 @@ class _MakarayizChrome extends StatelessWidget {
       decoration: BoxDecoration(
         color: wideScreen ? const Color(0xD9080B12) : const Color(0x73080B12),
         border: Border.all(
-          color: wideScreen
-              ? const Color(0x8CFFB800)
-              : const Color(0x73FFB800),
+          color: wideScreen ? const Color(0x8CFFB800) : const Color(0x73FFB800),
         ),
         borderRadius: BorderRadius.circular(16),
       ),
@@ -2095,11 +2133,7 @@ class _RoundButton extends StatelessWidget {
     );
     final label = semanticLabel;
     if (label != null) {
-      button = Semantics(
-        button: true,
-        label: label,
-        child: button,
-      );
+      button = Semantics(button: true, label: label, child: button);
     }
     return button;
   }

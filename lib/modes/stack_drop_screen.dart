@@ -191,6 +191,11 @@ class _StackDropScreenState extends State<StackDropScreen>
   double _cameraY = 0;
 
   Ticker? _ticker;
+
+  /// Kare sayacı (10E, 8C VLB deseni): `_tick` yalnız bu sayacı
+  /// artırır; sahne [ValueListenableBuilder] ile yenilenir.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
+
   Duration _last = Duration.zero;
 
   DateTime? _freezeUntil;
@@ -245,6 +250,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _ticker?.dispose();
+    _tickNotifier.dispose();
     _milestoneTimer?.cancel();
     _feedbackTimer?.cancel();
     if (_score > 0) unawaited(_persist());
@@ -474,7 +480,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     final frozen =
         _freezeUntil != null && DateTime.now().isBefore(_freezeUntil!);
     if (frozen) {
-      setState(() {});
+      _tickNotifier.value++;
       return;
     }
     if (!mounted || !_laidOut) {
@@ -510,11 +516,16 @@ class _StackDropScreenState extends State<StackDropScreen>
     _cameraY += (targetCam - _cameraY) * min(1.0, dt * 6);
 
     if (_paused || _phase == _Phase.failed) {
-      if (_shake > 0) setState(() {});
+      if (_shake > 0) _tickNotifier.value++;
       return;
     }
 
+    final wasTutorial = _elapsedSeconds < 15;
     _elapsedSeconds += dt;
+    // Öğretici öneki 15. saniyede kalkar: `hint` ArcadeScreen
+    // başlığında (VLB dışında) gösterildiği için bu tek geçişte
+    // bir kez dış `setState` gerekir.
+    if (wasTutorial && _elapsedSeconds >= 15) setState(() {});
     _sway += dt * 2.4;
     _comboMeter = max(0, _comboMeter - dt * 0.12);
 
@@ -544,13 +555,13 @@ class _StackDropScreenState extends State<StackDropScreen>
         _moverX = half;
         _dir = 1;
       }
-      setState(() {});
+      _tickNotifier.value++;
     } else if (_phase == _Phase.falling) {
       _fallY += 920 * dt;
       if (_fallY >= _landY) {
         _settle();
       } else {
-        setState(() {});
+        _tickNotifier.value++;
       }
     }
   }
@@ -1054,200 +1065,254 @@ class _StackDropScreenState extends State<StackDropScreen>
       canPop: _exitConfirmed || !_needsExitConfirm,
       onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: ArcadeScreen(
-      backgroundAsset: 'assets/design/backgrounds/stack_nightcity.webp',
-      title: context.l10n.shopModeStackDrop,
-      // Yardım (F4): chrome '?' diyaloğu bu `hint` metnini gösterir;
-      // canlı oyun geri bildirimi değil, kural metni verilir. İlk 15
-      // saniyedeki öğretici öneki korunur (stack_play_test diyaloğun
-      // bu öneki içerdiğini doğrular).
-      hint: _elapsedSeconds < 15 && !widget.prototypeVisualState
-          ? context.l10n.stackTutorialHint(context.l10n.stackHelpBody)
-          : context.l10n.stackHelpBody,
-      score: _score,
-      best: _best,
-      tag: context.l10n.stackTowerTag,
-      tagColor: const Color(0xFFE52E2E),
-      prototypeChrome: true,
-      showStatusBar: true,
-      prototypeModeChrome: true,
-      statLabel: context.l10n.stackFloorStat,
-      statValue: '$_floors',
-      onRestart: _finishEarly,
-      onPausePressed: _togglePause,
-      onHowToPlayVisibilityChanged: _handleHowToPlayVisibilityChanged,
-      overlay: _paused
-          ? Positioned.fill(
-              child: ColoredBox(
-                color: LululuColors.carbonVoid.withValues(alpha: 0.72),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        context.l10n.pausedStatusCaps,
-                        style: GoogleFonts.exo2(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                          color: LululuColors.liquidGold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _statsLine(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: LululuColors.mutedTitanium,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          : null,
-      footer: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: SizedBox(
-              width: 260,
-              child: _StackBonusDock(
-                items: [
-                  stockBonusWithResult(
-                    id: 'freeze',
-                    label: context.l10n.shopPowerFreezeNameCaps,
-                    asset: 'assets/icons2/crystal.png',
-                    effect: () {
-                      final applied = _useFreeze();
-                      setState(() {});
-                      return applied;
-                    },
-                  ),
-                  stockBonusWithResult(
-                    id: 'widen',
-                    label: context.l10n.shopPowerWidenNameCaps,
-                    asset: 'assets/icons2/block.png',
-                    effect: () {
-                      final applied = _useWiden();
-                      setState(() {});
-                      return applied;
-                    },
-                  ),
-                  stockBonusWithResult(
-                    id: 'slows',
-                    label: context.l10n.shopPowerSlowNameCaps,
-                    asset: 'assets/icons2/clock.png',
-                    effect: () {
-                      final applied = _useSlowDrop();
-                      setState(() {});
-                      return applied;
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          _ensure(constraints.maxWidth, constraints.maxHeight);
-          final top = _stack.isEmpty ? null : _stack.last;
-          final comboMessage =
-              _feedback ?? (_combo > 0 ? 'KOMBO X$_combo' : null);
-          final shakeX = _shake > 0 ? sin(_sway * 40) * 10 * _shake : 0.0;
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _drop,
-            child: ClipRect(
-              child: Transform.translate(
-                offset: Offset(shakeX, 0),
-                child: Stack(
-                  children: [
-                    // Near + perfect zone guides.
-                    if (top != null && _phase == _Phase.ready && !_paused)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 84,
-                        height: 2,
-                        child: CustomPaint(
-                          painter: _DashedLinePainter(
-                            Colors.white.withValues(alpha: 0.25),
+        backgroundAsset: 'assets/design/backgrounds/stack_nightcity.webp',
+        title: context.l10n.shopModeStackDrop,
+        // Yardım (F4): chrome '?' diyaloğu bu `hint` metnini gösterir;
+        // canlı oyun geri bildirimi değil, kural metni verilir. İlk 15
+        // saniyedeki öğretici öneki korunur (stack_play_test diyaloğun
+        // bu öneki içerdiğini doğrular).
+        hint: _elapsedSeconds < 15 && !widget.prototypeVisualState
+            ? context.l10n.stackTutorialHint(context.l10n.stackHelpBody)
+            : context.l10n.stackHelpBody,
+        score: _score,
+        best: _best,
+        tag: context.l10n.stackTowerTag,
+        tagColor: const Color(0xFFE52E2E),
+        prototypeChrome: true,
+        showStatusBar: true,
+        prototypeModeChrome: true,
+        statLabel: context.l10n.stackFloorStat,
+        statValue: '$_floors',
+        onRestart: _finishEarly,
+        onPausePressed: _togglePause,
+        onHowToPlayVisibilityChanged: _handleHowToPlayVisibilityChanged,
+        overlay: _paused
+            ? Positioned.fill(
+                child: ColoredBox(
+                  color: LululuColors.carbonVoid.withValues(alpha: 0.72),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          context.l10n.pausedStatusCaps,
+                          style: GoogleFonts.exo2(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            color: LululuColors.liquidGold,
                           ),
                         ),
-                      ),
-                    for (var i = 0; i < _stack.length; i++)
-                      _slabWidget(
-                        _stack[i],
-                        _baseY -
-                            i * (slabH + 4) -
-                            _cameraY +
-                            sin(_sway + i * 0.35) * (i == 0 ? 0 : 1.2),
-                        bounce: i == _stack.length - 1 ? _perfectBounce : 1.0,
-                      ),
-                    for (final cp in _cutPieces)
-                      Positioned(
-                        left: cp.center - cp.width / 2,
-                        top: cp.y - _cameraY,
-                        width: cp.width,
-                        height: slabH,
-                        child: IgnorePointer(
-                          child: Opacity(
-                            opacity: cp.life.clamp(0.0, 1.0),
-                            child: Transform.rotate(
-                              angle: cp.rot,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: _slabColors[
-                                      (cp.tier - 1).clamp(
-                                        0,
-                                        _slabColors.length - 1,
-                                      )],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: const Color(0xFFE52E2E),
-                                    width: 1.5,
+                        const SizedBox(height: 8),
+                        Text(
+                          _statsLine(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: LululuColors.mutedTitanium,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ArcadeButton(
+                          label: context.l10n.continueAction,
+                          onPressed: _togglePause,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            : null,
+        footer: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: SizedBox(
+                width: 260,
+                child: _StackBonusDock(
+                  items: [
+                    stockBonusWithResult(
+                      id: 'freeze',
+                      label: context.l10n.shopPowerFreezeNameCaps,
+                      asset: 'assets/icons2/crystal.png',
+                      effect: () {
+                        final applied = _useFreeze();
+                        setState(() {});
+                        return applied;
+                      },
+                    ),
+                    stockBonusWithResult(
+                      id: 'widen',
+                      label: context.l10n.shopPowerWidenNameCaps,
+                      asset: 'assets/icons2/block.png',
+                      effect: () {
+                        final applied = _useWiden();
+                        setState(() {});
+                        return applied;
+                      },
+                    ),
+                    stockBonusWithResult(
+                      id: 'slows',
+                      label: context.l10n.shopPowerSlowNameCaps,
+                      asset: 'assets/icons2/clock.png',
+                      effect: () {
+                        final applied = _useSlowDrop();
+                        setState(() {});
+                        return applied;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        child: ValueListenableBuilder<int>(
+          valueListenable: _tickNotifier,
+          builder: (context, _, _) => LayoutBuilder(
+            builder: (context, constraints) {
+              _ensure(constraints.maxWidth, constraints.maxHeight);
+              final top = _stack.isEmpty ? null : _stack.last;
+              final comboMessage =
+                  _feedback ?? (_combo > 0 ? 'KOMBO X$_combo' : null);
+              final shakeX = _shake > 0 ? sin(_sway * 40) * 10 * _shake : 0.0;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _drop,
+                child: ClipRect(
+                  child: Transform.translate(
+                    offset: Offset(shakeX, 0),
+                    child: Stack(
+                      children: [
+                        // Near + perfect zone guides.
+                        if (top != null && _phase == _Phase.ready && !_paused)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            top: 84,
+                            height: 2,
+                            child: CustomPaint(
+                              painter: _DashedLinePainter(
+                                Colors.white.withValues(alpha: 0.25),
+                              ),
+                            ),
+                          ),
+                        for (var i = 0; i < _stack.length; i++)
+                          _slabWidget(
+                            _stack[i],
+                            _baseY -
+                                i * (slabH + 4) -
+                                _cameraY +
+                                sin(_sway + i * 0.35) * (i == 0 ? 0 : 1.2),
+                            bounce: i == _stack.length - 1
+                                ? _perfectBounce
+                                : 1.0,
+                          ),
+                        for (final cp in _cutPieces)
+                          Positioned(
+                            left: cp.center - cp.width / 2,
+                            top: cp.y - _cameraY,
+                            width: cp.width,
+                            height: slabH,
+                            child: IgnorePointer(
+                              child: Opacity(
+                                opacity: cp.life.clamp(0.0, 1.0),
+                                child: Transform.rotate(
+                                  angle: cp.rot,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color:
+                                          _slabColors[(cp.tier - 1).clamp(
+                                            0,
+                                            _slabColors.length - 1,
+                                          )],
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(0xFFE52E2E),
+                                        width: 1.5,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                    if (_activePowerFx != null && _powerFxLife > 0)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: Center(
-                            child: Opacity(
-                              opacity: _powerFxLife.clamp(0.0, 1.0),
-                              child: Transform.scale(
-                                scale: 1.4 - 0.4 * _powerFxLife,
-                                child: Container(
-                                  width: 148,
-                                  height: 148,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: _activePowerFx == 'freeze'
-                                          ? const Color(0xFF00E5FF)
-                                          : _activePowerFx == 'widen'
-                                          ? const Color(0xFFFFD700)
-                                          : const Color(0xFF12B76A),
-                                      width: 5,
+                        if (_activePowerFx != null && _powerFxLife > 0)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: Center(
+                                child: Opacity(
+                                  opacity: _powerFxLife.clamp(0.0, 1.0),
+                                  child: Transform.scale(
+                                    scale: 1.4 - 0.4 * _powerFxLife,
+                                    child: Container(
+                                      width: 148,
+                                      height: 148,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: _activePowerFx == 'freeze'
+                                              ? const Color(0xFF00E5FF)
+                                              : _activePowerFx == 'widen'
+                                              ? const Color(0xFFFFD700)
+                                              : const Color(0xFF12B76A),
+                                          width: 5,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                (_activePowerFx == 'freeze'
+                                                        ? const Color(
+                                                            0xFF00E5FF,
+                                                          )
+                                                        : _activePowerFx ==
+                                                              'widen'
+                                                        ? const Color(
+                                                            0xFFFFD700,
+                                                          )
+                                                        : const Color(
+                                                            0xFF12B76A,
+                                                          ))
+                                                    .withValues(alpha: 0.55),
+                                            blurRadius: 24,
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: (_activePowerFx == 'freeze'
-                                                ? const Color(0xFF00E5FF)
-                                                : _activePowerFx == 'widen'
-                                                ? const Color(0xFFFFD700)
-                                                : const Color(0xFF12B76A))
-                                            .withValues(alpha: 0.55),
-                                        blurRadius: 24,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (_phase != _Phase.failed)
+                          _movingSlab(
+                            (_phase == _Phase.falling ? _fallY : 16) - _cameraY,
+                          ),
+                        if (comboMessage != null)
+                          Positioned(
+                            top: 96,
+                            left: 12,
+                            right: 12,
+                            child: IgnorePointer(
+                              child: Center(
+                                child: Text(
+                                  comboMessage,
+                                  style: GoogleFonts.bangers(
+                                    fontSize: 26,
+                                    height: 1,
+                                    letterSpacing: 0.78,
+                                    color: const Color(0xFFFFB800),
+                                    shadows: const [
+                                      Shadow(
+                                        color: Color(0xEB080B12),
+                                        offset: Offset(0, 3),
+                                      ),
+                                      Shadow(
+                                        color: Color(0xE6FF6B35),
+                                        blurRadius: 14,
+                                      ),
+                                      Shadow(
+                                        color: Color(0x8CFF6B35),
+                                        blurRadius: 32,
                                       ),
                                     ],
                                   ),
@@ -1255,79 +1320,41 @@ class _StackDropScreenState extends State<StackDropScreen>
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                    if (_phase != _Phase.failed)
-                      _movingSlab(
-                        (_phase == _Phase.falling ? _fallY : 16) - _cameraY,
-                      ),
-                    if (comboMessage != null)
-                      Positioned(
-                        top: 96,
-                        left: 12,
-                        right: 12,
-                        child: IgnorePointer(
-                          child: Center(
-                            child: Text(
-                              comboMessage,
-                              style: GoogleFonts.bangers(
-                                fontSize: 26,
-                                height: 1,
-                                letterSpacing: 0.78,
-                                color: const Color(0xFFFFB800),
-                                shadows: const [
-                                  Shadow(
-                                    color: Color(0xEB080B12),
-                                    offset: Offset(0, 3),
+                        if (_milestone != null)
+                          Positioned(
+                            top: 8,
+                            left: 24,
+                            right: 24,
+                            child: IgnorePointer(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: LululuGradients.fuchsiaToGold,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _milestone!,
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.exo2(
+                                    fontWeight: FontWeight.w900,
+                                    color: LululuColors.carbonVoid,
+                                    fontSize: 13,
                                   ),
-                                  Shadow(
-                                    color: Color(0xE6FF6B35),
-                                    blurRadius: 14,
-                                  ),
-                                  Shadow(
-                                    color: Color(0x8CFF6B35),
-                                    blurRadius: 32,
-                                  ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                    if (_milestone != null)
-                      Positioned(
-                        top: 8,
-                        left: 24,
-                        right: 24,
-                        child: IgnorePointer(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: LululuGradients.fuchsiaToGold,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              _milestone!,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.exo2(
-                                fontWeight: FontWeight.w900,
-                                color: LululuColors.carbonVoid,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -1401,10 +1428,7 @@ class _StackDropScreenState extends State<StackDropScreen>
         color: fill,
         borderRadius: BorderRadius.circular(moving ? 11 : 9),
         border: perfect
-            ? Border.all(
-                color: const Color(0xFF00C853),
-                width: 2.5,
-              )
+            ? Border.all(color: const Color(0xFF00C853), width: 2.5)
             : borderOverride == null
             ? null
             : Border.all(
@@ -1421,10 +1445,7 @@ class _StackDropScreenState extends State<StackDropScreen>
               ]
             : [
                 if (perfect)
-                  const BoxShadow(
-                    color: Color(0xB300C853),
-                    blurRadius: 14,
-                  ),
+                  const BoxShadow(color: Color(0xB300C853), blurRadius: 14),
               ],
       ),
       child: ClipRRect(

@@ -131,21 +131,21 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   String _hintString(AppLocalizations l10n) => switch (_hintKind) {
-        _BalloonHint.drift => l10n.balloonHintDrift,
-        _BalloonHint.rowDropped => l10n.balloonHintRowDropped,
-        _BalloonHint.ceilingDropped => l10n.balloonCeilingDropped,
-        _BalloonHint.missedAim => l10n.balloonMissedAim,
-        _BalloonHint.noStick => l10n.balloonNoStickAim,
-        _BalloonHint.stuck => l10n.balloonStuckNeed3,
-        _BalloonHint.popped => '$_hintText +$_hintB · x$_hintA',
-        _BalloonHint.poppedPlain => l10n.balloonPoppedStreak(_hintA, _hintB),
-        _BalloonHint.piercing => l10n.balloonPiercingShot(_hintA, _hintB),
-        _BalloonHint.reachedShooter => l10n.balloonLoseReached,
-        _BalloonHint.ceilingFull => l10n.balloonLoseCeiling,
-        _BalloonHint.tripleActive => l10n.balloonTripleActive,
-        _BalloonHint.fireball => l10n.balloonFireballShot(_hintA),
-        _BalloonHint.waveActive => l10n.balloonWaveActive,
-      };
+    _BalloonHint.drift => l10n.balloonHintDrift,
+    _BalloonHint.rowDropped => l10n.balloonHintRowDropped,
+    _BalloonHint.ceilingDropped => l10n.balloonCeilingDropped,
+    _BalloonHint.missedAim => l10n.balloonMissedAim,
+    _BalloonHint.noStick => l10n.balloonNoStickAim,
+    _BalloonHint.stuck => l10n.balloonStuckNeed3,
+    _BalloonHint.popped => '$_hintText +$_hintB · x$_hintA',
+    _BalloonHint.poppedPlain => l10n.balloonPoppedStreak(_hintA, _hintB),
+    _BalloonHint.piercing => l10n.balloonPiercingShot(_hintA, _hintB),
+    _BalloonHint.reachedShooter => l10n.balloonLoseReached,
+    _BalloonHint.ceilingFull => l10n.balloonLoseCeiling,
+    _BalloonHint.tripleActive => l10n.balloonTripleActive,
+    _BalloonHint.fireball => l10n.balloonFireballShot(_hintA),
+    _BalloonHint.waveActive => l10n.balloonWaveActive,
+  };
   Offset? _fly;
   Offset _vel = Offset.zero;
   Offset _aim = const Offset(0, -1);
@@ -173,6 +173,12 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   double _powerFxLife = 0;
 
   Ticker? _ticker;
+
+  /// Kare sayacı (10E, 8C VLB deseni): `_tick` yalnız bu sayacı
+  /// artırır; dinamik alt-ağaç `_buildBalloonPrototypeChrome`
+  /// içindeki [ValueListenableBuilder] ile yenilenir, tam `setState` yok.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
+
   Duration _last = Duration.zero;
   _Hex? _hex;
 
@@ -236,6 +242,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _ticker?.dispose();
+    _tickNotifier.dispose();
     _milestoneTimer?.cancel();
     _comboTimer?.cancel();
     _missTimer?.cancel();
@@ -426,7 +433,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       // kelepçesi tek başına yetmedi; `dirty` kapısı ekranı
       // yenilemiyordu). Duraklatma/bitti durumunda yalnız kirliyse
       // yenilenir.
-      if (dirty || (!_paused && !_over)) setState(() {});
+      if (dirty || (!_paused && !_over)) _tickNotifier.value++;
       return;
     }
     _step(dt);
@@ -881,11 +888,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   String _statsLine() => context.l10n.balloonStatsLine(
-        _popTotal,
-        _fallTotal,
-        _maxStreak,
-        _biggestPop,
-      );
+    _popTotal,
+    _fallTotal,
+    _maxStreak,
+    _biggestPop,
+  );
 
   List<Offset> _aimDots(_Hex hex) {
     var p = hex.shooter;
@@ -925,7 +932,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _powerFxLife = 1.0;
       _setHint(_BalloonHint.tripleActive);
     });
-    _showMilestone('${context.l10n.powerTripleArrowCaps} · ${context.l10n.laserAimActive}!');
+    _showMilestone(
+      '${context.l10n.powerTripleArrowCaps} · ${context.l10n.laserAimActive}!',
+    );
     return true;
   }
 
@@ -1224,7 +1233,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         },
       ),
     ];
-    final stageChild = widget.prototypeVisualState
+    Widget buildStage() => widget.prototypeVisualState
         ? const _PrototypeBalloonField()
         : LayoutBuilder(
             builder: (context, constraints) {
@@ -1321,10 +1330,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         top: hex.center(rows - 2, 0).dy - hex.cell * 0.42,
                         child: IgnorePointer(
                           child: Opacity(
-                            opacity: (0.28 +
-                                    0.2 * sin(_dangerPulse) +
-                                    (_fillDepth() * 0.35))
-                                .clamp(0.18, 0.85),
+                            opacity:
+                                (0.28 +
+                                        0.2 * sin(_dangerPulse) +
+                                        (_fillDepth() * 0.35))
+                                    .clamp(0.18, 0.85),
                             child: const ColoredBox(
                               color: Color(0x66E52E2E),
                               child: SizedBox(height: 1.5),
@@ -1360,9 +1370,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                               hex.center(r, c),
                               hex.cell,
                               _grid[r][c],
-                              angle: sin(
-                                    _dangerPulse * 0.35 + r * 1.3 + c * 0.9,
-                                  ) *
+                              angle:
+                                  sin(_dangerPulse * 0.35 + r * 1.3 + c * 0.9) *
                                   0.026,
                             ),
                       // 5. Falling detached balloons
@@ -1378,10 +1387,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                       // 6. Pop burst FX (uses prototype boom.png)
                       for (final fx in _popFx)
                         Positioned(
-                          left: fx.center.dx -
-                              hex.cell * (0.95 - 0.35 * fx.life),
-                          top: fx.center.dy -
-                              hex.cell * (0.95 - 0.35 * fx.life),
+                          left:
+                              fx.center.dx - hex.cell * (0.95 - 0.35 * fx.life),
+                          top:
+                              fx.center.dy - hex.cell * (0.95 - 0.35 * fx.life),
                           width: hex.cell * (1.9 - 0.7 * fx.life),
                           height: hex.cell * (1.9 - 0.7 * fx.life),
                           child: Opacity(
@@ -1539,53 +1548,13 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     // Ölü sonuç overlay'i kaldırıldı (F6): `_edgeShowResult`
     // `_resultShown`'u senkron set ettiği için bu dal hiç
     // çizilmiyordu; tek sonuç yolu `finishRun` diyaloğudur.
-    final overlayWidget = _paused
-        ? Positioned.fill(
-            child: ColoredBox(
-              color: LululuColors.carbonVoid.withValues(alpha: 0.7),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'DURAKLATILDI',
-                      style: GoogleFonts.exo2(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        color: LululuColors.liquidGold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _statsLine(),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: LululuColors.mutedTitanium,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
-                  ],
-                ),
-              ),
-            ),
-          )
-        : null;
-
-    final timeStr =
-        '${_elapsed ~/ 60}:${(_elapsed.floor() % 60).toString().padLeft(2, '0')}';
-
     return PopScope(
       canPop: _exitConfirmed || !_needsExitConfirm,
       onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: _buildBalloonPrototypeChrome(
         context: context,
-        timeStr: timeStr,
-        stageChild: stageChild,
-        overlayWidget: overlayWidget,
+        stageBuilder: buildStage,
         bonusItems: bonusItems,
-        until: until,
       ),
     );
   }
@@ -1616,11 +1585,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   Widget _buildBalloonPrototypeChrome({
     required BuildContext context,
-    required String timeStr,
-    required Widget stageChild,
-    required Widget? overlayWidget,
+    required Widget Function() stageBuilder,
     required List<ModeBonus> bonusItems,
-    required int until,
   }) {
     final screenW = MediaQuery.sizeOf(context).width;
     final topPad = MediaQuery.paddingOf(context).top;
@@ -1628,443 +1594,497 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     final coinsText = widget.prototypeVisualState
         ? '12.450'
         : _fmtDot(ProgressManager().coins);
+    // Statik arka plan: kare bildiriminde yeniden kurulmaz --
+    // [ValueListenableBuilder] `child` olarak bir kez kurulur.
+    final background = Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: Opacity(
+            opacity: 0.96,
+            child: Image.asset(
+              'assets/design/backgrounds/balloon_fair.webp',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+            ),
+          ),
+        ),
+        const Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0.0, 0.24, 0.76, 1.0],
+                colors: [
+                  Color(0x4D080B12),
+                  Color(0x00080B12),
+                  Color(0x00080B12),
+                  Color(0x52080B12),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
     return Scaffold(
       backgroundColor: const Color(0xFF0A0D14),
       body: MediaQuery.withNoTextScaling(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.96,
-                child: Image.asset(
-                  'assets/design/backgrounds/balloon_fair.webp',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                ),
-              ),
-            ),
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0.0, 0.24, 0.76, 1.0],
-                    colors: [
-                      Color(0x4D080B12),
-                      Color(0x00080B12),
-                      Color(0x00080B12),
-                      Color(0x52080B12),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 1. statusbar (height: 35.4 in prototype/headless, topPad on real device)
-                if (useHostTopInset)
-                  SizedBox(height: topPad)
-                else
-                  _scaleBand(
-                    screenW,
-                    35.4,
-                    Stack(
-                      children: [
-                        Positioned(
-                          left: 21,
-                          top: 16.0,
-                          child: Text(
-                            '09:41',
-                            style: GoogleFonts.nunito(
-                              fontSize: 12.5,
-                              height: 1.2,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.25,
-                              color: Colors.white,
+        child: ValueListenableBuilder<int>(
+          valueListenable: _tickNotifier,
+          child: background,
+          builder: (context, _, backgroundChild) {
+            // Kare başına değişen değerler burada, VLB içinde okunur
+            // (dış `build` yalnız olay `setState`'lerinde çalışır).
+            final timeStr =
+                '${_elapsed ~/ 60}:${(_elapsed.floor() % 60).toString().padLeft(2, '0')}';
+            final overlayWidget = _paused
+                ? Positioned.fill(
+                    child: ColoredBox(
+                      color: LululuColors.carbonVoid.withValues(alpha: 0.7),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'DURAKLATILDI',
+                              style: GoogleFonts.exo2(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                color: LululuColors.liquidGold,
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _statsLine(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: LululuColors.mutedTitanium,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            ArcadeButton(
+                              label: context.l10n.continueAction,
+                              onPressed: _togglePause,
+                            ),
+                          ],
                         ),
-                        const Positioned(
-                          left: 373,
-                          top: 16.2,
-                          child: CustomPaint(
-                            size: Size(35, 15),
-                            painter: _BalloonStatusIconsPainter(),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                // 2. mode-top (height: 56.3)
-                _scaleBand(
-                  screenW,
-                  56.3,
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: 12,
-                        top: 7.1,
-                        width: 44.4,
-                        height: 48,
-                        child: Semantics(
-                          button: true,
-                          label: context.l10n.goBackLabel,
-                          child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => Navigator.of(context).maybePop(),
-                          child: CustomPaint(
-                            painter: const _CssBoxPainter(
-                              fillColor: Color(0xD9080B12),
-                              radius: 14,
-                              shadowColor: Color(0x73000000),
-                              shadowOffset: Offset(0, 3),
+                  )
+                : null;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(child: backgroundChild!),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 1. statusbar (height: 35.4 in prototype/headless, topPad on real device)
+                    if (useHostTopInset)
+                      SizedBox(height: topPad)
+                    else
+                      _scaleBand(
+                        screenW,
+                        35.4,
+                        Stack(
+                          children: [
+                            Positioned(
+                              left: 21,
+                              top: 16.0,
+                              child: Text(
+                                '09:41',
+                                style: GoogleFonts.nunito(
+                                  fontSize: 12.5,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.25,
+                                  color: Colors.white,
+                                ),
+                              ),
                             ),
-                            child: Center(
-                              child: Image.asset(
-                                'assets/icons2/back-prototype.png',
-                                width: 29,
-                                height: 29,
-                                fit: BoxFit.contain,
-                                filterQuality: FilterQuality.medium,
+                            const Positioned(
+                              left: 373,
+                              top: 16.2,
+                              child: CustomPaint(
+                                size: Size(35, 15),
+                                painter: _BalloonStatusIconsPainter(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    // 2. mode-top (height: 56.3)
+                    _scaleBand(
+                      screenW,
+                      56.3,
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 12,
+                            top: 7.1,
+                            width: 44.4,
+                            height: 48,
+                            child: Semantics(
+                              button: true,
+                              label: context.l10n.goBackLabel,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => Navigator.of(context).maybePop(),
+                                child: CustomPaint(
+                                  painter: const _CssBoxPainter(
+                                    fillColor: Color(0xD9080B12),
+                                    radius: 14,
+                                    shadowColor: Color(0x73000000),
+                                    shadowOffset: Offset(0, 3),
+                                  ),
+                                  child: Center(
+                                    child: Image.asset(
+                                      'assets/icons2/back-prototype.png',
+                                      width: 29,
+                                      height: 29,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.medium,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 66.4,
-                        top: 6.0,
-                        width: 153.6,
-                        height: 27,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: const Color(0x8C080B12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 2,
-                            ),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                context.l10n.balloonPopTitle,
-                                maxLines: 1,
-                                softWrap: false,
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 20,
-                                  height: 1.15,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.0,
-                                  color: Colors.white,
-                                  shadows: const [
-                                    Shadow(
-                                      color: Color(0xA6000000),
-                                      offset: Offset(0, 2),
-                                      blurRadius: 6,
+                          Positioned(
+                            left: 66.4,
+                            top: 6.0,
+                            width: 153.6,
+                            height: 27,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0x8C080B12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 2,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    context.l10n.balloonPopTitle,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    style: GoogleFonts.baloo2(
+                                      fontSize: 20,
+                                      height: 1.15,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.0,
+                                      color: Colors.white,
+                                      shadows: const [
+                                        Shadow(
+                                          color: Color(0xA6000000),
+                                          offset: Offset(0, 2),
+                                          blurRadius: 6,
+                                        ),
+                                        Shadow(
+                                          color: Color(0xCC000000),
+                                          offset: Offset(0, 1),
+                                          blurRadius: 2,
+                                        ),
+                                      ],
                                     ),
-                                    Shadow(
-                                      color: Color(0xCC000000),
-                                      offset: Offset(0, 1),
-                                      blurRadius: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 66.4,
+                            top: 36.0,
+                            width: 55.5,
+                            height: 20.3,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF6B35),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Center(
+                                child: Transform.translate(
+                                  offset: const Offset(0, -1),
+                                  child: Text(
+                                    'BONUS',
+                                    style: GoogleFonts.baloo2(
+                                      fontSize: 10.5,
+                                      height: 1.0,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.735,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 274.4,
+                            top: 13.6,
+                            width: 85.6,
+                            height: 35,
+                            child: CustomPaint(
+                              painter: const _CssBoxPainter(
+                                fillColor: Color(0xD1080B12),
+                                radius: 17.5,
+                                shadowColor: Color(0x59000000),
+                                shadowOffset: Offset(0, 3),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(6, 5, 10, 5),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Image.asset(
+                                      'assets/icons2/coin.png',
+                                      width: 25,
+                                      height: 25,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.medium,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Transform.translate(
+                                        offset: const Offset(0, -1.5),
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            coinsText,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.nunito(
+                                              fontSize: 13.5,
+                                              height: 1.2,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 66.4,
-                        top: 36.0,
-                        width: 55.5,
-                        height: 20.3,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF6B35),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Center(
-                            child: Transform.translate(
-                              offset: const Offset(0, -1),
-                              child: Text(
-                                'BONUS',
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 10.5,
-                                  height: 1.0,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.735,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 274.4,
-                        top: 13.6,
-                        width: 85.6,
-                        height: 35,
-                        child: CustomPaint(
-                          painter: const _CssBoxPainter(
-                            fillColor: Color(0xD1080B12),
-                            radius: 17.5,
-                            shadowColor: Color(0x59000000),
-                            shadowOffset: Offset(0, 3),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(6, 5, 10, 5),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Image.asset(
-                                  'assets/icons2/coin.png',
-                                  width: 25,
-                                  height: 25,
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.medium,
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Transform.translate(
-                                    offset: const Offset(0, -1.5),
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        coinsText,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.nunito(
-                                          fontSize: 13.5,
-                                          height: 1.2,
-                                          fontWeight: FontWeight.w900,
-                                          color: Colors.white,
-                                        ),
+                          // Başlık duraklatma düğmesi (F3): başlık ile coin
+                          // rozeti arasındaki boşlukta, düzeni kaydırmadan
+                          // durur; prototip vitrininde gizlidir (makara
+                          // deseni: `l10n.pause` etiketi, `_togglePause`).
+                          if (!widget.prototypeVisualState)
+                            Positioned(
+                              left: 224,
+                              top: 7.1,
+                              width: 44,
+                              height: 48,
+                              child: Semantics(
+                                button: true,
+                                label: context.l10n.pause,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _togglePause,
+                                  child: CustomPaint(
+                                    painter: const _CssBoxPainter(
+                                      fillColor: Color(0xDB080B12),
+                                      radius: 22,
+                                      borderColor: Color(0xB3FFB800),
+                                      borderWidth: 2,
+                                      shadowColor: Color(0x66000000),
+                                      shadowOffset: Offset(0, 3),
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.pause_rounded,
+                                        size: 22,
+                                        color: Color(0xFFFFB800),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
-                      // Başlık duraklatma düğmesi (F3): başlık ile coin
-                      // rozeti arasındaki boşlukta, düzeni kaydırmadan
-                      // durur; prototip vitrininde gizlidir (makara
-                      // deseni: `l10n.pause` etiketi, `_togglePause`).
-                      if (!widget.prototypeVisualState)
-                        Positioned(
-                          left: 224,
-                          top: 7.1,
-                          width: 44,
-                          height: 48,
-                          child: Semantics(
-                            button: true,
-                            label: context.l10n.pause,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: _togglePause,
-                              child: CustomPaint(
-                                painter: const _CssBoxPainter(
-                                  fillColor: Color(0xDB080B12),
-                                  radius: 22,
-                                  borderColor: Color(0xB3FFB800),
-                                  borderWidth: 2,
-                                  shadowColor: Color(0x66000000),
-                                  shadowOffset: Offset(0, 3),
-                                ),
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.pause_rounded,
-                                    size: 22,
-                                    color: Color(0xFFFFB800),
+                          Positioned(
+                            left: 370,
+                            top: 7.1,
+                            width: 48,
+                            height: 48,
+                            child: Semantics(
+                              button: true,
+                              label: context.l10n.helpButtonLabel,
+                              child: GestureDetector(
+                                onTap: _showHelp,
+                                child: CustomPaint(
+                                  painter: const _CssBoxPainter(
+                                    fillColor: Color(0xDB080B12),
+                                    radius: 24,
+                                    borderColor: Color(0xB3FFB800),
+                                    borderWidth: 2,
+                                    shadowColor: Color(0x66000000),
+                                    shadowOffset: Offset(0, 3),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '?',
+                                      style: GoogleFonts.baloo2(
+                                        fontSize: 22,
+                                        height: 1.0,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFFFFB800),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                      Positioned(
-                        left: 370,
-                        top: 7.1,
-                        width: 48,
-                        height: 48,
-                        child: Semantics(
-                          button: true,
-                          label: context.l10n.helpButtonLabel,
-                          child: GestureDetector(
-                            onTap: _showHelp,
-                            child: CustomPaint(
-                              painter: const _CssBoxPainter(
-                                fillColor: Color(0xDB080B12),
-                                radius: 24,
-                                borderColor: Color(0xB3FFB800),
-                                borderWidth: 2,
-                                shadowColor: Color(0x66000000),
-                                shadowOffset: Offset(0, 3),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '?',
-                                  style: GoogleFonts.baloo2(
-                                    fontSize: 22,
-                                    height: 1.0,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFFFFB800),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // 3. game-hud (height: 54.0)
-                _scaleBand(
-                  screenW,
-                  54.0,
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: 10,
-                        top: 9.3,
-                        width: 64.6,
-                        height: 41.0,
-                        child: _buildHudStatBox(
-                          label: context.l10n.gameScoreLabel,
-                          value: _fmtDot(_score),
-                        ),
-                      ),
-                      Positioned(
-                        left: 80.6,
-                        top: 9.3,
-                        width: 84,
-                        height: 41.0,
-                        child: _buildHudStatBox(
-                          label: context.l10n.gameBestLabel,
-                          value: _fmtDot(_best),
-                        ),
-                      ),
-                      Positioned(
-                        left: 282.2,
-                        top: 9.3,
-                        width: 74,
-                        height: 41.0,
-                        child: _buildHudStatBox(
-                          label: context.l10n.timeLabel,
-                          value: timeStr,
-                        ),
-                      ),
-                      Positioned(
-                        left: 362.2,
-                        top: 5.9,
-                        width: 57.8,
-                        height: 48,
-                        child: Semantics(
-                          button: true,
-                          label: context.l10n.finishRoundLabel,
-                          child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _finishEarly,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFB800),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0xFFB97A00),
-                                  offset: Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Text(
-                                context.l10n.finishCaps,
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 12.5,
-                                  height: 1.0,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.375,
-                                  color: const Color(0xFF4A2E00),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // 4. mode-stage (margin top: 8, height: 697.5)
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0x660E1422), Color(0x800E1422)],
-                      ),
-                      border: Border.symmetric(
-                        horizontal: BorderSide(
-                          color: Color(0x24FFFFFF),
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    child: ClipRect(
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: const Color(0x59000000),
-                              width: 1,
-                            ),
-                          ),
-                          child: stageChild,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // 5. power-dock (height: 80.9)
-                SizedBox(
-                  height: 80.9,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < bonusItems.length; i++) ...[
-                          if (i > 0) const SizedBox(width: 20),
-                          _buildPowerButton(
-                            item: bonusItems[i],
-                            prototypeCount: const [3, 2, 1][i],
                           ),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
+                    // 3. game-hud (height: 54.0)
+                    _scaleBand(
+                      screenW,
+                      54.0,
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 10,
+                            top: 9.3,
+                            width: 64.6,
+                            height: 41.0,
+                            child: _buildHudStatBox(
+                              label: context.l10n.gameScoreLabel,
+                              value: _fmtDot(_score),
+                            ),
+                          ),
+                          Positioned(
+                            left: 80.6,
+                            top: 9.3,
+                            width: 84,
+                            height: 41.0,
+                            child: _buildHudStatBox(
+                              label: context.l10n.gameBestLabel,
+                              value: _fmtDot(_best),
+                            ),
+                          ),
+                          Positioned(
+                            left: 282.2,
+                            top: 9.3,
+                            width: 74,
+                            height: 41.0,
+                            child: _buildHudStatBox(
+                              label: context.l10n.timeLabel,
+                              value: timeStr,
+                            ),
+                          ),
+                          Positioned(
+                            left: 362.2,
+                            top: 5.9,
+                            width: 57.8,
+                            height: 48,
+                            child: Semantics(
+                              button: true,
+                              label: context.l10n.finishRoundLabel,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _finishEarly,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFB800),
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0xFFB97A00),
+                                        offset: Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      context.l10n.finishCaps,
+                                      style: GoogleFonts.baloo2(
+                                        fontSize: 12.5,
+                                        height: 1.0,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.375,
+                                        color: const Color(0xFF4A2E00),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 4. mode-stage (margin top: 8, height: 697.5)
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x660E1422), Color(0x800E1422)],
+                          ),
+                          border: Border.symmetric(
+                            horizontal: BorderSide(
+                              color: Color(0x24FFFFFF),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        child: ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: const Color(0x59000000),
+                                  width: 1,
+                                ),
+                              ),
+                              child: stageBuilder(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // 5. power-dock (height: 80.9)
+                    SizedBox(
+                      height: 80.9,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            for (var i = 0; i < bonusItems.length; i++) ...[
+                              if (i > 0) const SizedBox(width: 20),
+                              _buildPowerButton(
+                                item: bonusItems[i],
+                                prototypeCount: const [3, 2, 1][i],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                ?overlayWidget,
               ],
-            ),
-            ?overlayWidget,
-          ],
+            );
+          },
         ),
       ),
     );
@@ -2169,10 +2189,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                       width: 1,
                     ),
                     boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x73000000),
-                        offset: Offset(0, 3),
-                      ),
+                      BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
                       BoxShadow(
                         color: Color(0x4D000000),
                         offset: Offset(0, 6),
@@ -2257,10 +2274,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     return Positioned(
       left: center.dx - w / 2,
       top: center.dy - h / 2,
-      child: Transform.rotate(
-        angle: angle,
-        child: _bubbleFace(h, tier),
-      ),
+      child: Transform.rotate(angle: angle, child: _bubbleFace(h, tier)),
     );
   }
 
@@ -2376,18 +2390,20 @@ class _PrototypeBalloonField extends StatelessWidget {
 
   // (left, top, w, h, imgLeft, imgTop, imgW, imgH, tier, deg)
   static const _specs =
-      <(
-        double,
-        double,
-        double,
-        double,
-        double,
-        double,
-        double,
-        double,
-        int,
-        double,
-      )>[
+      <
+        (
+          double,
+          double,
+          double,
+          double,
+          double,
+          double,
+          double,
+          double,
+          int,
+          double,
+        )
+      >[
         (12.85, 204.45, 54.0, 62.0, 20.41, 213.08, 38.88, 44.64, 3, -0.292),
         (86.00, 196.90, 48.0, 56.0, 93.12, 209.79, 34.56, 66.42, 1, -1.444),
         (163.40, 213.90, 56.0, 64.0, 171.19, 222.81, 40.32, 46.08, 4, 0.000),
@@ -2507,9 +2523,7 @@ class _PrototypeBalloonField extends StatelessWidget {
               child: Transform.rotate(
                 angle: _specs[i].$10 * pi / 180,
                 child: CustomPaint(
-                  painter: _BalloonShapePainter(
-                    tint: _tints[_specs[i].$9 - 1],
-                  ),
+                  painter: _BalloonShapePainter(tint: _tints[_specs[i].$9 - 1]),
                 ),
               ),
             ),
@@ -2573,9 +2587,7 @@ class _PrototypeBalloonField extends StatelessWidget {
           top: 769.0 - _stageTopY,
           width: 46,
           height: 54,
-          child: CustomPaint(
-            painter: _BalloonShapePainter(tint: _tints[0]),
-          ),
+          child: CustomPaint(painter: _BalloonShapePainter(tint: _tints[0])),
         ),
         // 8. shooter bug image (rect: 198.4, 781.0, 33.1, 63.6)
         Positioned(

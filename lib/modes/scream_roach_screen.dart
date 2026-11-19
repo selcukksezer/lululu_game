@@ -57,6 +57,11 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   static const _voiceThresholdDb = 64.0;
 
   late final Ticker _ticker;
+
+  /// Kare sayacı (10E, 8C VLB deseni): `_onTick` yalnız bu sayacı
+  /// artırır; dinamik alt-ağaç [ValueListenableBuilder] ile yenilenir.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
+
   final NoiseMeter _noiseMeter = NoiseMeter();
   Duration _last = Duration.zero;
   StreamSubscription<NoiseReading>? _noiseSubscription;
@@ -208,6 +213,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     AudioManager().stopAll();
     _noiseSubscription?.cancel();
     _ticker.dispose();
+    _tickNotifier.dispose();
     super.dispose();
   }
 
@@ -437,10 +443,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
             _score,
           ),
         );
+        // Kapı geçişi olayı: skor/kapı sayısı başlıkta güncellensin.
+        setState(() {});
       }
     }
 
-    if (mounted) setState(() {});
+    if (mounted) _tickNotifier.value++;
   }
 
   bool _hitGate(Rect bug, _Gate g) {
@@ -974,7 +982,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       ),
     ];
 
-    final stageChild = GestureDetector(
+    Widget buildStage() => GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (_) => _scream(),
       child: LayoutBuilder(
@@ -1411,7 +1419,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     // Canlı _hint'in erişilebilirlik etiketi (Terlik deseni): F4'ten
     // beri yardım sayfası kural metnini gösteriyor; _hint artık
     // burada okunur, oyun-içi atamalar aynen durur.
-    final labeledStageChild = Semantics(label: _hint, child: stageChild);
+    Widget buildLabeledStage() => Semantics(label: _hint, child: buildStage());
 
     if (!wideScreen) {
       return PopScope(
@@ -1444,7 +1452,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           footer: Center(
             child: SizedBox(width: 285, child: ModeBonusBar(items: bonuses)),
           ),
-          child: labeledStageChild,
+          child: ValueListenableBuilder<int>(
+            valueListenable: _tickNotifier,
+            builder: (context, _, _) => buildLabeledStage(),
+          ),
         ),
       );
     }
@@ -1458,77 +1469,88 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         removeBottom: true,
         child: Scaffold(
           backgroundColor: const Color(0xFF080B12),
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              Positioned.fill(
-                child: Opacity(
-                  opacity: 0.96,
-                  child: Image.asset(
-                    'assets/scream_sky.webp',
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-              const Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: [0, 0.24, 0.76, 1],
-                      colors: [
-                        Color(0x4D080B12),
-                        Color(0x00080B12),
-                        Color(0x00080B12),
-                        Color(0x52080B12),
-                      ],
+          body: ValueListenableBuilder<int>(
+            valueListenable: _tickNotifier,
+            // Statik arka plan: kare bildiriminde yeniden kurulmaz --
+            // [ValueListenableBuilder] `child` olarak bir kez kurulur.
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0.96,
+                    child: Image.asset(
+                      'assets/scream_sky.webp',
+                      fit: BoxFit.cover,
                     ),
                   ),
                 ),
-              ),
-              Column(
-                children: [
-                  if (hasShellStatusBar)
-                    SizedBox(
-                      height: widget.prototypeVisualState
-                          ? 35.4
-                          : MediaQuery.paddingOf(context).top,
-                    )
-                  else
-                    _prototypeStatusBar(),
-                  _prototypeHeader(context),
-                  _prototypeHud(),
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Color(0x660E1422), Color(0x800E1422)],
-                        ),
-                        border: Border.all(
-                          color: const Color(0x24FFFFFF),
-                          width: 2,
-                        ),
-                      ),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                        child: labeledStageChild,
+                const Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: [0, 0.24, 0.76, 1],
+                        colors: [
+                          Color(0x4D080B12),
+                          Color(0x00080B12),
+                          Color(0x00080B12),
+                          Color(0x52080B12),
+                        ],
                       ),
                     ),
                   ),
-                  _prototypeDock(bonuses),
-                ],
-              ),
-              // Ölü sonuç kaplaması kaldırıldı (dar ekranla aynı gerekçe);
-              // tek sonuç yolu finishRun diyaloğu.
-              if (_paused && _alive && !widget.prototypeVisualState)
-                _pauseOverlay(),
-            ],
+                ),
+              ],
+            ),
+            builder: (context, _, backgroundChild) => Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(child: backgroundChild!),
+                Column(
+                  children: [
+                    if (hasShellStatusBar)
+                      SizedBox(
+                        height: widget.prototypeVisualState
+                            ? 35.4
+                            : MediaQuery.paddingOf(context).top,
+                      )
+                    else
+                      _prototypeStatusBar(),
+                    _prototypeHeader(context),
+                    _prototypeHud(),
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x660E1422), Color(0x800E1422)],
+                          ),
+                          border: Border.all(
+                            color: const Color(0x24FFFFFF),
+                            width: 2,
+                          ),
+                        ),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                          child: buildLabeledStage(),
+                        ),
+                      ),
+                    ),
+                    _prototypeDock(bonuses),
+                  ],
+                ),
+                // Ölü sonuç kaplaması kaldırıldı (dar ekranla aynı gerekçe);
+                // tek sonuç yolu finishRun diyaloğu.
+                if (_paused && _alive && !widget.prototypeVisualState)
+                  _pauseOverlay(),
+              ],
+            ),
           ),
         ),
       ),
