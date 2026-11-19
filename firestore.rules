@@ -29,6 +29,14 @@ rules_version = '2';
 //      - streak: int (optional, 0..3650)
 //      - unlockedTiers: list<int> (optional, max 16 items)
 //      - modeHighScores: map<string, int> (optional, max 16 keys)
+//      - coinsUpdatedAtMs / energyUpdatedAtMs / unlockedLevelUpdatedAtMs /
+//        f16UpdatedAtMs / raidUpdatedAtMs / terlikUpdatedAtMs /
+//        streakUpdatedAtMs / unlockedTiersUpdatedAtMs /
+//        displayNameUpdatedAtMs: int (optional, 0..9999999999999, client-ms
+//        LWW stamps — Y6, Faz 4 8E; request.time ile eşitlenmez, yalnız
+//        tür/aralık denetlenir)
+//      - extraPowersUpdatedAtMs: map<string, int> (optional, max 40 keys,
+//        per-key LWW stamps, same range as above)
 //      - integrityHash: string (optional, 64..64 chars HMAC-SHA256 hex digest)
 //      - role: string (optional, must be 'player' on create, immutable on update)
 //      - isBanned: bool (optional, must be false on create, immutable on update)
@@ -173,6 +181,19 @@ service cloud.firestore {
         'streak',
         'unlockedTiers',
         'modeHighScores',
+        // Y6/LWW alan damgaları (Faz 4, 8E): istemci-ms, yalnız
+        // tür/aralık denetlenir — `updatedAt == request.time` kuralı
+        // yalnız belge `updatedAt`'ine uygulanır.
+        'coinsUpdatedAtMs',
+        'energyUpdatedAtMs',
+        'unlockedLevelUpdatedAtMs',
+        'f16UpdatedAtMs',
+        'raidUpdatedAtMs',
+        'terlikUpdatedAtMs',
+        'streakUpdatedAtMs',
+        'unlockedTiersUpdatedAtMs',
+        'displayNameUpdatedAtMs',
+        'extraPowersUpdatedAtMs',
         'integrityHash',
         'role',
         'isBanned',
@@ -198,6 +219,20 @@ service cloud.firestore {
              isValidOptionalInt('terlikCount', 0, 9999) &&
              (!('extraPowers' in data) || (data.extraPowers is map && data.extraPowers.size() <= 40)) &&
              isValidOptionalInt('streak', 0, 3650) &&
+             // Y6/LWW damgaları: istemci-ms, 0..9999999999999; zorunlu
+             // değil (eski istemci uyumu). Harita damgasının tek tek
+             // değerleri kural dilinde yinelenemez — harita + boyut
+             // denetlenir, değer aralığı istemci ön-denetimindedir.
+             isValidOptionalInt('coinsUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('energyUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('unlockedLevelUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('f16UpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('raidUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('terlikUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('streakUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('unlockedTiersUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('displayNameUpdatedAtMs', 0, 9999999999999) &&
+             (!('extraPowersUpdatedAtMs' in data) || (data.extraPowersUpdatedAtMs is map && data.extraPowersUpdatedAtMs.size() <= 40)) &&
              (!('unlockedTiers' in data) || (data.unlockedTiers is list && data.unlockedTiers.size() <= 16)) &&
              (!('modeHighScores' in data) || (data.modeHighScores is map && data.modeHighScores.size() <= 16)) &&
              isValidOptionalString('integrityHash', 64, 64) &&

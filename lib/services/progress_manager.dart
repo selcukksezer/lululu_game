@@ -102,7 +102,22 @@ class ProgressManager extends ChangeNotifier {
     'lululu_daily_free_energy_claims',
     'lululu_last_free_energy_epoch_ms',
     'lululu_state_integrity_sig',
+    // Y6/LWW (Faz 4, 8E) alan damgaları — bkz. aşağıdaki damga bölümü.
+    'lululu_ts_coins',
+    'lululu_ts_energy',
+    'lululu_ts_level',
+    'lululu_ts_f16',
+    'lululu_ts_raid',
+    'lululu_ts_terlik',
+    'lululu_ts_streak',
+    'lululu_ts_tiers',
+    'lululu_ts_display_name',
+    'lululu_ts_extra_powers',
+    'lululu_lww_stamps_seeded_v1',
   ];
+
+  /// Y6/LWW göç bayrağı: damgalar ilk yüklemede bir kez tohumlandı mı.
+  static const String _lwwSeedFlagKey = 'lululu_lww_stamps_seeded_v1';
 
   /// 11 oyun modundaki 33 güçlendiricinin tam anahtar listesi (11 × 3 = 33).
   static const List<String> all33PowerKeys = [
@@ -165,6 +180,53 @@ class ProgressManager extends ChangeNotifier {
     'terlik_tap',
     'yuva_defense',
   ];
+
+  /// Y6/LWW (Faz 4, 8E) — alan-başına zaman-damgalı son-yazan-kazanır
+  /// damgaları (istemci-ms, UTC epoch). Damga, alanın YEREL olarak son
+  /// değiştiği andır; flush anı değil (yoksa her flush damgayı tazeler
+  /// ve LWW anlamsızlaşır). Damgasız alan 0 sayılır (eski istemci /
+  /// göç öncesi veri); ilk yüklemede mevcut değerler bir kez "şimdi"
+  /// ile damgalanır (göçte yerel öncelik — bkz. [_seedFieldStamps]).
+  ///
+  /// Damgalar, değeri gerçekten değişen alan için [touchChangedFieldStamps]
+  /// ile ilerletilir (kalıcı kayıt yolları [_persistEconomy],
+  /// [_persistCoinsOnly], [persistBoosters] içinde çağrılır) ve
+  /// [persistFieldStamps] ile prefs'e yazılır. [totalStars],
+  /// [total11ModesScore] ve en iyi skor türev alanlardır — LWW'ye
+  /// girmezler, damgaları yoktur (tasarım A10 §3.2.4).
+  int coinsUpdatedAtMs = 0;
+  int energyUpdatedAtMs = 0;
+  int unlockedLevelUpdatedAtMs = 0;
+  int f16UpdatedAtMs = 0;
+  int raidUpdatedAtMs = 0;
+  int terlikUpdatedAtMs = 0;
+  int streakUpdatedAtMs = 0;
+  int unlockedTiersUpdatedAtMs = 0;
+  int displayNameUpdatedAtMs = 0;
+
+  /// Güç anahtarı başına LWW damgası (`extraPowers` ile aynı anahtarlar).
+  /// Anahtar başına LWW: eksik anahtar "değişim yok" sayılır; silme
+  /// (tombstone) Faz 4 kapsamında eklenmez (tasarım A10 §3.2.4).
+  final Map<String, int> extraPowersUpdatedAtMs = <String, int>{};
+
+  /// Son kalıcı kayıtta görülen değerlerin anlık görüntüsü — damga
+  /// farkı buradan okunur (değeri değişen alan damgalanır).
+  int _snapCoins = defaultCoins;
+  int _snapEnergy = 0;
+  int _snapLevel = 1;
+  int _snapF16 = 0;
+  int _snapRaid = 0;
+  int _snapTerlik = 0;
+  int _snapStreak = 1;
+  Set<int> _snapTiers = <int>{};
+  Map<String, int> _snapExtraPowers = <String, int>{};
+
+  /// Yükleme sürerken damga ilerletme kapalıdır ([load] içindeki
+  /// atamalar değişim sayılmaz; göç tohumlaması bu kapının dışındadır).
+  bool _loading = false;
+
+  /// Enerji damgası dinleyicisi bağlandı mı (tek kez bağlanır).
+  bool _energyListenerAttached = false;
 
   int unlockedLevel = 1;
   int _coins = defaultCoins;
@@ -543,7 +605,10 @@ class ProgressManager extends ChangeNotifier {
   Future<void> load() async {
     final inFlight = _loadFuture;
     if (inFlight != null) return inFlight;
-    final future = _loadAsync();
+    // Yükleme yarıda kesilirse bile damga kapısı açık kalmasın.
+    final future = _loadAsync().whenComplete(() {
+      _loading = false;
+    });
     _loadFuture = future;
     try {
       await future;
@@ -553,6 +618,15 @@ class ProgressManager extends ChangeNotifier {
   }
 
   Future<void> _loadAsync() async {
+    _loading = true;
+    // Y6/LWW: enerji damgası dinleyicisi — enerji değişimleri
+    // (regen, grant, tüketim) EnergyService içinden gelir ve PM kalıcı
+    // kayıt yolundan geçmeyebilir; damga, enerji bildiricisini
+    // dinleyerek ilerletilir (bkz. [_onEnergyChanged]).
+    if (!_energyListenerAttached) {
+      _energyListenerAttached = true;
+      EnergyService.instance.energyNotifier.addListener(_onEnergyChanged);
+    }
     final prefs = await SharedPreferences.getInstance();
     unlockedLevel =
         (prefs.getInt('lululu_unlocked_level') ?? 1).clamp(1, maxCampaignLevels);
@@ -751,6 +825,12 @@ class ProgressManager extends ChangeNotifier {
     }
 
     _syncPrimaryPowersToExtra();
+    // Y6/LWW: alan damgalarını prefs'ten yükle; ilk yüklemede
+    // (göç) mevcut değerleri "şimdi" ile damgala.
+    await _loadFieldStamps(prefs);
+    // Damga farkı anlık görüntüsünü yüklenen duruma eşitle: yükleme
+    // sırasındaki atamalar değişim sayılmaz.
+    syncPersistedSnapshot();
     _stateIntegritySig =
         prefs.getString(_integrityPrefKey) ?? _computeStateIntegritySig();
     if (!verifyStateIntegrity()) {
@@ -762,6 +842,7 @@ class ProgressManager extends ChangeNotifier {
     }
 
     _loaded = true;
+    _loading = false;
     notifyListeners();
   }
 
@@ -1101,6 +1182,9 @@ class ProgressManager extends ChangeNotifier {
       'lululu_unlocked_tiers',
       unlockedTiers.map((e) => e.toString()).toList(),
     );
+    // Y6/LWW: tier değişimi damgalanır.
+    touchChangedFieldStamps();
+    await persistFieldStamps();
     notifyListeners();
     return true;
   }
@@ -1378,6 +1462,11 @@ class ProgressManager extends ChangeNotifier {
         _levelHighScores.map((k, v) => MapEntry(k.toString(), v));
     await prefs.setString('lululu_level_scores', jsonEncode(scoresMap));
 
+    // Y6/LWW: seviye/coin değişimi damgalanır (bu metot doğrudan
+    // prefs yazar, [_persistEconomy] yolundan geçmez).
+    touchChangedFieldStamps();
+    await persistFieldStamps();
+
     notifyListeners();
   }
 
@@ -1592,6 +1681,8 @@ class ProgressManager extends ChangeNotifier {
   /// Persist booster counts after in-match use (shop buy already saves).
   Future<void> persistBoosters() async {
     _syncPrimaryPowersToExtra();
+    // Y6/LWW: değeri değişen güç alanlarını damgala, damgaları da yaz.
+    touchChangedFieldStamps();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lululu_spray', sprayCount);
     await prefs.setInt('lululu_raid', sprayCount);
@@ -1602,6 +1693,12 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setString('lululu_extra_powers', jsonEncode(extraPowers));
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
+    // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
+    // (özellikle birleştirme/flush kritik yolunda) tek-uçuş
+    // korumalı akışları bayat işlere takar. Sonraki kalıcı kayıt
+    // da damgaları yazar; yazım penceresi milisaniyelerdir.
+    if (!_loading) unawaited(_persistStamps(prefs));
   }
 
   /// Durum bütünlük imzasını hesaplar (FNV-1a 64-bit benzeri deterministik özet).
@@ -1659,15 +1756,232 @@ class ProgressManager extends ChangeNotifier {
   /// Yalnız coin bakiyesi + bütünlük imzası yazar ([addCoins] ile aynı
   /// kayıt yolu; tam ekonomi kaydı için [_persistEconomy] kullanılır).
   Future<void> _persistCoinsOnly() async {
+    // Y6/LWW: coin değiştiyse damgala, damgaları da yaz.
+    touchChangedFieldStamps();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lululu_coins', coins);
     await prefs.setInt('LululuCoinBalance', coins);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
+    // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
+    // (özellikle birleştirme/flush kritik yolunda) tek-uçuş
+    // korumalı akışları bayat işlere takar. Sonraki kalıcı kayıt
+    // da damgaları yazar; yazım penceresi milisaniyelerdir.
+    if (!_loading) unawaited(_persistStamps(prefs));
+  }
+
+  /// Y6/LWW: alan damgalarını prefs'ten yükler; göçte (bayrak yoksa)
+  /// mevcut değerleri "şimdi" ile bir kez damgalar ve bayrağı yazar.
+  /// Damgasız uzak kayıt 0 sayıldığı için tohumlanmış yerel değer
+  /// göçte eski buluta karşı kazanır — veri kaybı olmaz (tasarım
+  /// A10 §3.2.5–§3.2.6, adım 1).
+  Future<void> _loadFieldStamps(SharedPreferences prefs) async {
+    int readStamp(String key) {
+      final v = prefs.getInt(key);
+      return v == null || v < 0 ? 0 : v;
+    }
+
+    coinsUpdatedAtMs = readStamp('lululu_ts_coins');
+    energyUpdatedAtMs = readStamp('lululu_ts_energy');
+    unlockedLevelUpdatedAtMs = readStamp('lululu_ts_level');
+    f16UpdatedAtMs = readStamp('lululu_ts_f16');
+    raidUpdatedAtMs = readStamp('lululu_ts_raid');
+    terlikUpdatedAtMs = readStamp('lululu_ts_terlik');
+    streakUpdatedAtMs = readStamp('lululu_ts_streak');
+    unlockedTiersUpdatedAtMs = readStamp('lululu_ts_tiers');
+    displayNameUpdatedAtMs = readStamp('lululu_ts_display_name');
+    extraPowersUpdatedAtMs.clear();
+    final extraRaw = prefs.getString('lululu_ts_extra_powers');
+    if (extraRaw != null && extraRaw.isNotEmpty) {
+      for (final entry in _decodeIntMap(
+        extraRaw,
+        'lululu_ts_extra_powers',
+      ).entries) {
+        if (entry.value >= 0) {
+          extraPowersUpdatedAtMs[entry.key] = entry.value;
+        }
+      }
+    }
+    if (prefs.getBool(_lwwSeedFlagKey) ?? false) return;
+    // Göç tohumlaması: bu cihazdaki mevcut değerler ilk kez
+    // damgalanır (damga = ilk damgalı yazım anı). İki cihaz da kendi
+    // ilk açılışında tohumlar; tohum anları 2 sn içindeyse eşitlik
+    // kuralı (max) uygulanır, aksi hâlde geç tohumlayan kazanır —
+    // tasarımın kabul ettiği göç yarışıdır, tek cihazda yerel
+    // öncelik korunur.
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    coinsUpdatedAtMs = nowMs;
+    energyUpdatedAtMs = nowMs;
+    unlockedLevelUpdatedAtMs = nowMs;
+    f16UpdatedAtMs = nowMs;
+    raidUpdatedAtMs = nowMs;
+    terlikUpdatedAtMs = nowMs;
+    streakUpdatedAtMs = nowMs;
+    unlockedTiersUpdatedAtMs = nowMs;
+    displayNameUpdatedAtMs = nowMs;
+    for (final key in extraPowers.keys) {
+      extraPowersUpdatedAtMs[key] = nowMs;
+    }
+    await _persistStamps(prefs);
+    await prefs.setBool(_lwwSeedFlagKey, true);
+  }
+
+  /// Y6/LWW: son kalıcı kayıttan beri değeri değişen alanların
+  /// damgasını "şimdi"ye ilerletir; fark anlık görüntüsünü günceller.
+  /// Yükleme sırasında kapalıdır (yükleme değişim sayılmaz).
+  void touchChangedFieldStamps() {
+    if (_loading) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (coins != _snapCoins) {
+      coinsUpdatedAtMs = nowMs;
+      _snapCoins = coins;
+    }
+    final currentEnergy = EnergyService.instance.energy;
+    if (currentEnergy != _snapEnergy) {
+      energyUpdatedAtMs = nowMs;
+      _snapEnergy = currentEnergy;
+    }
+    if (unlockedLevel != _snapLevel) {
+      unlockedLevelUpdatedAtMs = nowMs;
+      _snapLevel = unlockedLevel;
+    }
+    if (f16Count != _snapF16) {
+      f16UpdatedAtMs = nowMs;
+      _snapF16 = f16Count;
+    }
+    if (raidCount != _snapRaid) {
+      raidUpdatedAtMs = nowMs;
+      _snapRaid = raidCount;
+    }
+    if (terlikCount != _snapTerlik) {
+      terlikUpdatedAtMs = nowMs;
+      _snapTerlik = terlikCount;
+    }
+    if (streak != _snapStreak) {
+      streakUpdatedAtMs = nowMs;
+      _snapStreak = streak;
+    }
+    if (unlockedTiers.length != _snapTiers.length ||
+        !unlockedTiers.containsAll(_snapTiers)) {
+      unlockedTiersUpdatedAtMs = nowMs;
+      _snapTiers = Set<int>.of(unlockedTiers);
+    }
+    // Güç anahtarları: birincil güçlerin (raid/terlik/f16) damgası
+    // birincil stok damgasını izler; diğer anahtarlar kendi
+    // değişiminde "şimdi" ile damgalanır.
+    final nextPowers = <String, int>{};
+    for (final entry in extraPowers.entries) {
+      final prev = _snapExtraPowers[entry.key];
+      if (prev == null || prev != entry.value) {
+        switch (entry.key) {
+          case 'raid':
+            extraPowersUpdatedAtMs[entry.key] = raidUpdatedAtMs;
+            break;
+          case 'terlik':
+            extraPowersUpdatedAtMs[entry.key] = terlikUpdatedAtMs;
+            break;
+          case 'f16':
+            extraPowersUpdatedAtMs[entry.key] = f16UpdatedAtMs;
+            break;
+          default:
+            extraPowersUpdatedAtMs[entry.key] = nowMs;
+            break;
+        }
+      }
+      nextPowers[entry.key] = entry.value;
+    }
+    _snapExtraPowers = nextPowers;
+    for (final key in extraPowersUpdatedAtMs.keys.toList()) {
+      if (!extraPowers.containsKey(key)) {
+        extraPowersUpdatedAtMs.remove(key);
+      }
+    }
+  }
+
+  /// Y6/LWW: fark anlık görüntüsünü mevcut duruma eşitler — damga
+  /// ilerletmez. Birleştirme/test sıfırlaması sonrası kullanılır:
+  /// sonraki [touchChangedFieldStamps] yalnız gerçekten yeni
+  /// değişimleri damgalar.
+  void syncPersistedSnapshot() {
+    _snapCoins = coins;
+    _snapEnergy = EnergyService.instance.energy;
+    _snapLevel = unlockedLevel;
+    _snapF16 = f16Count;
+    _snapRaid = raidCount;
+    _snapTerlik = terlikCount;
+    _snapStreak = streak;
+    _snapTiers = Set<int>.of(unlockedTiers);
+    _snapExtraPowers = Map<String, int>.of(extraPowers);
+  }
+
+  /// Y6/LWW: enerji bildiricisinden gelen değişimde enerji damgasını
+  /// ilerletir. Enerji (regen/grant/tüketim) PM kalıcı kayıt yolundan
+  /// geçmeden de değişebilir; bu dinleyici o yolu kapatır.
+  void _onEnergyChanged() {
+    if (_loading) return;
+    final currentEnergy = EnergyService.instance.energy;
+    if (currentEnergy == _snapEnergy) return;
+    energyUpdatedAtMs = DateTime.now().millisecondsSinceEpoch;
+    _snapEnergy = currentEnergy;
+    unawaited(persistFieldStamps());
+  }
+
+  /// Y6/LWW: görünen ad değiştiğinde ad damgasını ilerletir. Ad,
+  /// AuthService'e aittir; bu kanca ad değişimini PM'e bildirmek
+  /// içindir (şu an çağrıcısı yok — damga payload'da taşınır,
+  /// pull'da ad ezilmez, bkz. CloudSync).
+  void noteDisplayNameChanged() {
+    displayNameUpdatedAtMs = DateTime.now().millisecondsSinceEpoch;
+    unawaited(persistFieldStamps());
+  }
+
+  /// Y6/LWW: bulut payload'una girecek damga haritası.
+  Map<String, dynamic> fieldUpdatedAtMap() {
+    return <String, dynamic>{
+      'coinsUpdatedAtMs': coinsUpdatedAtMs,
+      'energyUpdatedAtMs': energyUpdatedAtMs,
+      'unlockedLevelUpdatedAtMs': unlockedLevelUpdatedAtMs,
+      'f16UpdatedAtMs': f16UpdatedAtMs,
+      'raidUpdatedAtMs': raidUpdatedAtMs,
+      'terlikUpdatedAtMs': terlikUpdatedAtMs,
+      'streakUpdatedAtMs': streakUpdatedAtMs,
+      'unlockedTiersUpdatedAtMs': unlockedTiersUpdatedAtMs,
+      'displayNameUpdatedAtMs': displayNameUpdatedAtMs,
+      'extraPowersUpdatedAtMs':
+          Map<String, int>.from(extraPowersUpdatedAtMs),
+    };
+  }
+
+  /// Y6/LWW: damga prefs yazımı (tek yer).
+  Future<void> _persistStamps(SharedPreferences prefs) async {
+    await prefs.setInt('lululu_ts_coins', coinsUpdatedAtMs);
+    await prefs.setInt('lululu_ts_energy', energyUpdatedAtMs);
+    await prefs.setInt('lululu_ts_level', unlockedLevelUpdatedAtMs);
+    await prefs.setInt('lululu_ts_f16', f16UpdatedAtMs);
+    await prefs.setInt('lululu_ts_raid', raidUpdatedAtMs);
+    await prefs.setInt('lululu_ts_terlik', terlikUpdatedAtMs);
+    await prefs.setInt('lululu_ts_streak', streakUpdatedAtMs);
+    await prefs.setInt('lululu_ts_tiers', unlockedTiersUpdatedAtMs);
+    await prefs.setInt('lululu_ts_display_name', displayNameUpdatedAtMs);
+    await prefs.setString(
+      'lululu_ts_extra_powers',
+      jsonEncode(extraPowersUpdatedAtMs),
+    );
+  }
+
+  /// Y6/LWW: bellek içi damgaları prefs'e yazar (yükleme sırasında
+  /// çağrılmaz; yükleme kendi damga yolunu kullanır).
+  Future<void> persistFieldStamps() async {
+    if (_loading) return;
+    final prefs = await SharedPreferences.getInstance();
+    await _persistStamps(prefs);
   }
 
   Future<void> _persistEconomy() async {
     _syncPrimaryPowersToExtra();
+    // Y6/LWW: değeri değişen alanları damgala, sonra damgaları da yaz.
+    touchChangedFieldStamps();
     final prefs = await SharedPreferences.getInstance();
     // O1 NOTU: alias pref anahtarlarına yazım BİLİNÇLİ korunur —
     // `auth_service.dart` ve `cloud_sync_service.dart` aynı çift
@@ -1691,6 +2005,12 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setString('lululu_extra_powers', jsonEncode(extraPowers));
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
+    // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
+    // (özellikle birleştirme/flush kritik yolunda) tek-uçuş
+    // korumalı akışları bayat işlere takar. Sonraki kalıcı kayıt
+    // da damgaları yazar; yazım penceresi milisaniyelerdir.
+    if (!_loading) unawaited(_persistStamps(prefs));
   }
 }
 
@@ -1731,7 +2051,20 @@ class _ClaimSnapshot {
         _lastDailyFreeEnergyDay = pm.lastDailyFreeEnergyDay,
         _dailyFreeEnergyClaimsToday = pm.dailyFreeEnergyClaimsToday,
         _lastFreeEnergyClaimEpochMs = pm.lastFreeEnergyClaimEpochMs,
-        _energy = EnergyService.instance.energy;
+        _energy = EnergyService.instance.energy,
+        // Y6/LWW: damgalar da geri alınır (ödeme geri alınırken
+        // damga ilerlemesi kalırsa harcama "yeni" görünür).
+        _coinsUpdatedAtMs = pm.coinsUpdatedAtMs,
+        _energyUpdatedAtMs = pm.energyUpdatedAtMs,
+        _unlockedLevelUpdatedAtMs = pm.unlockedLevelUpdatedAtMs,
+        _f16UpdatedAtMs = pm.f16UpdatedAtMs,
+        _raidUpdatedAtMs = pm.raidUpdatedAtMs,
+        _terlikUpdatedAtMs = pm.terlikUpdatedAtMs,
+        _streakUpdatedAtMs = pm.streakUpdatedAtMs,
+        _unlockedTiersUpdatedAtMs = pm.unlockedTiersUpdatedAtMs,
+        _displayNameUpdatedAtMs = pm.displayNameUpdatedAtMs,
+        _extraPowersUpdatedAtMs =
+            Map<String, int>.of(pm.extraPowersUpdatedAtMs);
 
   final int _coins;
   final int _sprayCount;
@@ -1751,6 +2084,16 @@ class _ClaimSnapshot {
   final int _dailyFreeEnergyClaimsToday;
   final int _lastFreeEnergyClaimEpochMs;
   final int _energy;
+  final int _coinsUpdatedAtMs;
+  final int _energyUpdatedAtMs;
+  final int _unlockedLevelUpdatedAtMs;
+  final int _f16UpdatedAtMs;
+  final int _raidUpdatedAtMs;
+  final int _terlikUpdatedAtMs;
+  final int _streakUpdatedAtMs;
+  final int _unlockedTiersUpdatedAtMs;
+  final int _displayNameUpdatedAtMs;
+  final Map<String, int> _extraPowersUpdatedAtMs;
 
   /// Bellek durumunu anlık görüntüdeki hâle döndürür. `coins`
   /// doğrudan alana yazılır (setter'ın ertelenmiş kalıcı kaydı hata
@@ -1785,6 +2128,25 @@ class _ClaimSnapshot {
     pm.dailyFreeEnergyClaimsToday = _dailyFreeEnergyClaimsToday;
     pm.lastFreeEnergyClaimEpochMs = _lastFreeEnergyClaimEpochMs;
     pm._stateIntegritySig = pm._computeStateIntegritySig();
+    // Y6/LWW: damgalar da geri alınır.
+    pm.coinsUpdatedAtMs = _coinsUpdatedAtMs;
+    pm.energyUpdatedAtMs = _energyUpdatedAtMs;
+    pm.unlockedLevelUpdatedAtMs = _unlockedLevelUpdatedAtMs;
+    pm.f16UpdatedAtMs = _f16UpdatedAtMs;
+    pm.raidUpdatedAtMs = _raidUpdatedAtMs;
+    pm.terlikUpdatedAtMs = _terlikUpdatedAtMs;
+    pm.streakUpdatedAtMs = _streakUpdatedAtMs;
+    pm.unlockedTiersUpdatedAtMs = _unlockedTiersUpdatedAtMs;
+    pm.displayNameUpdatedAtMs = _displayNameUpdatedAtMs;
+    pm.extraPowersUpdatedAtMs
+      ..clear()
+      ..addAll(_extraPowersUpdatedAtMs);
+    // Y6/LWW: enerji ataması dinleyiciyi tetikler; anlık görüntüyü
+    // önce geri alınmış değere eşitle ki dinleyici damgayı yeniden
+    // ilerletmesin; sonra tüm fark anlık görüntülerini geri alınmış
+    // duruma eşitle (sonraki touch yalnız yeni değişimleri damgalar).
+    pm._snapEnergy = _energy;
     EnergyService.instance.energy = _energy;
+    pm.syncPersistedSnapshot();
   }
 }

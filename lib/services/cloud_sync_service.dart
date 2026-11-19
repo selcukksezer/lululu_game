@@ -140,6 +140,100 @@ class CloudSyncService extends ChangeNotifier {
   /// Rules `extraPowers` en fazla 40 anahtar.
   static const int maxExtraPowerEntries = 40;
 
+  /// Y6/LWW sabitleri (tasarım A10 §3.2.2):
+  /// * [lwwClockToleranceMs]: damga farkı bu eşiğin içindeyse eşit
+  ///   sayılır ve `max()` uygulanır (istemci saati kayması ±dakikalar
+  ///   oynayabilir; yanlış-yönlü ezilme önlenir).
+  /// * [lwwMaxFutureSkewMs]: şimdiden bu kadar ilerideki damga
+  ///   bozuktur (saat hilesi / bozuk veri) — alan `max()` yedeğine düşer.
+  /// * [maxFieldStampMs]: kural `isValidOptionalInt(..., 0, 9999999999999)`
+  ///   ile aynı üst sınır.
+  static const int lwwClockToleranceMs = 2000;
+  static const int lwwMaxFutureSkewMs = 24 * 60 * 60 * 1000;
+  static const int maxFieldStampMs = 9999999999999;
+
+  /// Y6/LWW: bir alanın uzak damgasını okur. Yoksa `0` (damgasız /
+  /// epoch — eski istemci veya göç öncesi veri); tür yanlış, negatif,
+  /// aralık dışı veya şimdi + 24 saatten ilerideyse bozuktur
+  /// ([bad] = true). Damgasız uzak, damgalı yerele her zaman yenilir;
+  /// iki taraf da damgasızsa [resolveLwwInt] `max()` yedeğine düşer.
+  static ({int stamp, bool bad}) readFieldStamp(
+    Map data,
+    String field, {
+    int? nowMs,
+  }) {
+    if (!data.containsKey(field)) return (stamp: 0, bad: false);
+    final raw = data[field];
+    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    if (raw is! num || raw.isNaN || raw.isInfinite) {
+      return (stamp: 0, bad: true);
+    }
+    final stamp = raw.toInt();
+    if (stamp < 0 ||
+        stamp > maxFieldStampMs ||
+        stamp > now + lwwMaxFutureSkewMs) {
+      return (stamp: 0, bad: true);
+    }
+    return (stamp: stamp, bad: false);
+  }
+
+  /// Y6/LWW: alan-başına zaman-damgalı son-yazan-kazanır çözümü
+  /// (tasarım A10 §3.2.2).
+  /// * uzak damga > yerel damga → uzak değer kazanır;
+  /// * uzak damga < yerel damga → yerel değer korunur (eski bulut,
+  ///   yeni yerel harcamayı diriltemez);
+  /// * fark ≤ [lwwClockToleranceMs] → eşit sayılır, `max()` uygulanır;
+  /// * uzak değer yoksa yerel korunur;
+  /// * bozuk uzak damgada `max()` yedeğine düşülür ve telemetri
+  ///   breadcrumb yazılır (alan adı yazılır, değer yazılmaz).
+  static int resolveLwwInt({
+    required int localValue,
+    required int localStamp,
+    required int? remoteValue,
+    required int remoteStamp,
+    bool remoteStampBad = false,
+    String field = '',
+  }) {
+    if (remoteValue == null) return localValue;
+    if (remoteStampBad) {
+      debugPrint('[lululu] cloudsync.lww_bad_timestamp field=$field');
+      return max(localValue, remoteValue);
+    }
+    final diff = remoteStamp - localStamp;
+    if (diff.abs() <= lwwClockToleranceMs) {
+      return max(localValue, remoteValue);
+    }
+    return diff > 0 ? remoteValue : localValue;
+  }
+
+  /// Y6/LWW: tek skaler alan için birleştirme — uzak değer yoksa yerel
+  /// korunur, varsa [resolveLwwInt] uygulanır, sonuç [clamp] ile
+  /// aralıklara çekilir (mevcut kelepçe davranışı korunur).
+  static int _mergeLwwField({
+    required int localValue,
+    required int localStamp,
+    required Map<String, dynamic> data,
+    required String valueField,
+    required String stampField,
+    required int Function(int value) clamp,
+    int? nowMs,
+  }) {
+    if (!data.containsKey(valueField)) return localValue;
+    final raw = data[valueField];
+    if (raw is! num) return localValue;
+    final stamp = readFieldStamp(data, stampField, nowMs: nowMs);
+    return clamp(
+      resolveLwwInt(
+        localValue: localValue,
+        localStamp: localStamp,
+        remoteValue: raw.toInt(),
+        remoteStamp: stamp.stamp,
+        remoteStampBad: stamp.bad,
+        field: valueField,
+      ),
+    );
+  }
+
   /// Rules `unlockedTiers` en fazla 16 öğe.
   static const int maxUnlockedTiersEntries = 16;
 
@@ -433,6 +527,20 @@ class CloudSyncService extends ChangeNotifier {
       'streak': safeStreak,
       'unlockedTiers': cappedTiers,
       'modeHighScores': safeModeScores,
+      // Y6/LWW (tasarım A10 §3.2.1): alan damgaları — değerin YEREL
+      // son değişim anı (flush anı değil). Damgalar bütünlük
+      // imzasına dahildir (`_canonicalize` yalnız `updatedAt` /
+      // `integrityHash`'i dışlar). `totalStars` / `total11ModesScore` /
+      // `bestOverallScore` türevdir, damgaları yoktur (§3.2.4).
+      // Güç damgaları yalnız payload'daki (kırpılmış) anahtarlar için
+      // yazılır. SIRA ŞARTI: kural allowlist'i dağıtılmadan damgalı
+      // yazım canlı kurallarca reddedilir (kuyruk korunur) — önce
+      // kural dağıtılır, sonra bu istemci yayınlanır.
+      ...pm.fieldUpdatedAtMap(),
+      'extraPowersUpdatedAtMs': <String, int>{
+        for (final k in safeExtraPowers.keys)
+          k: pm.extraPowersUpdatedAtMs[k] ?? 0,
+      },
     };
     payload['integrityHash'] = computeIntegrityHash(payload);
     return payload;
@@ -520,6 +628,34 @@ class CloudSyncService extends ChangeNotifier {
     final hash = payload['integrityHash'];
     if (hash != null && (hash is! String || hash.length != 64)) {
       violations.add('integrityHash 64 karakter olmalı');
+    }
+    // Y6/LWW damgaları (firestore.rules isValidUserDoc ile aynı sınırlar).
+    checkInt('coinsUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('energyUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('unlockedLevelUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('f16UpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('raidUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('terlikUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('streakUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('unlockedTiersUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('displayNameUpdatedAtMs', 0, maxFieldStampMs);
+    final powerStamps = payload['extraPowersUpdatedAtMs'];
+    if (powerStamps is Map) {
+      if (powerStamps.length > maxExtraPowerEntries) {
+        violations.add(
+          'extraPowersUpdatedAtMs en fazla $maxExtraPowerEntries anahtar olmalı',
+        );
+      }
+      for (final entry in powerStamps.entries) {
+        final v = entry.value;
+        if (v is! int || v < 0 || v > maxFieldStampMs) {
+          violations.add(
+            'extraPowersUpdatedAtMs[${entry.key}] 0..$maxFieldStampMs aralığında olmalı',
+          );
+        }
+      }
+    } else if (powerStamps != null) {
+      violations.add('extraPowersUpdatedAtMs harita olmalı');
     }
     final country = payload['country'];
     if (country != null &&
@@ -627,7 +763,39 @@ class CloudSyncService extends ChangeNotifier {
   /// Validates and conflict-free merges a remote/offline profile snapshot into
   /// [ProgressManager] and [LeaderboardService]. Returns false if rejected by
   /// integrity verification or anti-cheat bounds checks.
+  ///
+  /// Y6/LWW (Faz 4, 8E): birleştirme alan-başına zaman-damgalı
+  /// son-yazan-kazanır ([applyTimestampedProfileSnapshot]); eski
+  /// `max()` her alan için yalnız eşitlik/bozuk-damga yedeğidir.
+  /// Harcama dirilmesi kapanır: yeni damgalı yerel harcama, eski
+  /// damgalı uzak bakiyeye ezilmez. Bu metot geriye dönük uyumluluk
+  /// için LWW sürümüne delege eder.
   Future<bool> applyVerifiedProfileSnapshot(
+    Map<String, dynamic> data, {
+    bool allowUnsignedLegacy = false,
+  }) =>
+      applyTimestampedProfileSnapshot(
+        data,
+        allowUnsignedLegacy: allowUnsignedLegacy,
+      );
+
+  /// Alan-başına LWW profil birleştirme (tasarım A10 §3.2).
+  ///
+  /// * Ekonomi/ilerleme alanları (coin, enerji, seviye, f16/raid/
+  ///   terlik, seri): uzak damga yeniyse uzak değer, eskiyse yerel
+  ///   değer, fark ≤ 2 sn ise `max()` (eşitlik yedeği).
+  /// * `extraPowers`: anahtar başına LWW (eksik anahtar "değişim yok").
+  /// * `unlockedTiers`: birleşim kalır (yalnız-eklenir küme).
+  /// * `modeHighScores`: LWW DIŞI — yalnız-büyür kuralı korunur (§3.3).
+  /// * `totalStars` / `total11ModesScore` / `bestOverallScore`:
+  ///   türevdir, uzak değer okunmaz (§3.2.4).
+  /// * `displayName` / `country`: AuthService'e aittir; pull'da
+  ///   ezilmez (damga payload'da taşınır, birleştirme dışıdır).
+  /// * Damgasız uzak alan 0 sayılır → damgalı yerel kazanır; iki
+  ///   taraf da damgasızsa `max()` yedeği (göç, §3.2.5).
+  /// * Bozuk damga (negatif, tür yanlış, şimdi + 24 saatten ileri):
+  ///   o alan `max()` yedeğine düşer + breadcrumb (§3.2.5).
+  Future<bool> applyTimestampedProfileSnapshot(
     Map<String, dynamic> data, {
     bool allowUnsignedLegacy = false,
   }) async {
@@ -692,36 +860,84 @@ class CloudSyncService extends ChangeNotifier {
     }
 
     final pm = ProgressManager();
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (coinsVal != null) {
-      pm.coins = max(pm.coins, coinsVal).clamp(0, maxValidCoins);
+      pm.coins = _mergeLwwField(
+        localValue: pm.coins,
+        localStamp: pm.coinsUpdatedAtMs,
+        data: data,
+        valueField: 'coins',
+        stampField: 'coinsUpdatedAtMs',
+        clamp: (v) => v.clamp(0, maxValidCoins),
+        nowMs: nowMs,
+      );
     }
     if (energyVal != null) {
-      final mergedEnergy =
-          max(EnergyService.instance.energy, energyVal).clamp(0, maxValidEnergy);
-      EnergyService.instance.energy = mergedEnergy;
+      EnergyService.instance.energy = _mergeLwwField(
+        localValue: EnergyService.instance.energy,
+        localStamp: pm.energyUpdatedAtMs,
+        data: data,
+        valueField: 'energy',
+        stampField: 'energyUpdatedAtMs',
+        clamp: (v) => v.clamp(0, maxValidEnergy),
+        nowMs: nowMs,
+      );
     }
     if (levelVal != null) {
-      pm.unlockedLevel = max(pm.unlockedLevel, levelVal)
-          .clamp(1, ProgressManager.maxCampaignLevels);
+      pm.unlockedLevel = _mergeLwwField(
+        localValue: pm.unlockedLevel,
+        localStamp: pm.unlockedLevelUpdatedAtMs,
+        data: data,
+        valueField: 'unlockedLevel',
+        stampField: 'unlockedLevelUpdatedAtMs',
+        clamp: (v) => v.clamp(1, ProgressManager.maxCampaignLevels),
+        nowMs: nowMs,
+      );
     }
     if (f16Val != null) {
-      pm.f16Count = max(pm.f16Count, f16Val).clamp(0, maxValidBoosterCount);
+      pm.f16Count = _mergeLwwField(
+        localValue: pm.f16Count,
+        localStamp: pm.f16UpdatedAtMs,
+        data: data,
+        valueField: 'f16Count',
+        stampField: 'f16UpdatedAtMs',
+        clamp: (v) => v.clamp(0, maxValidBoosterCount),
+        nowMs: nowMs,
+      );
     }
     if (raidVal != null) {
-      pm.raidCount = max(pm.raidCount, raidVal).clamp(0, maxValidBoosterCount);
+      pm.raidCount = _mergeLwwField(
+        localValue: pm.raidCount,
+        localStamp: pm.raidUpdatedAtMs,
+        data: data,
+        valueField: 'raidCount',
+        stampField: 'raidUpdatedAtMs',
+        clamp: (v) => v.clamp(0, maxValidBoosterCount),
+        nowMs: nowMs,
+      );
     }
     if (terlikVal != null) {
-      pm.terlikCount =
-          max(pm.terlikCount, terlikVal).clamp(0, maxValidBoosterCount);
+      pm.terlikCount = _mergeLwwField(
+        localValue: pm.terlikCount,
+        localStamp: pm.terlikUpdatedAtMs,
+        data: data,
+        valueField: 'terlikCount',
+        stampField: 'terlikUpdatedAtMs',
+        clamp: (v) => v.clamp(0, maxValidBoosterCount),
+        nowMs: nowMs,
+      );
     }
 
-    final streakVal = _validateBoundedInt(
-      data['streak'],
-      minVal: 1,
-      maxVal: maxValidStreak,
-    );
-    if (streakVal != null) {
-      pm.streak = max(pm.streak, streakVal).clamp(1, maxValidStreak);
+    if (data.containsKey('streak')) {
+      pm.streak = _mergeLwwField(
+        localValue: pm.streak,
+        localStamp: pm.streakUpdatedAtMs,
+        data: data,
+        valueField: 'streak',
+        stampField: 'streakUpdatedAtMs',
+        clamp: (v) => v.clamp(1, maxValidStreak),
+        nowMs: nowMs,
+      );
     }
 
     final rawTiers = data['unlockedTiers'];
@@ -736,6 +952,7 @@ class CloudSyncService extends ChangeNotifier {
     }
 
     final rawPowers = data['extraPowers'];
+    final remotePowerStamps = data['extraPowersUpdatedAtMs'];
     if (rawPowers is Map) {
       rawPowers.forEach((k, v) {
         final bounded = _validateBoundedInt(
@@ -746,10 +963,36 @@ class CloudSyncService extends ChangeNotifier {
         );
         if (bounded != null) {
           final key = k.toString();
-          pm.extraPowers[key] =
-              max(pm.extraPowers[key] ?? 0, bounded).clamp(0, maxValidBoosterCount);
+          final keyStamp = remotePowerStamps is Map
+              ? readFieldStamp(remotePowerStamps, key, nowMs: nowMs)
+              : (stamp: 0, bad: false);
+          pm.extraPowers[key] = resolveLwwInt(
+            localValue: pm.extraPowers[key] ?? 0,
+            localStamp: pm.extraPowersUpdatedAtMs[key] ?? 0,
+            remoteValue: bounded,
+            remoteStamp: keyStamp.stamp,
+            remoteStampBad: keyStamp.bad,
+            field: 'extraPowers.$key',
+          ).clamp(0, maxValidBoosterCount);
         }
       });
+      // Birincil güçler (raid/terlik/f16) `extraPowers` ile AYNI
+      // stoktur (O1): harita birleşmesi birincil sayaçları da
+      // günceller. Yoksa aşağıdaki `persistBoosters` içindeki
+      // `_syncPrimaryPowersToExtra` harita değerini sayaçla ezer ve
+      // birleşme kaybolur (kısmi yük — yalnız harita gelen — bu
+      // yüzden sayaçla çelişir). Sayaç alanı da yükte varsa onun
+      // LWW kararı yukarıda verildi; harita kararı burada sayaca
+      // taşınır, son durum tek kaynaktan tutarlıdır.
+      if (pm.extraPowers.containsKey('raid')) {
+        pm.raidCount = pm.extraPowers['raid']!;
+      }
+      if (pm.extraPowers.containsKey('terlik')) {
+        pm.terlikCount = pm.extraPowers['terlik']!;
+      }
+      if (pm.extraPowers.containsKey('f16')) {
+        pm.f16Count = pm.extraPowers['f16']!;
+      }
     }
 
     final rawModeScores = data['modeHighScores'];
@@ -775,7 +1018,8 @@ class CloudSyncService extends ChangeNotifier {
     // anahtarlar için kalır (coin, seviye, seri, tier'lar, mod skorları);
     // mod skorları mutlak tavanla birleştirildiği için `recordModeScore`
     // (mod tavanı, tek-tavan dönemi eski skorları atar) kullanılmaz —
-    // birleştirme semantiği değişmez (Y6 kapsam dışı).
+    // mod skorları Y6'da da yalnız-büyür kalır (tasarım A10 §3.3),
+    // diğer alanlar LWW ile birleşir.
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lululu_coins', pm.coins);
     await prefs.setInt('LululuCoinBalance', pm.coins);
@@ -789,6 +1033,17 @@ class CloudSyncService extends ChangeNotifier {
       'lululu_mode_high_scores',
       jsonEncode(pm.modeHighScores),
     );
+    // Y6/LWW: birleşmede değişen alanların damgaları ilerletilir ve
+    // yazılır — benimsenen uzak değer, birleşme anında yerel
+    // değişimdir; kaybeden (yerel korunan) alanın damgası değişmez.
+    // Damga yazımı ateşle-unut yapılır: bellek içi damga zaten
+    // günceldir; kalıcı yazımın bu birleştirmenin kritik yolunu
+    // uzatması, tek-uçuş korumalı flush'ların bayat birleştirmelere
+    // takılmasına yol açar (guest_migration regresyonu, 8E).
+    // Ertelenmiş coin kaydı + sonraki _persistEconomy de damgaları
+    // yazar; yazım penceresi milisaniyelerdir.
+    pm.touchChangedFieldStamps();
+    unawaited(pm.persistFieldStamps());
     await pm.persistBoosters();
     // Birleşmiş durum dinleyicilere bildirilir: enerji setter'ı kendi
     // bildirimini yapar, ama coin/seviye/tier/skor değişimleri PM
@@ -1028,6 +1283,11 @@ class CloudSyncService extends ChangeNotifier {
   /// Skor yakınsaması (K2): yazımdan önce uzak skorlar ön-okunur ve her
   /// mod max(yerel, uzak) ile yazılır ([convergedScoreForFlush]); uzaktaki
   /// skor yüksekse tek modun bile batch'i reddetmesi önlenir.
+  ///
+  /// LWW (Y6): flush payload'undaki alan damgaları yerel değişim
+  /// anıdır (flush anı değil); coin yakınsaması değeri kısmen yazsa
+  /// bile damga değişmez — sonraki pull'da aynı damga + `max()`
+  /// eşitlik yedeği yerel bakiyeyi korur.
   ///
   /// Çevrimdışı flush (Firebase hazır değil): kuyruk KORUNUR ve tipli
   /// `unavailable` hatası döner (S2#17); [status] "kuyrukta bekliyor"
