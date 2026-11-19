@@ -96,6 +96,12 @@ class _GameScreenState extends State<GameScreen>
   bool _dropHadMerge = false;
   InsectTier _currentDropperTier = InsectTier.cone;
   InsectTier _nextDropperTier = InsectTier.helmet;
+
+  /// Düşürücüdeki / sıradaki böcek Hışır derili mi? Deri yalnız
+  /// görsel + birleşme sesini değiştirir; kademe/skor aynen kalır.
+  /// Prototip görsel durumunda hep `false` tutulur.
+  bool _currentDropperIsHisir = false;
+  bool _nextDropperIsHisir = false;
   InsectTier _highestTierUnlocked = InsectTier.cone;
 
   double _dropperX = 200.0;
@@ -265,6 +271,10 @@ class _GameScreenState extends State<GameScreen>
     LeaderboardService.instance.addListener(_onLeaderboardChanged);
     _currentDropperTier = _rollDropTier();
     _nextDropperTier = _rollDropTier();
+    _currentDropperIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+    _nextDropperIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
     if (widget.prototypeVisualState) {
       _currentDropperTier = InsectTier.cone;
       _nextDropperTier = InsectTier.helmet;
@@ -354,6 +364,23 @@ class _GameScreenState extends State<GameScreen>
   /// (bkz. `initState`); her dinleyici zaten `mounted` korur.
   void _preloadImages() {
     _preloadImagesBatched(0);
+    _preloadHisirImage();
+  }
+
+  /// Hışır derisi görseli (`hisir_hd.png`) tier görselleriyle aynı
+  /// haritaya çözülür — painter `body.isHisir` ise bu girdiyi okur.
+  void _preloadHisirImage() {
+    final imgStream = const AssetImage(HisirCharacter.assetPath)
+        .resolve(ImageConfiguration.empty);
+    final listener = ImageStreamListener((ImageInfo info, bool _) {
+      if (mounted) {
+        setState(() {
+          _insectImages[HisirCharacter.assetPath] = info;
+        });
+      }
+    });
+    _insectImageListeners[imgStream] = listener;
+    imgStream.addListener(listener);
   }
 
   void _preloadImagesBatched(int start) {
@@ -511,6 +538,10 @@ class _GameScreenState extends State<GameScreen>
       _bonusPulse.clear();
       _currentDropperTier = _rollDropTier();
       _nextDropperTier = _rollDropTier();
+      _currentDropperIsHisir =
+          !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+      _nextDropperIsHisir =
+          !widget.prototypeVisualState && HisirCharacter.roll(_rng);
       _aimDropperAt(_dropperX);
       _engine?.squareArena = widget.arcade || level.squareArena;
       _engine?.layoutBlocks(!widget.arcade && level.hasObstacles ? 3 : 0);
@@ -799,7 +830,15 @@ class _GameScreenState extends State<GameScreen>
       }
 
       unawaited(
-        AudioManager().playMerge(tier: nextTier, comboCount: _comboCount),
+        event.hisirInvolved
+            ? AudioManager().playMergeHisir(
+                tierNumber: nextTier.tier,
+                comboCount: _comboCount,
+              )
+            : AudioManager().playMerge(
+                tier: nextTier,
+                comboCount: _comboCount,
+              ),
       );
       // 10D: kombo≥3 ağırlaştırması kaldırıldı — playMerge zaten
       // onMerge(tier, combo) ile kombo≥3'te ağır titreşim verir
@@ -813,7 +852,9 @@ class _GameScreenState extends State<GameScreen>
       }
 
       _playMergeJuice(event, _comboCount, pointsGained);
-      _showSpeechBubble(nextTier.viralReplik);
+      _showSpeechBubble(
+        event.hisirInvolved ? HisirCharacter.replik : nextTier.viralReplik,
+      );
 
       // Check Victory Condition (deferred until every merge is scored).
       if (widget.arcade) continue;
@@ -881,7 +922,12 @@ class _GameScreenState extends State<GameScreen>
     final dropY = _engine!.arenaBounds.top + 18;
     // 10B: doğal bırakma — tohumlu küçük x sapması + başlangıç eğimi /
     // dönüş; sapma arena sınırları içinde kelepçelenir (motorda).
-    _engine!.addDropBody(_currentDropperTier, _dropperX, dropY);
+    _engine!.addDropBody(
+      _currentDropperTier,
+      _dropperX,
+      dropY,
+      isHisir: _currentDropperIsHisir,
+    );
     // Enerji iadesi sayacı (madde 35): düşürme anında sayılır, zamanlayıcı
     // geri çağrısında değil — 280 ms içinde çıkılsa bile hamle sayılır.
     _dropsMade++;
@@ -901,6 +947,8 @@ class _GameScreenState extends State<GameScreen>
         _arcadeDropCount++;
         _currentDropperTier = _nextDropperTier;
         _nextDropperTier = _rollDropTier();
+        _currentDropperIsHisir = _nextDropperIsHisir;
+        _nextDropperIsHisir = HisirCharacter.roll(_rng);
         _aimDropperAt(_dropperX);
         _isDropping = false;
         _waitingSettle = true;
@@ -1665,7 +1713,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
                 const SizedBox(width: 6),
                 Image.asset(
-                  _nextDropperTier.assetPath,
+                  HisirCharacter.assetFor(isHisir: _nextDropperIsHisir, tier: _nextDropperTier),
                   width: 34,
                   height: 34,
                   fit: BoxFit.contain,
@@ -1788,7 +1836,7 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
               Image.asset(
-                _nextDropperTier.assetPath,
+                HisirCharacter.assetFor(isHisir: _nextDropperIsHisir, tier: _nextDropperTier),
                 width: 19.3,
                 height: 38,
                 fit: BoxFit.contain,
@@ -1993,7 +2041,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                   const SizedBox(width: 3),
                   Image.asset(
-                    _nextDropperTier.assetPath,
+                    HisirCharacter.assetFor(isHisir: _nextDropperIsHisir, tier: _nextDropperTier),
                     width: 26,
                     height: 26,
                     fit: BoxFit.contain,
@@ -2854,6 +2902,7 @@ class _GameScreenState extends State<GameScreen>
                       coneSpriteScale: 1,
                       dropperX: _dropperX,
                       currentDropperTier: _currentDropperTier,
+                      currentDropperIsHisir: _currentDropperIsHisir,
                       showDropperPreview:
                           !_isFinished && !_paused && !_isDropping,
                       dangerLineLabel: context.l10n.dangerLineLabel,

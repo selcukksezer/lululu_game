@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -142,6 +143,9 @@ class _Match3ScreenState extends State<Match3Screen>
     if (widget.prototypeVisualState && v <= _prototypeTileColors.length) {
       return v;
     }
+    // Hışır derisi (kademe + 100): bomba bias'ından (kademe + 5) önce
+    // çözülür; kademe/skor/eşleşme hep bu taban üzerinden okunur.
+    if (HisirCharacter.isEncoded(v)) return HisirCharacter.baseTier(v);
     if (v > kinds) return v - bombBias;
     return v;
   }
@@ -401,10 +405,15 @@ class _Match3ScreenState extends State<Match3Screen>
           r >= 2 &&
           _base(_grid[r - 1][c]) == tier &&
           _base(_grid[r - 2][c]) == tier;
-      if (!horz && !vert) return tier;
+      if (!horz && !vert) return _maybeHisir(tier);
     }
-    return 1 + _rng.nextInt(kinds);
+    return _maybeHisir(1 + _rng.nextInt(kinds));
   }
+
+  /// Yeni taş %5 Hışır derili doğar (prototip görselde asla).
+  int _maybeHisir(int tier) => widget.prototypeVisualState
+      ? tier
+      : HisirCharacter.encodeGridValue(tier, _rng);
 
   void _reshuffle() {
     _deal();
@@ -630,6 +639,7 @@ class _Match3ScreenState extends State<Match3Screen>
     _moves--;
     var chain = 0;
     var voiceTier = 1;
+    var hisirCleared = false;
     Point<int>? bombAt;
 
     while (matches.isNotEmpty) {
@@ -663,6 +673,7 @@ class _Match3ScreenState extends State<Match3Screen>
       for (final p in toClear) {
         final raw = _grid[p.x][p.y];
         if (raw == 0) continue;
+        if (HisirCharacter.isEncoded(raw)) hisirCleared = true;
         final tier = _base(raw);
         if (tier > voiceTier) voiceTier = tier;
         gained += 12 * tier * chain;
@@ -706,7 +717,11 @@ class _Match3ScreenState extends State<Match3Screen>
       matches = _findMatches();
     }
 
-    AudioManager().playMerge(tierNumber: voiceTier);
+    if (hisirCleared) {
+      AudioManager().playMergeHisir(tierNumber: voiceTier);
+    } else {
+      AudioManager().playMerge(tierNumber: voiceTier);
+    }
     if (!_ended && !_hasMove()) _reshuffle();
     await _endCheck(epoch);
   }
@@ -767,7 +782,7 @@ class _Match3ScreenState extends State<Match3Screen>
       for (var r = write; r >= 0; r--) {
         _grid[r][c] = avoidRunaway
             ? _rollAvoiding(r, c)
-            : (1 + _rng.nextInt(kinds));
+            : _maybeHisir(1 + _rng.nextInt(kinds));
       }
     }
   }
@@ -912,7 +927,15 @@ class _Match3ScreenState extends State<Match3Screen>
     if (_ended || _paused || _busy) return false;
     final cell = _selected ?? _firstFilled();
     if (cell == null) return false;
-    AudioManager().playMerge(tierNumber: max(1, _base(_grid[cell.x][cell.y])));
+    if (HisirCharacter.isEncoded(_grid[cell.x][cell.y])) {
+      AudioManager().playMergeHisir(
+        tierNumber: max(1, _base(_grid[cell.x][cell.y])),
+      );
+    } else {
+      AudioManager().playMerge(
+        tierNumber: max(1, _base(_grid[cell.x][cell.y])),
+      );
+    }
     setState(() {
       _selected = null;
       _grid[cell.x][cell.y] = 0;
@@ -931,7 +954,21 @@ class _Match3ScreenState extends State<Match3Screen>
   bool _useBomb3() {
     if (_ended || _paused || _busy) return false;
     final cell = _selected ?? const Point<int>(3, 3);
-    AudioManager().playMerge(tierNumber: 4);
+    var hisirHit = false;
+    for (var r = cell.x - 1; r <= cell.x + 1; r++) {
+      for (var c = cell.y - 1; c <= cell.y + 1; c++) {
+        if (r < 0 || c < 0 || r >= rows || c >= _cols) continue;
+        if (HisirCharacter.isEncoded(_grid[r][c])) hisirHit = true;
+      }
+    }
+    for (var c = 0; c < _cols; c++) {
+      if (HisirCharacter.isEncoded(_grid[cell.x][c])) hisirHit = true;
+    }
+    if (hisirHit) {
+      AudioManager().playMergeHisir(tierNumber: 4);
+    } else {
+      AudioManager().playMerge(tierNumber: 4);
+    }
     setState(() {
       _selected = null;
       var n = 0;
@@ -976,7 +1013,19 @@ class _Match3ScreenState extends State<Match3Screen>
       if (counts[i] > counts[best]) best = i;
     }
     if (counts[best] == 0) return false;
-    AudioManager().playMerge(tierNumber: best);
+    var hisirHit = false;
+    for (final row in _grid) {
+      for (final value in row) {
+        if (_base(value) == best && HisirCharacter.isEncoded(value)) {
+          hisirHit = true;
+        }
+      }
+    }
+    if (hisirHit) {
+      AudioManager().playMergeHisir(tierNumber: best);
+    } else {
+      AudioManager().playMerge(tierNumber: best);
+    }
     setState(() {
       _selected = null;
       var n = 0;
@@ -2366,7 +2415,12 @@ class _Match3ScreenState extends State<Match3Screen>
             ? const SizedBox.shrink()
             : Padding(
                 padding: const EdgeInsets.all(1.9),
-                child: StickerImage(assetPath: insect.assetPath),
+                child: StickerImage(
+                  assetPath: HisirCharacter.assetFor(
+                    isHisir: HisirCharacter.isEncoded(raw),
+                    tier: insect,
+                  ),
+                ),
               ),
       ),
     );

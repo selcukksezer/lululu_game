@@ -8,7 +8,17 @@ class MergeEvent {
   final double x;
   final double y;
 
-  const MergeEvent({required this.tier, required this.x, required this.y});
+  /// Birleşen çiftteki gövdelerden en az biri Hışır derili miydi?
+  /// Skor/kademe [tier] üzerinden aynen hesaplanır; bu bayrak yalnız
+  /// ses + replik seçimi içindir.
+  final bool hisirInvolved;
+
+  const MergeEvent({
+    required this.tier,
+    required this.x,
+    required this.y,
+    this.hisirInvolved = false,
+  });
 }
 
 class InsectParticle {
@@ -59,6 +69,11 @@ class InsectBody {
   double spawnScale;
   double mergeSquash;
 
+  /// Hışır derisi: gövde bu kademenin böceği gibi davranır (fizik,
+  /// birleşme, skor aynen), yalnız görseli `hisir_hd.png` olur.
+  /// Birleşince doğan üst kademe gövde Hışır değildir.
+  bool isHisir;
+
   /// Kademe-bağımlı açısal sönüm (60 Hz kare başına çarpan; küçük
   /// kademeler daha uzun döner, büyükler daha çabuk durur). Motor
   /// [CircularPhysicsEngine.angularDampingFor] ile doldurur.
@@ -77,6 +92,7 @@ class InsectBody {
     this.spawnScale = 0.2,
     this.mergeSquash = 0,
     this.angularDamping = CircularPhysicsEngine.defaultAngularDamping,
+    this.isHisir = false,
   }) : prevX = prevX ?? x,
        prevY = prevY ?? y;
 
@@ -89,6 +105,7 @@ class InsectBody {
     required double ny,
     double initialAngle = 0.0,
     double initialAngularVelocity = 0.0,
+    bool isHisir = false,
   }) {
     tier = nextTier;
     x = nx;
@@ -101,6 +118,7 @@ class InsectBody {
     isMarkedForRemoval = false;
     spawnScale = 0.2;
     mergeSquash = 0;
+    this.isHisir = isHisir;
   }
 
   void applyImpulse(double ix, double iy) {
@@ -385,6 +403,7 @@ class CircularPhysicsEngine {
     double y, {
     double initialAngle = 0.0,
     double initialAngularVelocity = 0.0,
+    bool isHisir = false,
   }) {
     final InsectBody body;
     if (_pool.isNotEmpty) {
@@ -395,6 +414,7 @@ class CircularPhysicsEngine {
         ny: y,
         initialAngle: initialAngle,
         initialAngularVelocity: initialAngularVelocity,
+        isHisir: isHisir,
       );
     } else {
       body = InsectBody(
@@ -406,6 +426,7 @@ class CircularPhysicsEngine {
         angle: initialAngle,
         angularVelocity: initialAngularVelocity,
         angularDamping: angularDampingFor(tier),
+        isHisir: isHisir,
       );
       body.prevY = y - 4.5;
     }
@@ -416,7 +437,12 @@ class CircularPhysicsEngine {
   /// başlangıç eğimi / dönüş (kademe tablosundan). Sapmış x, doğma
   /// taşması payıyla (yarıçap × 1.06 + 2 px) arena sınırları içinde
   /// kelepçelenir — bırakma asla duvar dışına taşmaz.
-  InsectBody addDropBody(InsectTier tier, double aimX, double y) {
+  InsectBody addDropBody(
+    InsectTier tier,
+    double aimX,
+    double y, {
+    bool isHisir = false,
+  }) {
     final jitter = dropJitterPx(tier);
     final dx = (_dropRng.nextDouble() * 2 - 1) * jitter;
     final tilt = (_dropRng.nextDouble() * 2 - 1) * dropTiltRad(tier);
@@ -437,7 +463,7 @@ class CircularPhysicsEngine {
         x = arenaCenter.dx + dxc / dist * maxR;
       }
     }
-    addBody(tier, x, y, initialAngle: tilt, initialAngularVelocity: spin);
+    addBody(tier, x, y, initialAngle: tilt, initialAngularVelocity: spin, isHisir: isHisir);
     return bodies.last;
   }
 
@@ -720,8 +746,12 @@ class CircularPhysicsEngine {
             final next = b1.tier.nextTier!;
             final midX = (b1.x + b2.x) / 2;
             final midY = (b1.y + b2.y) / 2;
+            // Hışır derisi birleşmeye katıldıysa olay bunu taşır; doğan
+            // üst kademe gövde artık Hışır değildir (deri tek kullanımlık).
+            final hisirInvolved = b1.isHisir || b2.isHisir;
 
             b1.tier = next;
+            b1.isHisir = false;
             // Birleşen gövde yeni kademenin dönüş karakterini alır.
             b1.angularDamping = angularDampingFor(next);
             // One merge per body per frame — lock b1 for this frame.
@@ -742,7 +772,14 @@ class CircularPhysicsEngine {
             b2.isMarkedForRemoval = true;
             spawnParticles(midX, midY, next.color, count: 8 + next.tier);
             _nudgeNeighborsFromMerge(midX, midY, next.radius * 1.6);
-            merges.add(MergeEvent(tier: next, x: midX, y: midY));
+            merges.add(
+              MergeEvent(
+                tier: next,
+                x: midX,
+                y: midY,
+                hisirInvolved: hisirInvolved,
+              ),
+            );
             continue;
           }
 

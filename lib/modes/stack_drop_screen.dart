@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -47,6 +48,7 @@ class _Slab {
     required this.tier,
     required this.floor,
     this.perfect = false,
+    this.isHisir = false,
   });
 
   double center;
@@ -54,6 +56,10 @@ class _Slab {
   final int tier;
   final int floor;
   final bool perfect;
+
+  /// Hışır derisi: dilim bu kademenin dilimi gibi davranır (genişlik,
+  /// skor aynen), yalnız görseli `hisir_hd.png` olur.
+  final bool isHisir;
 }
 
 class _CutPiece {
@@ -172,6 +178,9 @@ class _StackDropScreenState extends State<StackDropScreen>
   double _fallY = 16;
   double _sway = 0;
   int _tier = 1;
+
+  /// Hareketli dilim Hışır derili mi? Yerleşmede dilime taşınır.
+  bool _moverIsHisir = false;
   int _score = 0;
   int _best = 0;
   int _combo = 0;
@@ -374,6 +383,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     _fallY = 16;
     _sway = 0;
     _tier = 4;
+    _moverIsHisir = false;
     _score = 0;
     _combo = 0;
     _maxCombo = 0;
@@ -456,6 +466,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     _moverW = 150;
     _moverX = _arenaW / 2 - 2.1;
     _tier = 4;
+    _moverIsHisir = false;
     _speed = 150;
     _score = 980;
     _best = max(_best, 1540);
@@ -619,6 +630,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     final width = perfect ? top.width : overlap;
     final center = perfect ? top.center : (overlapL + overlapR) / 2;
     final placedTier = _tier;
+    final placedIsHisir = _moverIsHisir;
     if (width < 14) {
       _fail();
       return;
@@ -660,7 +672,14 @@ class _StackDropScreenState extends State<StackDropScreen>
       final gain = ((28 + _combo * 8 + _floors) * heat).round();
       _score += gain;
       _showFeedback(context.l10n.stackPerfectHit(_combo));
-      AudioManager().playMerge(tierNumber: _tier, comboCount: _combo);
+      if (placedIsHisir) {
+        AudioManager().playMergeHisir(
+          tierNumber: _tier,
+          comboCount: _combo,
+        );
+      } else {
+        AudioManager().playMerge(tierNumber: _tier, comboCount: _combo);
+      }
       if (_combo == 3 || _combo == 5 || _combo == 8) {
         _showMilestone('COMBO x$_combo');
       }
@@ -671,14 +690,22 @@ class _StackDropScreenState extends State<StackDropScreen>
       final gain = 16 + _floors + _combo * 2;
       _score += gain;
       _showFeedback(context.l10n.stackNearCallout(gain));
-      AudioManager().playMerge(tierNumber: _tier);
+      if (placedIsHisir) {
+        AudioManager().playMergeHisir(tierNumber: _tier);
+      } else {
+        AudioManager().playMerge(tierNumber: _tier);
+      }
     } else {
       _combo = 0;
       _comboMeter = max(0, _comboMeter - 0.25);
       final gain = 10 + _floors;
       _score += gain;
       _showFeedback(context.l10n.stackEdgeCutCallout(gain));
-      AudioManager().playMerge(tierNumber: _tier);
+      if (placedIsHisir) {
+        AudioManager().playMergeHisir(tierNumber: _tier);
+      } else {
+        AudioManager().playMerge(tierNumber: _tier);
+      }
     }
 
     if (_score > _best) _best = _score;
@@ -689,6 +716,8 @@ class _StackDropScreenState extends State<StackDropScreen>
     // gösteriyordu (playtest S1).
     final floor = _floors;
     _tier = 1 + _rng.nextInt(5);
+    _moverIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
     _speed = min(360.0, _speed + 8 + (_floors > 10 ? 2 : 0));
     _phase = _Phase.ready;
     _moverX = _moverX.clamp(_moverW / 2, _arenaW - _moverW / 2);
@@ -698,6 +727,7 @@ class _StackDropScreenState extends State<StackDropScreen>
         width: width,
         tier: placedTier,
         floor: floor,
+        isHisir: placedIsHisir,
         perfect: perfect,
       ),
     );
@@ -1372,6 +1402,7 @@ class _StackDropScreenState extends State<StackDropScreen>
         moving: true,
         perfect: false,
         borderOverride: null,
+        isHisir: _moverIsHisir,
       ),
     );
   }
@@ -1408,6 +1439,7 @@ class _StackDropScreenState extends State<StackDropScreen>
           moving: false,
           perfect: slab.perfect,
           floor: slab.floor,
+          isHisir: slab.isHisir,
         ),
       ),
     );
@@ -1420,6 +1452,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     required bool perfect,
     int? floor,
     Color? borderOverride,
+    bool isHisir = false,
   }) {
     final fill = _slabColors[(tier - 1).clamp(0, _slabColors.length - 1)];
     final prototype = widget.prototypeVisualState;
@@ -1462,7 +1495,9 @@ class _StackDropScreenState extends State<StackDropScreen>
                     SizedBox(
                       height: moving ? 36 : 31,
                       child: Image.asset(
-                        'assets/bugs/tier${tier.clamp(1, 13)}_hd${tier.clamp(1, 13) == 5 ? '.webp' : '.png'}',
+                        isHisir
+                            ? HisirCharacter.assetPath
+                            : 'assets/bugs/tier${tier.clamp(1, 13)}_hd${tier.clamp(1, 13) == 5 ? '.webp' : '.png'}',
                         fit: BoxFit.contain,
                         errorBuilder: (_, _, _) =>
                             StickerImage(assetPath: insect.assetPath),

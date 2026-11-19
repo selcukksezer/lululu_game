@@ -694,7 +694,11 @@ class AudioManager {
     _exclusiveOnComplete = onComplete;
 
     try {
-      _exclusivePlayer ??= AudioPlayer()..setReleaseMode(ReleaseMode.stop);
+      // 12M dikişi: özel oyuncu da [playerFactory] üzerinden kurulur
+      // (varsayılanı `AudioPlayer.new` — üretim davranışı aynen);
+      // testte sahte oyuncu ile bitiş (`onComplete`) tetiklenebilir.
+      _exclusivePlayer ??= playerFactory()
+        ..setReleaseMode(ReleaseMode.stop);
       final player = _exclusivePlayer!;
       await _exclusiveCompleteSub?.cancel();
       _exclusiveCompleteSub = player.onPlayerComplete.listen((_) {
@@ -839,6 +843,38 @@ class AudioManager {
       // chime/combo onu kesemez, yeni birleşme eskisinin üstüne başlar,
       // eski ses kendi bitirir.
       plays.add(_playVoiceChannel(voiceAsset));
+    }
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
+  }
+
+  /// Hışır birleşme/patlama sesi: birleşme chime'ı (+ kombo SFX) ile
+  /// Hışır'ın onaylı sesi (`hisir_zopa.mp3`) birlikte çalar.
+  ///
+  /// [playMerge] buradan çağrılmaz: o, kademe sesini çalma başına
+  /// oyuncuya yazar (Dalga 12K). Hışır sesi tek yoldan
+  /// ([playHusurAday]) havuzdan çalar — 12K düzeninde hiçbir çalma
+  /// başka çalmayı durdurmadığı için Hışır klibi kesilmeden tam çalar.
+  /// Skor/kademe bu seste taşınmaz; çağıran skor hesabını aynen korur.
+  Future<void> playMergeHisir({
+    int? tierNumber,
+    int comboCount = 1,
+  }) async {
+    final resolvedTier = (tierNumber ?? 1).clamp(1, 13);
+    if (vibrationEnabled) {
+      unawaited(
+        HapticService.instance.onMerge(tier: resolvedTier, combo: comboCount),
+      );
+    }
+    final plays = <Future<void>>[
+      if (_sfxEnabled) playSfx(GameAudio.sfxMergeChime, isVoice: false),
+    ];
+    if (_sfxEnabled && comboCount > 1) {
+      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
+    }
+    if (_voiceAudible) {
+      plays.add(playHusurAday());
     }
     if (plays.isNotEmpty) {
       await Future.wait(plays);

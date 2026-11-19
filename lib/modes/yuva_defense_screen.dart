@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
@@ -45,6 +46,7 @@ class _DefenseBug {
     required this.x,
     required this.y,
     this.speedMultiplier = 1.0,
+    this.isHisir = false,
   });
 
   final int id;
@@ -54,6 +56,10 @@ class _DefenseBug {
   double x;
   double y;
   final double speedMultiplier;
+
+  /// Hışır derisi: böcek bu kademenin böceği gibi davranır (hız, skor
+  /// aynen), yalnız görseli `hisir_hd.png`, vuruş sesi `hisir_zopa.mp3`.
+  final bool isHisir;
   bool popping = false;
   double popTime = 0;
 }
@@ -395,6 +401,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         tier:
             tier ??
             InsectTier.values[_random.nextInt(InsectTier.values.length)],
+        isHisir:
+            tier == null &&
+            !widget.prototypeVisualState &&
+            HisirCharacter.roll(_random),
         lane: chosenLane,
         direction: left ? 1 : -1,
         x: spawnX,
@@ -416,6 +426,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _DefenseBug(
         id: _nextBugId++,
         tier: selectedTier,
+        isHisir:
+            tier == null &&
+            !widget.prototypeVisualState &&
+            HisirCharacter.roll(_random),
         lane: 1,
         direction: sx < _nestCenterX ? 1 : -1,
         x: sx,
@@ -809,7 +823,9 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     _shake = min(0.35, 0.12 + _combo * 0.025);
     unawaited(
       AudioManager().playSlipperSmash(
-        characterId: GameAudio.characterIdForTier(bug.tier),
+        characterId: bug.isHisir
+            ? HisirCharacter.id
+            : GameAudio.characterIdForTier(bug.tier),
         tier: bug.tier,
         comboCount: _combo,
       ),
@@ -1790,7 +1806,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                                         ? 0.72
                                                                         : 1,
                                                                     child: Image.asset(
-                                                                      'assets/bugs/tier${bug.tier.tier}_hd${bug.tier.tier == 5 ? '.webp' : '.png'}',
+                                                                      bug.isHisir
+                                                                          ? HisirCharacter
+                                                                              .assetPath
+                                                                          : 'assets/bugs/tier${bug.tier.tier}_hd${bug.tier.tier == 5 ? '.webp' : '.png'}',
                                                                       width: 48,
                                                                       height:
                                                                           48,

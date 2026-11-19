@@ -9,6 +9,7 @@ import 'package:noise_meter/noise_meter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
@@ -141,6 +142,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   final List<_Gate> _gates = [];
   double _world = 0;
   InsectTier _bug = InsectTier.helmet;
+
+  /// Uçan böcek Hışır derili mi? Deri yalnız görsel + çığlık sesini
+  /// değiştirir; fizik, kapı ve skor aynen kalır.
+  bool _bugIsHisir = false;
+
+  /// O anki böceğin repliği (Hışır ise kendi repliği).
+  String get _currentBugCallout =>
+      _bugIsHisir ? HisirCharacter.replik : _bug.viralReplik;
   String _callout = '';
   DateTime _lastScreamAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -325,6 +334,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           _maxScreamStreak = 7;
           _power = 0.7;
           _bug = InsectTier.kongo;
+          _bugIsHisir = false;
           _callout = context.l10n.screamGatePrototype;
           _scorePopup = '+50 X7';
           _x = 24;
@@ -540,6 +550,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     do {
       next = pool[_rng.nextInt(pool.length)];
     } while (next == _bug && pool.length > 1);
+    _bugIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
     return next;
   }
 
@@ -548,7 +560,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     setState(() {
       _voiceBusy = false;
       _bug = _nextBug();
-      _callout = _bug.viralReplik;
+      _callout = _currentBugCallout;
     });
   }
 
@@ -586,7 +598,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _vy = _flapImpulse;
     unawaited(HapticService.instance.selectionClick());
     _hint =
-        '${_callout.isEmpty ? _bug.viralReplik : _callout} · spam x$_screamStreak';
+        '${_callout.isEmpty ? _currentBugCallout : _callout} · spam x$_screamStreak';
 
     if (_voiceBusy || AudioManager().isExclusivePlaying) {
       setState(() {});
@@ -594,8 +606,16 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     }
 
     _voiceBusy = true;
-    _callout = _bug.viralReplik;
+    _callout = _currentBugCallout;
     _hint = '$_callout · spam x$_screamStreak';
+    if (_bugIsHisir) {
+      // Hışır çığlığı: onaylı ses tek yoldan çalar; böcek hemen
+      // değişir (ses havuzda kesilmeden tam çalar, 12K düzeni).
+      unawaited(AudioManager().playHusurAday());
+      _onVoiceComplete();
+      setState(() {});
+      return;
+    }
     final pitch = 0.88 + _rng.nextDouble() * 0.32;
     unawaited(() async {
       final started = await AudioManager().playScreamRoach(
@@ -705,6 +725,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _aliveFor = 0;
       _gates.clear();
       _bug = InsectTier.helmet;
+      _bugIsHisir = false;
       _callout = '';
       _scorePopup = '';
       _voiceBusy = false;
@@ -1260,8 +1281,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 90),
                               child: Image.asset(
-                                key: ValueKey(_bug),
-                                'assets/bugs/tier${_bug.tier}_hd${_bug.tier == 5 ? '.webp' : '.png'}',
+                                key: ValueKey('${_bug.tier}-$_bugIsHisir'),
+                                _bugIsHisir
+                                    ? HisirCharacter.assetPath
+                                    : 'assets/bugs/tier${_bug.tier}_hd${_bug.tier == 5 ? '.webp' : '.png'}',
                                 width: widget.prototypeVisualState ? 98 : 50,
                                 height: widget.prototypeVisualState ? null : 54,
                                 fit: BoxFit.contain,

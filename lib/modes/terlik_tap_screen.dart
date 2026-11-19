@@ -549,7 +549,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     }
 
     // ~8% Hışır özel hedefi (tier dışı; sesi 'hisir' kimliğiyle hisir_zopa).
-    if (_rng.nextDouble() < 0.08) {
+    // HisirCharacter.roll üzerinden: üretimde %8, testte debugForceHisir
+    // ile zorlanabilir.
+    if (HisirCharacter.roll(
+      _rng,
+      chance: HisirCharacter.terlikSpawnChance,
+    )) {
       _bugs.add(
         _Bug(
           id: _nextId++,

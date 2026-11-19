@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -414,11 +415,21 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     setState(() {});
   }
 
+  /// Hışır derisi (kademe + 100) çözümü: eşleşme/renk hep taban
+  /// kademeden okunur; skor/denge değişmez.
+  int _base(int v) => HisirCharacter.baseTier(v);
+
+  /// Yeni hücre %5 Hışır derili doğar (prototip/test görselinde asla).
+  int _maybeHisir(int tier) =>
+      (widget.prototypeVisualState || widget.gameplayTestState)
+      ? tier
+      : HisirCharacter.encodeGridValue(tier, _rng);
+
   void _fill() {
     for (var attempt = 0; attempt < 24; attempt++) {
       _grid = List.generate(
         rows,
-        (_) => List.generate(cols, (_) => 1 + _rng.nextInt(kinds)),
+        (_) => List.generate(cols, (_) => _maybeHisir(1 + _rng.nextInt(kinds))),
       );
       _plantEasyCluster();
       if (_hasGroup()) return;
@@ -464,14 +475,14 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
   }
 
   List<Point<int>> _flood(int r, int c) {
-    final tier = _grid[r][c];
+    final tier = _base(_grid[r][c]);
     final out = <Point<int>>[];
     final seen = <Point<int>>{};
     final queue = <Point<int>>[Point(r, c)];
     while (queue.isNotEmpty) {
       final p = queue.removeLast();
       if (!seen.add(p)) continue;
-      if (_grid[p.x][p.y] != tier) continue;
+      if (_base(_grid[p.x][p.y]) != tier) continue;
       out.add(p);
       const d = [
         Point(1, 0),
@@ -487,7 +498,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
         final nr = p.x + o.x;
         final nc = p.y + o.y;
         if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
-        if (_grid[nr][nc] == tier) queue.add(Point(nr, nc));
+        if (_base(_grid[nr][nc]) == tier) queue.add(Point(nr, nc));
       }
     }
     return out;
@@ -567,7 +578,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     if (_busy || _ended || _paused || _grid[p.x][p.y] == 0) return;
     _clearPath();
     _hintCells = {};
-    _paint = _grid[p.x][p.y];
+    _paint = _base(_grid[p.x][p.y]);
     _path.add(p);
     _pathSet.add(p);
     setState(() => _setHint(_ConnectHint.selectedOne, a: minLen));
@@ -595,7 +606,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
       }
       return;
     }
-    if (_grid[p.x][p.y] != _paint) return;
+    if (_base(_grid[p.x][p.y]) != _paint) return;
     if (!_ortho(p, _path.last)) return;
     _path.add(p);
     _pathSet.add(p);
@@ -637,11 +648,14 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     _clearPath();
 
     var cleared = 0;
+    var hisirCleared =
+        group.any((p) => HisirCharacter.isEncoded(_grid[p.x][p.y]));
     if (loop) {
       _loopCount++;
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < cols; c++) {
-          if (_grid[r][c] == tier) {
+          if (_base(_grid[r][c]) == tier) {
+            if (HisirCharacter.isEncoded(_grid[r][c])) hisirCleared = true;
             _grid[r][c] = 0;
             cleared++;
           }
@@ -679,7 +693,12 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     if (loop) {
       _setHint(_ConnectHint.squareHit, a: _streak, b: gained);
     } else {
-      _setHint(_ConnectHint.viral, a: _streak, b: gained, text: insect.viralReplik);
+      _setHint(
+        _ConnectHint.viral,
+        a: _streak,
+        b: gained,
+        text: hisirCleared ? HisirCharacter.replik : insect.viralReplik,
+      );
     }
     _flashCells = group.toSet();
     _flashTimer?.cancel();
@@ -688,12 +707,23 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     });
     if (loop) {
       _gridBurst = 1.08;
-      unawaited(AudioManager().playMerge(tierNumber: tier, comboCount: 3));
+      unawaited(
+        hisirCleared
+            ? AudioManager().playMergeHisir(
+                tierNumber: tier,
+                comboCount: 3,
+              )
+            : AudioManager().playMerge(tierNumber: tier, comboCount: 3),
+      );
     } else {
       // 10D P1-2: normal bırakmada ses commit anında çalar (eskiden
       // 130 ms sonraki çökme beklemesinden sonraydı — titreşim sesten
       // önce geliyordu). 130 ms bekleme görsel çökme için aynen kalır.
-      AudioManager().playMerge(tierNumber: tier);
+      if (hisirCleared) {
+        AudioManager().playMergeHisir(tierNumber: tier);
+      } else {
+        AudioManager().playMerge(tierNumber: tier);
+      }
     }
     setState(() {});
     await Future<void>.delayed(Duration(milliseconds: loop ? 200 : 130));
@@ -718,7 +748,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     var n = 0;
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
-        if (_grid[r][c] != tier) continue;
+        if (_base(_grid[r][c]) != tier) continue;
         final g = _flood(r, c);
         if (g.length == 1) {
           _grid[r][c] = 0;
@@ -819,7 +849,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
         write--;
       }
       for (var r = write; r >= 0; r--) {
-        _grid[r][c] = 1 + _rng.nextInt(kinds);
+        _grid[r][c] = _maybeHisir(1 + _rng.nextInt(kinds));
       }
     }
   }
@@ -857,7 +887,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
 
   List<Point<int>> _cluster(int r, int c) {
-    final tier = _grid[r][c];
+    final tier = _base(_grid[r][c]);
     final out = <Point<int>>[];
     final seen = <int>{};
     final queue = <Point<int>>[Point(r, c)];
@@ -865,7 +895,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
       final pt = queue.removeLast();
       if (pt.x < 0 || pt.y < 0 || pt.x >= rows || pt.y >= cols) continue;
       if (!seen.add(pt.x * cols + pt.y)) continue;
-      if (_grid[pt.x][pt.y] != tier) continue;
+      if (_base(_grid[pt.x][pt.y]) != tier) continue;
       out.add(pt);
       queue.add(Point(pt.x + 1, pt.y));
       queue.add(Point(pt.x - 1, pt.y));
@@ -913,7 +943,14 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
       }
     }
     if (best.isEmpty) return false;
-    AudioManager().playMerge(tierNumber: 4);
+    final hisirHit = best.any(
+      (p) => HisirCharacter.isEncoded(_grid[p.x][p.y]),
+    );
+    if (hisirHit) {
+      AudioManager().playMergeHisir(tierNumber: 4);
+    } else {
+      AudioManager().playMerge(tierNumber: 4);
+    }
     final gained = best.length * 28;
     setState(() {
       _flashCells = best.toSet();
@@ -942,7 +979,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
     final counts = List<int>.filled(maxKinds + 1, 0);
     for (final row in _grid) {
       for (final value in row) {
-        if (value > 0 && value <= maxKinds) counts[value]++;
+        if (value != 0) counts[_base(value)]++;
       }
     }
     var tier = 1;
@@ -1465,7 +1502,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
   }
 
   Widget _tile(int r, int c) {
-    final tier = _grid[r][c];
+    final raw = _grid[r][c];
+    final tier = _base(raw);
+    final isHisir = HisirCharacter.isEncoded(raw);
     final onPath = _pathSet.contains(Point(r, c));
     final hinted = _hintCells.contains(Point(r, c));
     final flashed = _flashCells.contains(Point(r, c));
@@ -1505,7 +1544,9 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
                     child: Padding(
                       padding: EdgeInsets.all(_cellInset),
                       child: Image.asset(
-                        'assets/bugs/tier${tier}_hd${tier == 5 ? '.webp' : '.png'}',
+                        isHisir
+                            ? HisirCharacter.assetPath
+                            : 'assets/bugs/tier${tier}_hd${tier == 5 ? '.webp' : '.png'}',
                         fit: BoxFit.contain,
                         filterQuality: FilterQuality.medium,
                         gaplessPlayback: true,

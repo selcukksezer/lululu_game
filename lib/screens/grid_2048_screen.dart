@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -370,7 +371,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         : roll < 0.94
         ? 2
         : 3;
-    _grid[spot.x][spot.y] = tier;
+    _grid[spot.x][spot.y] = widget.prototypeVisualState
+        ? tier
+        : HisirCharacter.encodeGridValue(tier, _rng);
     _lastSpawned = spot;
     if (tier > _highestTier) _highestTier = tier;
   }
@@ -378,38 +381,53 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   bool _hasMovesAvailable() {
     for (var r = 0; r < size; r++) {
       for (var c = 0; c < size; c++) {
-        final v = _grid[r][c];
+        final v = HisirCharacter.baseTier(_grid[r][c]);
         if (v == 0) return true;
         // Zirve kademe birleşmediği için iki zirvenin yan yana olması
         // hamle sayılmaz; yoksa tahta doluyken oyun bitmezdi.
         if (v < InsectTier.values.length) {
-          if (r + 1 < size && _grid[r + 1][c] == v) return true;
-          if (c + 1 < size && _grid[r][c + 1] == v) return true;
+          if (r + 1 < size &&
+              HisirCharacter.baseTier(_grid[r + 1][c]) == v) {
+            return true;
+          }
+          if (c + 1 < size &&
+              HisirCharacter.baseTier(_grid[r][c + 1]) == v) {
+            return true;
+          }
         }
       }
     }
     return false;
   }
 
-  (List<int>, int, int, List<int>) _compressLine(List<int> line) {
+  (List<int>, int, int, List<int>, bool) _compressLine(List<int> line) {
     final nonZero = line.where((v) => v != 0).toList();
     final out = <int>[];
     final mergedIndices = <int>[];
     var gained = 0;
     var topMergedTier = 0;
+    var hisirMerged = false;
     final maxTier = InsectTier.values.length;
     var i = 0;
     while (i < nonZero.length) {
       // Zirve kademe birleşmez: iki zirve yan yana kalır, üst kademe yok.
       // (_usePair da zirveyi dışlar; kayma ile güçlendirici tutarlı.)
-      if (i + 1 < nonZero.length &&
-          nonZero[i] == nonZero[i + 1] &&
-          nonZero[i] < maxTier) {
-        final next = (nonZero[i] + 1).clamp(1, maxTier);
+      // Hışır derisi kademeyi değiştirmez: iki aynı kademe (biri Hışır
+      // derili de olsa) birleşir; doğan taş düz üst kademedir.
+      final a = HisirCharacter.baseTier(nonZero[i]);
+      final b = i + 1 < nonZero.length
+          ? HisirCharacter.baseTier(nonZero[i + 1])
+          : 0;
+      if (i + 1 < nonZero.length && a == b && a < maxTier) {
+        final next = (a + 1).clamp(1, maxTier);
         out.add(next);
         mergedIndices.add(out.length - 1);
         gained += 1 << next;
         if (next > topMergedTier) topMergedTier = next;
+        if (HisirCharacter.isEncoded(nonZero[i]) ||
+            HisirCharacter.isEncoded(nonZero[i + 1])) {
+          hisirMerged = true;
+        }
         i += 2;
       } else {
         out.add(nonZero[i]);
@@ -419,7 +437,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     while (out.length < size) {
       out.add(0);
     }
-    return (out, gained, topMergedTier, mergedIndices);
+    return (out, gained, topMergedTier, mergedIndices, hisirMerged);
   }
 
   void _slide(int dr, int dc) {
@@ -430,13 +448,16 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     var totalGain = 0;
     var topMerge = 0;
     var mergesThisTurn = 0;
+    var hisirMerged = false;
     final newMerged = <Point<int>>{};
 
     if (dr == 0 && dc != 0) {
       for (var r = 0; r < size; r++) {
         final row = List<int>.from(_grid[r]);
         final input = dc < 0 ? row : row.reversed.toList();
-        final (compressed, gain, topTier, mergedIdx) = _compressLine(input);
+        final (compressed, gain, topTier, mergedIdx, lineHisir) =
+            _compressLine(input);
+        hisirMerged = hisirMerged || lineHisir;
         final result = dc < 0 ? compressed : compressed.reversed.toList();
         for (var c = 0; c < size; c++) {
           if (_grid[r][c] != result[c]) moved = true;
@@ -454,7 +475,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       for (var c = 0; c < size; c++) {
         final col = List<int>.generate(size, (r) => _grid[r][c]);
         final input = dr < 0 ? col : col.reversed.toList();
-        final (compressed, gain, topTier, mergedIdx) = _compressLine(input);
+        final (compressed, gain, topTier, mergedIdx, lineHisir) =
+            _compressLine(input);
+        hisirMerged = hisirMerged || lineHisir;
         final result = dr < 0 ? compressed : compressed.reversed.toList();
         for (var r = 0; r < size; r++) {
           if (_grid[r][c] != result[r]) moved = true;
@@ -517,10 +540,16 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         streak: _streak,
         tier: tierEnum,
         topMerge: topMerge,
+        hisir: hisirMerged,
       );
 
       unawaited(
-        AudioManager().playMerge(tier: tierEnum, comboCount: _streak),
+        hisirMerged
+            ? AudioManager().playMergeHisir(
+                tierNumber: topMerge,
+                comboCount: _streak,
+              )
+            : AudioManager().playMerge(tier: tierEnum, comboCount: _streak),
       );
       unawaited(
         ProgressManager.instance.recordTaskProgress(
@@ -571,6 +600,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     required int streak,
     required InsectTier tier,
     required int topMerge,
+    bool hisir = false,
   }) {
     _overlayTimer?.cancel();
     _comboText =
@@ -586,7 +616,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
 
     if (topMerge >= 3 || streak >= 2) {
       _speechTimer?.cancel();
-      _speechBubble = topMerge >= 4
+      _speechBubble = hisir
+          ? HisirCharacter.replik
+          : topMerge >= 4
           ? context.l10n.gridSuperMergeSpeech(tier.title)
           : tier.viralReplik;
       _speechTimer = Timer(const Duration(milliseconds: 1600), () {
@@ -656,12 +688,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   /// Eşleşen çift varsa en yüksek kademedeki çift birleştirilir
   /// (`matched`); yoksa yükseltilebilir en yüksek taş bir kademe
   /// yükseltilir (mevcut yedek davranış korunur).
-  ({Point<int> target, Point<int>? source, int next, bool matched})?
+  ({Point<int> target, Point<int>? source, int next, bool matched, bool hisir})?
   _planPairEffect() {
     final byTier = <int, List<Point<int>>>{};
     for (var r = 0; r < size; r++) {
       for (var c = 0; c < size; c++) {
-        final v = _grid[r][c];
+        final v = HisirCharacter.baseTier(_grid[r][c]);
         if (v > 0 && v < InsectTier.values.length) {
           byTier.putIfAbsent(v, () => <Point<int>>[]).add(Point<int>(r, c));
         }
@@ -680,20 +712,32 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         source: cells[1],
         next: (t + 1).clamp(1, InsectTier.values.length),
         matched: true,
+        hisir:
+            HisirCharacter.isEncoded(_grid[cells[0].x][cells[0].y]) ||
+            HisirCharacter.isEncoded(_grid[cells[1].x][cells[1].y]),
       );
     }
     Point<int>? bestCell;
     var maxT = 0;
     for (var r = 0; r < size; r++) {
       for (var c = 0; c < size; c++) {
-        if (_grid[r][c] > maxT && _grid[r][c] < InsectTier.values.length) {
-          maxT = _grid[r][c];
+        final v = HisirCharacter.baseTier(_grid[r][c]);
+        if (v > maxT && v < InsectTier.values.length) {
+          maxT = v;
           bestCell = Point<int>(r, c);
         }
       }
     }
     if (bestCell == null) return null;
-    return (target: bestCell, source: null, next: maxT + 1, matched: false);
+    return (
+      target: bestCell,
+      source: null,
+      next: maxT + 1,
+      matched: false,
+      hisir: HisirCharacter.isEncoded(
+        _grid[bestCell.x][bestCell.y],
+      ),
+    );
   }
 
   /// Güçlendirici 1: GERİ AL (son hamleyi geri alır veya en küçük taşı temizler)
@@ -755,7 +799,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     var minTier = 999;
     for (var r = 0; r < size; r++) {
       for (var c = 0; c < size; c++) {
-        final v = _grid[r][c];
+        final v = HisirCharacter.baseTier(_grid[r][c]);
         if (v > 0 && v < minTier) {
           minTier = v;
           target = Point<int>(r, c);
@@ -848,7 +892,14 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
           tier: tierEnum,
           topMerge: next,
         );
-        unawaited(AudioManager().playMerge(tier: tierEnum, comboCount: 2));
+        unawaited(
+          plan.hisir
+              ? AudioManager().playMergeHisir(
+                  tierNumber: next,
+                  comboCount: 2,
+                )
+              : AudioManager().playMerge(tier: tierEnum, comboCount: 2),
+        );
         unawaited(ProgressManager.instance.recordTaskProgress('merge'));
         unawaited(ProgressManager.instance.unlockTier(next));
       } else {
@@ -1574,7 +1625,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     var bestTier = 1;
     for (final row in _grid) {
       for (final v in row) {
-        if (v > bestTier) bestTier = v;
+        final base = HisirCharacter.baseTier(v);
+        if (base > bestTier) bestTier = base;
       }
     }
     return 1 << bestTier;
@@ -1943,7 +1995,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   }
 
   Widget _buildTile(int r, int c, double tileSize) {
-    final tier = _grid[r][c];
+    final raw = _grid[r][c];
+    final tier = HisirCharacter.baseTier(raw);
+    final isHisir = HisirCharacter.isEncoded(raw);
     final pt = Point<int>(r, c);
     final isMerged = _mergedCells.contains(pt);
     final isSpawned = _lastSpawned == pt;
@@ -1995,7 +2049,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
               width: tileSize * 0.74,
               height: tileSize * 0.78,
               child: Image.asset(
-                insect.assetPath,
+                HisirCharacter.assetFor(isHisir: isHisir, tier: insect),
                 fit: BoxFit.contain,
                 filterQuality: FilterQuality.high,
               ),

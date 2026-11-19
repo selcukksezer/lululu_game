@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -72,6 +73,35 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   int _shots = 0;
   int _current = 1;
   int _next = 2;
+
+  /// Atış sırasındaki / sıradaki balon Hışır derili mi? Deri yalnız
+  /// görsel + patlama sesini değiştirir; kademe/skor aynen kalır.
+  bool _currentIsHisir = false;
+  bool _nextIsHisir = false;
+
+  /// Son patlamada Hışır derili balon var mıydı? [_popFrom] biriktirir,
+  /// [_stick] ses seçiminde okur.
+  bool _lastPopHadHisir = false;
+
+  /// Hışır derisi (kademe + 100) çözümü: eşleşme/renk hep taban
+  /// kademeden okunur; skor/denge değişmez.
+  int _base(int v) => HisirCharacter.baseTier(v);
+
+  /// Yeni balon/hücre %5 Hışır derili doğar (prototip görselde asla).
+  int _maybeHisir(int tier) => widget.prototypeVisualState
+      ? tier
+      : HisirCharacter.encodeGridValue(tier, _rng);
+
+  int _rollCell() => _maybeHisir(1 + _rng.nextInt(kinds));
+
+  /// Atışı ilerlet: sıradaki balon atışa geçer, yeni sıradaki zarla gelir.
+  void _advanceShot() {
+    _current = _next;
+    _currentIsHisir = _nextIsHisir;
+    _next = _rollColor();
+    _nextIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+  }
   bool _flying = false;
   bool _over = false;
   bool _resultShown = false;
@@ -354,13 +384,17 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     for (var attempt = 0; attempt < 16; attempt++) {
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < cols; c++) {
-          _grid[r][c] = r < fillRows ? 1 + _rng.nextInt(kinds) : 0;
+          _grid[r][c] = r < fillRows ? _rollCell() : 0;
         }
       }
       if (_firstGroup() == null) break;
     }
     _current = _rollColor();
+    _currentIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
     _next = _rollColor();
+    _nextIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
   }
 
   /// Bias toward colors still on the board (classic Puzzle Bobble feel).
@@ -369,8 +403,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     var any = 0;
     for (final row in _grid) {
       for (final v in row) {
-        if (v > 0 && v <= kinds) {
-          counts[v]++;
+        if (v != 0) {
+          counts[_base(v)]++;
           any++;
         }
       }
@@ -592,8 +626,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       // Yapışmayan atış da atış sayılır (F12): aynı renkle
       // cezasız sonsuz tekrar yok; renk ilerler, sıra sayacı
       // artar ve 8 atışta bir inme aynen işler.
-      _current = _next;
-      _next = _rollColor();
+      _advanceShot();
       _shots++;
       if (_shots % descendEvery == 0) _descend();
       setState(() {});
@@ -601,15 +634,23 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     }
     final (r, c) = spot;
     final shotTier = _current;
-    _grid[r][c] = shotTier;
+    final shotIsHisir = _currentIsHisir;
+    _grid[r][c] = shotIsHisir
+        ? shotTier + HisirCharacter.gridValueOffset
+        : shotTier;
+    _lastPopHadHisir = false;
     // Delici atış (r, c)'yi de siler; _popFrom(r, c) bu yüzden 0 döner.
     // Komşu gruplar ayrıca denetlenir, seri korunur (bkz. _popNeighborGroups).
     var pierced = 0;
+    var piercedHisir = false;
     if (_pierce) {
       _pierce = false;
       for (final cell in <(int, int)>[(r, c), ..._neighbors(r, c)]) {
         if (pierced >= 3) break;
         if (_grid[cell.$1][cell.$2] == 0) continue;
+        if (HisirCharacter.isEncoded(_grid[cell.$1][cell.$2])) {
+          piercedHisir = true;
+        }
         _grid[cell.$1][cell.$2] = 0;
         pierced++;
       }
@@ -647,7 +688,12 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _score += gained;
       if (_score > _best) _best = _score;
       _checkScoreMilestones();
-      AudioManager().playMerge(tierNumber: shotTier);
+      final hisirPopped = shotIsHisir || _lastPopHadHisir || piercedHisir;
+      if (hisirPopped) {
+        AudioManager().playMergeHisir(tierNumber: shotTier);
+      } else {
+        AudioManager().playMerge(tierNumber: shotTier);
+      }
       final insect = InsectTier.values[(shotTier - 1).clamp(0, 7)];
       _comboTimer?.cancel();
       _comboText = _streak >= 2 ? 'COMBO X$_streak!' : null;
@@ -661,7 +707,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         }
       });
       if (fallen > 0) {
-        _setHint(_BalloonHint.popped, _streak, gained, insect.viralReplik);
+        _setHint(
+          _BalloonHint.popped,
+          _streak,
+          gained,
+          (shotIsHisir || _lastPopHadHisir || piercedHisir)
+              ? HisirCharacter.replik
+              : insect.viralReplik,
+        );
       } else {
         _setHint(_BalloonHint.poppedPlain, _streak, gained);
       }
@@ -672,8 +725,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       unawaited(HapticService.instance.selectionClick());
       _setHint(_BalloonHint.stuck);
     }
-    _current = _next;
-    _next = _rollColor();
+    _advanceShot();
     _shots++;
     if (_reachedDanger()) {
       _lose(_BalloonHint.reachedShooter);
@@ -725,10 +777,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   int _popFrom(int r, int c) {
-    final tier = _grid[r][c];
-    if (tier == 0) return 0;
+    final rawTier = _grid[r][c];
+    if (rawTier == 0) return 0;
+    final tier = _base(rawTier);
     final group = _flood(r, c, tier);
     if (group.length < minPop) return 0;
+    if (group.any((cell) => HisirCharacter.isEncoded(_grid[cell.$1][cell.$2]))) {
+      _lastPopHadHisir = true;
+    }
     final hex = _hex;
     for (final (gr, gc) in group) {
       if (hex != null) {
@@ -805,16 +861,17 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   List<(int, int)> _flood(int r, int c, int tier) {
+    final baseTier = _base(tier);
     final out = <(int, int)>[];
     final seen = <(int, int)>{};
     final queue = <(int, int)>[(r, c)];
     while (queue.isNotEmpty) {
       final (cr, cc) = queue.removeLast();
       if (!seen.add((cr, cc))) continue;
-      if (_grid[cr][cc] != tier) continue;
+      if (_base(_grid[cr][cc]) != baseTier) continue;
       out.add((cr, cc));
       for (final (nr, nc) in _neighbors(cr, cc)) {
-        if (_grid[nr][nc] == tier) queue.add((nr, nc));
+        if (_base(_grid[nr][nc]) == baseTier) queue.add((nr, nc));
       }
     }
     return out;
@@ -852,10 +909,13 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     for (var r = rows - 1; r > 0; r--) {
       _grid[r] = List<int>.from(_grid[r - 1]);
     }
-    _grid[0] = List.generate(cols, (_) => _rollColor());
+    _grid[0] = List.generate(cols, (_) => _rollCell());
     final group = _firstGroup();
     if (group != null) {
-      final tier = _grid[group.first.$1][group.first.$2];
+      final tier = _base(_grid[group.first.$1][group.first.$2]);
+      final hisirInGroup = group.any(
+        (cell) => HisirCharacter.isEncoded(_grid[cell.$1][cell.$2]),
+      );
       for (final (r, c) in group) {
         _grid[r][c] = 0;
       }
@@ -865,7 +925,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _popTotal += group.length;
       _fallTotal += fallen;
       if (_score > _best) _best = _score;
-      AudioManager().playMerge(tierNumber: _current);
+      if (hisirInGroup) {
+        AudioManager().playMergeHisir(tierNumber: _current);
+      } else {
+        AudioManager().playMerge(tierNumber: _current);
+      }
       _checkScoreMilestones();
     }
     _setHint(_BalloonHint.ceilingDropped);
@@ -951,7 +1015,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     if (spots.isEmpty) return false;
     spots.shuffle(_rng);
     final hex = _hex;
-    AudioManager().playMerge(tierNumber: min(8, _current + 1));
+    final bombHisir = spots
+        .take(8)
+        .any((cell) => HisirCharacter.isEncoded(_grid[cell.$1][cell.$2]));
+    if (bombHisir) {
+      AudioManager().playMergeHisir(tierNumber: min(8, _current + 1));
+    } else {
+      AudioManager().playMerge(tierNumber: min(8, _current + 1));
+    }
     setState(() {
       final take = min(8, spots.length);
       for (var i = 0; i < take; i++) {
@@ -989,7 +1060,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       var cleared = 0;
       for (var r = rows - 1; r >= 0 && cleared < 4; r--) {
         for (var c = 0; c < cols && cleared < 4; c++) {
-          if (_grid[r][c] == _current) {
+          if (_base(_grid[r][c]) == _current) {
             if (hex != null) {
               _popFx.add(
                 _PopFx(center: hex.center(r, c), tier: _current, life: 1.0),
@@ -1452,14 +1523,23 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         ),
                       ),
                       // 10. Flying shot balloon
-                      if (_fly != null) _bubble(_fly!, hex.cell, _current),
+                      if (_fly != null)
+                        _bubble(
+                          _fly!,
+                          hex.cell,
+                          _currentIsHisir
+                              ? _current + HisirCharacter.gridValueOffset
+                              : _current,
+                        ),
                       // 11. Shooter balloon (46x54 prototype oval)
                       Positioned(
                         left: hex.shooter.dx - 23,
                         top: hex.shooter.dy - 27,
                         child: _bubbleFace(
                           54,
-                          _current,
+                          _currentIsHisir
+                              ? _current + HisirCharacter.gridValueOffset
+                              : _current,
                           aimed: true,
                           miss: _missFlash,
                         ),
@@ -2294,7 +2374,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     bool aimed = false,
     bool miss = false,
   }) {
-    final idx = (tier - 1).clamp(0, 7);
+    final isHisir = HisirCharacter.isEncoded(tier);
+    final idx = (_base(tier) - 1).clamp(0, 7);
     final pastel = _pastelColors[idx];
     final h = size;
     final w = aimed ? (size * (46.0 / 54.0)) : (size * 0.865);
@@ -2319,7 +2400,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
             width: 0.72 * w,
             height: 0.72 * rowH,
             child: Image.asset(
-              'assets/bugs/tier${idx + 1}_hd${(idx + 1) == 5 ? '.webp' : '.png'}',
+              isHisir
+                  ? HisirCharacter.assetPath
+                  : 'assets/bugs/tier${idx + 1}_hd${(idx + 1) == 5 ? '.webp' : '.png'}',
               fit: BoxFit.contain,
               filterQuality: FilterQuality.medium,
             ),

@@ -8,6 +8,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/osmantus_cast.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -147,6 +148,11 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   int _beatAtMs = _firstBeatMs;
   bool _hitThisBeat = false;
   int _speakerIndex = 0;
+
+  /// Bu vuruş Hışır vuruşu mu? Hışır vuruşunda konuşmacı figürü
+  /// Hışır görseliyle görünür, replik Hışır repliğidir, isabet sesi
+  /// `hisir_zopa.mp3` olur. Skor/zamanlama aynen kalır.
+  bool _hisirBeat = false;
   final List<String> _lines = [
     OsmantusCast.duo[0].lines[0],
     OsmantusCast.duo[1].lines[2],
@@ -357,8 +363,16 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     _beatAtMs = _beatAtMs + interval;
     _hitThisBeat = false;
     _speakerIndex = 1 - _speakerIndex;
-    final lines = OsmantusCast.duo[_speakerIndex].lines;
-    _lines[_speakerIndex] = lines[_rng.nextInt(lines.length)];
+    _hisirBeat =
+        !_tutorial &&
+        !widget.prototypeVisualState &&
+        HisirCharacter.roll(_rng);
+    if (_hisirBeat) {
+      _lines[_speakerIndex] = HisirCharacter.replik;
+    } else {
+      final lines = OsmantusCast.duo[_speakerIndex].lines;
+      _lines[_speakerIndex] = lines[_rng.nextInt(lines.length)];
+    }
     if (_face != -1 && _nowMs > _flashUntilMs) _face = -1;
     setState(() {});
   }
@@ -435,13 +449,27 @@ class _OsmantusScreenState extends State<OsmantusScreen>
           ? context.l10n.osmantusEarlyBy(delta)
           : context.l10n.osmantusLateBy(delta);
       if (perfect) _hint = context.l10n.osmantusJustInTime;
-      unawaited(
-        AudioManager().playOsmantusBeat(
-          isPersonB: _speakerIndex == 1,
-          perfect: perfect,
-          comboCount: _combo,
-        ),
-      );
+      if (_hisirBeat) {
+        // Ritim SFX'i aynen, ses Hışır: Osman sesi Hışır'ı kesmez,
+        // Hışır klibi tek yoldan tam çalar (12K düzeni).
+        unawaited(
+          AudioManager().playOsmantusBeat(
+            isPersonB: _speakerIndex == 1,
+            perfect: perfect,
+            comboCount: _combo,
+            includeVoice: false,
+          ),
+        );
+        unawaited(AudioManager().playHusurAday());
+      } else {
+        unawaited(
+          AudioManager().playOsmantusBeat(
+            isPersonB: _speakerIndex == 1,
+            perfect: perfect,
+            comboCount: _combo,
+          ),
+        );
+      }
       setState(() {});
     } else if (delta < 0 && delta >= -win * 2.2) {
       _hitThisBeat = true;
@@ -469,6 +497,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _alive = true;
       _resultShown = false;
       _speakerIndex = 0;
+      _hisirBeat = false;
       _lines[0] = OsmantusCast.duo[0].lines[0];
       _lines[1] = OsmantusCast.duo[1].lines[2];
       _bandText = '';
@@ -1571,7 +1600,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         children: [
           _Fig(
             line: _lines[0],
-            asset: OsmantusCast.duo[0].assetPath,
+            asset: _hisirBeat && _speakerIndex == 0
+                ? HisirCharacter.assetPath
+                : OsmantusCast.duo[0].assetPath,
             wideScreen: wideScreen,
           ),
           if (wideScreen)
@@ -1596,7 +1627,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
             ),
           _Fig(
             line: _lines[1],
-            asset: OsmantusCast.duo[1].assetPath,
+            asset: _hisirBeat && _speakerIndex == 1
+                ? HisirCharacter.assetPath
+                : OsmantusCast.duo[1].assetPath,
             wideScreen: wideScreen,
           ),
         ],

@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
@@ -36,11 +37,16 @@ const _tcol = [
 ];
 
 class _Note {
-  _Note(this.lane, this.hitMs, this.tier, this.travelMs);
+  _Note(this.lane, this.hitMs, this.tier, this.travelMs, {this.isHisir = false});
   final int lane;
   double hitMs;
   final int tier; // 0-based
   final double travelMs;
+
+  /// Hışır derisi: nota bu kademenin notası gibi davranır (zamanlama,
+  /// skor aynen), yalnız görseli `hisir_hd.png`, vuruş sesi
+  /// `hisir_zopa.mp3`.
+  final bool isHisir;
   bool done = false;
 }
 
@@ -422,6 +428,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
           _nextHit,
           _rng.nextInt(InsectTier.values.length),
           _travelAt(_nextHit),
+          isHisir:
+              !widget.prototypeVisualState && HisirCharacter.roll(_rng),
         ),
       );
       _nextHit += _beatAt(_nextHit);
@@ -536,20 +544,33 @@ class MakarayizScreenState extends State<MakarayizScreen>
     if (_score > _best) _best = _score;
     final bug = InsectTier.values[n.tier];
     _bubbleTier = n.tier;
-    _hint = bug.viralReplik;
+    _hint = n.isHisir ? HisirCharacter.replik : bug.viralReplik;
     _showText(
       combo: _combo >= 2
           ? 'COMBO X$_combo!'
           : (perfect ? context.l10n.perfectCaps : null),
       gain: '+$gain X$_combo',
     );
-    unawaited(
-      AudioManager().playMakaraSpin(
-        bug: bug,
-        comboCount: _combo,
-        playbackRate: 0.95 + _rng.nextDouble() * 0.2,
-      ),
-    );
+    final rate = 0.95 + _rng.nextDouble() * 0.2;
+    if (n.isHisir) {
+      // Makara SFX'i seste, Hışır sesi tek yoldan: kademe sesi
+      // Hışır'ı kesmez, Hışır klibi tam çalar (12K düzeni).
+      unawaited(
+        AudioManager().playMakaraSpin(
+          comboCount: _combo,
+          playbackRate: rate,
+        ),
+      );
+      unawaited(AudioManager().playHusurAday());
+    } else {
+      unawaited(
+        AudioManager().playMakaraSpin(
+          bug: bug,
+          comboCount: _combo,
+          playbackRate: rate,
+        ),
+      );
+    }
   }
 
   /// Şerit vuruşu: pencere içindeki en yakın nota, çizgiye bağlıdır.
@@ -863,9 +884,11 @@ class MakarayizScreenState extends State<MakarayizScreen>
     int tier, {
     double opacity = 1,
     bool wideScreen = false,
+    bool isHisir = false,
   }) {
     final bug =
         InsectTier.values[(tier - 1).clamp(0, InsectTier.values.length - 1)];
+    final assetPath = isHisir ? HisirCharacter.assetPath : bug.assetPath;
     if (wideScreen) {
       final topPad = (tier == 3 || tier == 4)
           ? 3.15
@@ -893,7 +916,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
                 child: Padding(
                   padding: EdgeInsets.only(top: topPad),
                   child: Image.asset(
-                    bug.assetPath,
+                    assetPath,
                     width: 38.7,
                     fit: BoxFit.fitWidth,
                   ),
@@ -919,7 +942,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
               color: _tcol[(tier - 1) % _tcol.length],
             ),
             padding: const EdgeInsets.all(3),
-            child: StickerImage(assetPath: bug.assetPath, size: 39),
+            child: StickerImage(assetPath: assetPath, size: 39),
           ),
         ),
       ),
@@ -940,10 +963,23 @@ class MakarayizScreenState extends State<MakarayizScreen>
         final top = -_noteSize + (beatY - _noteSize / 2 + _noteSize) * p;
         if (n.done) {
           children.add(
-            _note(top, n.tier + 1, opacity: 0.0, wideScreen: wideScreen),
+            _note(
+              top,
+              n.tier + 1,
+              opacity: 0.0,
+              wideScreen: wideScreen,
+              isHisir: n.isHisir,
+            ),
           );
         } else {
-          children.add(_note(top, n.tier + 1, wideScreen: wideScreen));
+          children.add(
+            _note(
+              top,
+              n.tier + 1,
+              wideScreen: wideScreen,
+              isHisir: n.isHisir,
+            ),
+          );
         }
       }
     }
