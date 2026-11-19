@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
+import '../services/zero_jank_preloader.dart';
 import '../theme/lululu_theme.dart';
 import 'home_shell.dart';
 
@@ -26,8 +27,27 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _page = PageController();
   int _index = 0;
-  double _progress = 0.78;
+  // 12R: çubuk GERÇEK ön-yükleme ilerlemesini gösterir
+  // (`ZeroJankPreloader.progressNotifier`). Eskiden `0.78` sabitiydi:
+  // hiçbir iş ilerlemeyi güncellemiyordu, çubuk ilk kareden
+  // DOKUN VE BAŞLA dokunuşuna kadar %78'de takılı görünüyordu
+  // (canlıda 45+ sn "donuyor" izlenimi; iPhone'da da aynı).
+  double _progress = ZeroJankPreloader.instance.progress01;
   bool _finishing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ZeroJankPreloader.instance.progressNotifier.addListener(
+      _onPreloadProgress,
+    );
+  }
+
+  void _onPreloadProgress() {
+    if (!mounted) return;
+    final p = ZeroJankPreloader.instance.progressNotifier.value;
+    if (p != _progress) setState(() => _progress = p);
+  }
 
   Future<void> _finish() async {
     if (_finishing) return;
@@ -67,6 +87,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   void dispose() {
+    ZeroJankPreloader.instance.progressNotifier.removeListener(
+      _onPreloadProgress,
+    );
     _page.dispose();
     super.dispose();
   }
@@ -669,7 +692,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // splash-loader (%78 progress bar)
+        // Gerçek ön-yükleme çubuğu (12R): değer
+        // `ZeroJankPreloader.progressNotifier`dan gelir, sabit değil.
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -685,7 +709,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      context.l10n.onboardingLoadingText,
+                      // Hazırlık bittiyse dürüst etiket: artık
+                      // "hazırlanıyor" değil, başlama hazır.
+                      _progress >= 1.0
+                          ? context.l10n.splashStarting
+                          : context.l10n.onboardingLoadingText,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.nunito(
                         fontSize: 11.5,

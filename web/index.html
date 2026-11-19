@@ -18,6 +18,9 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <!-- 12R: iPhone Safari'de 980px varsayılan görünüm alanı olmasın;
+       oyun dikey mobil düzende açılır. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="description" content="LÜLÜLÜ — Böcekleri birleştir, evrimleştir! Suika tarzı birleştirme oyunu ve 11 arcade modu. / Merge the cockroaches, evolve them all! A Suika-style merge game with 11 arcade modes.">
   <meta name="theme-color" content="#121826">
 
@@ -32,8 +35,51 @@
 
   <title>LÜLÜLÜ</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* 12R: Flutter motoru ilk kareyi boyayana kadar (~20 sn beyaz
+       ekran yerine) koyu zemin + dönen yükleme göstergesi. Salt
+       HTML/CSS — motor indirilmeden önce de görünür. İlk karede
+       `flutter-first-frame` ile kaldırılır. */
+    html, body { margin: 0; padding: 0; background: #121826; }
+    #lululu-boot {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+      background: #121826; color: #ffffff;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    #lululu-boot .logo {
+      font-size: 34px; font-weight: 800; letter-spacing: 6px;
+      color: #FFD34D;
+    }
+    #lululu-boot .ring {
+      width: 44px; height: 44px; border-radius: 50%;
+      border: 4px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #FFB800;
+      animation: lululu-boot-spin 1s linear infinite;
+    }
+    @keyframes lululu-boot-spin { to { transform: rotate(360deg); } }
+    #lululu-boot .text { font-size: 15px; color: rgba(255, 255, 255, 0.85); }
+  </style>
 </head>
 <body>
+  <div id="lululu-boot" role="status" aria-label="LÜLÜLÜ yükleniyor">
+    <div class="logo">LÜLÜLÜ</div>
+    <div class="ring" aria-hidden="true"></div>
+    <div class="text" id="lululu-boot-text">yükleniyor…</div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var el = document.getElementById('lululu-boot');
+      if (el) el.remove();
+    });
+    // 60 sn'de ilk kare gelmezse dürüst mesaj: sonsuz dönen
+    // gösterge yerine yenileme önerilir.
+    setTimeout(function () {
+      var t = document.getElementById('lululu-boot-text');
+      if (t) t.textContent = 'Yükleme uzun sürdü — bağlantınızı kontrol edip sayfayı yenileyin.';
+    }, 60000);
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

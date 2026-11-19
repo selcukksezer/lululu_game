@@ -126,6 +126,43 @@ class ZeroJankPreloader {
 
   bool isWarming = false;
   double progress01 = 0;
+
+  /// [progress01] için dinlenebilir ayna (12R): tanıtım çubuğu gibi
+  /// arayüzler gerçek ilerlemeyi buradan okur; düz alan tek başına
+  /// hiçbir widget'ı yeniden çizmez. Her [progress01] yazımı
+  /// [_setProgress] üzerinden yapılır, ikisi asla ayrışmaz.
+  final ValueNotifier<double> progressNotifier = ValueNotifier<double>(0);
+
+  /// Tek bir işin asılı kalıp kuyruğu kilitlemesine karşı üst sınır
+  /// (12R): süre dolan iş denendi sayılır, kuyruk ilerler. Yerel
+  /// paket yüklemeleri milisaniyeler sürer; 15 sn cömert bir sınırdır.
+  /// Testler kısa değer atayabilir.
+  Duration jobTimeout = const Duration(seconds: 15);
+
+  /// [progress01] + [progressNotifier] tek kaynaktan yazılır.
+  void _setProgress(double value) {
+    progress01 = value.clamp(0.0, 1.0);
+    progressNotifier.value = progress01;
+  }
+
+  /// Bir işi [jobTimeout] sınırıyla çalıştırır (12R): asla dönmeyen
+  /// yükleme (iOS Safari'de takılan paket okuma / decode) kuyruğu ve
+  /// ilerleme çubuğunu kilitleyemez. Süre dolan iş denendi sayılır;
+  /// geç tamamlanırsa işaretleri idempotent eklenir, çift sayım olmaz.
+  Future<void> _runJobWithTimeout(FutureOr<void> Function() job) async {
+    final pending = job();
+    if (pending is! Future) return;
+    try {
+      await pending.timeout(jobTimeout);
+    } on TimeoutException {
+      if (kDebugMode) {
+        debugPrint(
+          '[ZeroJankPreloader] job zaman aşımı '
+          '(${jobTimeout.inSeconds} sn) — atlanıp devam ediliyor',
+        );
+      }
+    }
+  }
   double lastSliceMs = 0;
   double maxSliceMs = 0;
   bool get budgetRespected => maxSliceMs < 2.0;
@@ -409,7 +446,7 @@ class ZeroJankPreloader {
     _totalJobs++;
     isWarming = true;
     if (_totalJobs > 0 && _doneJobs == 0) {
-      progress01 = 0;
+      _setProgress(0);
     }
   }
 
@@ -474,7 +511,7 @@ class ZeroJankPreloader {
     if (_work.isEmpty) {
       if (isWarming) {
         isWarming = false;
-        progress01 = 1;
+        _setProgress(1);
         onWarmupComplete?.call();
       }
       return;
@@ -516,7 +553,7 @@ class ZeroJankPreloader {
         final job = _work.removeFirst();
         final jobWatch = Stopwatch()..start();
         try {
-          await job();
+          await _runJobWithTimeout(job);
         } catch (_) {
           // Failed job: counted as attempted below, like _drainBudget.
         } finally {
@@ -528,7 +565,7 @@ class ZeroJankPreloader {
         if (jobMs >= budget) overBudgetJobCount++;
         _doneJobs++;
         if (_totalJobs > 0) {
-          progress01 = (_doneJobs / _totalJobs).clamp(0.0, 1.0);
+          _setProgress(_doneJobs / _totalJobs);
         }
       }
     } finally {
@@ -541,7 +578,7 @@ class ZeroJankPreloader {
 
     if (_work.isEmpty) {
       isWarming = false;
-      progress01 = 1;
+      _setProgress(1);
       onWarmupComplete?.call();
     }
   }
@@ -568,7 +605,7 @@ class ZeroJankPreloader {
         // still deferred to the next frame by the check above.
         final jobWatch = Stopwatch()..start();
         try {
-          await job();
+          await _runJobWithTimeout(job);
         } catch (e, st) {
           if (!isFlutterTest && kDebugMode) {
             debugPrint('[ZeroJankPreloader] job skipped: $e\n$st');
@@ -591,7 +628,7 @@ class ZeroJankPreloader {
         }
         _doneJobs++;
         if (_totalJobs > 0) {
-          progress01 = (_doneJobs / _totalJobs).clamp(0.0, 1.0);
+          _setProgress(_doneJobs / _totalJobs);
         }
       }
     } finally {
@@ -608,7 +645,7 @@ class ZeroJankPreloader {
       _scheduleNextFrame();
     } else if (_work.isEmpty) {
       isWarming = false;
-      progress01 = 1;
+      _setProgress(1);
       onWarmupComplete?.call();
     }
   }
