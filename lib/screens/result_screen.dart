@@ -1467,9 +1467,12 @@ class _ConfettiLayer extends StatelessWidget {
     final w = MediaQuery.sizeOf(context).width;
     final rng = Random(42);
 
+    // 10F P2-2: 24 -> 40 parça, gecikme 0-1200 ms -> 0-400 ms; düşüş
+    // süresi (1700 ms) ve boyut (7-14 px) aynen — erken karede gözle
+    // görülür konfeti için az parça + geç başlama düzeltilir, hız değil.
     return Stack(
-      children: List.generate(24, (i) {
-        final delayMs = (rng.nextDouble() * 1200).round();
+      children: List.generate(40, (i) {
+        final delayMs = (rng.nextDouble() * 400).round();
         final size = 7.0 + rng.nextDouble() * 7;
         return Positioned(
           left: rng.nextDouble() * w,

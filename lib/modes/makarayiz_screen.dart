@@ -476,6 +476,10 @@ class MakarayizScreenState extends State<MakarayizScreen>
       _reel = 0;
       _score += 250;
       _lives = min(3, _lives + 1);
+      // 10F P2-4: dolum anı sesi — playPop kapılı lightImpact içerir;
+      // aynı _hit içindeki playMakaraSpin haptic'i ile çakışırsa 18 ms
+      // kapı ikinciyi düşürür, tek impuls kalır.
+      unawaited(AudioManager().playPop());
     }
     // G33: REKOR HUD'da canlı güncellenir (match3 deseni: skor yazılan
     // her yerde `_best` eşitlenir; kalıcı kayıt `_gameOver` /

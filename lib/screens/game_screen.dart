@@ -1265,7 +1265,11 @@ class _GameScreenState extends State<GameScreen>
         _engine!.bodies.isEmpty) {
       return;
     }
-    setState(() => progress.sprayCount--);
+    // 10F P2-3: Terlik deseni — Sprey de sarsıntılı (0.2, Terlik ile aynı).
+    setState(() {
+      progress.sprayCount--;
+      _screenShake = max(_screenShake, 0.2);
+    });
     unawaited(progress.persistBoosters());
 
     final vaporized = _engine!.sprayVaporizeSmallest(2);
