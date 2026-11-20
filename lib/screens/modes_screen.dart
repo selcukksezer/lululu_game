@@ -207,10 +207,17 @@ class _ModesScreenState extends State<ModesScreen> {
                       itemCount: modes.length,
                       itemBuilder: (context, i) {
                         final m = modes[i];
+                        // W13-F: liste "Best"i yalnız GERÇEK skordan
+                        // alır (`ProgressManager.getModeBestScore` →
+                        // `modeHighScores`, hiç oynanmamışta 0).
+                        // Eskiden 0 yerine katalog tohumu
+                        // (`m.defaultBestScore`: 4820/5940/…) gösteriliyordu;
+                        // taze kullanıcı oynamadığı skorları görüyordu
+                        // (playtest §4). Hiç oynanmamış modda '—'.
                         final savedScore = pm.getModeBestScore(m.bestScoreKey);
-                        final score =
-                            savedScore > 0 ? savedScore : m.defaultBestScore;
-                        final bestStr = _formatNumber(score);
+                        final bestStr = savedScore > 0
+                            ? _formatNumber(savedScore)
+                            : '—';
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 9.97),
                           child: _buildModeRow(m, bestStr),

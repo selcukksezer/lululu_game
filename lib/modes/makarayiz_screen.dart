@@ -610,6 +610,14 @@ class MakarayizScreenState extends State<MakarayizScreen>
         _breakCombo(context.l10n.makaraWrongLane, loseLife: true);
       } else if (_notes.any((n) => !n.done && n.lane == lane)) {
         _breakCombo(context.l10n.makaraEarlyTap, loseLife: false);
+      } else {
+        // W13-F: şeritte hiç nota yokken dokunuş TAMAMEN sessizdi —
+        // oyuncu neyin yanlış olduğunu öğrenemiyordu (playtest §11:
+        // "büyük düğmeye 5 basış + şeride dokunuş skor vermedi" ve
+        // "TAPPED TOO EARLY dışında geri bildirim yok"). Yalnız
+        // öğretici ipucu güncellenir (artık görünür satırda);
+        // skor/can/kombo/ıska sayacı aynen kalır — mekanik değişmez.
+        _hint = context.l10n.makaraBeatLine;
       }
     }
     setState(() {});
@@ -1601,6 +1609,35 @@ class _MakarayizChrome extends StatelessWidget {
                 if (hasShellStatusBar) SizedBox(height: topPad),
                 _header(context, wideScreen: wideScreen),
                 _hud(wideScreen: wideScreen),
+                // W13-F: öğretici ipucu satırı. `hint` (boşta "Nota beat
+                // çizgisine gelince…", ıskada pencere bilgisi, güç
+                // duyuruları) daha önce chrome'a geçiriliyor ama HİÇ
+                // çizilmiyordu — kör testte doğru vuruş öğrenilemedi
+                // (playtest §11). Mekanik aynen kalır: yalnız görünür
+                // metin. Prototip vitrininde gizlidir (kare değişmez).
+                if (!prototypeVisualState && hint.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: Text(
+                      hint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.nunito(
+                        fontSize: 12.5,
+                        height: 1.2,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xE6FFFFFF),
+                        shadows: const [
+                          Shadow(
+                            color: Color(0xCC080B12),
+                            offset: Offset(0, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),

@@ -2226,7 +2226,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   // --- W60-2: G5 osmantus (i18n göç planı) ---
   @override
-  String get osmantusHintIdle => 'Halka yeşile dönünce dokun!';
+  // W13-F: "İKİLİ TUŞ" adı çift dokunuş sanılıyordu (playtest §9);
+  // mekanik tek dokunuştur — ipucu bunu açıkça söyler.
+  String get osmantusHintIdle => 'Halka yeşilken BİR KEZ dokun!';
 
   @override
   String get osmantusDikkisChant => 'DIKKIŞ DIKKIŞ!';

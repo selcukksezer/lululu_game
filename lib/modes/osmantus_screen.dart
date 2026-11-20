@@ -1447,7 +1447,18 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   Widget _comboBand({required bool wideScreen}) {
-    final visible = _bandText.isNotEmpty;
+    // W13-F: `_hint` (yönlü zamanlama geri bildirimi: "Biraz erken
+    // (-120ms)", "Bekle, halka yeşile dönsün.", ısınma/can durumu)
+    // daha önce yalnız Semantics etiketindeydi — gören oyuncuya hiç
+    // ulaşmıyordu; kör testte zamanlama öğrenilemedi (playtest §9).
+    // Bant boşken ipucu satırı aynı yerde görünür; isabet/ıska anonsu
+    // (bant) varken bant önceliklidir. Mekanik aynen kalır: yalnız
+    // görünür metin, pencere/can kuralına dokunulmaz. Prototip
+    // vitrininde bant dolu ('MÜKEMMEL! X5') olduğundan kare değişmez.
+    final showHint =
+        _bandText.isEmpty && _hint.isNotEmpty && !widget.prototypeVisualState;
+    final text = _bandText.isNotEmpty ? _bandText : (showHint ? _hint : '');
+    final visible = text.isNotEmpty;
     final color = _bandBad
         ? const Color(0xFFE5334A)
         : (wideScreen ? const Color(0xFFFFB800) : const Color(0xFFFFD700));
@@ -1460,22 +1471,44 @@ class _OsmantusScreenState extends State<OsmantusScreen>
             : 0,
         duration: const Duration(milliseconds: 120),
         child: Text(
-          _bandText.isEmpty ? ' ' : _bandText,
+          text.isEmpty ? ' ' : text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.bangers(
-            fontSize: _bandBad
-                ? 18
-                : (widget.prototypeVisualState && !wideScreen ? 18 : 22),
-            height: 1,
-            letterSpacing: 0.6,
-            color: color,
-            shadows: [
-              const Shadow(color: Color(0xEB080B12), offset: Offset(0, 3)),
-              Shadow(color: glow.withValues(alpha: 0.9), blurRadius: 14),
-              Shadow(color: glow.withValues(alpha: 0.55), blurRadius: 32),
-            ],
-          ),
+          style: showHint
+              ? GoogleFonts.nunito(
+                  fontSize: 13,
+                  height: 1.2,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  shadows: const [
+                    Shadow(
+                      color: Color(0xEB080B12),
+                      offset: Offset(0, 2),
+                      blurRadius: 4,
+                    ),
+                  ],
+                )
+              : GoogleFonts.bangers(
+                  fontSize: _bandBad
+                      ? 18
+                      : (widget.prototypeVisualState && !wideScreen
+                          ? 18
+                          : 22),
+                  height: 1,
+                  letterSpacing: 0.6,
+                  color: color,
+                  shadows: [
+                    const Shadow(
+                      color: Color(0xEB080B12),
+                      offset: Offset(0, 3),
+                    ),
+                    Shadow(color: glow.withValues(alpha: 0.9), blurRadius: 14),
+                    Shadow(
+                      color: glow.withValues(alpha: 0.55),
+                      blurRadius: 32,
+                    ),
+                  ],
+                ),
         ),
       ),
     );

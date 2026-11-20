@@ -43,6 +43,14 @@ class TerlikTapScreen extends StatefulWidget {
   @visibleForTesting
   final bool initialTargetForTesting;
 
+  /// Tur-sonu skor→coin bağışı (13E): `skor ~/ 400`, en az 1.
+  ///
+  /// Ölüm (`_die`) ve BİTİR (`_presentResult`) yolları aynı bağışı
+  /// bir kez uygular (`_applyEndCoins` — `_endCoinsApplied`
+  /// korumasıyla). Skor 0'da BİTİR yolu bağış vermez (F10 kuralı);
+  /// ölüm yolunun `max(1, ...)` davranışı aynen korunur.
+  static int endCoinsForScore(int score) => max(1, score ~/ 400);
+
   @override
   State<TerlikTapScreen> createState() => _TerlikTapScreenState();
 }
@@ -130,6 +138,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   int _missed = 0;
   int _lives = 3;
   int _coinsEarned = 0;
+  // 13E: tur-sonu skor→coin bağışı bu turda uygulandı mı? Ölüm
+  // (`_die`) ve BİTİR (`_presentResult`) aynı bağışı paylaşır —
+  // bayrak çift eklemeyi kapatır. `_restart` sıfırlar.
+  bool _endCoinsApplied = false;
   int _slipperEarned = 0;
   int _sprayEarned = 0;
   double _elapsedSeconds = 0;
@@ -1048,14 +1060,24 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     );
   }
 
+  /// Tur-sonu skor→coin bağışı (13E): [TerlikTapScreen.endCoinsForScore]
+  /// bir kez `_coinsEarned`'e eklenir. Ölüm yolu (`_die`) ve BİTİR
+  /// yolu (`_presentResult`) aynı yardımcıdan geçer; ikinci çağrı
+  /// no-op'tur. Ödeme burada yapılmaz — birikim yalnız artırılır,
+  /// grant `_settleRunEconomy` içindeki tek noktadadır (madde 8).
+  void _applyEndCoins() {
+    if (_endCoinsApplied) return;
+    _endCoinsApplied = true;
+    _coinsEarned += TerlikTapScreen.endCoinsForScore(_score);
+  }
+
   void _die() {
     _alive = false;
     _runEnded = true;
     _diedAt = DateTime.now();
     // Run sonu skor→coin: SADECE biriktirilir; ödeme _presentResult'taki
     // tek noktadan yapılır (madde 8). Burada grant YOK.
-    final endCoins = max(1, _score ~/ 400);
-    _coinsEarned += endCoins;
+    _applyEndCoins();
     _hint = context.l10n.terlikOutOfSlippers(_smashed, _maxCombo, _coinsEarned);
     unawaited(HapticService.instance.heavyImpact());
     // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
@@ -1092,6 +1114,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     _runStartStamp = DateTime.now().microsecondsSinceEpoch;
     setState(() {
       _economySettled = false;
+      _endCoinsApplied = false;
       _paused = false;
       _pausedByLifecycle = false;
       _pauseStartedAt = null;
@@ -1223,6 +1246,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     // içindeki tek _settleRunEconomy çağrısıyla, bir kez ödenir.
     // Görüntülenecek tutar ödeme öncesi anlık görüntüden alınır
     // (_settleRunEconomy toplamları değiştirmez).
+    // 13E: BİTİR yolu _die() uğramadan gelir — tur-sonu bağışı burada
+    // da bir kez uygulanır (ölüm yolunda _die zaten uyguladıysa
+    // no-op). Skor 0 ise bağış yok (F10 kuralı).
+    if (_score > 0) _applyEndCoins();
     final earnedCoins = _coinsEarned;
     // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
     // üzerinden. Tur değiştiyse sonuç gösterilmez (stillValid koruması,

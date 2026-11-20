@@ -33,6 +33,14 @@ class YuvaDefenseScreen extends StatefulWidget {
   @visibleForTesting
   final bool prototypeVisualState;
 
+  /// Tur-sonu skor→coin bağışı (13E): `skor ~/ 360`, en az 1.
+  ///
+  /// Yenilgi (`_endGame`) ve BİTİR (`_presentResult`) yolları aynı
+  /// bağışı bir kez uygular (`_applyEndCoins` — `_endCoinsApplied`
+  /// korumasıyla). Skor 0'da BİTİR yolu bağış vermez (F10 kuralı);
+  /// yenilgi yolunun `max(1, ...)` davranışı aynen korunur.
+  static int endCoinsForScore(int score) => max(1, score ~/ 360);
+
   @override
   State<YuvaDefenseScreen> createState() => _YuvaDefenseScreenState();
 }
@@ -115,6 +123,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   int _hits = 0;
   int _misses = 0;
   int _coinsEarned = 0;
+  // 13E: tur-sonu skor→coin bağışı bu turda uygulandı mı? Yenilgi
+  // (`_endGame`) ve BİTİR (`_presentResult`) aynı bağışı paylaşır —
+  // bayrak çift eklemeyi kapatır. `_restart` sıfırlar.
+  bool _endCoinsApplied = false;
   // B18: kasa yüklenene kadar hayalet stok gösterme — sayaçlar 0'dan
   // başlar, initState'teki yükleme Yuva anahtarlarından doldurur.
   int _doubleSlipCount = 0;
@@ -550,14 +562,24 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _endedAt == null ||
       DateTime.now().difference(_endedAt!) >= const Duration(milliseconds: 500);
 
+  /// Tur-sonu skor→coin bağışı (13E): [YuvaDefenseScreen.endCoinsForScore]
+  /// bir kez `_coinsEarned`'e eklenir. Yenilgi yolu (`_endGame`) ve
+  /// BİTİR yolu (`_presentResult`) aynı yardımcıdan geçer; ikinci
+  /// çağrı no-op'tur. Ödeme burada yapılmaz — birikim yalnız artırılır,
+  /// grant `finishRun` varsayılan ödemesindedir.
+  void _applyEndCoins() {
+    if (_endCoinsApplied) return;
+    _endCoinsApplied = true;
+    _coinsEarned += YuvaDefenseScreen.endCoinsForScore(_score);
+  }
+
   void _endGame() {
     // Tur tamamlandı: iade hakkı biter (Stack Drop `_fail` deseni).
     _moveMade = true;
     _ended = true;
     _endedAt = DateTime.now();
     _best = max(_best, _score);
-    final endCoins = max(1, _score ~/ 360);
-    _coinsEarned += endCoins;
+    _applyEndCoins();
     unawaited(HapticService.instance.heavyImpact());
     // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
@@ -733,6 +755,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     // _restart onu sıfırladı, yeni sunum kurduysa da ezilmez.
     if (runId != _runId) return;
     if (!mounted) return;
+    // 13E: BİTİR yolu _endGame() uğramadan gelir — tur-sonu bağışı
+    // burada da bir kez uygulanır (yenilgi yolunda _endGame zaten
+    // uyguladıysa no-op). Skor 0 ise bağış yok (F10 kuralı).
+    if (_score > 0) _applyEndCoins();
     try {
       final replay = await finishRun(
         context,
@@ -1055,6 +1081,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _hits = 0;
       _misses = 0;
       _coinsEarned = 0;
+      _endCoinsApplied = false;
       _doubleSlipCount = doubleSlip;
       _goldSlipCount = goldSlip;
       _shieldCount = shield;

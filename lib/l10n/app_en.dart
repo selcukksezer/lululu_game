@@ -2228,7 +2228,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   // --- W60-2: G5 osmantus (i18n göç planı) ---
   @override
-  String get osmantusHintIdle => 'Tap when the ring turns green!';
+  // W13-F: "DUO KEY" was read as double-tap (playtest §9);
+  // the mechanic is a single tap — the hint now says so.
+  String get osmantusHintIdle => 'Tap ONCE when the ring turns green!';
 
   @override
   String get osmantusDikkisChant => 'DIKKIS DIKKIS!';

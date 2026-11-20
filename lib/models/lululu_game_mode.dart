@@ -32,6 +32,12 @@ class LululuGameMode {
   final String badgeIconAsset;
   final String mechanicSummary;
   final String bestScoreKey;
+
+  /// Katalog tohumu (temsilî iyi skor). W13-F: ARTIK HİÇBİR YERDE
+  /// GÖSTERİLMEZ — mod listesi yalnız oyuncunun gerçek en iyi skorunu
+  /// (`ProgressManager.getModeBestScore`) gösterir, hiç oynanmamış
+  /// modda '—'. Tohum yalnız tarihsel referans olarak durur; yıldız
+  /// çıtaları `threeStarScore`'dadır (12Q-stars, best'ten bağımsız).
   final int defaultBestScore;
 
   /// Sabit arcade yıldız ölçeği (12Q-stars): bu modda 3 yıldız için
