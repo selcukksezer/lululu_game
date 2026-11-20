@@ -95,6 +95,7 @@ class ProgressManager extends ChangeNotifier {
     'lululu_daily_streak',
     'lululu_last_streak_claim_day',
     'lululu_extra_powers',
+    'lululu_earned_power_keys',
     'lululu_level_stars',
     'lululu_level_scores',
     'lululu_power_seed_v1',
@@ -312,6 +313,61 @@ class ProgressManager extends ChangeNotifier {
 
   /// Moda özel güçlendirici stokları (HTML POWERS id'leri).
   final Map<String, int> extraPowers = {};
+
+  /// W13-D — kazanılan/kullanılan güç türlerinin kalıcı kaydı
+  /// (`lululu_earned_power_keys`, 33'lük katalog anahtarları).
+  /// Tohum stokları bu kümeye GİRMEZ: `eco_all_33_boosters` başarımı
+  /// yalnız bu kümeyi sayar, yoksa her taze misafir tohumlar yüzünden
+  /// başarımı ilk hub açılışında bedavaya alırdı. Tohumlar `load()`
+  /// içinde doğrudan `extraPowers` haritasına yazılır ve bu metotları
+  /// çağırmaz; küme yalnız gerçek kazanım/kullanım yollarında
+  /// (`incrementPowerCount`, `consumePower`/`takePower`,
+  /// `grantArcadeDrop`) işaretlenir.
+  static const String _earnedPowersPrefKey = 'lululu_earned_power_keys';
+  final Set<String> _earnedPowerKeys = <String>{};
+
+  /// Kazanılan/kullanılan güç türleri (33'lük katalogdan) — salt okunur.
+  Set<String> get earnedPowerKeys => Set.unmodifiable(_earnedPowerKeys);
+
+  /// `eco_all_33_boosters` sayacı: kazanılan/kullanılan güç türü sayısı.
+  int earnedPowerTypeCount() {
+    var count = 0;
+    for (final key in all33PowerKeys) {
+      if (_earnedPowerKeys.contains(key)) count++;
+    }
+    return count;
+  }
+
+  /// 2048 ekranının ayrı stok anahtarlarını (`undo2048` …) başarım
+  /// kataloğundaki karşılıklarına (`undo` …) katlar: başarım 11×3=33
+  /// gücü sayar ve 2048'in üç gücü katalogda bu adlarla yer alır.
+  /// Mağaza 2048 güçlerini yalnız `*2048` anahtarlarına yazar
+  /// (`shop_dialog.dart` ~421-432) ve 2048 ekranı yalnız `*2048`
+  /// stoklarını tüketir — katlama olmazsa düz `undo`/`shuffle`/`pair`
+  /// yalnız Sezon Bileti 20. kademe paketiyle kazanılır ve başarım
+  /// normal oynayışla tamamlanamaz hâle gelirdi. Stok ayrımı (O1)
+  /// değişmez — yalnız kazanılan-küme eşlemesidir.
+  static String _achievementPowerKey(String canonical) {
+    switch (canonical) {
+      case 'undo2048':
+        return 'undo';
+      case 'shuffle2048':
+        return 'shuffle';
+      case 'pair2048':
+        return 'pair';
+      default:
+        return canonical;
+    }
+  }
+
+  /// Bir güç türünü kazanılan/kullanılan kümeye ekler (yalnız 33'lük
+  /// katalog üyeleri tutulur). Tohum yolları bu metodu çağırmaz.
+  void _markPowerEarned(String canonical) {
+    final key = _achievementPowerKey(canonical);
+    if (all33PowerKeys.contains(key)) {
+      _earnedPowerKeys.add(key);
+    }
+  }
 
   /// Shop daily free case — separate from hub daily challenge claim.
   String shopChestDay = '';
@@ -772,6 +828,21 @@ class ProgressManager extends ChangeNotifier {
       }
     }
 
+    // W13-D: kazanılan/kullanılan güç kümesini yükle. Eski kayıtlarda
+    // anahtar yoksa küme boş başlar — tohum stokları ASLA buraya
+    // yazılmaz (tohumlar aşağıdaki `seeds` bloğunda doğrudan
+    // `extraPowers` haritasına uygulanır).
+    _earnedPowerKeys.clear();
+    final earnedRaw = prefs.getStringList(_earnedPowersPrefKey);
+    if (earnedRaw != null) {
+      for (final raw in earnedRaw) {
+        final key = _achievementPowerKey(normalizePowerKey(raw));
+        if (all33PowerKeys.contains(key)) {
+          _earnedPowerKeys.add(key);
+        }
+      }
+    }
+
     _levelStars.clear();
     final starsJson = prefs.getString('lululu_level_stars');
     if (starsJson != null) {
@@ -1148,6 +1219,9 @@ class ProgressManager extends ChangeNotifier {
     if (delta == 0) return powerCount(key);
     final canonical = normalizePowerKey(key);
     final nextValue = _adjustStock(canonical, key, delta);
+    // W13-D: pozitif artış gerçek kazanımdır (mağaza/IAP/kampanya/
+    // Sezon Bileti) — tohumlar bu yoldan geçmez.
+    if (delta > 0) _markPowerEarned(canonical);
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
@@ -1160,6 +1234,9 @@ class ProgressManager extends ChangeNotifier {
   Future<bool> consumePower(String key) async {
     final canonical = normalizePowerKey(key);
     if (!_takeOneStock(canonical, key)) return false;
+    // W13-D: güç kullanımı da kazanılan sayılır (tohum stokundan
+    // kullanılsa bile — oyuncu o gücü oyunda gerçekten harcamıştır).
+    _markPowerEarned(canonical);
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
@@ -1172,6 +1249,8 @@ class ProgressManager extends ChangeNotifier {
   bool takePower(String id) {
     final canonical = normalizePowerKey(id);
     if (!_takeOneStock(canonical, id)) return false;
+    // W13-D: bkz. [consumePower] — kullanım kazanılan sayılır.
+    _markPowerEarned(canonical);
     _syncPrimaryPowersToExtra();
     notifyListeners();
     unawaited(_persistEconomy());
@@ -1697,9 +1776,19 @@ class ProgressManager extends ChangeNotifier {
     if (coins > 0 && coins <= maxSingleCoinGrant) {
       this.coins = (this.coins + coins).clamp(0, maxTotalCoins);
     }
-    if (slipper > 0) slipperCount += slipper.clamp(0, 1000);
-    if (spray > 0) sprayCount += spray.clamp(0, 1000);
-    if (f16 > 0) aydinlatCount += f16.clamp(0, 1000);
+    if (slipper > 0) {
+      slipperCount += slipper.clamp(0, 1000);
+      // W13-D: tur-sonu/mağaza ödülü gerçek kazanımdır.
+      _markPowerEarned('terlik');
+    }
+    if (spray > 0) {
+      sprayCount += spray.clamp(0, 1000);
+      _markPowerEarned('raid');
+    }
+    if (f16 > 0) {
+      aydinlatCount += f16.clamp(0, 1000);
+      _markPowerEarned('f16');
+    }
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
@@ -1718,6 +1807,9 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setInt('lululu_aydinlat', aydinlatCount);
     await prefs.setInt('lululu_f16', aydinlatCount);
     await prefs.setString('lululu_extra_powers', jsonEncode(extraPowers));
+    // W13-D: kazanılan güç kümesini de yaz (sıralı — deterministik).
+    final earned = _earnedPowerKeys.toList()..sort();
+    await prefs.setStringList(_earnedPowersPrefKey, earned);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
     // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
@@ -2030,6 +2122,9 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setString('lululu_shop_chest_day', shopChestDay);
     await prefs.setString('lululu_limited_drop_day', limitedDropDay);
     await prefs.setString('lululu_extra_powers', jsonEncode(extraPowers));
+    // W13-D: kazanılan güç kümesini de yaz (sıralı — deterministik).
+    final earned = _earnedPowerKeys.toList()..sort();
+    await prefs.setStringList(_earnedPowersPrefKey, earned);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
     // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten

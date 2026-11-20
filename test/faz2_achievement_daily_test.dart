@@ -206,18 +206,27 @@ void main() {
       pm.coins = 10000;
 
       final first = await service.syncWithProgressManager();
-      // mode_suika_master + eco_10000_coins + eco_all_33_boosters
-      // (PM varsayılan stoklarında 33 güç türü de sahipli görünür).
-      expect(first, 3);
+      // W13-D: mode_suika_master + eco_10000_coins — eco_all_33_boosters
+      // ARTIK tohum stoklarıyla açılmaz (taze PM'de kazanılan güç yok).
+      expect(first, 2);
       expect(service.isAchievementUnlocked('mode_suika_master'), isTrue);
       expect(service.isAchievementUnlocked('eco_10000_coins'), isTrue);
-      expect(service.isAchievementUnlocked('eco_all_33_boosters'), isTrue);
+      expect(service.isAchievementUnlocked('eco_all_33_boosters'), isFalse);
       final coinsAfterFirst = pm.coins;
-      expect(coinsAfterFirst, 10000 + 350 + 1000 + 1500);
+      expect(coinsAfterFirst, 10000 + 350 + 1000);
 
       final second = await service.syncWithProgressManager();
       expect(second, 0);
       expect(pm.coins, coinsAfterFirst);
+
+      // 33 güç türü de kazanılınca üçüncü senkron başarımı açar.
+      for (final key in ProgressManager.all33PowerKeys) {
+        await pm.addPower(key);
+      }
+      final third = await service.syncWithProgressManager();
+      expect(third, 1);
+      expect(service.isAchievementUnlocked('eco_all_33_boosters'), isTrue);
+      expect(pm.coins, coinsAfterFirst + 1500);
     });
   });
 

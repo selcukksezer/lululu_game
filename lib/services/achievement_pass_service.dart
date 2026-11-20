@@ -1120,15 +1120,14 @@ class AchievementPassService extends ChangeNotifier {
       newlyUnlocked++;
     }
 
-    var ownedPowerTypes = 0;
-    for (final key in ProgressManager.all33PowerKeys) {
-      if (pm.powerCount(key) > 0) {
-        ownedPowerTypes++;
-      }
-    }
+    // W13-D: başarım sayacı STOK saymaz — tohumlar (`progress_manager`
+    // ~790-835, 36 anahtar) 33'lük kataloğu zaten kapsadığı için stok
+    // sayımı her taze misafire başarımı ilk hub açılışında bedavaya
+    // veriyordu. Yalnız gerçekten kazanılan/kullanılan güç türleri
+    // sayılır (`ProgressManager.earnedPowerTypeCount`).
     if (await recordProgress(
       'eco_all_33_boosters',
-      absoluteValue: ownedPowerTypes,
+      absoluteValue: pm.earnedPowerTypeCount(),
     )) {
       newlyUnlocked++;
     }
