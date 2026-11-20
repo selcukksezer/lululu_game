@@ -175,9 +175,14 @@ void main() {
         'void _playMilestoneOneShot',
         'int _calculateStars()',
       );
-      expect(count(milestone, 'playMezarinaSiktigim()'), 1);
+      // Suika replik kuyruğu (2026-11-20): milestone tek-seferlik sesi
+      // artık doğrudan playMezarinaSiktigim() ile değil, sıralı kuyruğa
+      // (enqueueSuikaVoice) aynı kliple girer — ses korunur, üst üste
+      // binmez. Kilit aynı kalır: tek çağrı, Hışır bağlamı değil.
+      expect(count(milestone, 'GameAudio.mezarinaSiktigim'), 1);
+      expect(milestone.contains('enqueueSuikaVoice'), isTrue);
       // Dosyada başka mezarına çağrısı kalmadı.
-      expect(count(game, 'playMezarinaSiktigim()'), 1);
+      expect(count(game, 'GameAudio.mezarinaSiktigim'), 1);
     });
   });
 

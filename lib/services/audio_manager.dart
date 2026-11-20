@@ -181,6 +181,14 @@ abstract final class GameAudio {
   }
 }
 
+/// Suika birleşme replik kuyruğu öğesi: çalınacak ses + çalmaya
+/// başlarken çağrılacak geri çağrı (Suika ekranı yazıyı bununla yazar).
+class _SuikaVoiceJob {
+  _SuikaVoiceJob(this.assetName, this.onStart);
+  final String assetName;
+  final void Function()? onStart;
+}
+
 class AudioManager {
   static final AudioManager _instance = AudioManager._internal();
   static AudioManager get instance => _instance;
@@ -437,6 +445,45 @@ class AudioManager {
   /// Havuz oyuncularının tamamlanma abonelikleri ([dispose] iptal eder).
   final List<StreamSubscription<void>> _poolCompleteSubs = [];
 
+  /// Suika birleşme replik kuyruğu — sıralı, tek ses (Selçuk kuralı,
+  /// 2026-11-20 20:24): Suika'da karakter sesleri birbirine girmeyecek,
+  /// arka arkaya çalacak; bir ses bitmeden yenisi başlamaz.
+  ///
+  /// YALNIZ Suika birleşme akışı ([playMergeQueued] + [enqueueSuikaVoice])
+  /// bu kuyruğu kullanır. [playMerge]/[playMergeHisir] ve diğer modların
+  /// ses yolları aynen kalır (12K örtüşme davranışı onlara dokunulmaz).
+  /// Hışır belirme/dokunma sesi ([playHusurAday] doğrudan çağrıları)
+  /// kuyruğa girmez — onaylı klip aynen çalar; nadir Hışır belirmesi
+  /// kuyruktaki bir replikle çakışabilir (bilinçli, kural dışı bırakıldı).
+  ///
+  /// Kuyruk tek adanmış oyuncuda ([_suikaVoicePlayer]) çalar; doğal
+  /// bitiş ([onPlayerComplete], 10 sn güvenlik zaman aşımıyla) bir
+  /// sonraki öğeyi başlatır. Bekleyen en fazla [_maxSuikaVoicePending]
+  /// öğedir (çalan + 2 bekleyen = en fazla 3 uçuşta); sınır dolunca EN
+  /// ESKİ bekleyen düşer (çalan asla kesilmez, en yeni korunur).
+  /// Ses kapalıysa / testte çalma zorlanmıyorsa öğe ses çıkarmadan
+  /// [_suikaVoiceMutedHold] bekler — toast sırası yine korunur.
+  final List<_SuikaVoiceJob> _suikaVoiceQueue = [];
+  bool _suikaVoiceBusy = false;
+  AudioPlayer? _suikaVoicePlayer;
+  int _suikaVoiceGen = 0;
+  static const int _maxSuikaVoicePending = 2;
+  static const Duration _suikaVoiceMaxClip = Duration(seconds: 10);
+  static const Duration _suikaVoiceMutedHold = Duration(milliseconds: 900);
+
+  /// Kuyruk boşaldığında çağrılır (son ses bittiğinde / [stopAll] /
+  /// [clearSuikaVoiceQueue] ile boşaltıldığında). Suika ekranı bu
+  /// geri çağrıyla replik bandını temizler.
+  VoidCallback? onSuikaVoiceQueueDrained;
+
+  /// Test dikişi: bekleyen (henüz başlamamış) kuyruk öğesi sayısı.
+  @visibleForTesting
+  int get suikaVoicePendingCount => _suikaVoiceQueue.length;
+
+  /// Test dikişi: kuyrukta şu an bir ses çalıyor mu.
+  @visibleForTesting
+  bool get suikaVoiceBusy => _suikaVoiceBusy;
+
   /// True while [playExclusiveSfx] clip is still playing.
   bool get isExclusivePlaying => _exclusiveBusy;
 
@@ -467,8 +514,6 @@ class AudioManager {
         (_isTestEnvironment && !forcePlaybackForTesting)) {
       return;
     }
-    _initialized = true;
-
     // iOS AudioSession çakışmalarını (Code 561015905) önlemek için global ambient/mixWithOthers context ayarla
     try {
       AudioPlayer.global.setAudioContext(
@@ -502,6 +547,15 @@ class AudioManager {
         );
       } catch (_) {}
     }
+
+    // 2048 sessizliği araştırması (2026-11-20): `_initialized` eskiden
+    // havuz kurulmadan ÖNCE yazılıyordu — 8 fabrika çağrısı da atarsa
+    // havuz boş kalır ama bayrak `true` olur, sonraki `initialize()`
+    // erken döner ve `_playPooled` içindeki yeniden-dene yolu işe
+    // yaramaz: uygulama yeniden başlayana dek kalıcı sessizlik. Bayrak
+    // yalnız havuzda en az 1 oyuncu varsa yazılır; boşsa sonraki çağrı
+    // yeniden dener.
+    if (_playersPool.isNotEmpty) _initialized = true;
   }
 
   Future<void> _stopExclusivePlayer() async {
@@ -561,6 +615,19 @@ class AudioManager {
   Future<void> stopAll() async {
     _playGeneration++;
     final gen = _playGeneration;
+    // Suika replik kuyruğu da boşaltılır: bekleyenler düşer, çalan
+    // susturulur (kasıtlı susturma — [dispose]/ekran çıkışı yolu).
+    _suikaVoiceGen++;
+    _suikaVoiceQueue.clear();
+    _suikaVoiceBusy = false;
+    final suikaPlayer = _suikaVoicePlayer;
+    if (suikaPlayer != null) {
+      try {
+        await suikaPlayer.stop();
+      } catch (_) {}
+    }
+    // Kuyruk boşaldı (havuz boşsa bile aşağıdaki erken dönüşten önce).
+    onSuikaVoiceQueueDrained?.call();
     await _stopExclusivePlayer();
     await _stopVoicePlayer();
     if (_playersPool.isEmpty) return;
@@ -814,6 +881,149 @@ class AudioManager {
       }
       // Graceful fallback for headless / test / platform audio constraints
     }
+  }
+
+  /// Suika birleşme karakter sesini sıralı kuyruğa ekler (yalnız Suika
+  /// birleşme akışı — diğer modlar [playMerge]/[playSfx] yolunu kullanır).
+  ///
+  /// [onStart] öğe çalmaya BAŞLARKEN çağrılır (Suika ekranı replik
+  /// yazısını bununla yazar). Kuyruk doluysa ([_maxSuikaVoicePending]
+  /// bekleyen) en eski BEKLEYEN düşer — çalan asla kesilmez, en yeni
+  /// korunur. Ses kapalıysa öğe sessizce [_suikaVoiceMutedHold] bekler,
+  /// sonra sıra bir sonrakine geçer.
+  void enqueueSuikaVoice(String assetName, {void Function()? onStart}) {
+    if (_suikaVoiceQueue.length >= _maxSuikaVoicePending) {
+      _suikaVoiceQueue.removeAt(0);
+    }
+    _suikaVoiceQueue.add(_SuikaVoiceJob(assetName, onStart));
+    _pumpSuikaVoiceQueue();
+  }
+
+  /// Suika birleşmesi (kuyruklu): chime/kombo SFX anında çalar
+  /// (karakter sesi değil, birleşme anıyla eşzamanlı kalır), tier/Hışır
+  /// karakter sesi sıralı kuyruğa girer — bir ses bitmeden yenisi
+  /// başlamaz. [onVoiceStart] kuyruktaki ses çalmaya başlarken çağrılır
+  /// (Suika ekranı replik yazısını bununla yazar).
+  ///
+  /// [playMerge]/[playMergeHisir] aynen durur (diğer modlar + eski
+  /// davranış); yalnız Suika ekranı bu yöntemi çağırır.
+  Future<void> playMergeQueued({
+    InsectTier? tier,
+    int? tierNumber,
+    int comboCount = 1,
+    bool hisirInvolved = false,
+    void Function()? onVoiceStart,
+  }) async {
+    final resolvedTier = (tier?.tier ?? tierNumber ?? 1).clamp(1, 13);
+    if (vibrationEnabled) {
+      unawaited(
+        HapticService.instance.onMerge(tier: resolvedTier, combo: comboCount),
+      );
+    }
+    final plays = <Future<void>>[
+      if (_sfxEnabled) playSfx(GameAudio.sfxMergeChime, isVoice: false),
+    ];
+    if (_sfxEnabled && comboCount > 1) {
+      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
+    }
+    final voiceAsset = hisirInvolved
+        ? (GameAudio.voiceForCharacterId('hisir') ?? GameAudio.hisirZopa)
+        : _resolveMergeVoice(tier: tier, tierNumber: tierNumber);
+    if (voiceAsset != null) {
+      enqueueSuikaVoice(voiceAsset, onStart: onVoiceStart);
+    }
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
+  }
+
+  /// Suika replik kuyruğunu boşaltır (yeni tur / ekran değişimi):
+  /// bekleyenler düşer, çalan susturulur, bant temizliği için
+  /// [onSuikaVoiceQueueDrained] çağrılır. SFX havuzuna dokunmaz.
+  void clearSuikaVoiceQueue() {
+    _suikaVoiceGen++;
+    _suikaVoiceQueue.clear();
+    _suikaVoiceBusy = false;
+    final player = _suikaVoicePlayer;
+    if (player != null) {
+      unawaited(player.stop().catchError((_) {}));
+    }
+    onSuikaVoiceQueueDrained?.call();
+  }
+
+  void _pumpSuikaVoiceQueue() {
+    if (_suikaVoiceBusy || _suikaVoiceQueue.isEmpty) return;
+    final job = _suikaVoiceQueue.removeAt(0);
+    _suikaVoiceBusy = true;
+    unawaited(_runSuikaVoiceJob(job));
+  }
+
+  Future<void> _runSuikaVoiceJob(_SuikaVoiceJob job) async {
+    final gen = _suikaVoiceGen;
+    try {
+      job.onStart?.call();
+      if (_canPlayAsset(job.assetName, isVoiceOverride: true)) {
+        await _playSuikaVoiceClip(job.assetName, gen);
+      } else {
+        await Future<void>.delayed(_suikaVoiceMutedHold);
+      }
+    } catch (_) {
+      // Bir öğedeki hata kuyruğu tıkamaz — sıra bir sonrakine geçer.
+    } finally {
+      if (gen == _suikaVoiceGen) {
+        _suikaVoiceBusy = false;
+        if (_suikaVoiceQueue.isEmpty) {
+          onSuikaVoiceQueueDrained?.call();
+        }
+        _pumpSuikaVoiceQueue();
+      }
+      // Kuşak değiştiyse (stopAll/clear/dispose): bu iş artık sahipsiz —
+      // busy bayrağı ve pompa güncel kuşağa aittir, dokunulmaz. Eski
+      // işin finally'si bayrağı sıfırlasaydı, o sırada çalan yeni
+      // kuşağın sesi varken ikinci bir ses başlayabilirdi.
+    }
+  }
+
+  /// Tek kuyruk klibini adanmış oyuncuda çalar; doğal bitişte (veya
+  /// 10 sn güvenlik zaman aşımında) döner. Kuşak değişmişse
+  /// ([stopAll]/[clearSuikaVoiceQueue]/[dispose]) erken döner.
+  Future<void> _playSuikaVoiceClip(String assetName, int gen) async {
+    final player = _suikaVoicePlayer ??= _createSuikaVoicePlayer();
+    final completer = Completer<void>();
+    late final StreamSubscription<void> sub;
+    Timer? watchdog;
+    void finish() {
+      watchdog?.cancel();
+      unawaited(sub.cancel().catchError((_) {}));
+      if (!completer.isCompleted) completer.complete();
+    }
+
+    sub = player.onPlayerComplete.listen((_) => finish());
+    watchdog = Timer(_suikaVoiceMaxClip, finish);
+    try {
+      await player.setVolume(1.0);
+      await player.setPlaybackRate(1.0);
+      if (gen != _suikaVoiceGen) {
+        finish();
+        return;
+      }
+      await player.play(AssetSource(_normalizeAssetPath(assetName)));
+      if (gen != _suikaVoiceGen) {
+        // Kuşak değişti: oyuncu stopAll/clear ile zaten susturuldu ya da
+        // yeni kuşağın klibi çalıyor — buradaki stop() yeni klibi keserdi.
+        finish();
+        return;
+      }
+      await completer.future;
+    } catch (_) {
+      finish();
+    }
+  }
+
+  AudioPlayer _createSuikaVoicePlayer() {
+    final created = playerFactory();
+    unawaited(created.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
+    return created;
   }
 
   /// Merge juice: merge SFX (+ optional combo) together with the new tier's
@@ -1290,6 +1500,15 @@ class AudioManager {
     _unbindProgressManagerListeners();
     _syncingWithProgress = false;
     _playGeneration++;
+    _suikaVoiceGen++;
+    _suikaVoiceQueue.clear();
+    _suikaVoiceBusy = false;
+    onSuikaVoiceQueueDrained = null;
+    final suikaPlayer = _suikaVoicePlayer;
+    _suikaVoicePlayer = null;
+    try {
+      suikaPlayer?.dispose();
+    } catch (_) {}
     _poolIndex = 0;
     _exclusiveBusy = false;
     _exclusiveOnComplete = null;

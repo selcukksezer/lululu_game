@@ -112,6 +112,10 @@ class _GameScreenState extends State<GameScreen>
 
   String _activeSpeechBubble = '';
   Timer? _speechTimer;
+
+  /// Sıralı replik bandı temizlik zamanlayıcısı: kuyruk boşalınca son
+  /// replik 700 ms daha görünür, sonra bant temizlenir.
+  Timer? _queuedSpeechClearTimer;
   Timer? _aydinlatTimer;
   bool _isAydinlatActive = false;
 
@@ -261,6 +265,8 @@ class _GameScreenState extends State<GameScreen>
     _survivalTimeRemaining = _currentLevel.timeLimitSeconds.toDouble();
     _remainingMoves = widget.arcade ? -1 : _currentLevel.allowedMoves;
     AudioManager().initialize();
+    // Suika replik kuyruğu: son ses bitince bant temizlenir.
+    AudioManager().onSuikaVoiceQueueDrained = _onSuikaVoiceQueueDrained;
     // 13 tier decode'u ilk kare sonrasına ertelenir: resolve
     // çağrıları ilk kareyle yarışmaz, kare başına 3 tier dilimlenir
     // ([_preloadImages]); decode zaten asenkrondu, görsel sonuç aynı.
@@ -503,6 +509,10 @@ class _GameScreenState extends State<GameScreen>
     _comboBreakTimer?.cancel();
     _hisirTimer?.cancel();
     _hisirHideTimer?.cancel();
+    // Yeni tur: eski turun replik kuyruğu silinir (eski sesler yeni
+    // tura sarkmaz); bant zaten aşağıdaki setState ile temizlenir.
+    AudioManager().clearSuikaVoiceQueue();
+    _queuedSpeechClearTimer?.cancel();
     for (final timer in _juiceTimers) {
       timer.cancel();
     }
@@ -566,6 +576,11 @@ class _GameScreenState extends State<GameScreen>
     // Kampanya ve doğrudan rota girişlerinde energyConsumed false'tur.
     if (widget.energyConsumed && !_isFinished && _dropsMade == 0) {
       EnergyService.instance.addEnergy(1);
+    }
+    _queuedSpeechClearTimer?.cancel();
+    if (AudioManager().onSuikaVoiceQueueDrained ==
+        _onSuikaVoiceQueueDrained) {
+      AudioManager().onSuikaVoiceQueueDrained = null;
     }
     AudioManager().stopAll();
     for (final entry in _insectImageListeners.entries) {
@@ -819,10 +834,13 @@ class _GameScreenState extends State<GameScreen>
       if (nextTier.tier > _runPeakTier.tier) {
         _runPeakTier = nextTier;
       }
+      // Yeni zirve tek-seferlik sesi birleşme sesinin ARKASINA kuyruğa
+      // girer (aşağıda); önce tier sesi, sonra kutlama repliği.
+      var newPeak = false;
       if (nextTier.tier > _peakTier.tier) {
         _peakTier = nextTier;
         _showMilestone(nextTier);
-        _playMilestoneOneShot(nextTier);
+        newPeak = true;
       }
 
       unawaited(ProgressManager.instance.unlockTier(nextTier.tier));
@@ -836,13 +854,20 @@ class _GameScreenState extends State<GameScreen>
         );
       }
 
+      // Suika replik kuyruğu: chime/kombo SFX anında çalar (karakter
+      // sesi değil), tier/Hışır karakter sesi sıralı kuyruğa girer —
+      // bir ses bitmeden yenisi başlamaz; yazısı da sesle sırayla gelir.
       unawaited(
-        event.hisirInvolved
-            ? AudioManager().playMergeHisir(
-                tierNumber: nextTier.tier,
-                comboCount: _comboCount,
-              )
-            : AudioManager().playMerge(tier: nextTier, comboCount: _comboCount),
+        AudioManager().playMergeQueued(
+          tier: nextTier,
+          comboCount: _comboCount,
+          hisirInvolved: event.hisirInvolved,
+          onVoiceStart: () => _showQueuedSpeech(
+            event.hisirInvolved
+                ? HisirCharacter.replik
+                : nextTier.viralReplik,
+          ),
+        ),
       );
       // 10D: kombo≥3 ağırlaştırması kaldırıldı — playMerge zaten
       // onMerge(tier, combo) ile kombo≥3'te ağır titreşim verir
@@ -850,15 +875,14 @@ class _GameScreenState extends State<GameScreen>
       // yedekte heavyImpact); yanındaki kapısız triggerHeavyHaptic
       // ikinci impuls demekti. Juice yolundaki _triggerMergeVibration
       // kapılıdır (18 ms kapı düşürür), çifte sayılmaz.
-      // Büyük kombo eşiği zincir başına bir kez çalınır.
+      // Büyük kombo eşiği zincir başına bir kez çalınır — Kanka repliği
+      // de kuyruğa girer (toast değişmez, yalnız ses sıraya girer).
       if (_comboCount == 8) {
-        unawaited(AudioManager().playKanka());
+        AudioManager().enqueueSuikaVoice(GameAudio.kanka);
       }
+      if (newPeak) _playMilestoneOneShot(nextTier);
 
       _playMergeJuice(event, _comboCount, pointsGained);
-      _showSpeechBubble(
-        event.hisirInvolved ? HisirCharacter.replik : nextTier.viralReplik,
-      );
 
       // Check Victory Condition (deferred until every merge is scored).
       if (widget.arcade) continue;
@@ -891,6 +915,28 @@ class _GameScreenState extends State<GameScreen>
     _speechTimer?.cancel();
     setState(() => _activeSpeechBubble = text);
     _speechTimer = Timer(Duration(seconds: durationSeconds), () {
+      if (mounted) setState(() => _activeSpeechBubble = '');
+    });
+  }
+
+  /// Sıralı replik yazısı: kuyrukta o an çalmaya BAŞLAYAN sesin yazısı
+  /// banda yazılır. Güçlendirme zamanlayıcısı eski yazıyı silmesin
+  /// diye iptal edilir; temizlik yalnız kuyruk boşalınca
+  /// [_onSuikaVoiceQueueDrained] ile olur.
+  void _showQueuedSpeech(String text) {
+    _speechTimer?.cancel();
+    _queuedSpeechClearTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _activeSpeechBubble = text);
+  }
+
+  /// Suika replik kuyruğu boşaldı: son replik kısa süre daha görünür,
+  /// sonra bant temizlenir. Güçlendirme balonu (Aydınlat/Terlik/Raid)
+  /// o an gösterimdeyse ona dokunulmaz — kendi zamanlayıcısı temizler.
+  void _onSuikaVoiceQueueDrained() {
+    if (_speechTimer?.isActive == true) return;
+    _queuedSpeechClearTimer?.cancel();
+    _queuedSpeechClearTimer = Timer(const Duration(milliseconds: 700), () {
       if (mounted) setState(() => _activeSpeechBubble = '');
     });
   }
@@ -1095,10 +1141,17 @@ class _GameScreenState extends State<GameScreen>
   /// Diva'ya ilk ulaşışta "sinyal", zirve tier'lere (12+) ilk ulaşışta
   /// (büyük birleşme) "mezarına" repliği. Ses ayarlarına metotlar saygı duyar.
   void _playMilestoneOneShot(InsectTier tier) {
+    // Milestone tek-seferlik sesleri de Suika replik kuyruğuna girer:
+    // birleşme sesiyle üst üste binmez, arkasından sırayla çalar.
     if (tier == InsectTier.diva) {
-      unawaited(AudioManager().playDivaSinyal());
+      // Diva "sinyal" repliği: toast o anki Diva repliğinde kalır
+      // (klibin tam sözü koda yazılmaz).
+      AudioManager().enqueueSuikaVoice(GameAudio.divaSinyal);
     } else if (tier.tier >= 12) {
-      unawaited(AudioManager().playMezarinaSiktigim());
+      AudioManager().enqueueSuikaVoice(
+        GameAudio.mezarinaSiktigim,
+        onStart: () => _showQueuedSpeech('Mezarına sıçtığım!'),
+      );
     }
   }
 

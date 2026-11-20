@@ -1119,6 +1119,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   void _handleBack() {
     final nav = Navigator.maybeOf(context);
     if (nav != null && nav.canPop()) {
+      // Geri düğmesi sesi (pop dalı; `else` dalı `_togglePause`
+      // üzerinden zaten çalar — çift ses olmasın).
+      AudioManager().playButtonTap();
       // N7: `pop()` yerine `maybePop()` — çıkış onayı (`PopScope`
       // vetosu) geri düğmesinden de geçer; onay gerekmiyorsa
       // davranış aynıdır.
@@ -1368,7 +1371,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
           button: true,
           label: context.l10n.helpButtonLabel,
           child: GestureDetector(
-            onTap: () => setState(() => _showHelpModal = true),
+            onTap: () {
+              AudioManager().playButtonTap();
+              setState(() => _showHelpModal = true);
+            },
             child: Container(
               width: 48,
               height: 48,
@@ -1474,7 +1480,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
           button: true,
           label: context.l10n.finishRoundLabel,
           child: GestureDetector(
-            onTap: _presentResult,
+            onTap: () {
+              AudioManager().playButtonTap();
+              _presentResult();
+            },
             child: Container(
               width: 57.8,
               height: 48,
@@ -2191,7 +2200,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   Widget _buildHelpOverlay() {
     return Positioned.fill(
       child: GestureDetector(
-        onTap: () => setState(() => _showHelpModal = false),
+        onTap: () {
+          AudioManager().playButtonTap();
+          setState(() => _showHelpModal = false);
+        },
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: ColoredBox(
@@ -2242,7 +2254,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                       button: true,
                       label: context.l10n.understoodButton,
                       child: GestureDetector(
-                        onTap: () => setState(() => _showHelpModal = false),
+                        onTap: () {
+                          AudioManager().playButtonTap();
+                          setState(() => _showHelpModal = false);
+                        },
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -2349,7 +2364,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                     button: true,
                     label: context.l10n.restart,
                     child: GestureDetector(
-                      onTap: _restart,
+                      // `_restart` içine konmaz: sonuç ekranı tekrar
+                      // düğmesi zaten ses çalar (çift ses olmasın).
+                      onTap: () {
+                        AudioManager().playButtonTap();
+                        _restart();
+                      },
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 12),
