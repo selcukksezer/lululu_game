@@ -1150,6 +1150,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Message could not be sent. Try again.';
 
   @override
+  String get chatLobbyTitle => 'Chat Lobby';
+
+  @override
+  String get chatLobbySubtitle => 'Join the live lobby chat';
+
+  @override
   String get stickerSendFailed =>
       'Sticker could not be sent. Try again.';
 

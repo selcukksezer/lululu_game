@@ -1305,6 +1305,40 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           const SizedBox(width: 10),
+          // 12D1: görünür lobi girişi — sohbet lobisi ekranını açar.
+          Semantics(
+            button: true,
+            label: context.l10n.chatLobbyTitle,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                AudioManager().playPop();
+                goTo(context, LululuRoutes.chatLobby);
+              },
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x1A141B2A),
+                      offset: Offset(0, 4),
+                      blurRadius: 0,
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.groups_rounded,
+                  size: 24,
+                  color: Color(0xFF141B2A),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
           Semantics(
             button: true,
             label: context.l10n.chatOptionsLabel,

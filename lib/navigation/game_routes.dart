@@ -14,7 +14,9 @@ import '../modes/stack_drop_screen.dart';
 import '../modes/terlik_tap_screen.dart';
 import '../modes/yuva_defense_screen.dart';
 import '../screens/auth_screen.dart';
+import '../screens/bug_video_hub_screen.dart';
 import '../screens/campaign_map_screen.dart';
+import '../screens/chat_lobby_screen.dart';
 import '../screens/chat_screen.dart';
 import '../screens/game_screen.dart';
 import '../screens/grid_2048_screen.dart';
@@ -27,6 +29,7 @@ import '../screens/profile_screen.dart';
 import '../screens/result_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
+import '../screens/sticker_gif_screen.dart';
 import '../screens/studio_screens.dart';
 import '../screens/tasks_screen.dart';
 import '../screens/tiers_screen.dart';
@@ -169,6 +172,9 @@ enum GameModeKind {
 /// Authoritative registry and zero-jank router for all 21 named screens
 /// (18 primary + settings, campaign, onboarding) and 11 game modes
 /// matching `gotoScreen(name)` / `data-goto` in `LÜLÜLÜ UI/UX Tasarım.html`.
+/// 12D1: +3 ölü-UI rotası (chat-lobby, bug-video-hub, sticker-gif) —
+/// `mainScreens` 18'de kalır (route_fallback_test), yalnız
+/// [resolveScreen] çözer.
 abstract final class LululuRoutes {
   static const String splash = 'splash';
   static const String hub = 'hub';
@@ -182,6 +188,9 @@ abstract final class LululuRoutes {
   static const String account = 'account';
   static const String online = 'online';
   static const String chat = 'chat';
+  static const String chatLobby = 'chat-lobby';
+  static const String bugVideoHub = 'bug-video-hub';
+  static const String stickerGif = 'sticker-gif';
   static const String tiers = 'tiers';
   static const String studioWatch = 'studio-watch';
   static const String studioCreate = 'studio-create';
@@ -362,6 +371,12 @@ abstract final class LululuRoutes {
         return const OnlineScreen();
       case chat:
         return const ChatScreen();
+      case chatLobby:
+        return const ChatLobbyScreen();
+      case bugVideoHub:
+        return const BugVideoHubScreen();
+      case stickerGif:
+        return const StickerGifScreen();
       case tiers:
         return const TiersScreen();
       case studioWatch:

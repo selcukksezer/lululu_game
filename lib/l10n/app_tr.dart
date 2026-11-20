@@ -1151,6 +1151,12 @@ class AppLocalizationsTr extends AppLocalizations {
   String get messageSendFailed => 'Mesaj gönderilemedi. Tekrar dene.';
 
   @override
+  String get chatLobbyTitle => 'Sohbet Lobisi';
+
+  @override
+  String get chatLobbySubtitle => 'Canlı lobi sohbetine katıl';
+
+  @override
   String get stickerSendFailed => 'Çıkartma gönderilemedi. Tekrar dene.';
 
   @override

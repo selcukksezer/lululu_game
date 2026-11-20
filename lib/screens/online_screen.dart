@@ -457,6 +457,18 @@ class _OnlineScreenState extends State<OnlineScreen> {
       padding: const EdgeInsets.fromLTRB(12, 9.9, 12, 10),
       child: Column(
         children: [
+          // 12D1: görünür lobi girişi — sohbet lobisi ekranını açar.
+          _buildFeatureCard(
+            icon: Icons.chat_bubble_rounded,
+            gradientColors: const [Color(0xFFF4538B), Color(0xFF9B5DE5)],
+            title: context.l10n.chatLobbyTitle,
+            subtitle: context.l10n.chatLobbySubtitle,
+            onTap: () {
+              AudioManager().playPop();
+              goTo(context, LululuRoutes.chatLobby);
+            },
+          ),
+          const SizedBox(height: 10),
           _buildFeatureCard(
             iconAsset: 'assets/icons2/sword.png',
             gradientColors: const [Color(0xFFF4538B), Color(0xFFE01E5A)],
@@ -483,13 +495,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
   }
 
   /// `.online-feat` -> height: 68, padding: 12px 14px, gap: 12px, borderRadius: 18
+  ///
+  /// 12D1: [onTap] verilirse kart dokunulabilir olur (lobi kartı);
+  /// verilmezse eskisi gibi statik kalır. [icon] verilirse
+  /// [iconAsset] yerine Material ikonu çizilir.
   Widget _buildFeatureCard({
-    required String iconAsset,
+    String? iconAsset,
+    IconData? icon,
     required List<Color> gradientColors,
     required String title,
     required String subtitle,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    final card = Container(
       height: 68,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -518,12 +536,14 @@ class _OnlineScreenState extends State<OnlineScreen> {
               ),
             ),
             alignment: Alignment.center,
-            child: Image.asset(
-              iconAsset,
-              width: 27,
-              height: 27,
-              fit: BoxFit.contain,
-            ),
+            child: icon != null
+                ? Icon(icon, size: 27, color: Colors.white)
+                : Image.asset(
+                    iconAsset!,
+                    width: 27,
+                    height: 27,
+                    fit: BoxFit.contain,
+                  ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -569,6 +589,16 @@ class _OnlineScreenState extends State<OnlineScreen> {
             ),
           ),
         ],
+      ),
+    );
+    if (onTap == null) return card;
+    return Semantics(
+      button: true,
+      label: title,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: card,
       ),
     );
   }

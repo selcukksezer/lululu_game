@@ -21,11 +21,13 @@ import '../widgets/energy_empty_popup.dart';
 import '../widgets/hb_overlay.dart';
 import '../widgets/invite_redeem_sheet.dart';
 import '../widgets/top_bar.dart';
+import 'bug_video_hub_screen.dart';
 import 'chat_screen.dart';
 import 'modes_screen.dart';
 import 'online_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
+import 'sticker_gif_screen.dart';
 import 'studio_screens.dart';
 import 'tasks_screen.dart';
 
@@ -514,10 +516,13 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             Color(0xFFF4538B),
                             Color(0xFFE01E5A),
                           ],
+                          // 12D1: video merkezi (hub) üzerinden açılır.
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute<void>(
-                              builder: (_) => const StudioWatchScreen(),
+                              builder: (_) => const BugVideoHubScreen(
+                                initial: BugVideoTab.watch,
+                              ),
                             ),
                           ),
                         ),
@@ -530,10 +535,13 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             Color(0xFF9B5DE5),
                             Color(0xFF7C3AED),
                           ],
+                          // 12D1: video merkezi (hub) üzerinden açılır.
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute<void>(
-                              builder: (_) => const StudioCreateScreen(),
+                              builder: (_) => const BugVideoHubScreen(
+                                initial: BugVideoTab.create,
+                              ),
                             ),
                           ),
                         ),
@@ -562,10 +570,11 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             Color(0xFF37E08B),
                             Color(0xFF12B76A),
                           ],
+                          // 12D1: çıkartma/GIF ekranı üzerinden açılır.
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute<void>(
-                              builder: (_) => const StudioGifScreen(),
+                              builder: (_) => const StickerGifScreen(),
                             ),
                           ),
                         ),

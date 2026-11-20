@@ -582,6 +582,8 @@ abstract class AppLocalizations {
   String levelShort(int level);
   String get messageHint;
   String get messageSendFailed;
+  String get chatLobbyTitle;
+  String get chatLobbySubtitle;
   String get stickerSendFailed;
   String get quickStickerTitle;
   String get notSentLocalOnly;

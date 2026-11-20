@@ -4,19 +4,31 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../theme/lululu_theme.dart';
 import '../widgets/lululu_press.dart';
 import '../widgets/sticker_image.dart';
 
-/// SOHBET — lobi sohbeti (mock veriyle gezilebilir).
+/// SOHBET LOBİSİ — canlı lobi sohbeti.
 ///
-/// Çevrimiçi oyuncu listesi (avatar + isim + seviye), gelen/giden mesaj
-/// baloncukları, altta 48dp mesaj yazma alanı + gönder butonu.
-/// Üstteki kanal satırı ChatService'e bağlıdır: kanal seçimi
-/// switchChannel üzerinden gider, okunmamış rozetleri S2#19 sayacını
-/// gösterir (mock mesaj listesi kanala göre değişmez).
+/// 12D1: mock oyuncu/mesaj listeleri kaldırıldı, ekran
+/// [ChatService] verisine bağlandı:
+/// * Mesajlar: aktif kanalın gerçek listesi
+///   ([ChatService.messagesForChannel]) — kullanıcı/bulut mesajı
+///   yoksa servisin tohum akışı (kanal başına) gösterilir; liste
+///   asla elle yazılmış sahte veriye düşmez.
+/// * Çevrimiçi oyuncular: aktif kanal mesajlarındaki farklı
+///   yazarlar (sistem mesajı hariç); seviye satırı yok — yazarın
+///   gerçek seviyesi serviste tutulmaz, uydurulmaz.
+/// * Gönderim: [ChatService.sendText] üzerinden gider; şart onayı
+///   yoksa [ChatScreen] ile aynı diyalog akışı çalışır (misafir
+///   kimliği + şart onayı akışı bozulmaz).
+/// * Kanal satırı zaten servise bağlıydı (değişmedi): kanal seçimi
+///   switchChannel üzerinden gider, okunmamış rozetleri S2#19
+///   sayacını gösterir.
 class ChatLobbyScreen extends StatefulWidget {
   const ChatLobbyScreen({super.key});
 
@@ -25,92 +37,31 @@ class ChatLobbyScreen extends StatefulWidget {
 }
 
 class _LobbyPlayer {
-  const _LobbyPlayer({
-    required this.name,
-    required this.level,
-    required this.avatar,
-  });
+  const _LobbyPlayer({required this.name, required this.avatar});
 
   final String name;
-  final int level;
-  final String avatar;
-}
-
-class _ChatMsg {
-  _ChatMsg({
-    required this.from,
-    required this.text,
-    required this.mine,
-    required this.avatar,
-  });
-
-  final String from;
-  final String text;
-  final bool mine;
   final String avatar;
 }
 
 class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
-  static const _players = <_LobbyPlayer>[
-    _LobbyPlayer(
-      name: 'HamamCan_34',
-      level: 24,
-      avatar: 'assets/design/bugs_hd/tier6_hd.png',
-    ),
-    _LobbyPlayer(
-      name: 'KongoKralı',
-      level: 21,
-      avatar: 'assets/design/bugs_hd/tier7_hd.png',
-    ),
-    _LobbyPlayer(
-      name: 'DivaNur',
-      level: 18,
-      avatar: 'assets/design/bugs_hd/tier5_hd.png',
-    ),
-    _LobbyPlayer(
-      name: 'MakaraMehmet',
-      level: 15,
-      avatar: 'assets/design/bugs_hd/tier3_hd.png',
-    ),
-    _LobbyPlayer(
-      name: 'HuniKafa',
-      level: 12,
-      avatar: 'assets/design/bugs_hd/tier1_hd.png',
-    ),
-  ];
-
-  final _messages = <_ChatMsg>[
-    _ChatMsg(
-      from: 'HamamCan_34',
-      text: 'Arkadaşlar 2048\u2019de 8192 yaptım!',
-      mine: false,
-      avatar: 'assets/design/bugs_hd/tier6_hd.png',
-    ),
-    _ChatMsg(
-      from: 'DivaNur',
-      text: 'Helal! Ben daha 4096\u2019dayım.',
-      mine: false,
-      avatar: 'assets/design/bugs_hd/tier5_hd.png',
-    ),
-    _ChatMsg(
-      from: 'KongoKralı',
-      text: 'Terlik yağmuru kombo x12 denediniz mi?',
-      mine: false,
-      avatar: 'assets/design/bugs_hd/tier7_hd.png',
-    ),
-  ];
-
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
-  Timer? _replyTimer;
+  bool _isSending = false;
+  String? _sendError;
 
   @override
   void initState() {
     super.initState();
+    ChatService.instance.addListener(_onChatChanged);
     // Kanal görünümü açılırken okundu işaretle (S2#19): yükleme bitince
     // çağrılır ki önbellekteki mesajlar "görüldü" sayılsın; yoklama
     // bunları tekrar okunmamış saymaz.
     unawaited(_markCurrentChannelRead());
+    unawaited(_ensureGuestIdentityForChat());
+  }
+
+  void _onChatChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _markCurrentChannelRead() async {
@@ -126,6 +77,22 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
     );
   }
 
+  /// Misafir kimliği ilk sohbet kullanımında oluşur (kalıcı UUID + ad);
+  /// kayıtlı kullanıcıda çağrı kimlik oluşturmaz.
+  /// [ChatScreen._ensureGuestIdentityForChat] ile aynı akış.
+  Future<void> _ensureGuestIdentityForChat() async {
+    try {
+      await ChatService.instance.ensureLoaded();
+      await AuthService.instance.ensureLoaded();
+      final auth = AuthService.instance;
+      if (!auth.isSignedIn || (auth.user?.isGuest ?? false)) {
+        await ChatService.instance.ensureGuestIdentity();
+      }
+    } catch (e) {
+      debugPrint('[lululu] Misafir kimliği oluşturulamadı: $e');
+    }
+  }
+
   /// Okunmamış rozet etiketi: sayaç yoklama penceresi
   /// ([ChatService.unreadProbeLimit]) ile sınırlı olduğundan sınırda
   /// "10+" gösterilir; 10'u aşan kesin sayı iddia edilmez.
@@ -136,9 +103,48 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
     return '$count';
   }
 
+  /// Görüntülenecek mesajlar: aktif kanalın gerçek listesi; kullanıcı/
+  /// bulut mesajı yoksa servisin tohum akışı döner (boş kanal olmaz).
+  List<ChatMessage> _displayMessages() {
+    return ChatService.instance.messagesForChannel(
+      ChatService.instance.currentChannel,
+    );
+  }
+
+  /// Lobi oyuncu satırı: aktif kanal mesajlarındaki farklı yazarlar
+  /// (sistem mesajı hariç), mesaj sırasıyla; en fazla 8 kişi.
+  List<_LobbyPlayer> _lobbyPlayers() {
+    final seen = <String>{};
+    final players = <_LobbyPlayer>[];
+    for (final msg in _displayMessages()) {
+      if (msg.isSystem) continue;
+      if (!seen.add(msg.authorId)) continue;
+      players.add(
+        _LobbyPlayer(name: msg.authorName, avatar: _avatarFor(msg)),
+      );
+      if (players.length >= 8) break;
+    }
+    return players;
+  }
+
+  /// Yazar avatarı: çıkartmalı mesajda çıkartma görseli, misafirde
+  /// varsayılan simge, diğerlerinde yazar kimliğine kararlı bir tier
+  /// görseli (aynı yazar hep aynı simgeyle görünür).
+  /// [ChatScreen._avatarFor] ile aynı kural.
+  static String _avatarFor(ChatMessage msg) {
+    if (msg.stickerAsset != null) return msg.stickerAsset!;
+    if (msg.isGuestAuthor) return 'assets/design/bugs_hd/tier1_hd.png';
+    var hash = 0;
+    for (final unit in msg.authorId.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    final tier = (hash % 13) + 1;
+    return 'assets/design/bugs_hd/tier${tier}_hd.png';
+  }
+
   @override
   void dispose() {
-    _replyTimer?.cancel();
+    ChatService.instance.removeListener(_onChatChanged);
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
@@ -155,35 +161,113 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
     });
   }
 
-  void _send() {
+  void _closeOrPop() {
+    AudioManager().playPop();
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+    // Yığında ekran yoksa (bağımsız/ilk açılış): suskun kalma, ana sekmeye git.
+    goTo(context, LululuRoutes.hub, replace: true);
+  }
+
+  Future<void> _send() async {
     final text = _ctrl.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isSending) return;
     AudioManager().playPop();
     setState(() {
-      _messages.add(_ChatMsg(
-        from: 'Sen',
-        text: text,
-        mine: true,
-        avatar: 'assets/design/bugs_hd/tier4_hd.png',
-      ));
+      _isSending = true;
+      _sendError = null;
     });
-    _ctrl.clear();
-    _jumpBottom();
-    // Mock cevap — lobiyi canlı hissettirir.
-    _replyTimer?.cancel();
-    _replyTimer = Timer(const Duration(seconds: 2), () {
+    // Gönderilen mesaj servisten okunur (dinleyici yeniden çizer); yerel
+    // listeye ekleme yapılmaz.
+    try {
+      await ChatService.instance.sendText(text);
+    } on ChatTermsRequiredException {
+      // Şart onayı yok: diyaloğu göster, kabulde bir kez tekrar dene.
+      bool accepted;
+      try {
+        accepted = await _showTermsDialog();
+      } catch (e) {
+        debugPrint('[lululu] Sohbet şart diyaloğu açılamadı: $e');
+        if (!mounted) return;
+        setState(() {
+          _isSending = false;
+          _sendError = context.l10n.messageSendFailed;
+        });
+        return;
+      }
       if (!mounted) return;
-      final p = _players[DateTime.now().millisecond % _players.length];
+      if (!accepted) {
+        setState(() {
+          _isSending = false;
+          _sendError = context.l10n.chatTermsRequired;
+        });
+        return;
+      }
+      try {
+        await ChatService.instance.sendText(text);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _isSending = false;
+          _sendError = e is StateError
+              ? e.message.toString()
+              : context.l10n.messageSendFailed;
+        });
+        return;
+      }
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _messages.add(_ChatMsg(
-          from: p.name,
-          text: 'Güzel skor, eline sağlık!',
-          mine: false,
-          avatar: p.avatar,
-        ));
+        _isSending = false;
+        _sendError = e is StateError
+            ? e.message.toString()
+            : context.l10n.messageSendFailed;
       });
-      _jumpBottom();
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _isSending = false;
+      _ctrl.clear();
     });
+    _jumpBottom();
+  }
+
+  /// Sohbet şart diyaloğu: kabulde onay kalıcı kaydedilir, true döner.
+  /// [ChatScreen._showTermsDialog] ile aynı akış.
+  Future<bool> _showTermsDialog() async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(ctx.l10n.chatTermsTitle),
+          content: Text(ctx.l10n.chatTermsBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(ctx.l10n.chatTermsDecline),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(ctx.l10n.chatTermsAccept),
+            ),
+          ],
+        );
+      },
+    );
+    if (accepted == true) {
+      try {
+        await ChatService.instance.acceptChatTerms();
+      } catch (e) {
+        debugPrint('[lululu] Sohbet şart onayı kaydedilemedi: $e');
+        return false;
+      }
+      return true;
+    }
+    return false;
   }
 
   /// Kanal satırı: 3 kanal çipi + okunmamış rozeti (S2#19). Seçim
@@ -290,20 +374,35 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final messages = _displayMessages();
+    final players = _lobbyPlayers();
     return Scaffold(
       backgroundColor: LululuColors.paper,
       appBar: AppBar(
         backgroundColor: LululuColors.paper,
         foregroundColor: LululuColors.inkDark,
         elevation: 0,
+        automaticallyImplyLeading: false,
+        leading: Semantics(
+          button: true,
+          label: context.l10n.goBackLabel,
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: _closeOrPop,
+          ),
+        ),
         title: Row(
           children: [
-            Text(
-              context.l10n.chatTitle,
-              style: GoogleFonts.exo2(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.5,
+            Flexible(
+              child: Text(
+                context.l10n.chatLobbyTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.exo2(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -326,7 +425,7 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    context.l10n.onlinePlayersCount(_players.length),
+                    context.l10n.onlinePlayersCount(players.length),
                     style: GoogleFonts.exo2(
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
@@ -343,70 +442,84 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
         children: [
           // Kanal seçimi + okunmamış rozetleri (S2#19).
           _buildChannelRow(),
-          // Çevrimiçi oyuncular.
-          SizedBox(
-            height: 98, // 11pt seviye satırı taşmasın diye.
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: _players.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 14),
-              itemBuilder: (context, i) {
-                final p = _players[i];
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: LululuColors.toxicNeon,
-                          width: 2,
+          // Çevrimiçi oyuncular (gerçek yazarlar; boşsa satır gizlenir).
+          if (players.isNotEmpty)
+            SizedBox(
+              height: 86,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                itemCount: players.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 14),
+                itemBuilder: (context, i) {
+                  final p = players[i];
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: LululuColors.toxicNeon,
+                            width: 2,
+                          ),
+                        ),
+                        child: ClipOval(
+                          child: StickerImage(
+                            assetPath: p.avatar,
+                            width: 44,
+                            height: 44,
+                          ),
                         ),
                       ),
-                      child: ClipOval(
-                        child: StickerImage(
-                          assetPath: p.avatar,
-                          width: 44,
-                          height: 44,
+                      const SizedBox(height: 4),
+                      Text(
+                        p.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.exo2(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: LululuColors.inkDark,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      p.name,
-                      style: GoogleFonts.exo2(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: LululuColors.inkDark,
-                      ),
-                    ),
-                    Text(
-                      context.l10n.levelShort(p.level),
-                      style: GoogleFonts.exo2(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: LululuColors.inkDark,
-                      ),
-                    ),
-                  ],
-                );
-              },
+                    ],
+                  );
+                },
+              ),
             ),
-          ),
           const Divider(height: 1),
           // Mesajlar.
           Expanded(
             child: ListView.builder(
               controller: _scroll,
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              itemCount: _messages.length,
-              itemBuilder: (context, i) =>
-                  _Bubble(msg: _messages[i]),
+              itemCount: messages.length,
+              itemBuilder: (context, i) => _Bubble(
+                msg: messages[i],
+                mine: ChatService.instance.isOwnMessage(messages[i]),
+              ),
             ),
           ),
+          // Gönderim hatası (varsa).
+          if (_sendError != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+              child: Text(
+                _sendError!,
+                style: GoogleFonts.exo2(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: LululuColors.mysticRuby,
+                ),
+              ),
+            ),
           // Yazma alanı.
           SafeArea(
             top: false,
@@ -492,28 +605,30 @@ class _ChatLobbyScreenState extends State<ChatLobbyScreen> {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.msg});
+  const _Bubble({required this.msg, required this.mine});
 
-  final _ChatMsg msg;
+  final ChatMessage msg;
+  final bool mine;
 
   @override
   Widget build(BuildContext context) {
+    final text = msg.body.isNotEmpty ? msg.body : (msg.voiceLine ?? '');
     final bubble = Container(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.72,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: msg.mine
+        color: mine
             ? LululuColors.liquidGold
             : LululuColors.paperSoft,
         borderRadius: BorderRadius.circular(18).copyWith(
           bottomRight:
-              msg.mine ? Radius.zero : const Radius.circular(18),
+              mine ? Radius.zero : const Radius.circular(18),
           bottomLeft:
-              msg.mine ? const Radius.circular(18) : Radius.zero,
+              mine ? const Radius.circular(18) : Radius.zero,
         ),
-        border: msg.mine
+        border: mine
             ? null
             : Border.all(
                 color: LululuColors.mutedTitanium
@@ -524,11 +639,11 @@ class _Bubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!msg.mine)
+          if (!mine)
             Padding(
               padding: const EdgeInsets.only(bottom: 3),
               child: Text(
-                msg.from,
+                msg.authorName,
                 style: GoogleFonts.exo2(
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
@@ -537,7 +652,7 @@ class _Bubble extends StatelessWidget {
               ),
             ),
           Text(
-            msg.text,
+            text,
             style: GoogleFonts.exo2(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -549,7 +664,7 @@ class _Bubble extends StatelessWidget {
       ),
     );
 
-    if (msg.mine) {
+    if (mine) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: Row(
@@ -565,7 +680,7 @@ class _Bubble extends StatelessWidget {
         children: [
           ClipOval(
             child: StickerImage(
-              assetPath: msg.avatar,
+              assetPath: _ChatLobbyScreenState._avatarFor(msg),
               width: 32,
               height: 32,
             ),

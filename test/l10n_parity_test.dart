@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 864 getter + 178 metot = 1042 anahtar,
+// açıkça sayılır (soyut sınıftaki 869 getter + 178 metot = 1047 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -107,6 +107,8 @@ void main() {
         'onlineModeSubtitle': l10n.onlineModeSubtitle,
         'notifyMe': l10n.notifyMe,
         'chatTitle': l10n.chatTitle,
+        'chatLobbyTitle': l10n.chatLobbyTitle,
+        'chatLobbySubtitle': l10n.chatLobbySubtitle,
         'onlineCount5': l10n.onlineCount5,
         'chatSubtitle': l10n.chatSubtitle,
         'hubTasksSubtitle': l10n.hubTasksSubtitle,
@@ -995,6 +997,8 @@ void main() {
         'onlineModeSubtitle': l10n.onlineModeSubtitle,
         'notifyMe': l10n.notifyMe,
         'chatTitle': l10n.chatTitle,
+        'chatLobbyTitle': l10n.chatLobbyTitle,
+        'chatLobbySubtitle': l10n.chatLobbySubtitle,
         'onlineCount5': l10n.onlineCount5,
         'chatSubtitle': l10n.chatSubtitle,
         'hubTasksSubtitle': l10n.hubTasksSubtitle,
@@ -2262,15 +2266,15 @@ void main() {
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 867);
-    expect(tr.length, 867);
+    expect(en.length, 869);
+    expect(tr.length, 869);
     expect(enMethods.length, 178);
     expect(trMethods.length, 178);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1045);
+    expect(en.length + enMethods.length, 1047);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });
