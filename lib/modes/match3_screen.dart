@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/global_notify.dart';
@@ -411,6 +412,27 @@ class _Match3ScreenState extends State<Match3Screen>
     return _maybeHisir(1 + _rng.nextInt(kinds));
   }
 
+  /// 12C1: adaptif zorluk — merhamette yeni taş bazen altındaki taşla
+  /// aynı gelir (daha çok eşleşme), kazanma serisinde eşleşme doğurmayan
+  /// taş tercih edilir (daha az hazır eşleşme).
+  int _rollRefill(int r, int c) {
+    final favorability = DifficultyBinding.instance
+        .cachedProfileForMode('match3')
+        .spawnFavorability;
+    if (favorability > 1.0) {
+      if (r + 1 < rows) {
+        final below = _base(_grid[r + 1][c]);
+        if (below > 0 &&
+            _rng.nextDouble() < (favorability - 1.0).clamp(0.0, 0.25)) {
+          return _maybeHisir(below);
+        }
+      }
+      return _maybeHisir(1 + _rng.nextInt(kinds));
+    }
+    if (favorability < 1.0) return _rollAvoiding(r, c);
+    return _maybeHisir(1 + _rng.nextInt(kinds));
+  }
+
   /// Yeni taş %5 Hışır derili doğar (prototip görselde asla).
   int _maybeHisir(int tier) => widget.prototypeVisualState
       ? tier
@@ -781,9 +803,7 @@ class _Match3ScreenState extends State<Match3Screen>
         write--;
       }
       for (var r = write; r >= 0; r--) {
-        _grid[r][c] = avoidRunaway
-            ? _rollAvoiding(r, c)
-            : _maybeHisir(1 + _rng.nextInt(kinds));
+        _grid[r][c] = avoidRunaway ? _rollAvoiding(r, c) : _rollRefill(r, c);
       }
     }
   }
@@ -1079,6 +1099,10 @@ class _Match3ScreenState extends State<Match3Screen>
         modeScoreId: 'match3',
         // Y3: tur-başlangıç damgası — aynı turun çift sunumu engellenir.
         idempotencyKey: 'match3:$_runStartStamp',
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          milliseconds: DateTime.now().millisecondsSinceEpoch - _runStartStamp,
+        ),
       );
     } catch (_) {
       // `finishRun` fırlatırsa sonuçsuz takılma: bayrağı düşür ki

@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/haptic_service.dart';
@@ -363,7 +364,14 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     }
     if (empties.isEmpty) return;
     final spot = empties[_rng.nextInt(empties.length)];
-    final roll = _rng.nextDouble();
+    // 12C1: adaptif zorluk — merhamette zar küçük kademeye kayar (daha
+    // çok 2, daha az 4/8), kazanma serisinde büyük kademeye kayar.
+    final roll =
+        _rng.nextDouble() *
+        (2.0 -
+            DifficultyBinding.instance
+                .cachedProfileForMode('grid2048')
+                .spawnFavorability);
     final tier = roll < 0.72
         ? 1
         : roll < 0.94
@@ -979,6 +987,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       // Y3: tur-başı damgadan üretilen tek anahtar; çift çağrı
       // (BİTİR + bitiş kenarı) ikinci kez ödeme yapamaz.
       idempotencyKey: 'grid2048:$_runStartedAt',
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+      elapsed: Duration(
+        milliseconds: DateTime.now().millisecondsSinceEpoch - _runStartedAt,
+      ),
       awaitSettle: false,
     );
     _presentingResultModal = false;

@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/haptic_service.dart';
@@ -388,7 +389,13 @@ class _StackDropScreenState extends State<StackDropScreen>
     _moverW = 150.0 * scaleW;
     _moverX = _arenaW / 2;
     _dir = 1;
-    _speed = 150;
+    // 12C1: adaptif zorluk — merhamette blok daha yavaş kayar (0.88x),
+    // kazanma serisinde hızlanır (1.35x tavan). Taban hız 150 aynen korunur.
+    _speed =
+        150 *
+        DifficultyBinding.instance
+            .cachedProfileForMode('stack')
+            .speedMultiplier;
     _fallY = 16;
     _sway = 0;
     _tier = 4;
@@ -931,6 +938,11 @@ class _StackDropScreenState extends State<StackDropScreen>
         // Y3: tur-başlangıç damgalı anahtar — aynı turun çift bitiş
         // yolu (BİTİR + ölüm kenarı) ikinci kez ödemez/göstermez.
         idempotencyKey: 'stack:$_runStartedAtEpochMs',
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          milliseconds:
+              DateTime.now().millisecondsSinceEpoch - _runStartedAtEpochMs,
+        ),
         // F2: sunum anında tur değişmişse dialog açılmadan `false` döner.
         stillValid: () => mounted && runId == _runId,
       );

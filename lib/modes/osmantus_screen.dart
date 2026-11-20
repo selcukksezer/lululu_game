@@ -11,6 +11,7 @@ import '../l10n/app_localizations.dart';
 import '../models/hisir_character.dart';
 import '../models/osmantus_cast.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/global_notify.dart';
@@ -176,10 +177,16 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   bool get _boostOn => _nowMs < _boostUntilMs;
   bool get _ringOn => _nowMs < _ringUntilMs;
 
+  // 12C1: adaptif zorluk — merhamette vuruş penceresi genişler (daha
+  // bağışlayıcı), kazanma serisinde daralır. Çarpan profilden senkron okunur.
   int get _window =>
-      OsmantusPacing.windowMs(_playMs) +
-      (_boostOn ? 60 : 0) +
-      (_ringOn ? 60 : 0);
+      ((OsmantusPacing.windowMs(_playMs) +
+                  (_boostOn ? 60 : 0) +
+                  (_ringOn ? 60 : 0)) /
+              DifficultyBinding.instance
+                  .cachedProfileForMode('osmantus')
+                  .speedMultiplier)
+          .round();
 
   bool get _tutorial => OsmantusPacing.isTutorial(_playMs);
 
@@ -333,7 +340,13 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       // kaçan vuruşları kare kare cezalandırmak yerine cezasız
       // yeniden senkronla. Normal oyunda kare başına sapma ~16 ms
       // olduğundan bu eşik asla tutmaz.
-      final interval = OsmantusPacing.intervalMs(_playMs);
+      // 12C1: adaptif zorluk — vuruş aralığı hız çarpanına bölünür
+      // (merhamette daha seyrek vuruş, seride daha sık).
+      final interval =
+          OsmantusPacing.intervalMs(_playMs) ~/
+          DifficultyBinding.instance
+              .cachedProfileForMode('osmantus')
+              .speedMultiplier;
       if (now > _beatAtMs + _window + interval) {
         _beatStartMs = now;
         _beatAtMs = now + interval;
@@ -358,7 +371,13 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   void _advanceBeat() {
-    final interval = OsmantusPacing.intervalMs(_playMs);
+    // 12C1: adaptif zorluk — vuruş aralığı hız çarpanına bölünür
+    // (merhamette daha seyrek vuruş, seride daha sık).
+    final interval =
+        OsmantusPacing.intervalMs(_playMs) ~/
+        DifficultyBinding.instance
+            .cachedProfileForMode('osmantus')
+            .speedMultiplier;
     _beatStartMs = _beatAtMs;
     _beatAtMs = _beatAtMs + interval;
     _hitThisBeat = false;
@@ -568,6 +587,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       // paylaşır, çift ödeme/gösterim engellenir.
       idempotencyKey:
           '${LeaderboardService.modeOsmantus}:$_runStartedAtUs',
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur
+      // süresi (duraklatma sayacı durdurur — kronometre esas alınır).
+      elapsed: _clock.elapsed,
     );
     if (!mounted) return;
     _resultShown = false;

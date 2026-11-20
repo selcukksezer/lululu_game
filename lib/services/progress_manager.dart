@@ -4,7 +4,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'anti_cheat_service.dart';
 import 'energy_service.dart';
+import 'game_telemetry_service.dart';
 
 class ProgressManager extends ChangeNotifier {
   static final ProgressManager _instance = ProgressManager._internal();
@@ -67,6 +69,12 @@ class ProgressManager extends ChangeNotifier {
   };
   static const String _integrityPrefKey = 'lululu_state_integrity_sig';
   static const String _integritySalt = 'LululuVaultSig_2026_v4';
+
+  /// AntiCheat HMAC durum mührü anahtarı (12C1). Mevcut FNV imzasının
+  /// YANINDA tutulur, yerine geçmez: eski imza yerinde kalır, eski
+  /// kurulumlar etkilenmez. Mühür yalnız bu sınıfın sahip olduğu
+  /// alanları kapsar (bkz. [_antiCheatStatePayload]).
+  static const String _antiCheatSigPrefKey = 'lululu_state_anticheat_sig_v1';
 
   /// [load] tarafından okunan yerel ilerleme anahtarları — "İlerlemeyi
   /// Sıfırla" (SettingsScreen.resetAll) ile aynı küme; hesap silme
@@ -935,6 +943,9 @@ class ProgressManager extends ChangeNotifier {
       _stateIntegritySig = _computeStateIntegritySig();
       await prefs.setString(_integrityPrefKey, _stateIntegritySig);
     }
+    // 12C1: AntiCheat HMAC mührünü yüklenen duruma karşı doğrula
+    // (yoksa benimse, uyuşmazsa telemetriye yaz + yeniden mühürle).
+    await _verifyAndResealAntiCheatState(prefs);
 
     _loaded = true;
     _loading = false;
@@ -1288,6 +1299,7 @@ class ProgressManager extends ChangeNotifier {
     // Y6/LWW: tier değişimi damgalanır.
     touchChangedFieldStamps();
     await persistFieldStamps();
+    await _persistAntiCheatSeal(prefs);
     notifyListeners();
     return true;
   }
@@ -1297,9 +1309,32 @@ class ProgressManager extends ChangeNotifier {
   /// Tavan, [modeScoreCeilings] tablosundan mod bazlı okunur — liderlik
   /// servisinin `submitScore` yolu aynı tabloyu kullandığı için iki depo
   /// ayrışamaz (S1#35).
-  Future<bool> recordModeScore(String modeId, int score) async {
+  ///
+  /// 12C1: yazımdan ÖNCE [AntiCheatService.validateGameScore] çalışır.
+  /// Geçersiz skor (bilinmeyen mod, negatif, tavan üstü) sessizce
+  /// reddedilir (`false` döner, kayıt yazılmaz, hata fırlatılmaz).
+  /// Bulut birleştirme yolu ([CloudSyncService]/göç) kural-doğrulanmış
+  /// uzak veriyi yazar; o yol [fromRemoteSync] ile AntiCheat kap
+  /// denetimini atlar — mutlak tavan + mod tavanı denetimi aynen kalır
+  /// (eski/uzak veri okuma yolları bilinçli olarak mutlak sınırdadır,
+  /// S1#35).
+  Future<bool> recordModeScore(
+    String modeId,
+    int score, {
+    bool fromRemoteSync = false,
+  }) async {
     final key = normalizeModeId(modeId);
     if (key.isEmpty) return false;
+    if (!fromRemoteSync) {
+      final check = AntiCheatService.instance.validateGameScore(key, score);
+      if (!check.isValid) {
+        debugPrint(
+          '[lululu] AntiCheat: recordModeScore reddedildi '
+          '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
+        );
+        return false;
+      }
+    }
     if (!isScoreValidForMode(key, score)) return false;
     final prev = modeHighScores[key] ?? 0;
     if (score <= prev) return false;
@@ -1311,6 +1346,7 @@ class ProgressManager extends ChangeNotifier {
     );
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
     notifyListeners();
     return true;
   }
@@ -1748,6 +1784,7 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setInt('LululuCoinBalance', coins);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
     notifyListeners();
   }
 
@@ -1761,6 +1798,7 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setInt('LululuCoinBalance', coins);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
     notifyListeners();
     return true;
   }
@@ -1812,6 +1850,7 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setStringList(_earnedPowersPrefKey, earned);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
     // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
     // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
     // (özellikle birleştirme/flush kritik yolunda) tek-uçuş
@@ -1854,6 +1893,98 @@ class ProgressManager extends ChangeNotifier {
     return _stateIntegritySig == _computeStateIntegritySig();
   }
 
+  /// AntiCheat HMAC mührü için durum paketi (12C1).
+  ///
+  /// Enerji bilinçli olarak 0 geçirilir: enerji [EnergyService]'e
+  /// aittir ve 5 dakikalık yenileme sayacıyla bu sınıfın kalıcı kayıt
+  /// yollarından geçmeden değişir — canlı enerji mühürlense her
+  /// yenileme sahte uyumsuzluk üretirdi. Mühür coin, rekorlar,
+  /// kademe kilitleri ve güç envanterini kapsar; enerji bu mührün
+  /// dışındadır.
+  Map<String, dynamic> _antiCheatStatePayload() {
+    var highScore = 0;
+    for (final s in modeHighScores.values) {
+      if (s > highScore) highScore = s;
+    }
+    return AntiCheatService.instance.buildStatePayload(
+      coins: coins,
+      energy: 0,
+      highScore: highScore,
+      modeHighScores: modeHighScores,
+      unlockedTiers: unlockedTiers,
+      powerCounts: extraPowers,
+    );
+  }
+
+  /// Güncel durumun HMAC mührünü kalıcı yazar. Hata fırlatmaz: mühür
+  /// yazımı oyun akışını bozamaz.
+  Future<void> _persistAntiCheatSeal([SharedPreferences? prefs]) async {
+    try {
+      final store = prefs ?? await SharedPreferences.getInstance();
+      final payload = _antiCheatStatePayload();
+      final signature = AntiCheatService.instance.computeStateSignature(
+        payload,
+      );
+      await store.setString(_antiCheatSigPrefKey, signature);
+    } catch (e) {
+      debugPrint('[lululu] AntiCheat: durum mührü yazılamadı: $e');
+    }
+  }
+
+  /// Saklı HMAC mührünü yüklenen duruma karşı doğrular (12C1).
+  ///
+  /// Mühür yoksa ilk kez mühürlenir (benimseme). Mühür uyuşmazsa veri
+  /// SİLİNMEZ: uyumsuzluk telemetriye yazılır ve güncel durum
+  /// yeniden mühürlenir (bulut birleştirme bu sınıfın kayıt yollarını
+  /// atlayarak yazabildiği için mühür bayat kalabilir — uyumsuzluk
+  /// tek başına hile kanıtı sayılmaz).
+  Future<void> _verifyAndResealAntiCheatState(SharedPreferences prefs) async {
+    try {
+      final stored = prefs.getString(_antiCheatSigPrefKey);
+      if (stored != null && stored.isNotEmpty) {
+        final payload = _antiCheatStatePayload();
+        final valid = AntiCheatService.instance.verifyStateSignature(
+          payload,
+          stored,
+        );
+        if (!valid) {
+          debugPrint(
+            '[lululu] AntiCheat: durum imzası uyuşmadı '
+            '(${AntiCheatService.instance.lastSignatureFailureReason}) — '
+            'durum korunarak yeniden mühürleniyor.',
+          );
+          GameTelemetryService.instance.recordError(
+            'state_signature_mismatch',
+            category: 'anticheat',
+            action: 'state_signature_mismatch',
+            meta: <String, Object?>{
+              'reason': AntiCheatService.instance.lastSignatureFailureReason,
+            },
+          );
+        }
+      }
+      await _persistAntiCheatSeal(prefs);
+    } catch (e) {
+      debugPrint('[lululu] AntiCheat: durum imzası doğrulanamadı: $e');
+    }
+  }
+
+  /// Saklı HMAC mührünü güncel bellek durumuna karşı doğrular
+  /// (test/diagnostik içindir; mühür yoksa `true` döner).
+  Future<bool> verifyStoredAntiCheatSignature() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString(_antiCheatSigPrefKey);
+      if (stored == null || stored.isEmpty) return true;
+      return AntiCheatService.instance.verifyStateSignature(
+        _antiCheatStatePayload(),
+        stored,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// `coins` setter'ının kalıcı kaydı (S1#36): setter senkron olduğu için
   /// kayıt olay kuyruğuna ertelenir; aynı senkron bloktaki tekrarlı
   /// atamalar tek kayıtta birleşir. Erteleme sayesinde kayıt, çağıran
@@ -1882,6 +2013,7 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setInt('LululuCoinBalance', coins);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
     // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
     // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
     // (özellikle birleştirme/flush kritik yolunda) tek-uçuş
@@ -2127,6 +2259,7 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setStringList(_earnedPowersPrefKey, earned);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
     // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
     // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
     // (özellikle birleştirme/flush kritik yolunda) tek-uçuş

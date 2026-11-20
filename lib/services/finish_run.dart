@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../screens/result_screen.dart';
 import 'achievement_pass_service.dart';
+import 'anti_cheat_service.dart';
+import 'difficulty_binding.dart';
 import 'game_telemetry_service.dart';
 import 'leaderboard_service.dart';
 import 'progress_manager.dart';
@@ -91,6 +93,8 @@ String _taskTitleFor(AppLocalizations l10n, String taskId) =>
 /// 2. İlerleme: [modeScoreId] verilirse `recordModeScore` yazılır.
 /// 3. Liderlik: [leaderboardMode] verilirse `submitScore` gönderilir;
 ///    [leaderboardOnlyIfPositiveScore] `true` ise yalnız `score > 0` iken.
+///    2. ve 3. adımlar ayrıca [AntiCheatService] kapısından geçer
+///    (12C1, aşağıda): geçersiz skor hiçbir kayda yazılmaz.
 /// 4. Görev: [recordPlayTask] `true` ise
 ///    `recordTaskProgressDetailed('play')` kaydedilir; bu çağrıyla yeni
 ///    tamamlanan görev kimliği saklanır (7. adımda bildirilir).
@@ -157,6 +161,24 @@ String _taskTitleFor(AppLocalizations l10n, String taskId) =>
 /// (playtest bulgu #2). Kazanma/kaybetme ayrımı olan modlar
 /// (Match3/Connect hedefi, can-biten modlar) açık değer geçirir.
 ///
+/// 12C1 — ANTICHEAT KAPISI: [modeScoreId] ?? [leaderboardMode] kimliğiyle
+/// skor, yerleşimden ÖNCE [AntiCheatService.validateGameScore] ile
+/// denetlenir ([elapsed] verilirse saniye başına puan hızı da
+/// denetlenir). Geçersiz skor SESSİZCE reddedilir: ödeme, mod rekoru,
+/// liderlik, başarım XP'si ve zorluk kaydı yapılmaz (coin 0 ödenir),
+/// ama sonuç ekranı aynen gösterilir ve oyun akar — hata ekranı yok,
+/// ret telemetriye yazılır. Ekranda turda görülen ham skor gösterilir
+/// (yalnız görünüm); rekor rozeti gösterilmez, en iyi skor olarak
+/// önceki rekor gösterilir.
+///
+/// 12C1 — ADAPTİF ZORLUK: geçerli turlar [DifficultyBinding.recordRun]
+/// ile kaydedilir (skor/süre/zafer → `recordMatchResult` + kalıcı
+/// profil). Mod başlangıcındaki zorluk çarpanları her mod ekranında
+/// `DifficultyBinding.cachedProfileForMode` ile uygulanır.
+///
+/// [elapsed] turun gerçek süresidir (tur-başı damgadan hesaplanır);
+/// verilmezse yalnız tavan/negatif/bilinmeyen-mod denetimi yapılır.
+///
 /// [firstClearExtras] (5B, salt-görünüm) verilirse settle tamamlandıktan
 /// sonra, gösterimden önce çağrılır ve dönen ekstralar sonuç ekranında
 /// ayrı bir bantta gösterilir. Ödeme yapmaz. Ekstralar settle özetinden
@@ -184,20 +206,53 @@ Future<bool> finishRun(
   FirstClearExtras Function()? firstClearExtras,
   // 12P: bitiş sebebi satırı; sonuç ekranının alt başlığında gösterilir.
   String? resultLine,
+  // 12C1: turun gerçek süresi (tur-başı damgadan); AntiCheat hız
+  // denetimi ve adaptif zorluk kaydı için kullanılır.
+  Duration? elapsed,
 }) async {
   final pm = ProgressManager.instance;
-  // F10-kuralı: skor > 0 ise varsayılan ödeme en az 1 coindir.
-  final effectiveCoins = coins ??
-      (score > 0 ? max(1, ResultScoring.coinsFor(score)) : 0);
-  final effectiveStars = stars ??
-      ResultScoring.starsForMode(
-        score: score,
-        modeScoreId: modeScoreId ?? '',
+  // 12C1 — AntiCheat kapısı: skor yerleşimden önce denetlenir.
+  // Kimlik yoksa denetim yapılamaz, akış eskisi gibi sürer.
+  var scoreRejected = false;
+  final validationMode = modeScoreId ?? leaderboardMode;
+  if (validationMode != null) {
+    final check = AntiCheatService.instance.validateGameScore(
+      validationMode,
+      score,
+      elapsed: elapsed,
+    );
+    if (!check.isValid) {
+      scoreRejected = true;
+      debugPrint(
+        '[lululu] AntiCheat: finishRun skoru reddedildi '
+        '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
       );
+      GameTelemetryService.instance.recordError(
+        'score_rejected',
+        category: 'anticheat',
+        action: 'score_rejected',
+        meta: <String, Object?>{
+          'mode': check.mode,
+          'reason': check.reason,
+          'score': score,
+          'source': 'finish_run',
+        },
+      );
+    }
+  }
+  // F10-kuralı: skor > 0 ise varsayılan ödeme en az 1 coindir.
+  // Reddedilen turda ödeme 0'dır (geçersiz skordan coin doğmaz).
+  final effectiveCoins = scoreRejected
+      ? 0
+      : coins ?? (score > 0 ? max(1, ResultScoring.coinsFor(score)) : 0);
+  final effectiveStars =
+      stars ??
+      ResultScoring.starsForMode(score: score, modeScoreId: modeScoreId ?? '');
   final effectiveWon = won ?? score > 0;
   // 12Q-stars: rekor rozeti yıldızdan ayrı hesaplanır.
+  // Reddedilen turda rozet gösterilmez.
   final effectiveIsNewRecord =
-      ResultScoring.isNewRecord(score: score, best: best);
+      !scoreRejected && ResultScoring.isNewRecord(score: score, best: best);
 
   // Y3: çift-kayıt koruması — anahtar ödeme öncesinde sahiplenilir.
   final explicitKey = idempotencyKey?.trim();
@@ -230,59 +285,78 @@ Future<bool> finishRun(
 
   Future<void> settleStep() async {
     try {
+      // 12C1: reddedilen tur hiçbir kalıcı kayda yazılmaz (ödeme,
+      // rekor, liderlik, başarım, zorluk). Günlük 'oyna' görevi skora
+      // bağlı değildir, aynen ilerler; sonuç ekranı yine gösterilir.
       await _runSettleStep('payment', () async {
+        if (scoreRejected) return;
         if (settle != null) {
           await settle();
         } else {
           await pm.addCoins(effectiveCoins);
         }
       });
-      if (modeScoreId != null) {
+      if (modeScoreId != null && !scoreRejected) {
         await _runSettleStep('modeScore', () async {
           await pm.recordModeScore(modeScoreId, score);
         });
       }
       if (leaderboardMode != null &&
+          !scoreRejected &&
           (!leaderboardOnlyIfPositiveScore || score > 0)) {
         await _runSettleStep('leaderboard', () async {
-          await LeaderboardService.instance.submitScore(
-            leaderboardMode,
-            score,
-          );
+          await LeaderboardService.instance.submitScore(leaderboardMode, score);
         });
       }
       if (recordPlayTask) {
         await _runSettleStep('playTask', () async {
-          newlyCompletedTasks =
-              await pm.recordTaskProgressDetailed('play');
+          newlyCompletedTasks = await pm.recordTaskProgressDetailed('play');
         });
       }
       // K1a — başarım/pass adımı (Y1 yalıtımlı): hata verse bile
       // kalan adımlar ve sonuç diyaloğu çalışır. Ödeme adımından
       // bağımsızdır; `settle` veren çağırıcılar da buradan geçer.
-      await _runSettleStep('achievements', () async {
-        final service = AchievementPassService.instance;
-        await service.ensureLoaded();
-        final modeId = modeScoreId ?? leaderboardMode;
-        if (modeId != null) {
-          await service.evaluateModeScore(modeId, score);
-        }
-        // Tur XP kuralı (K1a kararı): tur başına sabit 10 + yıldız
-        // başına 5 (yıldız 0..3 ile sınırlı → tur başına en çok 25),
-        // yalnız skor > 0 iken (0 skorlu tur XP çiftçiliği yapmaz).
-        // Emsal: kademe-1 eşiği 100 XP, kademe aralıkları 150..800 XP,
-        // başarım XP ödülleri 60..600 — tur XP'si bilinçli olarak
-        // bunların çok altında tutuldu; kademe 1 yaklaşık 5-7 skorlu
-        // turda açılır. STATUS bayrağı: kural koordinatör/Selçuk
-        // onayına açıktır.
-        if (score > 0) {
-          final starBonus = 5 * effectiveStars.clamp(0, 3);
-          await service.addSeasonXp(
-            10 + starBonus,
-            reason: 'finish_run:${modeId ?? 'unknown'}',
-          );
-        }
-      });
+      if (!scoreRejected) {
+        await _runSettleStep('achievements', () async {
+          final service = AchievementPassService.instance;
+          await service.ensureLoaded();
+          final modeId = modeScoreId ?? leaderboardMode;
+          if (modeId != null) {
+            await service.evaluateModeScore(modeId, score);
+          }
+          // Tur XP kuralı (K1a kararı): tur başına sabit 10 + yıldız
+          // başına 5 (yıldız 0..3 ile sınırlı → tur başına en çok 25),
+          // yalnız skor > 0 iken (0 skorlu tur XP çiftçiliği yapmaz).
+          // Emsal: kademe-1 eşiği 100 XP, kademe aralıkları 150..800 XP,
+          // başarım XP ödülleri 60..600 — tur XP'si bilinçli olarak
+          // bunların çok altında tutuldu; kademe 1 yaklaşık 5-7 skorlu
+          // turda açılır. STATUS bayrağı: kural koordinatör/Selçuk
+          // onayına açıktır.
+          if (score > 0) {
+            final starBonus = 5 * effectiveStars.clamp(0, 3);
+            await service.addSeasonXp(
+              10 + starBonus,
+              reason: 'finish_run:${modeId ?? 'unknown'}',
+            );
+          }
+        });
+      }
+      // 12C1 — adaptif zorluk kaydı (Y1 yalıtımlı): her geçerli tur
+      // bitişinde performans örneği kaydedilir, profil kalıcı yazılır.
+      // Reddedilen tur profili kirletmez. Kayıt hatası akışı bozamaz.
+      if (!scoreRejected) {
+        await _runSettleStep('difficulty', () async {
+          final modeId = modeScoreId ?? leaderboardMode;
+          if (modeId != null) {
+            await DifficultyBinding.instance.recordRun(
+              mode: modeId,
+              score: score,
+              won: effectiveWon,
+              elapsed: elapsed,
+            );
+          }
+        });
+      }
     } catch (error, stack) {
       // Adım yalıtımı üstündeki beklenmedik hata: sonuç diyaloğu yine
       // gösterilsin (B8); hata görünür kılınır.
@@ -316,7 +390,9 @@ Future<bool> finishRun(
     score: score,
     coins: effectiveCoins,
     stars: effectiveStars,
-    bestScore: bestScore ?? max(score, best),
+    // 12C1: reddedilen turda en iyi skor olarak önceki rekor gösterilir
+    // (kayda yazılmayan skor "en iyi" diye sunulmaz).
+    bestScore: scoreRejected ? best : (bestScore ?? max(score, best)),
     bestCombo: bestCombo ?? 0,
     merges: merges ?? 0,
     won: effectiveWon,

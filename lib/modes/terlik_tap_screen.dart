@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/haptic_service.dart';
@@ -440,7 +441,13 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
     _elapsedSeconds += dt;
     _spawnAcc += dt;
-    final spawnEvery = TerlikTapPacing.spawnInterval(_elapsedSeconds);
+    // 12C1: adaptif zorluk — merhamette doğuş aralığı uzar (daha sakin),
+    // kazanma serisinde kısalır. Çarpan profilden senkron okunur.
+    final difficultySpeed = DifficultyBinding.instance
+        .cachedProfileForMode('terlik')
+        .speedMultiplier;
+    final spawnEvery =
+        TerlikTapPacing.spawnInterval(_elapsedSeconds) / difficultySpeed;
     final maxConcurrent = _elapsedSeconds < 12 ? 3 : 4;
     if (_spawnAcc >= spawnEvery &&
         _bugs.where((bug) => !bug.smashed).length < maxConcurrent) {
@@ -516,7 +523,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       }
     }
     final holeIndex = freeHoles[_rng.nextInt(freeHoles.length)];
-    final visibleFor = TerlikTapPacing.targetVisibleSeconds(_elapsedSeconds);
+    // 12C1: adaptif zorluk — merhamette hedef daha uzun görünür.
+    final visibleFor =
+        TerlikTapPacing.targetVisibleSeconds(_elapsedSeconds) /
+        DifficultyBinding.instance
+            .cachedProfileForMode('terlik')
+            .speedMultiplier;
 
     // Skor yükselince %12 ihtimalle dokunulmaması gereken elektrik/bomba tuzağı.
     if (!widget.prototypeVisualState &&
@@ -1266,6 +1278,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       // ('terlik_tap'); Y3: anahtar tur başlangıç damgalıdır.
       modeScoreId: LeaderboardService.modeTerlik,
       idempotencyKey: _runIdempotencyKey,
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+      elapsed: Duration(
+        microseconds: DateTime.now().microsecondsSinceEpoch - _runStartStamp,
+      ),
       settle: _settleRunEconomy,
       stillValid: () => mounted && runId == _runId,
     );

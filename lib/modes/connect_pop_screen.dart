@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/global_notify.dart';
@@ -424,6 +425,34 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
       (widget.prototypeVisualState || widget.gameplayTestState)
       ? tier
       : HisirCharacter.encodeGridValue(tier, _rng);
+
+  /// 12C1: adaptif zorluk — merhamette yeni taş bazen altındaki taşla
+  /// aynı gelir (daha çok eşleşme), kazanma serisinde komşu taşlardan
+  /// farklı gelir (daha az hazır eşleşme).
+  int _rollRefill(int r, int c) {
+    final favorability = DifficultyBinding.instance
+        .cachedProfileForMode('connect')
+        .spawnFavorability;
+    if (favorability > 1.0) {
+      if (r + 1 < rows) {
+        final below = _base(_grid[r + 1][c]);
+        if (below > 0 &&
+            _rng.nextDouble() < (favorability - 1.0).clamp(0.0, 0.25)) {
+          return _maybeHisir(below);
+        }
+      }
+      return _maybeHisir(1 + _rng.nextInt(kinds));
+    }
+    if (favorability < 1.0) {
+      for (var i = 0; i < 8; i++) {
+        final tier = 1 + _rng.nextInt(kinds);
+        final below = r + 1 < rows ? _base(_grid[r + 1][c]) : 0;
+        final left = c > 0 ? _base(_grid[r][c - 1]) : 0;
+        if (tier != below && tier != left) return _maybeHisir(tier);
+      }
+    }
+    return _maybeHisir(1 + _rng.nextInt(kinds));
+  }
 
   void _fill() {
     for (var attempt = 0; attempt < 24; attempt++) {
@@ -849,7 +878,7 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
         write--;
       }
       for (var r = write; r >= 0; r--) {
-        _grid[r][c] = _maybeHisir(1 + _rng.nextInt(kinds));
+        _grid[r][c] = _rollRefill(r, c);
       }
     }
   }
@@ -1025,6 +1054,10 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
         modeScoreId: 'connect_pop',
         // Y3: tur-başlangıç damgası — aynı turun çift sunumu engellenir.
         idempotencyKey: 'connect:$_runStartStamp',
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          milliseconds: DateTime.now().millisecondsSinceEpoch - _runStartStamp,
+        ),
       );
     } catch (error) {
       // finishRun fırlatırsa sonuçsuz takılma: bayrağı düşür ki BİTİR

@@ -19,6 +19,7 @@ import 'services/campaign_progression_service.dart';
 import 'services/chat_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/daily_challenge_service.dart';
+import 'services/difficulty_binding.dart';
 import 'services/energy_service.dart';
 import 'services/firebase_bootstrap.dart';
 import 'services/firebase_options.dart';
@@ -267,6 +268,17 @@ class _BootAppState extends State<BootApp> {
     }
     try {
       await ProgressManager().load().timeout(const Duration(seconds: 3));
+      // 12C1: adaptif zorluk geçmişi PM'den sonra yüklenir (3 sn zaman
+      // aşımı — yüklenemezse tarafsız profillerle devam edilir; mod
+      // başlangıçları `DifficultyBinding.cachedProfileForMode` ile
+      // senkron okur).
+      try {
+        await DifficultyBinding.instance.ensureLoaded().timeout(
+          const Duration(seconds: 2),
+        );
+      } catch (e) {
+        debugPrint('[lululu] DDA geçmişi boot yüklemesi atlandı: $e');
+      }
       // Kampanya ilerlemesi (sandık/boss kayıtları) PM senkronu gerektirir:
       // PM yüklenmeden önce çağrılmamalı (W55-4 / R1).
       await CampaignProgressionService.instance

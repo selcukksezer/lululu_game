@@ -16,6 +16,7 @@ import '../services/adaptive_quality_scaler.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
 import '../services/campaign_progression_service.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/haptic_service.dart';
@@ -330,7 +331,12 @@ class _GameScreenState extends State<GameScreen>
 
   /// Weighted bag like classic Suika — mostly tier 1–3.
   InsectTier _rollDropTier() {
-    var r = _rng.nextDouble();
+    // 12C1: adaptif zorluk — merhamette zar küçük kademeye kayar (daha
+    // çok küçük böcek), kazanma serisinde büyük kademeye kayar.
+    final favorability = DifficultyBinding.instance
+        .cachedProfileForMode('suika')
+        .spawnFavorability;
+    var r = _rng.nextDouble() * (2.0 - favorability);
     if (widget.arcade) {
       final ramp = min(0.24, _arcadeDropCount * 0.003 + _score / 12000);
       if (r < ramp) {
@@ -939,7 +945,15 @@ class _GameScreenState extends State<GameScreen>
     }
 
     _dropTimer?.cancel();
-    _dropTimer = Timer(const Duration(milliseconds: 280), () {
+    // 12C1: adaptif zorluk — merhamette bir sonraki taş daha geç düşer
+    // (daha sakin), kazanma serisinde daha erken düşer.
+    final dropDelayMs =
+        (280 /
+                DifficultyBinding.instance
+                    .cachedProfileForMode('suika')
+                    .speedMultiplier)
+            .round();
+    _dropTimer = Timer(Duration(milliseconds: dropDelayMs), () {
       if (!mounted || gen != _dropGen) return;
       setState(() {
         _arcadeDropCount++;
@@ -1188,6 +1202,10 @@ class _GameScreenState extends State<GameScreen>
       merges: _mergeTotal,
       modeScoreId: LeaderboardService.modeSuika,
       idempotencyKey: _runIdempotencyKey,
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+      elapsed: Duration(
+        microseconds: DateTime.now().microsecondsSinceEpoch - _runStartStamp,
+      ),
       awaitSettle: false,
       // 5B: getter verilince finishRun settle'ı gösterimden önce bekler,
       // böylece özet hazır olur (awaitSettle: false korunur).
@@ -1256,6 +1274,10 @@ class _GameScreenState extends State<GameScreen>
       merges: _mergeTotal,
       modeScoreId: LeaderboardService.modeSuika,
       idempotencyKey: _runIdempotencyKey,
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+      elapsed: Duration(
+        microseconds: DateTime.now().microsecondsSinceEpoch - _runStartStamp,
+      ),
       // Yenilgi başlığı skordan bağımsızdır: pes etme / taşma / hamle
       // bitimi skor > 0 olsa da zafer başlığı göstermez (B1).
       won: false,

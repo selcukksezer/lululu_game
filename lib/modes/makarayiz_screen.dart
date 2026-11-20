@@ -689,6 +689,10 @@ class MakarayizScreenState extends State<MakarayizScreen>
         // yolları (_finishEarly + _edgeShowResult) aynı anahtarı
         // paylaşır, çift ödeme/gösterim engellenir.
         idempotencyKey: '${LeaderboardService.modeMakarayiz}:$_runStartedAtUs',
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          microseconds: DateTime.now().microsecondsSinceEpoch - _runStartedAtUs,
+        ),
       );
     } catch (_) {
       if (mounted) _resultShown = false;

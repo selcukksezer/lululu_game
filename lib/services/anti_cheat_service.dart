@@ -153,6 +153,11 @@ class AntiCheatService {
   ];
 
   /// 11 oyun modu için skor ve hız tavan politikaları.
+  /// `maxPossibleScore` değerleri `ProgressManager.modeScoreCeilings` (S1#35
+  /// tek kaynak, firestore.rules ile uyumlu) ile BİREBİR aynı olmalıdır:
+  /// daha düşük bir AntiCheat tavanı, oyunun kendi tavanına kadar meşru
+  /// skorları sessizce reddeder. Tavan değişirse iki yer birlikte güncellenir
+  /// (bkz. anticheat_binding_12c1_test.dart — tavan hizalama testi).
   static const Map<String, GameModeScorePolicy> modePolicies =
       <String, GameModeScorePolicy>{
     'suika': GameModeScorePolicy(
@@ -169,55 +174,55 @@ class AntiCheatService {
     ),
     'balloon': GameModeScorePolicy(
       modeId: 'balloon',
-      maxPossibleScore: 120000,
+      maxPossibleScore: 150000,
       maxPointsPerSecond: 900,
       minDurationSeconds: 2,
     ),
     'match3': GameModeScorePolicy(
       modeId: 'match3',
-      maxPossibleScore: 180000,
+      maxPossibleScore: 300000,
       maxPointsPerSecond: 1000,
       minDurationSeconds: 2,
     ),
     'connect': GameModeScorePolicy(
       modeId: 'connect',
-      maxPossibleScore: 160000,
+      maxPossibleScore: 250000,
       maxPointsPerSecond: 950,
       minDurationSeconds: 2,
     ),
     'stack': GameModeScorePolicy(
       modeId: 'stack',
-      maxPossibleScore: 100000,
+      maxPossibleScore: 150000,
       maxPointsPerSecond: 750,
       minDurationSeconds: 2,
     ),
     'terlikTap': GameModeScorePolicy(
       modeId: 'terlikTap',
-      maxPossibleScore: 95000,
+      maxPossibleScore: 150000,
       maxPointsPerSecond: 850,
       minDurationSeconds: 2,
     ),
     'yuvaDefense': GameModeScorePolicy(
       modeId: 'yuvaDefense',
-      maxPossibleScore: 150000,
+      maxPossibleScore: 200000,
       maxPointsPerSecond: 950,
       minDurationSeconds: 2,
     ),
     'osmantus': GameModeScorePolicy(
       modeId: 'osmantus',
-      maxPossibleScore: 140000,
+      maxPossibleScore: 200000,
       maxPointsPerSecond: 900,
       minDurationSeconds: 2,
     ),
     'screamRoach': GameModeScorePolicy(
       modeId: 'screamRoach',
-      maxPossibleScore: 110000,
+      maxPossibleScore: 150000,
       maxPointsPerSecond: 800,
       minDurationSeconds: 2,
     ),
     'makarayiz': GameModeScorePolicy(
       modeId: 'makarayiz',
-      maxPossibleScore: 130000,
+      maxPossibleScore: 200000,
       maxPointsPerSecond: 850,
       minDurationSeconds: 2,
     ),

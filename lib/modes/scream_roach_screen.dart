@@ -13,6 +13,7 @@ import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/global_notify.dart';
@@ -391,7 +392,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     // Keep the opening generous; increase gate speed only after the tutorial.
     // 12T: nitro kaydırma çarpanı 1,35'ten 1,6'ya — hız farkı artık
     // gözle görülür, kapı başına +25 skor bonusu aynen durur.
-    final scroll = (tutorial ? 72 : 104 + 86 * ramp) * (_nitro ? 1.6 : 1);
+    // 12C1: adaptif zorluk — merhamette kaydırma yavaşlar (0.88x),
+    // kazanma serisinde hızlanır (1.35x tavan).
+    final scroll =
+        (tutorial ? 72 : 104 + 86 * ramp) *
+        (_nitro ? 1.6 : 1) *
+        DifficultyBinding.instance
+            .cachedProfileForMode('scream')
+            .speedMultiplier;
     _world += scroll * dt;
 
     // A fixed gravity and impulse make each tap predictable, like Flappy.
@@ -502,7 +510,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   void _spawnGate({bool initial = false}) {
     final tutorial = _aliveFor < _tutorialSeconds;
     final ramp = ((_aliveFor - _tutorialSeconds) / 45).clamp(0.0, 1.0);
-    final gapHalf = tutorial ? 96.0 : 88.0 - ramp * 18;
+    // 12C1: adaptif zorluk — merhamette kapı aralığı genişler (daha
+    // bağışlayıcı), kazanma serisinde daralır. Öğretici aralık aynen kalır.
+    final gapHalf = tutorial
+        ? 96.0
+        : (88.0 - ramp * 18) /
+              DifficultyBinding.instance
+                  .cachedProfileForMode('scream')
+                  .speedMultiplier;
     final minC = _ceilY + gapHalf + 24;
     final maxC = _floorY - _grassH - gapHalf - 18;
     final center = minC >= maxC
@@ -834,6 +849,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         // ('scream_roach'); Y3: anahtar tur başlangıç damgalıdır.
         modeScoreId: LeaderboardService.modeScream,
         idempotencyKey: _runIdempotencyKey,
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          microseconds: DateTime.now().microsecondsSinceEpoch - _runStartStamp,
+        ),
         stillValid: () => mounted && runId == _runId,
       );
       if (runId != _runId) return;

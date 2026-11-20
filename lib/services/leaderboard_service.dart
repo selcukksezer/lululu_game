@@ -4,9 +4,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'anti_cheat_service.dart';
 import 'auth_service.dart';
 import 'cloud_sync_service.dart';
 import 'daily_challenge_service.dart';
+import 'game_telemetry_service.dart';
 import 'progress_manager.dart';
 
 enum LeaderboardCategory {
@@ -478,12 +480,47 @@ class LeaderboardService extends ChangeNotifier {
     return true;
   }
 
+  /// Skor gönderir (12C1 AntiCheat kapılı).
+  ///
+  /// Yerel oyun akışından gelen skorlar ÖNCE
+  /// [AntiCheatService.validateGameScore] ile denetlenir: geçersiz skor
+  /// sessizce reddedilir (`false` döner, tahtaya yazılmaz, hata
+  /// fırlatılmaz) ve ret telemetriye yazılır. Bulut birleştirme /
+  /// göç yolu kural-doğrulanmış uzak veriyi yazar; o yol
+  /// [fromRemoteSync] ile AntiCheat kap denetimini atlar — mutlak
+  /// tavan + mod tavanı denetimi aynen kalır (S1#35: eski/uzak veri
+  /// okuma yolları bilinçli olarak mutlak sınırdadır).
   Future<bool> submitScore(
     String modeId,
     int score, {
     String? playerName,
+    bool fromRemoteSync = false,
   }) async {
     final canonicalMode = normalizeModeId(modeId);
+    if (!fromRemoteSync) {
+      final check = AntiCheatService.instance.validateGameScore(
+        canonicalMode,
+        score,
+      );
+      if (!check.isValid) {
+        debugPrint(
+          '[lululu] AntiCheat: submitScore reddedildi '
+          '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
+        );
+        GameTelemetryService.instance.recordError(
+          'score_rejected',
+          category: 'anticheat',
+          action: 'score_rejected',
+          meta: <String, Object?>{
+            'mode': check.mode,
+            'reason': check.reason,
+            'score': score,
+            'source': 'leaderboard_submit',
+          },
+        );
+        return false;
+      }
+    }
     if (!isScoreValidForMode(canonicalMode, score)) return false;
     await ensureLoaded();
     await AuthService.instance.ensureLoaded();
@@ -548,7 +585,11 @@ class LeaderboardService extends ChangeNotifier {
     // itme kuyruğunu tetiklemez. (Yüklemedeki max-birleştirme — K2 —
     // sayesinde PM zaten tahta rekorunu bildiği için değişmeyen
     // gönderimde `recordModeScore` atlamak skor kaybına yol açmaz.)
-    await ProgressManager.instance.recordModeScore(canonicalMode, score);
+    await ProgressManager.instance.recordModeScore(
+      canonicalMode,
+      score,
+      fromRemoteSync: fromRemoteSync,
+    );
     unawaited(
       DailyChallengeService.instance.tryCompleteWithScore(canonicalMode, score),
     );

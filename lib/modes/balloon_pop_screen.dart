@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/haptic_service.dart';
@@ -409,7 +410,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       }
     }
     if (any == 0) return 1 + _rng.nextInt(kinds);
-    if (_rng.nextDouble() < 0.35) return 1 + _rng.nextInt(kinds);
+    // 12C1: adaptif zorluk — merhamette tahtada kalan renklere
+    // yönelim artar (daha çok eşleşebilir taş), kazanma serisinde
+    // rastgele pay artar (daha az eşleşebilir taş).
+    final favorability = DifficultyBinding.instance
+        .cachedProfileForMode('balloon')
+        .spawnFavorability;
+    final uniformShare = (0.35 / favorability).clamp(0.05, 0.9);
+    if (_rng.nextDouble() < uniformShare) return 1 + _rng.nextInt(kinds);
     final bag = <int>[];
     for (var k = 1; k <= kinds; k++) {
       final n = max(1, counts[k]);
@@ -1121,6 +1129,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         // Y3: tur-başlangıç damgalı anahtar — aynı turun çift bitiş
         // yolu (BİTİR + bitiş kenarı) ikinci kez ödemez/göstermez.
         idempotencyKey: 'balloon_pop:$_runStartedAtEpochMs',
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          milliseconds:
+              DateTime.now().millisecondsSinceEpoch - _runStartedAtEpochMs,
+        ),
       );
     } catch (_) {
       _resultShown = false;

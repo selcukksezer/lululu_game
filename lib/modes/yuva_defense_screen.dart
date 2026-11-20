@@ -10,6 +10,7 @@ import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
 import '../services/global_notify.dart';
@@ -422,6 +423,11 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         direction: left ? 1 : -1,
         x: spawnX,
         y: spawnY,
+        // 12C1: adaptif zorluk — merhamette böcekler yavaşlar (0.88x),
+        // kazanma serisinde hızlanır (1.35x tavan).
+        speedMultiplier: DifficultyBinding.instance
+            .cachedProfileForMode('yuva')
+            .speedMultiplier,
       ),
     );
   }
@@ -434,7 +440,11 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     final sy = (_nestCenterY + sin(theta) * r).clamp(0.08, 0.88);
     final selectedTier =
         tier ?? InsectTier.values[_random.nextInt(InsectTier.values.length)];
-    final speedMul = 0.88 + _random.nextDouble() * 0.36;
+    // 12C1: adaptif zorluk — merhamette böcekler yavaşlar (0.88x),
+    // kazanma serisinde hızlanır (1.35x tavan).
+    final speedMul =
+        (0.88 + _random.nextDouble() * 0.36) *
+        DifficultyBinding.instance.cachedProfileForMode('yuva').speedMultiplier;
     _bugs.add(
       _DefenseBug(
         id: _nextBugId++,
@@ -776,6 +786,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         // Y3: '<mod>:<tur başlangıç damgası>' — damga tur
         // başlangıcında yakalandı (`_runStartedAtMs`), bitiş anı değil.
         idempotencyKey: '${LeaderboardService.modeYuva}:$_runStartedAtMs',
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          milliseconds: DateTime.now().millisecondsSinceEpoch - _runStartedAtMs,
+        ),
       );
       if (runId != _runId) return;
       if (!mounted) return;

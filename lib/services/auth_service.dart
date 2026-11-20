@@ -1078,10 +1078,14 @@ class AuthService extends ChangeNotifier {
             pm.modeHighScores[canonical] = entry.value;
           }
           if (entry.value > LeaderboardService.instance.getBest(canonical)) {
+            // 12C1: göç birleştirme — doğrulanmış anlık görüntüden gelen
+            // uzak skor; AntiCheat kap denetimi atlanır, mutlak + mod
+            // tavanı denetimi submitScore içinde kalır.
             await LeaderboardService.instance.submitScore(
               canonical,
               entry.value,
               playerName: targetName,
+              fromRemoteSync: true,
             );
           }
         }

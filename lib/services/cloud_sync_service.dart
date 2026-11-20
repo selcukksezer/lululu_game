@@ -1685,7 +1685,10 @@ class CloudSyncService extends ChangeNotifier {
   Future<void> _mergeRemoteBest(String modeId, int safeScore) async {
     final board = LeaderboardService.instance;
     if (safeScore <= board.getBest(modeId)) return;
-    await board.submitScore(modeId, safeScore);
+    // 12C1: uzak birleştirme — skor zaten kural düzeyinde doğrulandı
+    // (`isValidScore`/`sanitizeModeScore`); AntiCheat kap denetimi
+    // atlanır, mutlak + mod tavanı denetimi submitScore içinde kalır.
+    await board.submitScore(modeId, safeScore, fromRemoteSync: true);
   }
 
   Future<void> _pullRemoteProfile(String uid) async {
