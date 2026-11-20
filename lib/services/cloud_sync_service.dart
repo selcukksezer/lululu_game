@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'achievement_pass_service.dart';
 import 'auth_service.dart';
 import 'bug_video_service.dart';
 import 'chat_service.dart';
@@ -136,6 +137,19 @@ class CloudSyncService extends ChangeNotifier {
 
   /// Rules `total11ModesScore 0..5500000`.
   static const int maxTotal11ModesScore = 5500000;
+
+  /// Dalga 2: sezon XP'si — `AchievementPassService` 0..9999999
+  /// kelepçesiyle birebir (kural allowlist'ine eklenmeden canlı yazım
+  /// reddedilir; bkz. `buildSignedProfilePayload` SIRA ŞARTI).
+  static const int maxValidSeasonXp = 9999999;
+
+  /// Dalga 2: en iyi kombo — `ProgressManager.bestCombo` 0..999999
+  /// kelepçesiyle birebir.
+  static const int maxValidBestCombo = 999999;
+
+  /// Dalga 2: kazanılan başarım kimliği listesi — en fazla 30
+  /// (tanımlı başarım sayısı, `all30Achievements`).
+  static const int maxUnlockedAchievementsEntries = 30;
 
   /// Rules `extraPowers` en fazla 40 anahtar.
   static const int maxExtraPowerEntries = 40;
@@ -453,6 +467,7 @@ class CloudSyncService extends ChangeNotifier {
   }) {
     final pm = ProgressManager();
     final board = LeaderboardService.instance;
+    final aps = AchievementPassService.instance;
     final resolvedUid = uid ?? AuthService.instance.playerId;
     final rawName = displayName ?? AuthService.instance.displayName;
     final clampedName = sanitizeDisplayName(rawName);
@@ -466,6 +481,23 @@ class CloudSyncService extends ChangeNotifier {
     final safeRaid = pm.raidCount.clamp(0, maxValidBoosterCount);
     final safeTerlik = pm.terlikCount.clamp(0, maxValidBoosterCount);
     final safeStreak = pm.streak.clamp(1, maxValidStreak);
+    // Dalga 2: sezon XP'si / kazanılan başarımlar / en iyi kombo —
+    // cihaz değişiminde kayboluyorlardı. Bilinmeyen başarım kimliği
+    // atılır (ileri uyum: yeni istemcinin kimliği eski istemcide
+    // payload'u bozmaz); liste en fazla 30 öğe, sıralı (imza kararlılığı).
+    final safeSeasonXp = aps.seasonXp.clamp(0, maxValidSeasonXp);
+    final safeBestCombo = pm.bestCombo.clamp(0, maxValidBestCombo);
+    final validAchievementIds = AchievementPassService.all30Achievements
+        .map((d) => d.id)
+        .toSet();
+    final safeAchievements = aps.unlockedAchievementIds
+        .where(validAchievementIds.contains)
+        .toList()
+      ..sort();
+    final cappedAchievements =
+        safeAchievements.length > maxUnlockedAchievementsEntries
+            ? safeAchievements.sublist(0, maxUnlockedAchievementsEntries)
+            : safeAchievements;
 
     final safeTiers = pm.unlockedTiers
         .where((t) => t >= 1 && t <= maxValidTier)
@@ -527,6 +559,10 @@ class CloudSyncService extends ChangeNotifier {
       'streak': safeStreak,
       'unlockedTiers': cappedTiers,
       'modeHighScores': safeModeScores,
+      // Dalga 2: sezon XP'si, kazanılan başarımlar, en iyi kombo.
+      'seasonXp': safeSeasonXp,
+      'unlockedAchievements': cappedAchievements,
+      'bestCombo': safeBestCombo,
       // Y6/LWW (tasarım A10 §3.2.1): alan damgaları — değerin YEREL
       // son değişim anı (flush anı değil). Damgalar bütünlük
       // imzasına dahildir (`_canonicalize` yalnız `updatedAt` /
@@ -541,6 +577,18 @@ class CloudSyncService extends ChangeNotifier {
         for (final k in safeExtraPowers.keys)
           k: pm.extraPowersUpdatedAtMs[k] ?? 0,
       },
+      // Dalga 2: sezon/başarım damgaları `AchievementPassService`'te
+      // tutulur (`progress_manager.dart` bu dalganın kapsamı dışındadır
+      // — `fieldUpdatedAtMap` kirli dosyadadır, dokunulmadı).
+      // bestCombo yalnız-büyür (max) birleşir — `modeHighScores` gibi
+      // LWW dışıdır (§3.3), damgası yoktur. SIRA ŞARTI: bu 5 yeni
+      // anahtar (`seasonXp`, `unlockedAchievements`, `bestCombo`,
+      // `seasonXpUpdatedAtMs`, `unlockedAchievementsUpdatedAtMs`)
+      // `firestore.rules` `isValidUserDoc` allowlist'ine eklenip
+      // dağıtılmadan canlı yazım kuralca reddedilir (kuyruk korunur) —
+      // önce kural dağıtılır, sonra bu istemci yayınlanır.
+      'seasonXpUpdatedAtMs': aps.seasonXpUpdatedAtMs,
+      'unlockedAchievementsUpdatedAtMs': aps.achievementsUpdatedAtMs,
     };
     payload['integrityHash'] = computeIntegrityHash(payload);
     return payload;
@@ -605,6 +653,25 @@ class CloudSyncService extends ChangeNotifier {
     checkInt('raidCount', 0, maxValidBoosterCount);
     checkInt('terlikCount', 0, maxValidBoosterCount);
     checkInt('streak', 0, maxValidStreak);
+    // Dalga 2: sezon XP'si / en iyi kombo / kazanılan başarımlar.
+    checkInt('seasonXp', 0, maxValidSeasonXp);
+    checkInt('bestCombo', 0, maxValidBestCombo);
+    final achievements = payload['unlockedAchievements'];
+    if (achievements is List) {
+      if (achievements.length > maxUnlockedAchievementsEntries) {
+        violations.add(
+          'unlockedAchievements en fazla $maxUnlockedAchievementsEntries öğe olmalı',
+        );
+      }
+      for (final id in achievements) {
+        if (id is! String || id.isEmpty) {
+          violations.add('unlockedAchievements yalnız metin kimlik içermeli');
+          break;
+        }
+      }
+    } else if (achievements != null) {
+      violations.add('unlockedAchievements liste olmalı');
+    }
     final tiers = payload['unlockedTiers'];
     if (tiers is List && tiers.length > maxUnlockedTiersEntries) {
       violations.add('unlockedTiers en fazla $maxUnlockedTiersEntries öğe olmalı');
@@ -639,6 +706,9 @@ class CloudSyncService extends ChangeNotifier {
     checkInt('streakUpdatedAtMs', 0, maxFieldStampMs);
     checkInt('unlockedTiersUpdatedAtMs', 0, maxFieldStampMs);
     checkInt('displayNameUpdatedAtMs', 0, maxFieldStampMs);
+    // Dalga 2 damgaları.
+    checkInt('seasonXpUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('unlockedAchievementsUpdatedAtMs', 0, maxFieldStampMs);
     final powerStamps = payload['extraPowersUpdatedAtMs'];
     if (powerStamps is Map) {
       if (powerStamps.length > maxExtraPowerEntries) {
@@ -787,6 +857,11 @@ class CloudSyncService extends ChangeNotifier {
   /// * `extraPowers`: anahtar başına LWW (eksik anahtar "değişim yok").
   /// * `unlockedTiers`: birleşim kalır (yalnız-eklenir küme).
   /// * `modeHighScores`: LWW DIŞI — yalnız-büyür kuralı korunur (§3.3).
+  /// * Dalga 2: `seasonXp` / `bestCombo` LWW DIŞI — yalnız-büyür
+  ///   (max); `unlockedAchievements` birleşim (union) — tek yönlü
+  ///   büyüme, damga karar verici değildir, denetim için taşınır.
+  ///   Bilinmeyen başarım kimliği atılır, birleşmeyle açılan başarımın
+  ///   ödülü tekrar verilmez.
   /// * `totalStars` / `total11ModesScore` / `bestOverallScore`:
   ///   türevdir, uzak değer okunmaz (§3.2.4).
   /// * `displayName` / `country`: AuthService'e aittir; pull'da
@@ -856,6 +931,28 @@ class CloudSyncService extends ChangeNotifier {
     if ((data.containsKey('f16Count') && f16Val == null) ||
         (data.containsKey('raidCount') && raidVal == null) ||
         (data.containsKey('terlikCount') && terlikVal == null)) {
+      return false;
+    }
+
+    // Dalga 2: sınır dışı sezon XP'si / en iyi kombo tüm snapshot'ı
+    // reddeder (coin/enerji deseni); başarım listesi gevşek okunur
+    // (tier deseni — yanlış tür sessizce atlanır).
+    final seasonXpVal = _validateBoundedInt(
+      data['seasonXp'],
+      minVal: 0,
+      maxVal: maxValidSeasonXp,
+      rejectOutOfBounds: true,
+    );
+    if (data.containsKey('seasonXp') && seasonXpVal == null) {
+      return false;
+    }
+    final bestComboVal = _validateBoundedInt(
+      data['bestCombo'],
+      minVal: 0,
+      maxVal: maxValidBestCombo,
+      rejectOutOfBounds: true,
+    );
+    if (data.containsKey('bestCombo') && bestComboVal == null) {
       return false;
     }
 
@@ -938,6 +1035,29 @@ class CloudSyncService extends ChangeNotifier {
         clamp: (v) => v.clamp(1, maxValidStreak),
         nowMs: nowMs,
       );
+    }
+
+    // Dalga 2: sezon XP'si yalnız-büyür (max), başarımlar birleşim
+    // (union), en iyi kombo yalnız-büyür (max). `applyCloudMerge`
+    // bilinmeyen kimliği atar, ödül tekrarı yapmaz; değişim yoksa
+    // yazım yapmaz. Uzak alan yoksa yerel aynen korunur.
+    if (seasonXpVal != null ||
+        data.containsKey('unlockedAchievements')) {
+      final rawAchievements = data['unlockedAchievements'];
+      final remoteIds = <String>[];
+      if (rawAchievements is Iterable) {
+        for (final id in rawAchievements) {
+          if (id is String && id.isNotEmpty) remoteIds.add(id);
+        }
+      }
+      await AchievementPassService.instance.applyCloudMerge(
+        remoteSeasonXp: seasonXpVal ?? 0,
+        remoteAchievementIds: remoteIds,
+        nowMs: nowMs,
+      );
+    }
+    if (bestComboVal != null && bestComboVal > pm.bestCombo) {
+      pm.bestCombo = bestComboVal;
     }
 
     final rawTiers = data['unlockedTiers'];
@@ -1025,6 +1145,12 @@ class CloudSyncService extends ChangeNotifier {
     await prefs.setInt('LululuCoinBalance', pm.coins);
     await prefs.setInt('lululu_unlocked_level', pm.unlockedLevel);
     await prefs.setInt('lululu_daily_streak', pm.streak);
+    // Dalga 2: bestCombo'nun PM'de toplu kayıt yolu yoktur
+    // (yalnız `recordBestCombo` yazar); birleşmiş değer doğrudan
+    // prefs'e yazılır — yukarıdaki doğrudan-yazım kuralına uyar.
+    if (data.containsKey('bestCombo')) {
+      await prefs.setInt('lululu_best_combo', pm.bestCombo);
+    }
     await prefs.setStringList(
       'lululu_unlocked_tiers',
       pm.unlockedTiers.map((e) => e.toString()).toList(),

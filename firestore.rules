@@ -181,6 +181,11 @@ service cloud.firestore {
         'streak',
         'unlockedTiers',
         'modeHighScores',
+        // Dalga 2: sezon XP'si / başarımlar / en iyi kombo (bulut
+        // senkronuna eklendi; allowlist'e girmezse flush reddedilir).
+        'seasonXp',
+        'unlockedAchievements',
+        'bestCombo',
         // Y6/LWW alan damgaları (Faz 4, 8E): istemci-ms, yalnız
         // tür/aralık denetlenir — `updatedAt == request.time` kuralı
         // yalnız belge `updatedAt`'ine uygulanır.
@@ -194,6 +199,9 @@ service cloud.firestore {
         'unlockedTiersUpdatedAtMs',
         'displayNameUpdatedAtMs',
         'extraPowersUpdatedAtMs',
+        // Dalga 2 LWW damgaları.
+        'seasonXpUpdatedAtMs',
+        'unlockedAchievementsUpdatedAtMs',
         'integrityHash',
         'role',
         'isBanned',
@@ -214,6 +222,9 @@ service cloud.firestore {
              isValidOptionalInt('totalStars', 0, 240) &&
              isValidOptionalInt('total11ModesScore', 0, 5500000) &&
              isValidOptionalInt('bestOverallScore', 0, 500000) &&
+             // Dalga 2: sezon XP'si / en iyi kombo (istemci kelepçesiyle birebir).
+             isValidOptionalInt('seasonXp', 0, 9999999) &&
+             isValidOptionalInt('bestCombo', 0, 999999) &&
              isValidOptionalInt('f16Count', 0, 9999) &&
              isValidOptionalInt('raidCount', 0, 9999) &&
              isValidOptionalInt('terlikCount', 0, 9999) &&
@@ -232,8 +243,13 @@ service cloud.firestore {
              isValidOptionalInt('streakUpdatedAtMs', 0, 9999999999999) &&
              isValidOptionalInt('unlockedTiersUpdatedAtMs', 0, 9999999999999) &&
              isValidOptionalInt('displayNameUpdatedAtMs', 0, 9999999999999) &&
+             // Dalga 2 LWW damgaları.
+             isValidOptionalInt('seasonXpUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('unlockedAchievementsUpdatedAtMs', 0, 9999999999999) &&
              (!('extraPowersUpdatedAtMs' in data) || (data.extraPowersUpdatedAtMs is map && data.extraPowersUpdatedAtMs.size() <= 40)) &&
              (!('unlockedTiers' in data) || (data.unlockedTiers is list && data.unlockedTiers.size() <= 16)) &&
+             // Dalga 2: kazanılan başarım kimlikleri, en fazla 30.
+             (!('unlockedAchievements' in data) || (data.unlockedAchievements is list && data.unlockedAchievements.size() <= 30)) &&
              (!('modeHighScores' in data) || (data.modeHighScores is map && data.modeHighScores.size() <= 16)) &&
              isValidOptionalString('integrityHash', 64, 64) &&
              (!('role' in data) || data.role == 'player') &&

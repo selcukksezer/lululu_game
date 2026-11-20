@@ -227,7 +227,17 @@ class _GuestProgressSnapshot {
 /// Sign In with Apple, Username/DisplayName updates, and session persistence
 /// (`SharedPreferences` + `FirebaseAuth`).
 class AuthService extends ChangeNotifier {
-  AuthService._();
+  AuthService._() {
+    // Firebase oturum dinleyicisi: Firebase hazır olduğu an kurulur
+    // (bkz. [_ensureAuthStateListener]); hazır olma anı
+    // [FirebaseBootstrap.availableNotifier] üzerinden izlenir.
+    FirebaseBootstrap.availableNotifier.addListener(
+      _onFirebaseAvailabilityChanged,
+    );
+    if (FirebaseBootstrap.isAvailable) {
+      _ensureAuthStateListener();
+    }
+  }
   static final AuthService instance = AuthService._();
 
   static const _sessionKey = 'LululuAuthV1';
@@ -291,6 +301,27 @@ class AuthService extends ChangeNotifier {
   bool _lastRegistrationLocalOnly = false;
   String? _lastRegistrationFirebaseError;
   final ValueNotifier<AuthUser?> userNotifier = ValueNotifier<AuthUser?>(null);
+
+  /// YALNIZCA TEST: ayarlıysa Firebase çağrıları gerçek
+  /// [fb.FirebaseAuth.instance] yerine bu örneği kullanır (fake ile
+  /// link akışı testi için). Üretimde `null` kalır.
+  @visibleForTesting
+  static fb.FirebaseAuth? firebaseAuthOverrideForTest;
+
+  /// YALNIZCA TEST: ayarlıysa [requestPasswordReset] Firebase hazır
+  /// yolunda gerçek `sendPasswordResetEmail` yerine bu göndericiyi
+  /// çağırır (hata eşlemesi testi için). Üretimde `null` kalır.
+  @visibleForTesting
+  static Future<void> Function(String email)? sendPasswordResetEmailForTest;
+
+  /// Firebase Auth durum dinleyicisi aboneliği (yalnız Firebase
+  /// hazırsa kurulur; bkz. [_ensureAuthStateListener]).
+  StreamSubscription<fb.User?>? _authStateSubscription;
+
+  /// Dinleyici bu oturumda Firebase kullanıcısı gördü mü?
+  /// Açılıştaki geçici `null` olayı (henüz geri yüklenmemiş oturum)
+  /// geçersiz sayılmaz — yalnız kullanıcı→yok geçişi misafire düşürür.
+  bool _sawFirebaseUser = false;
 
   AuthUser? get user => _user;
   AuthUser? get currentUser => _user;
@@ -368,6 +399,129 @@ class AuthService extends ChangeNotifier {
         : safe;
   }
 
+  /// Test kancası varsa onu, yoksa gerçek FirebaseAuth örneğini döner.
+  fb.FirebaseAuth get _firebaseAuth =>
+      firebaseAuthOverrideForTest ?? fb.FirebaseAuth.instance;
+
+  /// Firebase hazırsa o anki Firebase kullanıcısı, değilse `null`.
+  /// Gerçek örnek yokken (test ortamı) fırlatmaz.
+  fb.User? _currentFirebaseUser() {
+    if (!FirebaseBootstrap.ready) return null;
+    try {
+      return _firebaseAuth.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _onFirebaseAvailabilityChanged() {
+    if (FirebaseBootstrap.isAvailable) {
+      _ensureAuthStateListener();
+    } else {
+      _stopAuthStateListener();
+    }
+  }
+
+  /// Firebase Auth durum dinleyicisini kurar (tek seferlik).
+  /// Firebase hazır değilse veya akış açılamazsa sessizce kurumsuz
+  /// kalır (yerel-öncelikli kip bozulmaz).
+  void _ensureAuthStateListener() {
+    if (_authStateSubscription != null) return;
+    if (!FirebaseBootstrap.isAvailable) return;
+    try {
+      _authStateSubscription = _firebaseAuth.authStateChanges().listen(
+        _onFirebaseAuthStateChanged,
+        onError: (_) {},
+      );
+    } catch (_) {
+      _authStateSubscription = null;
+    }
+  }
+
+  void _stopAuthStateListener() {
+    unawaited(_authStateSubscription?.cancel());
+    _authStateSubscription = null;
+    _sawFirebaseUser = false;
+  }
+
+  /// YALNIZCA TEST: dinleyici aktif mi?
+  @visibleForTesting
+  bool get isAuthStateListenerActive => _authStateSubscription != null;
+
+  /// YALNIZCA TEST: dinleyiciyi durdurur (test izolasyonu).
+  @visibleForTesting
+  void stopAuthStateListenerForTest() => _stopAuthStateListener();
+
+  void _onFirebaseAuthStateChanged(fb.User? fbUser) {
+    unawaited(_handleFirebaseAuthStateChange(fbUser));
+  }
+
+  /// Firebase oturumu dışarıdan değiştiğinde (token iptali, başka
+  /// cihazda silme) uygulama oturumunu düzeltir: kayıtlı oturum
+  /// varken Firebase kullanıcısı yok olmuşsa veya başka bir
+  /// kullanıcıya dönmüşse misafir oturumuna düşülür. Misafir
+  /// oturumu ve oturumsuz hâl etkilenmez (yerel misafir sürer).
+  /// Açılıştaki ilk `null` olayı yoksayılır (oturum henüz
+  /// geri yüklenmemiş olabilir) — yalnız kullanıcı→yok geçişi
+  /// geçersiz sayılır.
+  Future<void> _handleFirebaseAuthStateChange(fb.User? fbUser) async {
+    final firebaseUid = fbUser?.uid;
+    final hadKnownUser = _sawFirebaseUser;
+    _sawFirebaseUser = firebaseUid != null;
+    final current = _user;
+    if (current == null || current.isGuest) return;
+    if (!hadKnownUser) return;
+    final invalidated =
+        firebaseUid == null ||
+            (!fbUser!.isAnonymous && firebaseUid != current.id);
+    if (!invalidated) return;
+    debugPrint(
+      '[lululu] Firebase oturumu dışarıdan geçersiz kılındı — misafire düşülüyor',
+    );
+    await _fallBackToGuest();
+  }
+
+  /// YALNIZCA TEST: dış Firebase durum değişimini doğrudan işletir
+  /// (dinleyici akışı olmadan).
+  @visibleForTesting
+  Future<void> handleFirebaseAuthStateChangeForTest(fb.User? fbUser) =>
+      _handleFirebaseAuthStateChange(fbUser);
+
+  /// Kayıtlı oturumu düşürüp kalıcı misafir oturumuna döner
+  /// (misafir kimliği korunur, yoksa güvenli rastgele üretilir).
+  Future<void> _fallBackToGuest() async {
+    final prefs = await SharedPreferences.getInstance();
+    var guestId = prefs.getString(_guestIdKey) ?? '';
+    if (guestId.isEmpty) {
+      guestId = _newGuestId();
+      await prefs.setString(_guestIdKey, guestId);
+    }
+    _setUser(
+      AuthUser(
+        id: guestId,
+        displayName: 'Misafir',
+        provider: AuthProviderKind.guest,
+        username: _normalizeUsername('Misafir'),
+      ),
+    );
+    await _persistSession();
+    // K1 (W60-6): misafire düşünce sohbet bulut dinlemesi kapatılır
+    // (eski kimlikle reddedilen okuma denemesi yapmasın).
+    ChatService.instance.refreshCloudBinding();
+    notifyListeners();
+  }
+
+  /// Yeni misafir kimliği: `guest_` + 20 kriptografik rastgele hex.
+  /// ChatService kural deseniyle (`^guest_[0-9a-f]{8,64}$`) uyumludur.
+  /// Yalnız YENİ misafirlerde üretilir; kayıtlı kimliklere dokunulmaz.
+  static String _newGuestId() {
+    final random = Random.secure();
+    const hex = '0123456789abcdef';
+    final suffix =
+        List.generate(20, (_) => hex[random.nextInt(hex.length)]).join();
+    return 'guest_$suffix';
+  }
+
   Future<void> ensureLoaded() async {
     if (_loaded) return;
     await load();
@@ -404,7 +558,7 @@ class AuthService extends ChangeNotifier {
       }
     } else if (FirebaseBootstrap.isAvailable) {
       try {
-        final fbUser = fb.FirebaseAuth.instance.currentUser;
+        final fbUser = _firebaseAuth.currentUser;
         if (fbUser != null) {
           final isAnon = fbUser.isAnonymous;
           _setUser(
@@ -1208,6 +1362,92 @@ class AuthService extends ChangeNotifier {
     );
   }
 
+  /// Şifre sıfırlama e-postası gönderir.
+  ///
+  /// Firebase hazırsa `sendPasswordResetEmail` kullanılır; hata
+  /// kodları kullanıcıya uygun iletilere çevrilir (`user-not-found`
+  /// → kayıt yok, `invalid-email` → geçersiz e-posta,
+  /// `too-many-requests` → bekleme). Firebase hazır değilse yerel
+  /// kasa denetlenir: e-posta yerelde kayıtlıysa sıfırlama için bulut
+  /// bağlantısı gerektiği söylenir, kayıtlı değilse "bulunamadı"
+  /// döner. E-posta doğrulaması [_validateEmail] ile yapılır.
+  Future<void> requestPasswordReset(String email) async {
+    _validateEmail(email);
+    final normalized = email.trim().toLowerCase();
+    await ensureLoaded();
+    if (FirebaseBootstrap.ready) {
+      try {
+        if (sendPasswordResetEmailForTest != null) {
+          await sendPasswordResetEmailForTest!(normalized);
+        } else {
+          await _firebaseAuth.sendPasswordResetEmail(email: normalized);
+        }
+        return;
+      } on fb.FirebaseAuthException catch (e) {
+        switch (e.code) {
+          case 'user-not-found':
+          case 'invalid-credential':
+            throw StateError('Bu e-posta ile kayıtlı hesap bulunamadı');
+          case 'invalid-email':
+            throw ArgumentError('Geçerli bir e-posta adresi girin');
+          case 'too-many-requests':
+            throw StateError(
+              'Çok fazla sıfırlama isteği gönderildi — lütfen daha sonra tekrar deneyin',
+            );
+          default:
+            throw StateError(
+              'Şifre sıfırlama başarısız: ${e.message ?? e.code}',
+            );
+        }
+      }
+    }
+    final knownLocally = _accounts.values.any(
+      (a) => a.email?.toLowerCase() == normalized,
+    );
+    if (!knownLocally) {
+      throw StateError('Bu e-posta ile kayıtlı hesap bulunamadı');
+    }
+    throw StateError(
+      'Şifre sıfırlama şu an kullanılamıyor — bulut bağlantısı gerekli, '
+      'internete bağlanıp tekrar deneyin',
+    );
+  }
+
+  /// Anonim Firebase oturumunu kalıcı kimlik bilgileriyle bağlar
+  /// (misafir→hesap göçünde anonim UID yetim kalmaz).
+  ///
+  /// Firebase hazır ve oturum anonimse [credential] mevcut anonim
+  /// kullanıcıya [linkWithCredential] ile bağlanır (aynı UID kalır).
+  /// Bağlama başarısız olursa (örn. kimlik bilgisi başka bir
+  /// hesapta) eski davranışa düşülür: [fallbackSignIn] çalışır,
+  /// misafir ilerlemesi uygulama-düzeyi göçle birleştirilir
+  /// ([_captureGuestProgressBeforeLink] +
+  /// [_mergeGuestProgressIntoAccount] aynen çalışır). Anonim oturum
+  /// yoksa doğrudan [fallbackSignIn] çalışır.
+  Future<fb.UserCredential> _linkOrFallbackSignIn(
+    fb.AuthCredential credential,
+    Future<fb.UserCredential> Function() fallbackSignIn,
+  ) async {
+    final current = _currentFirebaseUser();
+    if (current != null && current.isAnonymous) {
+      try {
+        return await current.linkWithCredential(credential);
+      } on fb.FirebaseAuthException catch (e) {
+        debugPrint(
+          '[lululu] Firebase link başarısız (${e.code}), girişe düşülüyor',
+        );
+      }
+    }
+    return fallbackSignIn();
+  }
+
+  /// YALNIZCA TEST: [_linkOrFallbackSignIn] akışını doğrudan işletir.
+  @visibleForTesting
+  Future<fb.UserCredential> linkOrFallbackSignInForTest(
+    fb.AuthCredential credential,
+    Future<fb.UserCredential> Function() fallbackSignIn,
+  ) => _linkOrFallbackSignIn(credential, fallbackSignIn);
+
   /// Register a durable username+password (or email+password) account
   /// (device vault + optional Firebase Auth).
   ///
@@ -1263,10 +1503,15 @@ class AuthService extends ChangeNotifier {
     await FirebaseBootstrap.ensureInitialized();
     if (FirebaseBootstrap.ready) {
       try {
-        final cred = await fb.FirebaseAuth.instance
-            .createUserWithEmailAndPassword(
-          email: resolvedEmail,
-          password: password,
+        final cred = await _linkOrFallbackSignIn(
+          fb.EmailAuthProvider.credential(
+            email: resolvedEmail,
+            password: password,
+          ),
+          () => _firebaseAuth.createUserWithEmailAndPassword(
+            email: resolvedEmail,
+            password: password,
+          ),
         );
         await cred.user?.updateDisplayName(shown);
         firebaseUid = cred.user?.uid ?? id;
@@ -1402,10 +1647,15 @@ class AuthService extends ChangeNotifier {
       await FirebaseBootstrap.ensureInitialized();
       if (FirebaseBootstrap.ready) {
         try {
-          final cred = await fb.FirebaseAuth.instance
-              .signInWithEmailAndPassword(
-            email: authEmail,
-            password: password,
+          final cred = await _linkOrFallbackSignIn(
+            fb.EmailAuthProvider.credential(
+              email: authEmail,
+              password: password,
+            ),
+            () => _firebaseAuth.signInWithEmailAndPassword(
+              email: authEmail,
+              password: password,
+            ),
           );
           final uid = cred.user?.uid;
           if (uid != null && uid.isNotEmpty) firebaseUid = uid;
@@ -1428,10 +1678,15 @@ class AuthService extends ChangeNotifier {
               (e.code == 'user-not-found' ||
                   e.code == 'invalid-credential')) {
             try {
-              final created = await fb.FirebaseAuth.instance
-                  .createUserWithEmailAndPassword(
-                email: authEmail,
-                password: password,
+              final created = await _linkOrFallbackSignIn(
+                fb.EmailAuthProvider.credential(
+                  email: authEmail,
+                  password: password,
+                ),
+                () => _firebaseAuth.createUserWithEmailAndPassword(
+                  email: authEmail,
+                  password: password,
+                ),
               );
               await created.user
                   ?.updateDisplayName(resolvedAccount.displayName);
@@ -1489,9 +1744,15 @@ class AuthService extends ChangeNotifier {
     await FirebaseBootstrap.ensureInitialized();
     if (FirebaseBootstrap.ready) {
       try {
-        final cred = await fb.FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: authEmail,
-          password: password,
+        final cred = await _linkOrFallbackSignIn(
+          fb.EmailAuthProvider.credential(
+            email: authEmail,
+            password: password,
+          ),
+          () => _firebaseAuth.signInWithEmailAndPassword(
+            email: authEmail,
+            password: password,
+          ),
         );
         final uid = cred.user?.uid ?? _stableLocalId(userKey);
         final shown = _clampDisplayName(
@@ -1551,14 +1812,14 @@ class AuthService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     var guestId = prefs.getString(_guestIdKey) ?? '';
     if (guestId.isEmpty) {
-      guestId = 'guest_${DateTime.now().millisecondsSinceEpoch}';
+      guestId = _newGuestId();
       await prefs.setString(_guestIdKey, guestId);
     }
 
     await FirebaseBootstrap.ensureInitialized();
     if (FirebaseBootstrap.ready) {
       try {
-        final cred = await fb.FirebaseAuth.instance.signInAnonymously();
+        final cred = await _firebaseAuth.signInAnonymously();
         if (cred.user?.uid != null && cred.user!.uid.isNotEmpty) {
           guestId = cred.user!.uid;
           await prefs.setString(_guestIdKey, guestId);
@@ -1673,8 +1934,10 @@ class AuthService extends ChangeNotifier {
           idToken: idToken,
           rawNonce: rawNonce,
         );
-        final cred =
-            await fb.FirebaseAuth.instance.signInWithCredential(oauth);
+        final cred = await _linkOrFallbackSignIn(
+          oauth,
+          () => _firebaseAuth.signInWithCredential(oauth),
+        );
         _setUser(
           AuthUser(
             id: cred.user?.uid ?? stableId,
@@ -1741,8 +2004,10 @@ class AuthService extends ChangeNotifier {
       if (FirebaseBootstrap.ready && idToken != null) {
         try {
           final cred = fb.GoogleAuthProvider.credential(idToken: idToken);
-          final userCred =
-              await fb.FirebaseAuth.instance.signInWithCredential(cred);
+          final userCred = await _linkOrFallbackSignIn(
+            cred,
+            () => _firebaseAuth.signInWithCredential(cred),
+          );
           final resolvedName = _clampDisplayName(
             userCred.user?.displayName ??
                 account.displayName ??
@@ -1835,7 +2100,7 @@ class AuthService extends ChangeNotifier {
     }
     if (FirebaseBootstrap.ready) {
       try {
-        await fb.FirebaseAuth.instance.currentUser
+        await _firebaseAuth.currentUser
             ?.updateDisplayName(clampedName);
       } catch (e) {
         debugPrint('[lululu] Firebase updateDisplayName error: $e');
@@ -2028,7 +2293,7 @@ class AuthService extends ChangeNotifier {
     if (!FirebaseBootstrap.ready) {
       return (attempted: false, failures: <String>[]);
     }
-    final fbUser = fb.FirebaseAuth.instance.currentUser;
+    final fbUser = _firebaseAuth.currentUser;
     if (fbUser == null) {
       return (attempted: false, failures: <String>[]);
     }
@@ -2088,7 +2353,7 @@ class AuthService extends ChangeNotifier {
   Future<void> signOut() async {
     try {
       if (FirebaseBootstrap.ready) {
-        await fb.FirebaseAuth.instance.signOut();
+        await _firebaseAuth.signOut();
       }
       if (_googleReady) {
         await GoogleSignIn.instance.signOut();

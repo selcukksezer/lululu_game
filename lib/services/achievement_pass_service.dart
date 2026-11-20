@@ -120,6 +120,10 @@ class AchievementPassService extends ChangeNotifier {
   static const String _prefClaimedGoldTiers =
       'lululu_season_claimed_gold_tiers_v1';
   static const String _prefBonusStars = 'lululu_season_bonus_stars_v1';
+  static const String _prefSeasonXpUpdatedAtMs =
+      'lululu_season_pass_xp_updated_at_ms_v1';
+  static const String _prefAchievementsUpdatedAtMs =
+      'lululu_ach_unlocked_updated_at_ms_v1';
 
   /// 5 kategori altında 30 özgün Türkçe başarım listesi.
   static const List<AchievementDefinition> all30Achievements = [
@@ -805,6 +809,15 @@ class AchievementPassService extends ChangeNotifier {
   int _seasonXp = 0;
   int get seasonXp => _seasonXp;
 
+  /// Dalga 2 / bulut senkronu: sezon XP'si ve kazanılan başarım
+  /// kümesinin yerel son değişim damgaları (istemci-ms).
+  /// `ProgressManager.fieldUpdatedAtMap` desenine uyar; damgalar
+  /// profil payload'una yazılır ve bütünlük imzasına dahildir.
+  /// Birleşme yalnız-büyür (XP) / birleşim (başarımlar) olduğu için
+  /// damga karar verici değildir — denetim + ilerideki LWW için taşınır.
+  int seasonXpUpdatedAtMs = 0;
+  int achievementsUpdatedAtMs = 0;
+
   bool _hasGoldPass = false;
   bool get hasGoldPass => _hasGoldPass;
 
@@ -940,6 +953,11 @@ class AchievementPassService extends ChangeNotifier {
         (unlockedTitles.isNotEmpty ? unlockedTitles.first : 'Yeni Böcekçi');
 
     _seasonXp = (prefs.getInt(_prefSeasonXp) ?? 0).clamp(0, 9999999);
+    seasonXpUpdatedAtMs =
+        (prefs.getInt(_prefSeasonXpUpdatedAtMs) ?? 0).clamp(0, 9999999999999);
+    achievementsUpdatedAtMs =
+        (prefs.getInt(_prefAchievementsUpdatedAtMs) ?? 0)
+            .clamp(0, 9999999999999);
     _hasGoldPass = prefs.getBool(_prefHasGoldPass) ?? false;
     _bonusStars = (prefs.getInt(_prefBonusStars) ?? 0).clamp(0, 999999);
 
@@ -969,6 +987,8 @@ class AchievementPassService extends ChangeNotifier {
     unlockedTitles.clear();
     selectedTitle = 'Yeni Böcekçi';
     _seasonXp = 0;
+    seasonXpUpdatedAtMs = 0;
+    achievementsUpdatedAtMs = 0;
     _hasGoldPass = false;
     _bonusStars = 0;
     claimedFreeTiers.clear();
@@ -981,6 +1001,8 @@ class AchievementPassService extends ChangeNotifier {
     await prefs.remove(_prefUnlockedTitles);
     await prefs.remove(_prefSelectedTitle);
     await prefs.remove(_prefSeasonXp);
+    await prefs.remove(_prefSeasonXpUpdatedAtMs);
+    await prefs.remove(_prefAchievementsUpdatedAtMs);
     await prefs.remove(_prefHasGoldPass);
     await prefs.remove(_prefClaimedFreeTiers);
     await prefs.remove(_prefClaimedGoldTiers);
@@ -1055,6 +1077,7 @@ class AchievementPassService extends ChangeNotifier {
 
     unlockedAchievementIds.add(achievementId);
     achievementProgress[achievementId] = def.targetValue;
+    achievementsUpdatedAtMs = DateTime.now().millisecondsSinceEpoch;
 
     if (def.rewardTitle.isNotEmpty) {
       unlockedTitles.add(def.rewardTitle);
@@ -1144,10 +1167,52 @@ class AchievementPassService extends ChangeNotifier {
   Future<int> addSeasonXp(int xp, {String reason = ''}) async {
     if (xp <= 0) return _seasonXp;
     _seasonXp = (_seasonXp + xp).clamp(0, 9999999);
+    seasonXpUpdatedAtMs = DateTime.now().millisecondsSinceEpoch;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_prefSeasonXp, _seasonXp);
+    await prefs.setInt(_prefSeasonXpUpdatedAtMs, seasonXpUpdatedAtMs);
     notifyListeners();
     return _seasonXp;
+  }
+
+  /// Bulut birleşmesi (Dalga 2): uzak sezon XP'si yalnız-büyür (max),
+  /// uzak başarım kimlikleri birleşim (union). Bilinmeyen kimlikler
+  /// atılır; birleşmeyle açılan başarımın ödülleri (altın/XP) TEKRAR
+  /// verilmez — ödül öbür cihazda zaten verildi. Yeni açılan başarımın
+  /// unvanı eklenir (`load()` türetmesiyle aynı) ve ilerlemesi hedefe
+  /// çekilir. Değişim olduysa ilgili damga birleşme anına ilerletilir
+  /// ve kalıcı yazılır; değişim yoksa yazım yapılmaz.
+  Future<void> applyCloudMerge({
+    required int remoteSeasonXp,
+    required Iterable<String> remoteAchievementIds,
+    int? nowMs,
+  }) async {
+    await ensureLoaded();
+    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    var changed = false;
+    final safeRemoteXp = remoteSeasonXp.clamp(0, 9999999);
+    if (safeRemoteXp > _seasonXp) {
+      _seasonXp = safeRemoteXp;
+      seasonXpUpdatedAtMs = now;
+      changed = true;
+    }
+    for (final id in remoteAchievementIds) {
+      final def = getDefinition(id);
+      if (def == null) continue;
+      if (unlockedAchievementIds.add(id)) {
+        achievementProgress[id] = def.targetValue;
+        if (def.rewardTitle.isNotEmpty) {
+          unlockedTitles.add(def.rewardTitle);
+        }
+        achievementsUpdatedAtMs = now;
+        changed = true;
+      }
+    }
+    if (changed) {
+      await _persistAchievements();
+      await _persistSeasonPass();
+      notifyListeners();
+    }
   }
 
   /// Belirtilen kademenin ödülünün talep edilip edilemeyeceğini döndürür.
@@ -1246,11 +1311,16 @@ class AchievementPassService extends ChangeNotifier {
       unlockedTitles.toList(),
     );
     await prefs.setString(_prefSelectedTitle, selectedTitle);
+    await prefs.setInt(
+      _prefAchievementsUpdatedAtMs,
+      achievementsUpdatedAtMs,
+    );
   }
 
   Future<void> _persistSeasonPass() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_prefSeasonXp, _seasonXp);
+    await prefs.setInt(_prefSeasonXpUpdatedAtMs, seasonXpUpdatedAtMs);
     await prefs.setBool(_prefHasGoldPass, _hasGoldPass);
     await prefs.setInt(_prefBonusStars, _bonusStars);
     await prefs.setStringList(
