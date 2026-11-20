@@ -16,6 +16,7 @@ import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
 import '../widgets/mode_bonus_bar.dart';
@@ -812,8 +813,12 @@ class _Match3ScreenState extends State<Match3Screen>
     }
   }
 
-  String _statsLine() =>
-      context.l10n.match3StatsLine(_mergeTotal, _maxChain, _bombsMade, _bombsFired);
+  String _statsLine() => context.l10n.match3StatsLine(
+    _mergeTotal,
+    _maxChain,
+    _bombsMade,
+    _bombsFired,
+  );
 
   Point<int>? _cellAt(Offset local, double cell, double gap) {
     final stride = cell + gap;
@@ -1248,7 +1253,10 @@ class _Match3ScreenState extends State<Match3Screen>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+                    ArcadeButton(
+                      label: context.l10n.continueAction,
+                      onPressed: _togglePause,
+                    ),
                   ],
                 ),
               ),
@@ -1361,12 +1369,16 @@ class _Match3ScreenState extends State<Match3Screen>
                             final dy = d.delta.dy;
                             if (dx.abs() < 4 && dy.abs() < 4) return;
                             if (dx.abs() >= dy.abs()) {
-                              final nc = (from.y + (dx > 0 ? 1 : -1))
-                                  .clamp(0, _cols - 1);
+                              final nc = (from.y + (dx > 0 ? 1 : -1)).clamp(
+                                0,
+                                _cols - 1,
+                              );
                               to = Point(from.x, nc);
                             } else {
-                              final nr = (from.x + (dy > 0 ? 1 : -1))
-                                  .clamp(0, rows - 1);
+                              final nr = (from.x + (dy > 0 ? 1 : -1)).clamp(
+                                0,
+                                rows - 1,
+                              );
                               to = Point(nr, from.y);
                             }
                           }
@@ -1485,10 +1497,7 @@ class _Match3ScreenState extends State<Match3Screen>
                         Shadow(color: Color(0x52FF6B35), blurRadius: 54),
                         Shadow(color: Color(0x8CFF6B35), blurRadius: 32),
                         Shadow(color: Color(0xE6FF6B35), blurRadius: 14),
-                        Shadow(
-                          color: Color(0xEB080B12),
-                          offset: Offset(0, 3),
-                        ),
+                        Shadow(color: Color(0xEB080B12), offset: Offset(0, 3)),
                       ],
                     ),
                   ),
@@ -1510,10 +1519,7 @@ class _Match3ScreenState extends State<Match3Screen>
                         Shadow(color: Color(0x52FF6B35), blurRadius: 54),
                         Shadow(color: Color(0x8CFF6B35), blurRadius: 32),
                         Shadow(color: Color(0xE6FF6B35), blurRadius: 14),
-                        Shadow(
-                          color: Color(0xEB080B12),
-                          offset: Offset(0, 3),
-                        ),
+                        Shadow(color: Color(0xEB080B12), offset: Offset(0, 3)),
                       ],
                     ),
                   ),
@@ -1538,12 +1544,13 @@ class _Match3ScreenState extends State<Match3Screen>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: (_activePowerFx == 'hammer'
-                                    ? const Color(0xFFFFD700)
-                                    : _activePowerFx == 'bomb3'
-                                    ? const Color(0xFFFF6B35)
-                                    : const Color(0xFF00E5FF))
-                                .withValues(alpha: 0.55),
+                            color:
+                                (_activePowerFx == 'hammer'
+                                        ? const Color(0xFFFFD700)
+                                        : _activePowerFx == 'bomb3'
+                                        ? const Color(0xFFFF6B35)
+                                        : const Color(0xFF00E5FF))
+                                    .withValues(alpha: 0.55),
                             blurRadius: 28,
                           ),
                         ],
@@ -1594,16 +1601,6 @@ class _Match3ScreenState extends State<Match3Screen>
         overlayWidget: overlayWidget,
       ),
     );
-  }
-
-  String _formatTrInt(int value) {
-    final s = value.abs().toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-    }
-    return value < 0 ? '-$buf' : buf.toString();
   }
 
   void _showHelpModal(BuildContext context) {
@@ -1666,7 +1663,9 @@ class _Match3ScreenState extends State<Match3Screen>
                 decoration: BoxDecoration(
                   color: const Color(0xFF0B101B),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
                 ),
                 child: Text(
                   // Statik yönerge: oyun içi durum mesajları
@@ -1733,7 +1732,10 @@ class _Match3ScreenState extends State<Match3Screen>
     final screenW = MediaQuery.sizeOf(context).width;
     final topPad = MediaQuery.paddingOf(context).top;
     final useHostTopInset = !widget.prototypeVisualState && topPad > 0;
-    final coinsText = _formatTrInt(ProgressManager().coins);
+    final coinsText = formatGroupedInt(
+      ProgressManager().coins,
+      Localizations.localeOf(context).languageCode,
+    );
     return Scaffold(
       backgroundColor: const Color(0xFF080B12),
       body: MediaQuery.withNoTextScaling(
@@ -1772,9 +1774,24 @@ class _Match3ScreenState extends State<Match3Screen>
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    ArcadeStat(label: context.l10n.gameScoreLabel, value: _formatTrInt(_score)),
-                    ArcadeStat(label: context.l10n.gameBestLabel, value: _formatTrInt(_best)),
-                    ArcadeStat(label: context.l10n.movesLabelCaps, value: '$_moves'),
+                    ArcadeStat(
+                      label: context.l10n.gameScoreLabel,
+                      value: formatGroupedInt(
+                        _score,
+                        Localizations.localeOf(context).languageCode,
+                      ),
+                    ),
+                    ArcadeStat(
+                      label: context.l10n.gameBestLabel,
+                      value: formatGroupedInt(
+                        _best,
+                        Localizations.localeOf(context).languageCode,
+                      ),
+                    ),
+                    ArcadeStat(
+                      label: context.l10n.movesLabelCaps,
+                      value: '$_moves',
+                    ),
                   ],
                 ),
               ),
@@ -1799,28 +1816,28 @@ class _Match3ScreenState extends State<Match3Screen>
                             button: true,
                             label: context.l10n.goBackLabel,
                             child: GestureDetector(
-                            onTap: () => Navigator.maybePop(context),
-                            behavior: HitTestBehavior.opaque,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xD9080B12),
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x73000000),
-                                    offset: Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              alignment: Alignment.center,
-                              child: Image.asset(
-                                'assets/icons2/back-prototype.png',
-                                width: 29,
-                                height: 29,
-                                fit: BoxFit.contain,
+                              onTap: () => Navigator.maybePop(context),
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xD9080B12),
+                                  borderRadius: BorderRadius.circular(14),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x73000000),
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                alignment: Alignment.center,
+                                child: Image.asset(
+                                  'assets/icons2/back-prototype.png',
+                                  width: 29,
+                                  height: 29,
+                                  fit: BoxFit.contain,
+                                ),
                               ),
                             ),
-                          ),
                           ),
                         ),
                         Positioned(
@@ -1942,35 +1959,35 @@ class _Match3ScreenState extends State<Match3Screen>
                             button: true,
                             label: context.l10n.helpButtonLabel,
                             child: GestureDetector(
-                            onTap: () => _showHelpModal(context),
-                            behavior: HitTestBehavior.opaque,
-                            child: Container(
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: const Color(0xDB080B12),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: const Color(0xB3FFB800),
-                                  width: 2,
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x66000000),
-                                    offset: Offset(0, 3),
+                              onTap: () => _showHelpModal(context),
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xDB080B12),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: const Color(0xB3FFB800),
+                                    width: 2,
                                   ),
-                                ],
-                              ),
-                              child: Text(
-                                '?',
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 22,
-                                  height: 1,
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFFFFB800),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x66000000),
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  '?',
+                                  style: GoogleFonts.baloo2(
+                                    fontSize: 22,
+                                    height: 1,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFFFFB800),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
                           ),
                         ),
                       ],
@@ -1989,7 +2006,10 @@ class _Match3ScreenState extends State<Match3Screen>
                           height: 51,
                           child: _buildHudStatBox(
                             label: context.l10n.gameScoreLabel,
-                            value: _formatTrInt(_score),
+                            value: formatGroupedInt(
+                              _score,
+                              Localizations.localeOf(context).languageCode,
+                            ),
                             valueDx: -1,
                           ),
                         ),
@@ -2000,7 +2020,10 @@ class _Match3ScreenState extends State<Match3Screen>
                           height: 51,
                           child: _buildHudStatBox(
                             label: context.l10n.gameBestLabel,
-                            value: _formatTrInt(_best),
+                            value: formatGroupedInt(
+                              _best,
+                              Localizations.localeOf(context).languageCode,
+                            ),
                             valueDx: -1,
                           ),
                         ),
@@ -2023,32 +2046,32 @@ class _Match3ScreenState extends State<Match3Screen>
                             button: true,
                             label: context.l10n.finishRoundLabel,
                             child: GestureDetector(
-                            onTap: _finishEarly,
-                            behavior: HitTestBehavior.opaque,
-                            child: Container(
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFB800),
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0xFFB97A00),
-                                    offset: Offset(0, 3),
+                              onTap: _finishEarly,
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFB800),
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0xFFB97A00),
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  context.l10n.finishCaps,
+                                  style: GoogleFonts.baloo2(
+                                    fontSize: 12.5,
+                                    height: 1.1,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.5,
+                                    color: const Color(0xFF4A2E00),
                                   ),
-                                ],
-                              ),
-                              child: Text(
-                                context.l10n.finishCaps,
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 12.5,
-                                  height: 1.1,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.5,
-                                  color: const Color(0xFF4A2E00),
                                 ),
                               ),
                             ),
-                          ),
                           ),
                         ),
                         // Duraklatma girişi (F3): makara deseninde başlık
@@ -2115,10 +2138,7 @@ class _Match3ScreenState extends State<Match3Screen>
                         gradient: const LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0x660E1422),
-                            Color(0x800E1422),
-                          ],
+                          colors: [Color(0x660E1422), Color(0x800E1422)],
                         ),
                         border: Border.all(
                           color: const Color(0x24FFFFFF),
@@ -2348,8 +2368,10 @@ class _Match3ScreenState extends State<Match3Screen>
         ? const Color(0xFF2A3042)
         : insect == null
         ? LululuColors.spaceNavy
-        : _prototypeTileColors[
-            (tier - 1).clamp(0, _prototypeTileColors.length - 1)];
+        : _prototypeTileColors[(tier - 1).clamp(
+            0,
+            _prototypeTileColors.length - 1,
+          )];
     return AnimatedScale(
       scale: widget.prototypeVisualState
           ? 1
@@ -2485,4 +2507,3 @@ class _CellBoxPainter extends CustomPainter {
       oldDelegate.isHinted != isHinted ||
       oldDelegate.snapToPixel != snapToPixel;
 }
-

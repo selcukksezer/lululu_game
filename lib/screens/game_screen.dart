@@ -22,6 +22,7 @@ import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import '../widgets/bonus_fx.dart';
 import '../widgets/game_arena_painter.dart';
 import 'result_screen.dart';
@@ -316,9 +317,7 @@ class _GameScreenState extends State<GameScreen>
   void _refreshBestFromServices() {
     final saved = max(
       LeaderboardService.instance.getBest(LeaderboardService.modeSuika),
-      ProgressManager.instance.getModeHighScore(
-        LeaderboardService.modeSuika,
-      ),
+      ProgressManager.instance.getModeHighScore(LeaderboardService.modeSuika),
     );
     if (mounted && saved > _bestScore) {
       setState(() => _bestScore = saved);
@@ -370,8 +369,9 @@ class _GameScreenState extends State<GameScreen>
   /// Hışır derisi görseli (`hisir_hd.png`) tier görselleriyle aynı
   /// haritaya çözülür — painter `body.isHisir` ise bu girdiyi okur.
   void _preloadHisirImage() {
-    final imgStream = const AssetImage(HisirCharacter.assetPath)
-        .resolve(ImageConfiguration.empty);
+    final imgStream = const AssetImage(
+      HisirCharacter.assetPath,
+    ).resolve(ImageConfiguration.empty);
     final listener = ImageStreamListener((ImageInfo info, bool _) {
       if (mounted) {
         setState(() {
@@ -390,8 +390,9 @@ class _GameScreenState extends State<GameScreen>
     final end = min(start + batch, tiers.length);
     for (var i = start; i < end; i++) {
       final tier = tiers[i];
-      final imgStream = AssetImage(tier.assetPath)
-          .resolve(ImageConfiguration.empty);
+      final imgStream = AssetImage(
+        tier.assetPath,
+      ).resolve(ImageConfiguration.empty);
       final listener = ImageStreamListener((ImageInfo info, bool _) {
         if (mounted) {
           setState(() {
@@ -835,10 +836,7 @@ class _GameScreenState extends State<GameScreen>
                 tierNumber: nextTier.tier,
                 comboCount: _comboCount,
               )
-            : AudioManager().playMerge(
-                tier: nextTier,
-                comboCount: _comboCount,
-              ),
+            : AudioManager().playMerge(tier: nextTier, comboCount: _comboCount),
       );
       // 10D: kombo≥3 ağırlaştırması kaldırıldı — playMerge zaten
       // onMerge(tier, combo) ile kombo≥3'te ağır titreşim verir
@@ -1713,7 +1711,10 @@ class _GameScreenState extends State<GameScreen>
                 ),
                 const SizedBox(width: 6),
                 Image.asset(
-                  HisirCharacter.assetFor(isHisir: _nextDropperIsHisir, tier: _nextDropperTier),
+                  HisirCharacter.assetFor(
+                    isHisir: _nextDropperIsHisir,
+                    tier: _nextDropperTier,
+                  ),
                   width: 34,
                   height: 34,
                   fit: BoxFit.contain,
@@ -1794,13 +1795,16 @@ class _GameScreenState extends State<GameScreen>
         const SizedBox(width: 8),
         _buildArcadeScoreBox(
           context.l10n.gameScoreLabel,
-          _formatArcadeScore(_score),
+          formatGroupedInt(
+            _score,
+            Localizations.localeOf(context).languageCode,
+          ),
           104,
         ),
         const SizedBox(width: 8),
         _buildArcadeScoreBox(
           context.l10n.gameBestLabel,
-          _formatArcadeScore(best),
+          formatGroupedInt(best, Localizations.localeOf(context).languageCode),
           84,
         ),
         const Spacer(),
@@ -1836,7 +1840,10 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
               Image.asset(
-                HisirCharacter.assetFor(isHisir: _nextDropperIsHisir, tier: _nextDropperTier),
+                HisirCharacter.assetFor(
+                  isHisir: _nextDropperIsHisir,
+                  tier: _nextDropperTier,
+                ),
                 width: 19.3,
                 height: 38,
                 fit: BoxFit.contain,
@@ -1953,14 +1960,6 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  String _formatArcadeScore(int score) {
-    final digits = score.toString().split('');
-    for (var index = digits.length - 3; index > 0; index -= 3) {
-      digits.insert(index, '.');
-    }
-    return digits.join();
-  }
-
   Widget _buildCompactGameHud() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
@@ -2041,7 +2040,10 @@ class _GameScreenState extends State<GameScreen>
                   ),
                   const SizedBox(width: 3),
                   Image.asset(
-                    HisirCharacter.assetFor(isHisir: _nextDropperIsHisir, tier: _nextDropperTier),
+                    HisirCharacter.assetFor(
+                      isHisir: _nextDropperIsHisir,
+                      tier: _nextDropperTier,
+                    ),
                     width: 26,
                     height: 26,
                     fit: BoxFit.contain,

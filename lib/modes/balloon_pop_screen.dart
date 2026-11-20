@@ -16,6 +16,7 @@ import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
 
@@ -99,9 +100,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _current = _next;
     _currentIsHisir = _nextIsHisir;
     _next = _rollColor();
-    _nextIsHisir =
-        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+    _nextIsHisir = !widget.prototypeVisualState && HisirCharacter.roll(_rng);
   }
+
   bool _flying = false;
   bool _over = false;
   bool _resultShown = false;
@@ -390,11 +391,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       if (_firstGroup() == null) break;
     }
     _current = _rollColor();
-    _currentIsHisir =
-        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+    _currentIsHisir = !widget.prototypeVisualState && HisirCharacter.roll(_rng);
     _next = _rollColor();
-    _nextIsHisir =
-        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+    _nextIsHisir = !widget.prototypeVisualState && HisirCharacter.roll(_rng);
   }
 
   /// Bias toward colors still on the board (classic Puzzle Bobble feel).
@@ -782,7 +781,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     final tier = _base(rawTier);
     final group = _flood(r, c, tier);
     if (group.length < minPop) return 0;
-    if (group.any((cell) => HisirCharacter.isEncoded(_grid[cell.$1][cell.$2]))) {
+    if (group.any(
+      (cell) => HisirCharacter.isEncoded(_grid[cell.$1][cell.$2]),
+    )) {
       _lastPopHadHisir = true;
     }
     final hex = _hex;
@@ -1639,16 +1640,6 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     );
   }
 
-  static String _fmtDot(int v) {
-    final s = v.abs().toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-    }
-    return v < 0 ? '-$buf' : buf.toString();
-  }
-
   Widget _scaleBand(double screenW, double height, Widget child) {
     if ((screenW - 430.0).abs() < 0.5) {
       return SizedBox(width: 430, height: height, child: child);
@@ -1673,7 +1664,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     final useHostTopInset = !widget.prototypeVisualState && topPad > 0;
     final coinsText = widget.prototypeVisualState
         ? '12.450'
-        : _fmtDot(ProgressManager().coins);
+        : formatGroupedInt(
+            ProgressManager().coins,
+            Localizations.localeOf(context).languageCode,
+          );
     // Statik arka plan: kare bildiriminde yeniden kurulmaz --
     // [ValueListenableBuilder] `child` olarak bir kez kurulur.
     final background = Stack(
@@ -2010,7 +2004,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                             height: 41.0,
                             child: _buildHudStatBox(
                               label: context.l10n.gameScoreLabel,
-                              value: _fmtDot(_score),
+                              value: formatGroupedInt(
+                                _score,
+                                Localizations.localeOf(context).languageCode,
+                              ),
                             ),
                           ),
                           Positioned(
@@ -2020,7 +2017,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                             height: 41.0,
                             child: _buildHudStatBox(
                               label: context.l10n.gameBestLabel,
-                              value: _fmtDot(_best),
+                              value: formatGroupedInt(
+                                _best,
+                                Localizations.localeOf(context).languageCode,
+                              ),
                             ),
                           ),
                           Positioned(

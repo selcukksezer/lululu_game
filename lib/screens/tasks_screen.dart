@@ -7,6 +7,7 @@ import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
 import '../services/energy_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/coin_fly.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
@@ -90,18 +91,6 @@ class _TasksScreenState extends State<TasksScreen> {
   /// ile tetiklenirse null kalır, uçuş ekran ortasından kalkar).
   Offset? _lastClaimTap;
 
-  static String _formatDots(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
-
   @override
   void initState() {
     super.initState();
@@ -133,14 +122,14 @@ class _TasksScreenState extends State<TasksScreen> {
     final pm = ProgressManager.instance;
     var changed = false;
     for (final t in _tasks) {
-      final pVal = pm.dailyTaskProgress[t.pmKey] ??
-          pm.dailyTaskProgress[t.id] ??
-          0;
+      final pVal =
+          pm.dailyTaskProgress[t.pmKey] ?? pm.dailyTaskProgress[t.id] ?? 0;
       if (pVal > t.cur) {
         t.cur = pVal;
         changed = true;
       }
-      final cVal = pm.claimedDailyTasks.contains(t.pmKey) ||
+      final cVal =
+          pm.claimedDailyTasks.contains(t.pmKey) ||
           pm.claimedDailyTasks.contains(t.id);
       if (cVal && !t.claimed) {
         t.claimed = true;
@@ -169,9 +158,9 @@ class _TasksScreenState extends State<TasksScreen> {
     );
     if (!context.mounted) return;
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.errorGeneric)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.errorGeneric)));
       return;
     }
     if (!mounted) return;
@@ -185,7 +174,8 @@ class _TasksScreenState extends State<TasksScreen> {
       _trackCoinFlight(
         CoinFlyService.instance.fly(
           context: context,
-          from: _lastClaimTap ??
+          from:
+              _lastClaimTap ??
               Offset(
                 MediaQuery.sizeOf(context).width / 2,
                 MediaQuery.sizeOf(context).height / 2,
@@ -223,9 +213,9 @@ class _TasksScreenState extends State<TasksScreen> {
     if (!mounted) return;
     setState(() => _dailyChallengeClaiming = false);
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.errorGeneric)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.errorGeneric)));
       return;
     }
     // 12N: günlük challenge coin ödülü de düğmeden üst bara uçar.
@@ -233,7 +223,8 @@ class _TasksScreenState extends State<TasksScreen> {
       _trackCoinFlight(
         CoinFlyService.instance.fly(
           context: context,
-          from: _lastClaimTap ??
+          from:
+              _lastClaimTap ??
               Offset(
                 MediaQuery.sizeOf(context).width / 2,
                 MediaQuery.sizeOf(context).height / 2,
@@ -244,9 +235,7 @@ class _TasksScreenState extends State<TasksScreen> {
     }
     AudioManager().playVictorySfx(includeVoice: false);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.l10n.dailyChallengeClaimedSnack(reward)),
-      ),
+      SnackBar(content: Text(context.l10n.dailyChallengeClaimedSnack(reward))),
     );
   }
 
@@ -281,10 +270,11 @@ class _TasksScreenState extends State<TasksScreen> {
         final l10n = context.l10n;
         // 12N: uçuş sürerken başlıktaki sayı artmaz (bekleyen tutar düşülür).
         final rawCoins = ProgressManager.instance.coins;
-        final displayCoins =
-            rawCoins - CoinFlyService.instance.pendingCoins;
-        final coinsText =
-            _formatDots(displayCoins < 0 ? 0 : displayCoins);
+        final displayCoins = rawCoins - CoinFlyService.instance.pendingCoins;
+        final coinsText = formatGroupedInt(
+          displayCoins < 0 ? 0 : displayCoins,
+          Localizations.localeOf(context).languageCode,
+        );
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F6FA),
@@ -306,31 +296,33 @@ class _TasksScreenState extends State<TasksScreen> {
                             button: true,
                             label: l10n.goBackLabel,
                             child: GestureDetector(
-                            onTap: widget.onClose ??
-                                () => Navigator.of(context).maybePop(),
-                            child: Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x1A141B2A),
-                                    offset: Offset(0, 4),
-                                    blurRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              alignment: Alignment.center,
-                              child: Image.asset(
-                                'assets/icons2/back.png',
-                                width: 29,
-                                height: 29,
-                                fit: BoxFit.contain,
+                              onTap:
+                                  widget.onClose ??
+                                  () => Navigator.of(context).maybePop(),
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x1A141B2A),
+                                      offset: Offset(0, 4),
+                                      blurRadius: 0,
+                                    ),
+                                  ],
+                                ),
+                                alignment: Alignment.center,
+                                child: Image.asset(
+                                  'assets/icons2/back.png',
+                                  width: 29,
+                                  height: 29,
+                                  fit: BoxFit.contain,
+                                ),
                               ),
                             ),
-                          )),
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Transform.translate(
@@ -365,63 +357,63 @@ class _TasksScreenState extends State<TasksScreen> {
                           // 12N: başlık coin hapı uçuş hedefi + varış "pop"u.
                           CoinFlyPop(
                             child: Container(
-                            height: 35,
-                            padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF33363C),
-                              borderRadius: BorderRadius.circular(999),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x59000000),
-                                  offset: Offset(0, 3),
-                                  blurRadius: 0,
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                CoinFlyTarget(
-                                  child: Image.asset(
-                                  'assets/icons2/coin.png',
-                                  width: 25,
-                                  height: 25,
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.medium,
+                              height: 35,
+                              padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF33363C),
+                                borderRadius: BorderRadius.circular(999),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x59000000),
+                                    offset: Offset(0, 3),
+                                    blurRadius: 0,
                                   ),
-                                ),
-                                const SizedBox(width: 6),
-                                // Sabit genişlik yok: metin doğal
-                                // genişliğinde, sığmazsa küçülerek sığar.
-                                Flexible(
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: Alignment.centerLeft,
-                                    child: Transform.translate(
-                                      offset: const Offset(0, -0.5),
-                                      child: Transform.scale(
-                                        alignment: Alignment.centerLeft,
-                                        scaleX: 0.96,
-                                        scaleY: 1.0,
-                                        child: Text(
-                                          coinsText,
-                                          maxLines: 1,
-                                          softWrap: false,
-                                          style: const TextStyle(
-                                            fontFamily: 'Nunito',
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.w900,
-                                            color: Colors.white,
-                                            height: 1.55,
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  CoinFlyTarget(
+                                    child: Image.asset(
+                                      'assets/icons2/coin.png',
+                                      width: 25,
+                                      height: 25,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.medium,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  // Sabit genişlik yok: metin doğal
+                                  // genişliğinde, sığmazsa küçülerek sığar.
+                                  Flexible(
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Transform.translate(
+                                        offset: const Offset(0, -0.5),
+                                        child: Transform.scale(
+                                          alignment: Alignment.centerLeft,
+                                          scaleX: 0.96,
+                                          scaleY: 1.0,
+                                          child: Text(
+                                            coinsText,
+                                            maxLines: 1,
+                                            softWrap: false,
+                                            style: const TextStyle(
+                                              fontFamily: 'Nunito',
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.white,
+                                              height: 1.55,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -441,8 +433,12 @@ class _TasksScreenState extends State<TasksScreen> {
                               _buildTaskCard(context, l10n, _tasks[0]),
                               // .tasks-hero (x=12, y=105.4, w=406, h=123.1, margin: 10px 12px 2px)
                               Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  10,
+                                  12,
+                                  0,
+                                ),
                                 child: CustomPaint(
                                   painter: const _TasksBlurShadowPainter(
                                     color: Color(0x47E01E5A),
@@ -482,16 +478,15 @@ class _TasksScreenState extends State<TasksScreen> {
                                                   child: ImageFiltered(
                                                     imageFilter:
                                                         ui.ImageFilter.blur(
-                                                      sigmaX: 3.0,
-                                                      sigmaY: 3.0,
-                                                    ),
+                                                          sigmaX: 3.0,
+                                                          sigmaY: 3.0,
+                                                        ),
                                                     child: ColorFiltered(
                                                       colorFilter:
-                                                          const ColorFilter
-                                                              .mode(
-                                                        Color(0x4D000000),
-                                                        BlendMode.srcIn,
-                                                      ),
+                                                          const ColorFilter.mode(
+                                                            Color(0x4D000000),
+                                                            BlendMode.srcIn,
+                                                          ),
                                                       child: Image.asset(
                                                         'assets/icons2/gift_box.png',
                                                         width: 58,
@@ -566,7 +561,8 @@ class _TasksScreenState extends State<TasksScreen> {
                                                                   FontWeight
                                                                       .w700,
                                                               color: Color(
-                                                                  0xEBFFFFFF),
+                                                                0xEBFFFFFF,
+                                                              ),
                                                               height: 1.55,
                                                             ),
                                                           ),
@@ -575,8 +571,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                                           maxWidth: 320,
                                                           alignment: Alignment
                                                               .centerLeft,
-                                                          child:
-                                                              Transform.scale(
+                                                          child: Transform.scale(
                                                             alignment: Alignment
                                                                 .centerLeft,
                                                             scaleX: 0.96,
@@ -593,7 +588,8 @@ class _TasksScreenState extends State<TasksScreen> {
                                                                     FontWeight
                                                                         .w700,
                                                                 color: Color(
-                                                                    0xEBFFFFFF),
+                                                                  0xEBFFFFFF,
+                                                                ),
                                                                 height: 1.55,
                                                               ),
                                                             ),
@@ -633,9 +629,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                   height: 1.55,
                                 ),
                                 children: [
-                                  TextSpan(
-                                    text: l10n.tasksNotePrefix,
-                                  ),
+                                  TextSpan(text: l10n.tasksNotePrefix),
                                   TextSpan(
                                     text: l10n.claimReward,
                                     style: TextStyle(
@@ -646,9 +640,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                       height: 1.55,
                                     ),
                                   ),
-                                  TextSpan(
-                                    text: l10n.tasksNoteSuffix,
-                                  ),
+                                  TextSpan(text: l10n.tasksNoteSuffix),
                                 ],
                               ),
                             ),
@@ -682,19 +674,18 @@ class _TasksScreenState extends State<TasksScreen> {
   // Görev başlığı/ödülü BuildContext gerektirdiği için _TaskItem
   // alanında tutulamaz; id + ödül bilgisinden üretim anında çözülür.
   // Başlık anahtarları ana sayfa görev özetiyle ortaktır (tek kaynak).
-  String _taskTitle(AppLocalizations l10n, _TaskItem task) =>
-      switch (task.id) {
-        'play3' => l10n.taskPlay3Games,
-        'merge5' => l10n.taskMerge5,
-        'watch1' => l10n.taskWatch1Video,
-        'combo4' => l10n.taskCombo4,
-        _ => task.id,
-      };
+  String _taskTitle(AppLocalizations l10n, _TaskItem task) => switch (task.id) {
+    'play3' => l10n.taskPlay3Games,
+    'merge5' => l10n.taskMerge5,
+    'watch1' => l10n.taskWatch1Video,
+    'combo4' => l10n.taskCombo4,
+    _ => task.id,
+  };
 
   String _taskRewardText(AppLocalizations l10n, _TaskItem task) =>
       task.rewardType == 'energy'
-          ? l10n.rewardEnergy(task.rewardAmount)
-          : l10n.rewardCoins(task.rewardAmount);
+      ? l10n.rewardEnergy(task.rewardAmount)
+      : l10n.rewardCoins(task.rewardAmount);
 
   Widget _buildTaskCard(
     BuildContext context,
@@ -819,11 +810,11 @@ class _TasksScreenState extends State<TasksScreen> {
                                       rewardText,
                                       textHeightBehavior:
                                           const TextHeightBehavior(
-                                        applyHeightToFirstAscent: true,
-                                        applyHeightToLastDescent: true,
-                                        leadingDistribution:
-                                            TextLeadingDistribution.even,
-                                      ),
+                                            applyHeightToFirstAscent: true,
+                                            applyHeightToLastDescent: true,
+                                            leadingDistribution:
+                                                TextLeadingDistribution.even,
+                                          ),
                                       style: TextStyle(
                                         fontFamily: 'Nunito',
                                         fontSize: 12.5,
@@ -868,45 +859,43 @@ class _TasksScreenState extends State<TasksScreen> {
                       button: true,
                       label: l10n.claimTaskLabel(title, rewardText),
                       child: GestureDetector(
-                      // 12N: uçuş kalkış noktası (dokunma konumu).
-                      onTapDown: (d) => _lastClaimTap = d.globalPosition,
-                      onTap: () {
-                        _claimTask(context, t);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0xFF37E08B),
-                              Color(0xFF12B76A),
+                        // 12N: uçuş kalkış noktası (dokunma konumu).
+                        onTapDown: (d) => _lastClaimTap = d.globalPosition,
+                        onTap: () {
+                          _claimTask(context, t);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Color(0xFF37E08B), Color(0xFF12B76A)],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0xFF066C3C),
+                                offset: Offset(0, 3),
+                                blurRadius: 0,
+                              ),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0xFF066C3C),
-                              offset: Offset(0, 3),
-                              blurRadius: 0,
+                          child: Text(
+                            l10n.claimReward,
+                            style: TextStyle(
+                              fontFamily: 'Baloo 2',
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
                             ),
-                          ],
-                        ),
-                        child: Text(
-                          l10n.claimReward,
-                          style: TextStyle(
-                            fontFamily: 'Baloo 2',
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
                           ),
                         ),
                       ),
-                    ))
+                    )
                   else
                     RichText(
                       text: TextSpan(
@@ -1134,10 +1123,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           gradient: const LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0xFF37E08B),
-                              Color(0xFF12B76A),
-                            ],
+                            colors: [Color(0xFF37E08B), Color(0xFF12B76A)],
                           ),
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: const [
@@ -1286,12 +1272,12 @@ class _TasksFloatingDock extends StatelessWidget {
       };
 
   static String _icon(LululuDockTab tab) => switch (tab) {
-        LululuDockTab.home => 'assets/icons2/home.png',
-        LululuDockTab.modes => 'assets/icons2/target.png',
-        LululuDockTab.family => 'assets/icons2/paw.png',
-        LululuDockTab.shop => 'assets/icons2/cart.png',
-        LululuDockTab.scores => 'assets/icons2/trophy.png',
-      };
+    LululuDockTab.home => 'assets/icons2/home.png',
+    LululuDockTab.modes => 'assets/icons2/target.png',
+    LululuDockTab.family => 'assets/icons2/paw.png',
+    LululuDockTab.shop => 'assets/icons2/cart.png',
+    LululuDockTab.scores => 'assets/icons2/trophy.png',
+  };
 
   static Widget _buildIconWithDropShadow(String asset, double size) {
     return SizedBox(
@@ -1320,12 +1306,7 @@ class _TasksFloatingDock extends StatelessWidget {
               ),
             ),
           ),
-          Image.asset(
-            asset,
-            width: size,
-            height: size,
-            fit: BoxFit.contain,
-          ),
+          Image.asset(asset, width: size, height: size, fit: BoxFit.contain),
         ],
       ),
     );
@@ -1350,10 +1331,7 @@ class _TasksFloatingDock extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             stops: [0.0, 0.72],
-            colors: [
-              Color(0xFF1E2538),
-              Color(0xFF080B12),
-            ],
+            colors: [Color(0xFF1E2538), Color(0xFF080B12)],
           ),
           boxShadow: const [
             BoxShadow(
@@ -1367,17 +1345,17 @@ class _TasksFloatingDock extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final usableWidth =
-                  (constraints.maxWidth - 14.0).clamp(100.0, 410.0);
+              final usableWidth = (constraints.maxWidth - 14.0).clamp(
+                100.0,
+                410.0,
+              );
               final tabWidth = usableWidth / _tabs.length;
 
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
                   const Positioned.fill(
-                    child: CustomPaint(
-                      painter: _TasksDockSurfacePainter(),
-                    ),
+                    child: CustomPaint(painter: _TasksDockSurfacePainter()),
                   ),
                   Positioned(
                     left: 26,
@@ -1474,44 +1452,92 @@ class _TasksFloatingDock extends StatelessWidget {
                               label: _label(l10n, tab),
                               selected: tab == activeTab,
                               child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => onSelectTab(tab),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: Colors.transparent,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: SizedBox(
-                                  height: 64,
-                                  child: Stack(
-                                    clipBehavior: Clip.none,
-                                    alignment: Alignment.topCenter,
-                                    children: [
-                                      if (tab == activeTab)
-                                        Positioned(
-                                          top: 1.8,
-                                          width: 42.4,
-                                          height: 42.4,
-                                          child: CustomPaint(
-                                            painter:
-                                                const _TasksBlurShadowPainter(
-                                              color: Color(0x3D000000),
-                                              offset: Offset(0, 7),
-                                              blurRadius: 12,
-                                              borderRadius: 999,
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => onSelectTab(tab),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.transparent,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: SizedBox(
+                                    height: 64,
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      alignment: Alignment.topCenter,
+                                      children: [
+                                        if (tab == activeTab)
+                                          Positioned(
+                                            top: 1.8,
+                                            width: 42.4,
+                                            height: 42.4,
+                                            child: CustomPaint(
+                                              painter:
+                                                  const _TasksBlurShadowPainter(
+                                                    color: Color(0x3D000000),
+                                                    offset: Offset(0, 7),
+                                                    blurRadius: 12,
+                                                    borderRadius: 999,
+                                                  ),
+                                              child: Container(
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: Colors.white,
+                                                  border: Border.all(
+                                                    color: Colors.white,
+                                                    width: 2,
+                                                  ),
+                                                  boxShadow: const [
+                                                    BoxShadow(
+                                                      color: Color(0x597A082E),
+                                                      offset: Offset(0, 4),
+                                                      blurRadius: 0,
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: ClipOval(
+                                                  child: Stack(
+                                                    alignment: Alignment.center,
+                                                    children: [
+                                                      const Positioned.fill(
+                                                        child: CustomPaint(
+                                                          painter:
+                                                              _TasksDockCircleInsetPainter(
+                                                                dy: -4.24,
+                                                                color: Color(
+                                                                  0x1F080B12,
+                                                                ),
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      _buildIconWithDropShadow(
+                                                        _icon(tab),
+                                                        35,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
                                             ),
+                                          )
+                                        else
+                                          Positioned(
+                                            top: 7.0,
+                                            width: 40.0,
+                                            height: 40.0,
                                             child: Container(
                                               decoration: BoxDecoration(
                                                 shape: BoxShape.circle,
-                                                color: Colors.white,
+                                                color: const Color(0x17FFFFFF),
                                                 border: Border.all(
-                                                  color: Colors.white,
+                                                  color: const Color(
+                                                    0x2EFFFFFF,
+                                                  ),
                                                   width: 2,
                                                 ),
                                                 boxShadow: const [
                                                   BoxShadow(
-                                                    color: Color(0x597A082E),
-                                                    offset: Offset(0, 4),
+                                                    color: Color(0x4D000000),
+                                                    offset: Offset(0, 3),
                                                     blurRadius: 0,
                                                   ),
                                                 ],
@@ -1524,110 +1550,70 @@ class _TasksFloatingDock extends StatelessWidget {
                                                       child: CustomPaint(
                                                         painter:
                                                             _TasksDockCircleInsetPainter(
-                                                          dy: -4.24,
-                                                          color:
-                                                              Color(0x1F080B12),
-                                                        ),
+                                                              dy: 2.0,
+                                                              color: Color(
+                                                                0x29FFFFFF,
+                                                              ),
+                                                            ),
                                                       ),
                                                     ),
                                                     _buildIconWithDropShadow(
                                                       _icon(tab),
-                                                      35,
+                                                      33,
                                                     ),
                                                   ],
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        )
-                                    else
-                                      Positioned(
-                                        top: 7.0,
-                                        width: 40.0,
-                                        height: 40.0,
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: const Color(0x17FFFFFF),
-                                            border: Border.all(
-                                              color: const Color(0x2EFFFFFF),
-                                              width: 2,
-                                            ),
-                                            boxShadow: const [
-                                              BoxShadow(
-                                                color: Color(0x4D000000),
-                                                offset: Offset(0, 3),
-                                                blurRadius: 0,
+                                        Positioned(
+                                          left: 0,
+                                          right: 0,
+                                          top: 46.0,
+                                          height: 16.0,
+                                          child: Center(
+                                            child: Text(
+                                              _label(l10n, tab),
+                                              maxLines: 1,
+                                              style: TextStyle(
+                                                fontFamily: 'Baloo 2',
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                height: 1.0,
+                                                letterSpacing: 0,
+                                                color: tab == activeTab
+                                                    ? Colors.white
+                                                    : const Color(0xA8FFFFFF),
+                                                shadows: tab == activeTab
+                                                    ? const [
+                                                        Shadow(
+                                                          color: Color(
+                                                            0x737A082E,
+                                                          ),
+                                                          offset: Offset(0, 2),
+                                                          blurRadius: 0,
+                                                        ),
+                                                      ]
+                                                    : const [
+                                                        Shadow(
+                                                          color: Color(
+                                                            0xBF000000,
+                                                          ),
+                                                          offset: Offset(0, 1),
+                                                          blurRadius: 0,
+                                                        ),
+                                                      ],
                                               ),
-                                            ],
-                                          ),
-                                          child: ClipOval(
-                                            child: Stack(
-                                              alignment: Alignment.center,
-                                              children: [
-                                                const Positioned.fill(
-                                                  child: CustomPaint(
-                                                    painter:
-                                                        _TasksDockCircleInsetPainter(
-                                                      dy: 2.0,
-                                                      color: Color(0x29FFFFFF),
-                                                    ),
-                                                  ),
-                                                ),
-                                                _buildIconWithDropShadow(
-                                                  _icon(tab),
-                                                  33,
-                                                ),
-                                              ],
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    Positioned(
-                                      left: 0,
-                                      right: 0,
-                                      top: 46.0,
-                                      height: 16.0,
-                                      child: Center(
-                                        child: Text(
-                                          _label(l10n, tab),
-                                          maxLines: 1,
-                                          style: TextStyle(
-                                            fontFamily: 'Baloo 2',
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                            height: 1.0,
-                                            letterSpacing: 0,
-                                            color: tab == activeTab
-                                                ? Colors.white
-                                                : const Color(0xA8FFFFFF),
-                                            shadows: tab == activeTab
-                                                ? const [
-                                                    Shadow(
-                                                      color:
-                                                          Color(0x737A082E),
-                                                      offset: Offset(0, 2),
-                                                      blurRadius: 0,
-                                                    ),
-                                                  ]
-                                                : const [
-                                                    Shadow(
-                                                      color:
-                                                          Color(0xBF000000),
-                                                      offset: Offset(0, 1),
-                                                      blurRadius: 0,
-                                                    ),
-                                                  ],
-                                          ),
-                                        ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
-                          )),
-                        ),
+                          ),
                       ],
                     ),
                   ),
@@ -1765,4 +1751,3 @@ class _TasksDockCircleInsetPainter extends CustomPainter {
   bool shouldRepaint(covariant _TasksDockCircleInsetPainter oldDelegate) =>
       oldDelegate.dy != dy || oldDelegate.color != color;
 }
-

@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../services/progress_manager.dart';
 import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import 'lululu_press.dart';
 
 /// Shared play chrome: dot mesh, prototype HUD (`mode-top` + `game-hud`),
@@ -104,10 +105,7 @@ class ArcadeScreen extends StatelessWidget {
           decoration: BoxDecoration(
             color: LululuColors.spaceNavy,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: const Color(0x73FFB800),
-              width: 1.5,
-            ),
+            border: Border.all(color: const Color(0x73FFB800), width: 1.5),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x80000000),
@@ -151,41 +149,41 @@ class ArcadeScreen extends StatelessWidget {
                 child: GestureDetector(
                   onTap: () => Navigator.pop(dialogContext),
                   child: Container(
-                  constraints: const BoxConstraints(minHeight: 48),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 9,
-                  ),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: [0.0, 0.55, 1.0],
-                      colors: [
-                        Color(0xFFFFCF3F),
-                        Color(0xFFFFB800),
-                        Color(0xFFF59E00),
+                    constraints: const BoxConstraints(minHeight: 48),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 9,
+                    ),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: [0.0, 0.55, 1.0],
+                        colors: [
+                          Color(0xFFFFCF3F),
+                          Color(0xFFFFB800),
+                          Color(0xFFF59E00),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xFFB97A00),
+                          offset: Offset(0, 5),
+                        ),
                       ],
                     ),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0xFFB97A00),
-                        offset: Offset(0, 5),
+                    child: Text(
+                      dialogContext.l10n.understoodButton,
+                      style: GoogleFonts.baloo2(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
-                    ],
-                  ),
-                  child: Text(
-                    dialogContext.l10n.understoodButton,
-                    style: GoogleFonts.baloo2(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
                     ),
                   ),
                 ),
-              ),
               ),
             ],
           ),
@@ -278,9 +276,7 @@ class ArcadeScreen extends StatelessWidget {
                   ),
                 ),
               if (backgroundAsset == null)
-                const CustomPaint(
-                  painter: ArcadeDotPainter(paintBase: true),
-                ),
+                const CustomPaint(painter: ArcadeDotPainter(paintBase: true)),
               SafeArea(
                 top: true,
                 bottom: false,
@@ -324,65 +320,66 @@ class ArcadeScreen extends StatelessWidget {
                               // kaldırıldı (Expanded zaten kalan alanı
                               // verir, etiket Wrap ile alt satıra iner).
                               child: Wrap(
-                                  spacing: 6,
-                                  runSpacing: 3,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Container(
-                                      // 7A: yatay iç boşluk 10→6 — başlık
-                                      // metnine +8px kazandırır (390'da
-                                      // BAĞLA PATLAT ~10px'ten ~12.5px'e).
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: isCompactH ? 0 : 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0x8C080B12),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          title.toUpperCase(),
-                                          maxLines: 1,
-                                          softWrap: false,
-                                          overflow: TextOverflow.clip,
-                                          style: GoogleFonts.baloo2(
-                                            fontSize: isCompactW ? 16 : 20,
-                                            height: 1.05,
-                                            letterSpacing: 0.2,
-                                            fontWeight: FontWeight.w800,
-                                            color: Colors.white,
-                                          ),
+                                spacing: 6,
+                                runSpacing: 3,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Container(
+                                    // 7A: yatay iç boşluk 10→6 — başlık
+                                    // metnine +8px kazandırır (390'da
+                                    // BAĞLA PATLAT ~10px'ten ~12.5px'e).
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: isCompactH ? 0 : 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0x8C080B12),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        title.toUpperCase(),
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.clip,
+                                        style: GoogleFonts.baloo2(
+                                          fontSize: isCompactW ? 16 : 20,
+                                          height: 1.05,
+                                          letterSpacing: 0.2,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
                                         ),
                                       ),
                                     ),
-                                    if (tag != null)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 9,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: tagColor,
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                        ),
-                                        child: Text(
-                                          tag!,
-                                          maxLines: 1,
-                                          style: GoogleFonts.baloo2(
-                                            fontSize: 10.5,
-                                            height: 1.55,
-                                            letterSpacing: 0.63,
-                                            fontWeight: FontWeight.w800,
-                                            color: tagTextColor,
-                                          ),
+                                  ),
+                                  if (tag != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: tagColor,
+                                        borderRadius: BorderRadius.circular(
+                                          999,
                                         ),
                                       ),
-                                  ],
-                                ),
+                                      child: Text(
+                                        tag!,
+                                        maxLines: 1,
+                                        style: GoogleFonts.baloo2(
+                                          fontSize: 10.5,
+                                          height: 1.55,
+                                          letterSpacing: 0.63,
+                                          fontWeight: FontWeight.w800,
+                                          color: tagTextColor,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                           SizedBox(width: isCompactW ? 6 : 10),
@@ -426,8 +423,11 @@ class ArcadeScreen extends StatelessWidget {
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      _fmt(
+                                      formatGroupedInt(
                                         ProgressManager().coins,
+                                        Localizations.localeOf(
+                                          context,
+                                        ).languageCode,
                                       ),
                                       style: GoogleFonts.nunito(
                                         fontSize: 13.5,
@@ -490,7 +490,10 @@ class ArcadeScreen extends StatelessWidget {
                           wrapStat(
                             ArcadeStat(
                               label: context.l10n.gameScoreLabel,
-                              value: _fmt(score),
+                              value: formatGroupedInt(
+                                score,
+                                Localizations.localeOf(context).languageCode,
+                              ),
                               height: statBoxHeight,
                               valueFontSize: 21,
                               horizontalPadding: isCompactW ? 8 : 14,
@@ -502,7 +505,10 @@ class ArcadeScreen extends StatelessWidget {
                           wrapStat(
                             ArcadeStat(
                               label: context.l10n.gameBestLabel,
-                              value: _fmt(best),
+                              value: formatGroupedInt(
+                                best,
+                                Localizations.localeOf(context).languageCode,
+                              ),
                               height: statBoxHeight,
                               valueFontSize: 21,
                               horizontalPadding: isCompactW ? 8 : 14,
@@ -538,35 +544,35 @@ class ArcadeScreen extends StatelessWidget {
                                 // Dokunma yüksekliği her zaman 48; iç yazı
                                 // FittedBox ile zaten küçülerek sığar.
                                 height: 48,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFB800),
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0xFFB97A00),
-                                    offset: Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                  ),
-                                  child: Text(
-                                    context.l10n.finishCaps,
-                                    style: GoogleFonts.baloo2(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w800,
-                                      color: const Color(0xFF4A2E00),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFB800),
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0xFFB97A00),
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    child: Text(
+                                      context.l10n.finishCaps,
+                                      style: GoogleFonts.baloo2(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF4A2E00),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
                           ),
                         ],
                       ),
@@ -694,11 +700,6 @@ class ArcadeScreen extends StatelessWidget {
       ),
     );
   }
-
-  static String _fmt(int v) => v.toString().replaceAllMapped(
-    RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => '.',
-  );
 }
 
 /// Prototip `evo-strip` / `mode-info` bilgi ve evrim şeridi bileşeni.
@@ -867,10 +868,7 @@ class ArcadeStat extends StatelessWidget {
           width: 1,
         ),
         boxShadow: const [
-          BoxShadow(
-            color: Color(0x73000000),
-            offset: Offset(0, 3),
-          ),
+          BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
         ],
       ),
       child: FittedBox(
@@ -939,56 +937,59 @@ class _ArcadeButtonState extends State<ArcadeButton> {
       button: true,
       enabled: enabled,
       child: GestureDetector(
-      onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-      onTapCancel: () => setState(() => _pressed = false),
-      onTap: widget.onPressed,
-      child: AnimatedScale(
-        scale: _pressed ? LululuMotion.pressScale : 1,
-        duration: LululuMotion.pressDuration,
-        curve: LululuMotion.elastic,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: LululuMotion.minTap),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              gradient: widget.primary
-                  ? LululuGradients.fuchsiaToGold
-                  : const LinearGradient(
-                      colors: [
-                        LululuColors.darkObsidian,
-                        LululuColors.spaceNavy,
-                      ],
-                    ),
-              border: Border.all(
-                color: widget.primary
-                    ? LululuColors.liquidGold.withValues(alpha: 0.7)
-                    : LululuColors.cyberFuchsia.withValues(alpha: 0.45),
-              ),
-              boxShadow: widget.primary
-                  ? [
-                      BoxShadow(
-                        color: LululuColors.liquidGold.withValues(alpha: 0.28),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
+        onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onPressed,
+        child: AnimatedScale(
+          scale: _pressed ? LululuMotion.pressScale : 1,
+          duration: LululuMotion.pressDuration,
+          curve: LululuMotion.elastic,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: LululuMotion.minTap),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: widget.primary
+                    ? LululuGradients.fuchsiaToGold
+                    : const LinearGradient(
+                        colors: [
+                          LululuColors.darkObsidian,
+                          LululuColors.spaceNavy,
+                        ],
                       ),
-                    ]
-                  : null,
-            ),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    widget.label,
-                    style: GoogleFonts.exo2(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.6,
-                      color: widget.primary
-                          ? LululuColors.carbonVoid
-                          : LululuColors.liquidGold,
+                border: Border.all(
+                  color: widget.primary
+                      ? LululuColors.liquidGold.withValues(alpha: 0.7)
+                      : LululuColors.cyberFuchsia.withValues(alpha: 0.45),
+                ),
+                boxShadow: widget.primary
+                    ? [
+                        BoxShadow(
+                          color: LululuColors.liquidGold.withValues(
+                            alpha: 0.28,
+                          ),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      widget.label,
+                      style: GoogleFonts.exo2(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.6,
+                        color: widget.primary
+                            ? LululuColors.carbonVoid
+                            : LululuColors.liquidGold,
+                      ),
                     ),
                   ),
                 ),
@@ -996,7 +997,6 @@ class _ArcadeButtonState extends State<ArcadeButton> {
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -1064,11 +1064,6 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
     super.initState();
     _displayCoins = widget.coins ?? (180 + (widget.score.abs() % 220));
   }
-
-  static String _fmt(int v) => v.toString().replaceAllMapped(
-    RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => '.',
-  );
 
   int get _stars {
     if (widget.stars != null) return widget.stars!.clamp(1, 3);
@@ -1187,9 +1182,8 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
               child: Image.asset(
                 'assets/design/backgrounds/result_wood_bg.png',
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const ColoredBox(
-                  color: Color(0xFFE9B872),
-                ),
+                errorBuilder: (_, _, _) =>
+                    const ColoredBox(color: Color(0xFFE9B872)),
               ),
             ),
             LayoutBuilder(
@@ -1391,7 +1385,12 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                       Expanded(
                                         child: _buildSubMetric(
                                           label: context.l10n.gameBestLabel,
-                                          value: _fmt(bestVal),
+                                          value: formatGroupedInt(
+                                            bestVal,
+                                            Localizations.localeOf(
+                                              context,
+                                            ).languageCode,
+                                          ),
                                         ),
                                       ),
                                       Expanded(
@@ -1408,8 +1407,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                       ),
                                       Expanded(
                                         child: _buildSubMetric(
-                                          label:
-                                              context.l10n.modeBadgeTitle,
+                                          label: context.l10n.modeBadgeTitle,
                                           value: _resolvedBadge,
                                         ),
                                       ),
@@ -1638,7 +1636,9 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                             Text(
                                               widget.retryLabel.isNotEmpty
                                                   ? widget.retryLabel
-                                                  : context.l10n.playAgainButton,
+                                                  : context
+                                                        .l10n
+                                                        .playAgainButton,
                                               style: GoogleFonts.baloo2(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w800,
@@ -1740,8 +1740,7 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
                                   ],
                                 ),
                                 child: Text(
-                                  widget.secondaryLabel ??
-                                  context.l10n.navHome,
+                                  widget.secondaryLabel ?? context.l10n.navHome,
                                   style: GoogleFonts.baloo2(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w800,
@@ -1770,11 +1769,8 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
       width: size,
       height: size,
       fit: BoxFit.contain,
-      errorBuilder: (_, _, _) => Icon(
-        Icons.star_rounded,
-        size: size,
-        color: const Color(0xFFFFD700),
-      ),
+      errorBuilder: (_, _, _) =>
+          Icon(Icons.star_rounded, size: size, color: const Color(0xFFFFD700)),
     );
     if (earned) return SizedBox(width: size, height: size, child: img);
     return SizedBox(
@@ -1784,10 +1780,26 @@ class _ArcadeResultOverlayState extends State<ArcadeResultOverlay> {
         opacity: 0.55,
         child: ColorFiltered(
           colorFilter: const ColorFilter.matrix([
-            0.2126, 0.7152, 0.0722, 0, 0,
-            0.2126, 0.7152, 0.0722, 0, 0,
-            0.2126, 0.7152, 0.0722, 0, 0,
-            0,      0,      0,      1, 0,
+            0.2126,
+            0.7152,
+            0.0722,
+            0,
+            0,
+            0.2126,
+            0.7152,
+            0.0722,
+            0,
+            0,
+            0.2126,
+            0.7152,
+            0.0722,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
           ]),
           child: img,
         ),

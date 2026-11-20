@@ -15,6 +15,7 @@ import '../services/finish_run.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/bonus_fx.dart';
 
 class _BoardSnapshot {
@@ -312,10 +313,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   Future<void> _persistBest() async {
     if (_score <= 0) return;
     await LeaderboardService.instance.ensureLoaded();
-    await LeaderboardService.instance.submitScore(
-      'grid2048',
-      _score,
-    );
+    await LeaderboardService.instance.submitScore('grid2048', _score);
     final saved = LeaderboardService.instance.getBest(
       LeaderboardService.mode2048,
     );
@@ -386,12 +384,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         // Zirve kademe birleşmediği için iki zirvenin yan yana olması
         // hamle sayılmaz; yoksa tahta doluyken oyun bitmezdi.
         if (v < InsectTier.values.length) {
-          if (r + 1 < size &&
-              HisirCharacter.baseTier(_grid[r + 1][c]) == v) {
+          if (r + 1 < size && HisirCharacter.baseTier(_grid[r + 1][c]) == v) {
             return true;
           }
-          if (c + 1 < size &&
-              HisirCharacter.baseTier(_grid[r][c + 1]) == v) {
+          if (c + 1 < size && HisirCharacter.baseTier(_grid[r][c + 1]) == v) {
             return true;
           }
         }
@@ -455,8 +451,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       for (var r = 0; r < size; r++) {
         final row = List<int>.from(_grid[r]);
         final input = dc < 0 ? row : row.reversed.toList();
-        final (compressed, gain, topTier, mergedIdx, lineHisir) =
-            _compressLine(input);
+        final (compressed, gain, topTier, mergedIdx, lineHisir) = _compressLine(
+          input,
+        );
         hisirMerged = hisirMerged || lineHisir;
         final result = dc < 0 ? compressed : compressed.reversed.toList();
         for (var c = 0; c < size; c++) {
@@ -475,8 +472,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       for (var c = 0; c < size; c++) {
         final col = List<int>.generate(size, (r) => _grid[r][c]);
         final input = dr < 0 ? col : col.reversed.toList();
-        final (compressed, gain, topTier, mergedIdx, lineHisir) =
-            _compressLine(input);
+        final (compressed, gain, topTier, mergedIdx, lineHisir) = _compressLine(
+          input,
+        );
         hisirMerged = hisirMerged || lineHisir;
         final result = dr < 0 ? compressed : compressed.reversed.toList();
         for (var r = 0; r < size; r++) {
@@ -532,8 +530,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       _score += boostedGain;
       if (_score > _best) _best = _score;
 
-      final tierEnum =
-          InsectTier.values[(topMerge - 1).clamp(0, InsectTier.values.length - 1)];
+      final tierEnum = InsectTier
+          .values[(topMerge - 1).clamp(0, InsectTier.values.length - 1)];
 
       _showTurnOverlays(
         gain: boostedGain,
@@ -603,8 +601,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     bool hisir = false,
   }) {
     _overlayTimer?.cancel();
-    _comboText =
-        streak >= 2 ? 'COMBO X$streak!' : context.l10n.gridSuperCombo;
+    _comboText = streak >= 2 ? 'COMBO X$streak!' : context.l10n.gridSuperCombo;
     _gainText = streak >= 2 ? '+$gain X$streak' : '+$gain';
     _overlayTimer = Timer(const Duration(milliseconds: 1100), () {
       if (!mounted) return;
@@ -699,11 +696,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         }
       }
     }
-    final matchingTiers = byTier.entries
-        .where((e) => e.value.length >= 2)
-        .map((e) => e.key)
-        .toList()
-      ..sort((a, b) => b.compareTo(a));
+    final matchingTiers =
+        byTier.entries
+            .where((e) => e.value.length >= 2)
+            .map((e) => e.key)
+            .toList()
+          ..sort((a, b) => b.compareTo(a));
     if (matchingTiers.isNotEmpty) {
       final t = matchingTiers.first;
       final cells = byTier[t]!;
@@ -734,9 +732,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       source: null,
       next: maxT + 1,
       matched: false,
-      hisir: HisirCharacter.isEncoded(
-        _grid[bestCell.x][bestCell.y],
-      ),
+      hisir: HisirCharacter.isEncoded(_grid[bestCell.x][bestCell.y]),
     );
   }
 
@@ -894,10 +890,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         );
         unawaited(
           plan.hisir
-              ? AudioManager().playMergeHisir(
-                  tierNumber: next,
-                  comboCount: 2,
-                )
+              ? AudioManager().playMergeHisir(tierNumber: next, comboCount: 2)
               : AudioManager().playMerge(tier: tierEnum, comboCount: 2),
         );
         unawaited(ProgressManager.instance.recordTaskProgress('merge'));
@@ -958,18 +951,6 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
-  }
-
-  String _formatDotNumber(int n) {
-    final raw = n.abs().toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < raw.length; i++) {
-      if (i > 0 && (raw.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(raw[i]);
-    }
-    return n < 0 ? '-$buf' : buf.toString();
   }
 
   Future<void> _presentResult() async {
@@ -1143,82 +1124,82 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       canPop: _exitConfirmed || !_needsExitConfirm,
       onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _onKeyEvent,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF080B12),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final mq = MediaQuery.of(context);
-            final topInset = mq.padding.top;
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _onKeyEvent,
+        child: Scaffold(
+          backgroundColor: const Color(0xFF080B12),
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final mq = MediaQuery.of(context);
+              final topInset = mq.padding.top;
 
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                // Zero-footprint test finder text for widget_test.dart ('2048 Grid')
-                const Positioned(
-                  left: 0,
-                  top: 0,
-                  width: 0,
-                  height: 0,
-                  child: Opacity(opacity: 0, child: Text('2048 Grid')),
-                ),
-
-                // .bg (`assets/design/backgrounds/2048_casino.webp`, opacity: .96)
-                Positioned.fill(
-                  child: Opacity(
-                    opacity: 0.96,
-                    child: Image.asset(
-                      'assets/design/backgrounds/2048_casino.webp',
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.medium,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const ColoredBox(color: Color(0xFF141B2A)),
-                    ),
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Zero-footprint test finder text for widget_test.dart ('2048 Grid')
+                  const Positioned(
+                    left: 0,
+                    top: 0,
+                    width: 0,
+                    height: 0,
+                    child: Opacity(opacity: 0, child: Text('2048 Grid')),
                   ),
-                ),
 
-                // .bgshade
-                const Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Color(0x4D080B12),
-                          Colors.transparent,
-                          Colors.transparent,
-                          Color(0x52080B12),
-                        ],
-                        stops: [0.0, 0.24, 0.76, 1.0],
+                  // .bg (`assets/design/backgrounds/2048_casino.webp`, opacity: .96)
+                  Positioned.fill(
+                    child: Opacity(
+                      opacity: 0.96,
+                      child: Image.asset(
+                        'assets/design/backgrounds/2048_casino.webp',
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const ColoredBox(color: Color(0xFF141B2A)),
                       ),
                     ),
                   ),
-                ),
 
-                // Main column (`statusbar` -> `mode-top` -> `game-hud` -> `mode-stage` -> `power-dock`)
-                Positioned.fill(
-                  top: topInset,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildModeTop(),
-                      _buildGameHud(),
-                      Expanded(child: _buildModeStage()),
-                      _buildPowerDock(),
-                    ],
+                  // .bgshade
+                  const Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0x4D080B12),
+                            Colors.transparent,
+                            Colors.transparent,
+                            Color(0x52080B12),
+                          ],
+                          stops: [0.0, 0.24, 0.76, 1.0],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
 
-                if (_showHelpModal) _buildHelpOverlay(),
-                if (_paused) _buildPauseOverlay(),
-              ],
-            );
-          },
+                  // Main column (`statusbar` -> `mode-top` -> `game-hud` -> `mode-stage` -> `power-dock`)
+                  Positioned.fill(
+                    top: topInset,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildModeTop(),
+                        _buildGameHud(),
+                        Expanded(child: _buildModeStage()),
+                        _buildPowerDock(),
+                      ],
+                    ),
+                  ),
+
+                  if (_showHelpModal) _buildHelpOverlay(),
+                  if (_paused) _buildPauseOverlay(),
+                ],
+              );
+            },
+          ),
         ),
-      ),
       ),
     );
   }
@@ -1235,29 +1216,26 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
           button: true,
           label: context.l10n.goBackLabel,
           child: GestureDetector(
-          onTap: _handleBack,
-          child: Container(
-            width: 48,
-            height: 48,
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: const Color(0xD9080B12),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x73000000),
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Image.asset(
-              'assets/icons2/back.png',
-              width: 29,
-              height: 29,
-              fit: BoxFit.contain,
+            onTap: _handleBack,
+            child: Container(
+              width: 48,
+              height: 48,
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: const Color(0xD9080B12),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
+                ],
+              ),
+              child: Image.asset(
+                'assets/icons2/back.png',
+                width: 29,
+                height: 29,
+                fit: BoxFit.contain,
+              ),
             ),
           ),
-        ),
         ),
         const SizedBox(width: 10),
 
@@ -1269,64 +1247,64 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 3,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0x8C080B12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                context.l10n.grid2048Title,
-                style: TextStyle(
-                  fontFamily: 'Baloo 2',
-                  fontSize: 20,
-                  height: 1.05,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  color: Colors.white,
-                  shadows: [
-                    Shadow(
-                      color: Color(0xA6000000),
-                      offset: Offset(0, 2),
-                      blurRadius: 6,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 3,
                     ),
-                    Shadow(
-                      color: Color(0xCC000000),
-                      offset: Offset(0, 1),
-                      blurRadius: 2,
+                    decoration: BoxDecoration(
+                      color: const Color(0x8C080B12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 9,
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFB800),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: const Text(
-                '2048',
-                style: TextStyle(
-                  fontFamily: 'Baloo 2',
-                  fontSize: 11,
-                  height: 1.55,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.735,
-                  color: Color(0xFF4A2E00),
-                ),
-              ),
-            ),
-              ],
+                    child: Text(
+                      context.l10n.grid2048Title,
+                      style: TextStyle(
+                        fontFamily: 'Baloo 2',
+                        fontSize: 20,
+                        height: 1.05,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Color(0xA6000000),
+                            offset: Offset(0, 2),
+                            blurRadius: 6,
+                          ),
+                          Shadow(
+                            color: Color(0xCC000000),
+                            offset: Offset(0, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFB800),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      '2048',
+                      style: TextStyle(
+                        fontFamily: 'Baloo 2',
+                        fontSize: 11,
+                        height: 1.55,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.735,
+                        color: Color(0xFF4A2E00),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1342,10 +1320,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
             color: const Color(0xD1080B12),
             borderRadius: BorderRadius.circular(999),
             boxShadow: const [
-              BoxShadow(
-                color: Color(0x59000000),
-                offset: Offset(0, 3),
-              ),
+              BoxShadow(color: Color(0x59000000), offset: Offset(0, 3)),
             ],
           ),
           child: Row(
@@ -1359,7 +1334,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
               ),
               const SizedBox(width: 6),
               Text(
-                _formatDotNumber(coins),
+                formatGroupedInt(
+                  coins,
+                  Localizations.localeOf(context).languageCode,
+                ),
                 style: const TextStyle(
                   fontFamily: 'Nunito',
                   fontSize: 13.5,
@@ -1378,37 +1356,31 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
           button: true,
           label: context.l10n.helpButtonLabel,
           child: GestureDetector(
-          onTap: () => setState(() => _showHelpModal = true),
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xDB080B12),
-              border: Border.all(
-                color: const Color(0xB3FFB800),
-                width: 2,
+            onTap: () => setState(() => _showHelpModal = true),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xDB080B12),
+                border: Border.all(color: const Color(0xB3FFB800), width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+                ],
               ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x66000000),
-                  offset: Offset(0, 3),
+              alignment: Alignment.center,
+              child: const Text(
+                '?',
+                style: TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 22,
+                  height: 1.0,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFFFB800),
                 ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: const Text(
-              '?',
-              style: TextStyle(
-                fontFamily: 'Baloo 2',
-                fontSize: 22,
-                height: 1.0,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFFFFB800),
               ),
             ),
           ),
-        ),
         ),
       ],
     );
@@ -1417,8 +1389,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       builder: (context, constraints) {
         // İçerik genişliği mevcut alandan hesaplanır; 406 tavandır.
         // Dar ekranda 406'luk tasarım FittedBox ile orantılı küçültülür.
-        final contentWidth =
-            (constraints.maxWidth - 24).clamp(0.0, _maxContentWidth);
+        final contentWidth = (constraints.maxWidth - 24).clamp(
+          0.0,
+          _maxContentWidth,
+        );
         return SizedBox(
           height: 54,
           child: Padding(
@@ -1453,7 +1427,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         // SKOR (`[12, 97.4, 104, 50.5]`)
         _buildScoreBox(
           label: context.l10n.gameScoreLabel,
-          value: _formatDotNumber(_score),
+          value: formatGroupedInt(
+            _score,
+            Localizations.localeOf(context).languageCode,
+          ),
           width: 104,
         ),
         const SizedBox(width: 8),
@@ -1463,7 +1440,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         // (playtest bulgu #1).
         _buildScoreBox(
           label: context.l10n.gameBestLabel,
-          value: _formatDotNumber(_best),
+          value: formatGroupedInt(
+            _best,
+            Localizations.localeOf(context).languageCode,
+          ),
           width: 92.1,
         ),
 
@@ -1491,10 +1471,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                 color: const Color(0xFFFFB800),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: const [
-                  BoxShadow(
-                    color: Color(0xFFB97A00),
-                    offset: Offset(0, 3),
-                  ),
+                  BoxShadow(color: Color(0xFFB97A00), offset: Offset(0, 3)),
                 ],
               ),
               child: Text(
@@ -1518,8 +1495,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       builder: (context, constraints) {
         // İçerik genişliği mevcut alandan hesaplanır; 406 tavandır.
         // Dar ekranda 406'luk tasarım FittedBox ile orantılı küçültülür.
-        final contentWidth =
-            (constraints.maxWidth - 24).clamp(0.0, _maxContentWidth);
+        final contentWidth = (constraints.maxWidth - 24).clamp(
+          0.0,
+          _maxContentWidth,
+        );
         return Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: Align(
@@ -1555,10 +1534,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       decoration: BoxDecoration(
         color: const Color(0xD9080B12),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0x73FFB800),
-          width: 1,
-        ),
+        border: Border.all(color: const Color(0x73FFB800), width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1645,7 +1621,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
               _panConsumed = false;
             },
             onPanUpdate: (details) {
-              if (_panConsumed || _paused || _gameOver || _showHelpModal) return;
+              if (_panConsumed || _paused || _gameOver || _showHelpModal)
+                return;
               _panAccum += details.delta;
               if (_panAccum.distance < 16) return;
               _panConsumed = true;
@@ -1656,7 +1633,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
               }
             },
             onPanEnd: (details) {
-              if (_panConsumed || _paused || _gameOver || _showHelpModal) return;
+              if (_panConsumed || _paused || _gameOver || _showHelpModal)
+                return;
               final v = details.velocity.pixelsPerSecond;
               if (v.distance < 80) return;
               _panConsumed = true;
@@ -1677,10 +1655,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
               ),
               foregroundDecoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0x24FFFFFF),
-                  width: 2,
-                ),
+                border: Border.all(color: const Color(0x24FFFFFF), width: 2),
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
@@ -1719,7 +1694,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                                 ),
                               ),
                               Text(
-                                context.l10n.gridHighestTile(_highestTileValue()),
+                                context.l10n.gridHighestTile(
+                                  _highestTileValue(),
+                                ),
                                 style: const TextStyle(
                                   fontFamily: 'Nunito',
                                   fontSize: 11,
@@ -1739,37 +1716,38 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                     offset: Offset(_invalidShakeX, 0),
                     child: Center(
                       child: Container(
-                      width: boardSide,
-                      height: boardSide,
-                      decoration: widget.prototypeVisualState
-                          ? null
-                          : BoxDecoration(
-                              color: const Color(0x4D080B12),
-                              borderRadius: BorderRadius.circular(22),
-                              border: Border.all(
-                                color: const Color(0x24FFFFFF),
-                                width: 1.5,
+                        width: boardSide,
+                        height: boardSide,
+                        decoration: widget.prototypeVisualState
+                            ? null
+                            : BoxDecoration(
+                                color: const Color(0x4D080B12),
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(
+                                  color: const Color(0x24FFFFFF),
+                                  width: 1.5,
+                                ),
                               ),
-                            ),
-                      child: Padding(
-                        padding: EdgeInsets.all(boardPad),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List<Widget>.generate(size, (r) {
-                            return Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: List<Widget>.generate(size, (c) {
-                                return SizedBox(
-                                  width: tileSize,
-                                  height: tileSize,
-                                  child: _buildTile(r, c, tileSize),
-                                );
-                              }),
-                            );
-                          }),
+                        child: Padding(
+                          padding: EdgeInsets.all(boardPad),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: List<Widget>.generate(size, (r) {
+                              return Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: List<Widget>.generate(size, (c) {
+                                  return SizedBox(
+                                    width: tileSize,
+                                    height: tileSize,
+                                    child: _buildTile(r, c, tileSize),
+                                  );
+                                }),
+                              );
+                            }),
+                          ),
                         ),
                       ),
-                    ),
                     ),
                   ),
 
@@ -1962,14 +1940,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                                 color: Color(0xEB080B12),
                                 offset: Offset(0, 3),
                               ),
-                              Shadow(
-                                color: Color(0xE6FF6B35),
-                                blurRadius: 14,
-                              ),
-                              Shadow(
-                                color: Color(0x8CFF6B35),
-                                blurRadius: 32,
-                              ),
+                              Shadow(color: Color(0xE6FF6B35), blurRadius: 14),
+                              Shadow(color: Color(0x8CFF6B35), blurRadius: 32),
                             ],
                           ),
                         ),
@@ -2139,10 +2111,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                       width: 1,
                     ),
                     boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x73000000),
-                        offset: Offset(0, 3),
-                      ),
+                      BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
                       BoxShadow(
                         color: Color(0x4D000000),
                         offset: Offset(0, 6),
@@ -2226,10 +2195,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                     end: Alignment.bottomCenter,
                     colors: [Color(0xFF1E2740), Color(0xFF121829)],
                   ),
-                  border: Border.all(
-                    color: const Color(0x8CFFB800),
-                    width: 2,
-                  ),
+                  border: Border.all(color: const Color(0x8CFFB800), width: 2),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2312,10 +2278,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                   end: Alignment.bottomCenter,
                   colors: [Color(0xFF1E2740), Color(0xFF121829)],
                 ),
-                border: Border.all(
-                  color: const Color(0x73FFB800),
-                  width: 2,
-                ),
+                border: Border.all(color: const Color(0x73FFB800), width: 2),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -2331,7 +2294,11 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    context.l10n.gridPauseStats(_moveCount, _mergeTotal, _maxStreak),
+                    context.l10n.gridPauseStats(
+                      _moveCount,
+                      _mergeTotal,
+                      _maxStreak,
+                    ),
                     style: const TextStyle(
                       fontFamily: 'Nunito',
                       fontSize: 12,
@@ -2401,4 +2368,3 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     );
   }
 }
-

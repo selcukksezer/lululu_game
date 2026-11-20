@@ -6,6 +6,7 @@ import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/iap_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 
 String _trUpper(String input, Locale locale) {
   if (locale.languageCode != 'tr') {
@@ -385,18 +386,6 @@ class _ShopScreenState extends State<ShopScreen> {
     ),
   ];
 
-  String _formatNumber(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
-
   void _showToast(String msg) {
     AudioManager().playPop();
     ScaffoldMessenger.of(context)
@@ -446,9 +435,7 @@ class _ShopScreenState extends State<ShopScreen> {
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         title: Text(ctx.l10n.shopPurchaseConfirmTitle),
-        content: Text(
-          ctx.l10n.shopPurchaseConfirmBody(itemName, priceLabel),
-        ),
+        content: Text(ctx.l10n.shopPurchaseConfirmBody(itemName, priceLabel)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -499,9 +486,7 @@ class _ShopScreenState extends State<ShopScreen> {
     if (ok) {
       AudioManager().playWin();
     }
-    _showToast(
-      ok ? successToast : context.l10n.shopStoreUnavailableToast,
-    );
+    _showToast(ok ? successToast : context.l10n.shopStoreUnavailableToast);
   }
 
   Future<void> _watchFreeChestAd() async {
@@ -594,7 +579,10 @@ class _ShopScreenState extends State<ShopScreen> {
       builder: (context, _) {
         final rawCoins = _pm.coins;
         final l10n = context.l10n;
-        final coinsText = _formatNumber(rawCoins);
+        final coinsText = formatGroupedInt(
+          rawCoins,
+          Localizations.localeOf(context).languageCode,
+        );
         final mqTop = MediaQuery.of(context).padding.top;
         final parentHasExtendBody =
             Scaffold.maybeOf(context)?.widget.extendBody == true;
@@ -639,77 +627,77 @@ class _ShopScreenState extends State<ShopScreen> {
                             child: GestureDetector(
                               onTap: () =>
                                   _showToast(l10n.shopAddedCoinPackToast),
-                            child: Container(
-                              height: 35,
-                              padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF33363C),
-                                borderRadius: BorderRadius.circular(999),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x59000000),
-                                    offset: Offset(0, 3),
-                                    blurRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    'assets/design/ui/res_coin.png',
-                                    width: 25,
-                                    height: 25,
-                                    fit: BoxFit.contain,
-                                    filterQuality: FilterQuality.medium,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Transform.translate(
-                                    offset: const Offset(0, -0.5),
-                                    child: Text(
-                                      coinsText,
-                                      style: const TextStyle(
-                                        fontFamily: 'Nunito',
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w900,
-                                        fontVariations: [
-                                          FontVariation('wght', 900)
-                                        ],
-                                        letterSpacing: -0.14,
-                                        color: Colors.white,
-                                        height: 1.15,
-                                      ),
+                              child: Container(
+                                height: 35,
+                                padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF33363C),
+                                  borderRadius: BorderRadius.circular(999),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x59000000),
+                                      offset: Offset(0, 3),
+                                      blurRadius: 0,
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    width: 20,
-                                    height: 20,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF00C853),
-                                      shape: BoxShape.circle,
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      'assets/design/ui/res_coin.png',
+                                      width: 25,
+                                      height: 25,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.medium,
                                     ),
-                                    child: const Center(
+                                    const SizedBox(width: 6),
+                                    Transform.translate(
+                                      offset: const Offset(0, -0.5),
                                       child: Text(
-                                        '+',
-                                        style: TextStyle(
+                                        coinsText,
+                                        style: const TextStyle(
                                           fontFamily: 'Nunito',
-                                          fontSize: 15,
+                                          fontSize: 13.5,
                                           fontWeight: FontWeight.w900,
                                           fontVariations: [
-                                            FontVariation('wght', 900)
+                                            FontVariation('wght', 900),
                                           ],
-                                          color: Color(0xFF04140A),
-                                          height: 1.0,
+                                          letterSpacing: -0.14,
+                                          color: Colors.white,
+                                          height: 1.15,
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      width: 20,
+                                      height: 20,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF00C853),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Center(
+                                        child: Text(
+                                          '+',
+                                          style: TextStyle(
+                                            fontFamily: 'Nunito',
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w900,
+                                            fontVariations: [
+                                              FontVariation('wght', 900),
+                                            ],
+                                            color: Color(0xFF04140A),
+                                            height: 1.0,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
                           ),
                           const SizedBox(width: 8),
                           // Dark star pill (86)
@@ -748,7 +736,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.w900,
                                       fontVariations: [
-                                        FontVariation('wght', 900)
+                                        FontVariation('wght', 900),
                                       ],
                                       color: Colors.white,
                                       height: 1.15,
@@ -804,8 +792,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                             sigmaY: 3.0,
                                           ),
                                           child: ColorFiltered(
-                                            colorFilter:
-                                                const ColorFilter.mode(
+                                            colorFilter: const ColorFilter.mode(
                                               Color(0x4D000000),
                                               BlendMode.srcIn,
                                             ),
@@ -847,7 +834,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                           fontSize: 17,
                                           fontWeight: FontWeight.w800,
                                           fontVariations: [
-                                            FontVariation('wght', 800)
+                                            FontVariation('wght', 800),
                                           ],
                                           letterSpacing: -0.02,
                                           color: Colors.white,
@@ -869,7 +856,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w700,
                                         fontVariations: [
-                                          FontVariation('wght', 700)
+                                          FontVariation('wght', 700),
                                         ],
                                         letterSpacing: 0.0,
                                         color: Color(0xF2FFFFFF),
@@ -943,7 +930,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w800,
                                                 fontVariations: [
-                                                  FontVariation('wght', 800)
+                                                  FontVariation('wght', 800),
                                                 ],
                                                 letterSpacing: -0.02,
                                                 color: Color(0xFF141B2A),
@@ -961,7 +948,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w700,
                                         fontVariations: [
-                                          FontVariation('wght', 700)
+                                          FontVariation('wght', 700),
                                         ],
                                         letterSpacing: -0.025,
                                         color: Color(0xFF66738A),
@@ -999,7 +986,9 @@ class _ShopScreenState extends State<ShopScreen> {
                                       ),
                                       child: Container(
                                         decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                           border: Border.all(
                                             color: const Color(0xFFD5DAE4),
                                             width: 1,
@@ -1020,7 +1009,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.w800,
                                                 fontVariations: [
-                                                  FontVariation('wght', 800)
+                                                  FontVariation('wght', 800),
                                                 ],
                                                 color: Color(0xFF9AA3B2),
                                                 height: 1.1,
@@ -1041,9 +1030,8 @@ class _ShopScreenState extends State<ShopScreen> {
                         _buildSecHead(
                           title: l10n.shopEnergyTitle,
                           rightText: l10n.shopEnergyRefillNote,
-                          onTapRight: () => _showToast(
-                            l10n.shopEnergyRegenToast,
-                          ),
+                          onTapRight: () =>
+                              _showToast(l10n.shopEnergyRegenToast),
                         ),
                         _buildShopGridRow(
                           _ShopItemData(
@@ -1082,9 +1070,8 @@ class _ShopScreenState extends State<ShopScreen> {
                         _buildSecHead(
                           title: l10n.shopPowerUpsTitle,
                           rightText: l10n.shopPowerUpsNote,
-                          onTapRight: () => _showToast(
-                            l10n.shopPowerUpModeOnlyToast,
-                          ),
+                          onTapRight: () =>
+                              _showToast(l10n.shopPowerUpModeOnlyToast),
                         ),
                         for (final group in _powerGroups(l10n))
                           _buildPowGroup(group),
@@ -1698,10 +1685,7 @@ class _ShopScreenState extends State<ShopScreen> {
                 button: true,
                 label: item.owned
                     ? '${item.title} · ${context.l10n.shopRoyalCapeOwnedLabel}'
-                    : context.l10n.shopBuyItemLabel(
-                        item.title,
-                        item.priceText,
-                      ),
+                    : context.l10n.shopBuyItemLabel(item.title, item.priceText),
                 // 8F: tek kartlı satırda (sağ kart null) başlık +
                 // açıklama + düğme etiketi tek semantics düğümünde
                 // birleşiyordu ('BİR KASA\n...\nBir Kasa satın al...')
@@ -1717,115 +1701,59 @@ class _ShopScreenState extends State<ShopScreen> {
                   behavior: HitTestBehavior.opaque,
                   onTap: item.owned ? null : item.onTap,
                   child: CustomPaint(
-                  painter: _ShopBtnShadowPainter(
-                    solidColor: item.owned
-                        ? const Color(0xFF6B7482)
-                        : item.isCoinPrice
-                            ? const Color(0xFFB97A00)
-                            : const Color(0xFF7E0A2E),
-                  ),
-                  child: Container(
-                    width: double.infinity,
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: item.owned
-                          ? const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              stops: [0.0, 0.55, 1.0],
-                              colors: [
-                                Color(0xFFB8BFCB),
-                                Color(0xFF9AA3B2),
-                                Color(0xFF8A93A3),
-                              ],
-                            )
+                    painter: _ShopBtnShadowPainter(
+                      solidColor: item.owned
+                          ? const Color(0xFF6B7482)
                           : item.isCoinPrice
-                              ? const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              stops: [0.0, 0.55, 1.0],
-                              colors: [
-                                Color(0xFFFFCF3F),
-                                Color(0xFFFFB800),
-                                Color(0xFFF59E00),
-                              ],
-                            )
-                          : const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              stops: [0.0, 0.55, 1.0],
-                              colors: [
-                                Color(0xFFF4538B),
-                                Color(0xFFE01E5A),
-                                Color(0xFFB80F42),
-                              ],
-                            ),
+                          ? const Color(0xFFB97A00)
+                          : const Color(0xFF7E0A2E),
                     ),
-                    child: Center(
-                      child: item.owned
-                          ? Text(
-                              context.l10n.shopRoyalCapeOwnedLabel,
-                              style: const TextStyle(
-                                fontFamily: 'Baloo 2',
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                fontVariations: [FontVariation('wght', 750)],
-                                color: Colors.white,
-                                letterSpacing: 0.05,
-                                height: 1.1,
-                                shadows: [
-                                  Shadow(
-                                    color: Color(0x665A001E),
-                                    offset: Offset(0, 1),
-                                    blurRadius: 0,
-                                  ),
+                    child: Container(
+                      width: double.infinity,
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        gradient: item.owned
+                            ? const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                stops: [0.0, 0.55, 1.0],
+                                colors: [
+                                  Color(0xFFB8BFCB),
+                                  Color(0xFF9AA3B2),
+                                  Color(0xFF8A93A3),
+                                ],
+                              )
+                            : item.isCoinPrice
+                            ? const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                stops: [0.0, 0.55, 1.0],
+                                colors: [
+                                  Color(0xFFFFCF3F),
+                                  Color(0xFFFFB800),
+                                  Color(0xFFF59E00),
+                                ],
+                              )
+                            : const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                stops: [0.0, 0.55, 1.0],
+                                colors: [
+                                  Color(0xFFF4538B),
+                                  Color(0xFFE01E5A),
+                                  Color(0xFFB80F42),
                                 ],
                               ),
-                            )
-                          : item.isCoinPrice
-                              ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Image.asset(
-                                  'assets/design/ui/res_coin.png',
-                                  width: 21,
-                                  height: 21,
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.medium,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  item.priceText,
-                                  style: const TextStyle(
-                                    fontFamily: 'Baloo 2',
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w900,
-                                    fontVariations: [
-                                      FontVariation('wght', 800)
-                                    ],
-                                    color: Colors.white,
-                                    letterSpacing: 0.3,
-                                    height: 1.1,
-                                    shadows: [
-                                      Shadow(
-                                        color: Color(0x59000000),
-                                        offset: Offset(0, 1),
-                                        blurRadius: 0,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Transform.translate(
-                              offset: const Offset(-0.3, 0.5),
-                              child: Text(
-                                item.priceText,
+                      ),
+                      child: Center(
+                        child: item.owned
+                            ? Text(
+                                context.l10n.shopRoyalCapeOwnedLabel,
                                 style: const TextStyle(
                                   fontFamily: 'Baloo 2',
                                   fontSize: 15,
@@ -1842,12 +1770,70 @@ class _ShopScreenState extends State<ShopScreen> {
                                     ),
                                   ],
                                 ),
+                              )
+                            : item.isCoinPrice
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Image.asset(
+                                    'assets/design/ui/res_coin.png',
+                                    width: 21,
+                                    height: 21,
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.medium,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    item.priceText,
+                                    style: const TextStyle(
+                                      fontFamily: 'Baloo 2',
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      fontVariations: [
+                                        FontVariation('wght', 800),
+                                      ],
+                                      color: Colors.white,
+                                      letterSpacing: 0.3,
+                                      height: 1.1,
+                                      shadows: [
+                                        Shadow(
+                                          color: Color(0x59000000),
+                                          offset: Offset(0, 1),
+                                          blurRadius: 0,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Transform.translate(
+                                offset: const Offset(-0.3, 0.5),
+                                child: Text(
+                                  item.priceText,
+                                  style: const TextStyle(
+                                    fontFamily: 'Baloo 2',
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    fontVariations: [
+                                      FontVariation('wght', 750),
+                                    ],
+                                    color: Colors.white,
+                                    letterSpacing: 0.05,
+                                    height: 1.1,
+                                    shadows: [
+                                      Shadow(
+                                        color: Color(0x665A001E),
+                                        offset: Offset(0, 1),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
+                      ),
                     ),
                   ),
                 ),
-              ),
               ),
             ],
           ),
@@ -1918,10 +1904,7 @@ class _ShopScreenState extends State<ShopScreen> {
             padding: const EdgeInsets.only(bottom: 8),
             decoration: const BoxDecoration(
               border: Border(
-                bottom: BorderSide(
-                  color: Color(0xFFEDF0F6),
-                  width: 1,
-                ),
+                bottom: BorderSide(color: Color(0xFFEDF0F6), width: 1),
               ),
             ),
             child: Row(
@@ -1939,10 +1922,7 @@ class _ShopScreenState extends State<ShopScreen> {
                 ),
                 const SizedBox(width: 9),
                 Padding(
-                  padding: const EdgeInsets.only(
-                    top: 19.615,
-                    bottom: 20.615,
-                  ),
+                  padding: const EdgeInsets.only(top: 19.615, bottom: 20.615),
                   child: Text(
                     _trUpper(group.modeName, locale),
                     style: const TextStyle(
@@ -1969,7 +1949,9 @@ class _ShopScreenState extends State<ShopScreen> {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      context.l10n.shopPowerGroupBonusCount(group.powers.length),
+                      context.l10n.shopPowerGroupBonusCount(
+                        group.powers.length,
+                      ),
                       style: TextStyle(
                         fontFamily: 'Nunito',
                         fontSize: 11,
@@ -2047,7 +2029,10 @@ class _ShopScreenState extends State<ShopScreen> {
                     ),
                   ),
                   Text(
-                    context.l10n.shopPowerUpDescModeSuffix(pow.desc, group.modeName),
+                    context.l10n.shopPowerUpDescModeSuffix(
+                      pow.desc,
+                      group.modeName,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -2070,67 +2055,72 @@ class _ShopScreenState extends State<ShopScreen> {
               child: GestureDetector(
                 onTap: () => _buyCoinItem(
                   itemName: pow.name,
-                  toastMsg: context.l10n.shopPowerUpAddedToCartToast(pow.name, group.modeName),
-                cost: pow.cost,
-                onSuccess: () => _grantPowerStock(pow.id, 1),
-              ),
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 48),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(13),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0.0, 0.55, 1.0],
-                    colors: [
-                      Color(0xFFFFCF3F),
-                      Color(0xFFFFB800),
-                      Color(0xFFF59E00),
+                  toastMsg: context.l10n.shopPowerUpAddedToCartToast(
+                    pow.name,
+                    group.modeName,
+                  ),
+                  cost: pow.cost,
+                  onSuccess: () => _grantPowerStock(pow.id, 1),
+                ),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(13),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0.0, 0.55, 1.0],
+                      colors: [
+                        Color(0xFFFFCF3F),
+                        Color(0xFFFFB800),
+                        Color(0xFFF59E00),
+                      ],
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFFB97A00),
+                        offset: Offset(0, 3),
+                        blurRadius: 0,
+                      ),
                     ],
                   ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0xFFB97A00),
-                      offset: Offset(0, 3),
-                      blurRadius: 0,
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Image.asset(
-                      'assets/design/ui/res_coin.png',
-                      width: 19,
-                      height: 19,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.medium,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '${pow.cost}',
-                      style: const TextStyle(
-                        fontFamily: 'Baloo 2',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        fontVariations: [FontVariation('wght', 800)],
-                        color: Colors.white,
-                        height: 1.15,
-                        shadows: [
-                          Shadow(
-                            color: Color(0x59784000),
-                            offset: Offset(0, 1),
-                            blurRadius: 0,
-                          ),
-                        ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/design/ui/res_coin.png',
+                        width: 19,
+                        height: 19,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 5),
+                      Text(
+                        '${pow.cost}',
+                        style: const TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          fontVariations: [FontVariation('wght', 800)],
+                          color: Colors.white,
+                          height: 1.15,
+                          shadows: [
+                            Shadow(
+                              color: Color(0x59784000),
+                              offset: Offset(0, 1),
+                              blurRadius: 0,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
             ),
           ],
         ),
@@ -2367,16 +2357,16 @@ class _ShopFloatingDock extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final usableWidth =
-                  (constraints.maxWidth - 14.0).clamp(100.0, 410.0);
+              final usableWidth = (constraints.maxWidth - 14.0).clamp(
+                100.0,
+                410.0,
+              );
               final tabW = usableWidth / _tabIcons.length;
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
                   const Positioned.fill(
-                    child: CustomPaint(
-                      painter: _ShopDockSurfacePainter(),
-                    ),
+                    child: CustomPaint(painter: _ShopDockSurfacePainter()),
                   ),
                   Positioned(
                     left: 26,
@@ -2389,10 +2379,7 @@ class _ShopFloatingDock extends StatelessWidget {
                         gradient: const LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0x33FFFFFF),
-                            Color(0x00FFFFFF),
-                          ],
+                          colors: [Color(0x33FFFFFF), Color(0x00FFFFFF)],
                         ),
                       ),
                     ),
@@ -2461,150 +2448,162 @@ class _ShopFloatingDock extends StatelessWidget {
                             label: labels[i],
                             selected: active,
                             child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => _onTapTab(context, i),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: active
-                                    ? const Color(0x1FFFB800)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: SizedBox(
-                                height: 64,
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  alignment: Alignment.topCenter,
-                                  children: [
-                                    if (active)
-                                      Positioned(
-                                        top: 1.8,
-                                        width: 42.4,
-                                        height: 42.4,
-                                        child: CustomPaint(
-                                          painter:
-                                              const _ShopDockActiveCircleShadowPainter(),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: Colors.white,
-                                              border: Border.all(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _onTapTab(context, i),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: active
+                                      ? const Color(0x1FFFB800)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: SizedBox(
+                                  height: 64,
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    alignment: Alignment.topCenter,
+                                    children: [
+                                      if (active)
+                                        Positioned(
+                                          top: 1.8,
+                                          width: 42.4,
+                                          height: 42.4,
+                                          child: CustomPaint(
+                                            painter:
+                                                const _ShopDockActiveCircleShadowPainter(),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
                                                 color: Colors.white,
-                                                width: 2,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 2,
+                                                ),
                                               ),
-                                            ),
-                                            child: ClipOval(
-                                              child: Stack(
-                                                alignment: Alignment.center,
-                                                children: [
-                                                  const Positioned.fill(
-                                                    child: CustomPaint(
-                                                      painter:
-                                                          _ShopDockCircleInsetPainter(
-                                                        dy: -4.24,
-                                                        color: Color(0x1F080B12),
+                                              child: ClipOval(
+                                                child: Stack(
+                                                  alignment: Alignment.center,
+                                                  children: [
+                                                    const Positioned.fill(
+                                                      child: CustomPaint(
+                                                        painter:
+                                                            _ShopDockCircleInsetPainter(
+                                                              dy: -4.24,
+                                                              color: Color(
+                                                                0x1F080B12,
+                                                              ),
+                                                            ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  Transform.translate(
-                                                    offset: const Offset(
-                                                        0.5, 0.5),
-                                                    child:
-                                                        _buildIconWithDropShadow(
-                                                      _tabIcons[i],
-                                                      35,
+                                                    Transform.translate(
+                                                      offset: const Offset(
+                                                        0.5,
+                                                        0.5,
+                                                      ),
+                                                      child:
+                                                          _buildIconWithDropShadow(
+                                                            _tabIcons[i],
+                                                            35,
+                                                          ),
                                                     ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        Positioned(
+                                          top: 7.0,
+                                          width: 40.0,
+                                          height: 40.0,
+                                          child: CustomPaint(
+                                            painter:
+                                                const _ShopDockInactiveCircleShadowPainter(),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: const Color(0x17FFFFFF),
+                                                border: Border.all(
+                                                  color: const Color(
+                                                    0x2EFFFFFF,
                                                   ),
-                                                ],
+                                                  width: 2,
+                                                ),
+                                              ),
+                                              child: ClipOval(
+                                                child: Stack(
+                                                  alignment: Alignment.center,
+                                                  children: [
+                                                    const Positioned.fill(
+                                                      child: CustomPaint(
+                                                        painter:
+                                                            _ShopDockCircleInsetPainter(
+                                                              dy: 2.0,
+                                                              color: Color(
+                                                                0x29FFFFFF,
+                                                              ),
+                                                            ),
+                                                      ),
+                                                    ),
+                                                    Transform.translate(
+                                                      offset: const Offset(
+                                                        0.5,
+                                                        0.5,
+                                                      ),
+                                                      child:
+                                                          _buildIconWithDropShadow(
+                                                            _tabIcons[i],
+                                                            33,
+                                                          ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      )
-                                    else
                                       Positioned(
-                                        top: 7.0,
-                                        width: 40.0,
-                                        height: 40.0,
-                                        child: CustomPaint(
-                                          painter:
-                                              const _ShopDockInactiveCircleShadowPainter(),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: const Color(0x17FFFFFF),
-                                              border: Border.all(
-                                                color: const Color(0x2EFFFFFF),
-                                                width: 2,
-                                              ),
-                                            ),
-                                            child: ClipOval(
-                                              child: Stack(
-                                                alignment: Alignment.center,
-                                                children: [
-                                                  const Positioned.fill(
-                                                    child: CustomPaint(
-                                                      painter:
-                                                          _ShopDockCircleInsetPainter(
-                                                        dy: 2.0,
-                                                        color: Color(0x29FFFFFF),
+                                        left: 0,
+                                        right: 0,
+                                        top: 46.0,
+                                        height: 16.0,
+                                        child: Center(
+                                          child: Text(
+                                            labels[i],
+                                            maxLines: 1,
+                                            style: TextStyle(
+                                              fontFamily: 'Baloo 2',
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              fontVariations: const [
+                                                FontVariation('wght', 600),
+                                              ],
+                                              height: 1.0,
+                                              letterSpacing: -0.02,
+                                              color: active
+                                                  ? Colors.white
+                                                  : const Color(0xA8FFFFFF),
+                                              shadows: active
+                                                  ? const [
+                                                      Shadow(
+                                                        color: Color(
+                                                          0x737A082E,
+                                                        ),
+                                                        offset: Offset(0, 2),
+                                                        blurRadius: 0,
                                                       ),
-                                                    ),
-                                                  ),
-                                                  Transform.translate(
-                                                    offset: const Offset(
-                                                        0.5, 0.5),
-                                                    child:
-                                                        _buildIconWithDropShadow(
-                                                      _tabIcons[i],
-                                                      33,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                                    ]
+                                                  : null,
                                             ),
                                           ),
                                         ),
                                       ),
-                                    Positioned(
-                                      left: 0,
-                                      right: 0,
-                                      top: 46.0,
-                                      height: 16.0,
-                                      child: Center(
-                                        child: Text(
-                                          labels[i],
-                                          maxLines: 1,
-                                          style: TextStyle(
-                                            fontFamily: 'Baloo 2',
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                            fontVariations: const [
-                                              FontVariation('wght', 600)
-                                            ],
-                                            height: 1.0,
-                                            letterSpacing: -0.02,
-                                            color: active
-                                                ? Colors.white
-                                                : const Color(0xA8FFFFFF),
-                                            shadows: active
-                                                ? const [
-                                                    Shadow(
-                                                      color: Color(0x737A082E),
-                                                      offset: Offset(0, 2),
-                                                      blurRadius: 0,
-                                                    ),
-                                                  ]
-                                                : null,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
                           ),
                         );
                       }),
@@ -2696,8 +2695,8 @@ class _ShopDockActiveCircleShadowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(
-          covariant _ShopDockActiveCircleShadowPainter oldDelegate) =>
-      false;
+    covariant _ShopDockActiveCircleShadowPainter oldDelegate,
+  ) => false;
 }
 
 class _ShopDockInactiveCircleShadowPainter extends CustomPainter {
@@ -2717,8 +2716,8 @@ class _ShopDockInactiveCircleShadowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(
-          covariant _ShopDockInactiveCircleShadowPainter oldDelegate) =>
-      false;
+    covariant _ShopDockInactiveCircleShadowPainter oldDelegate,
+  ) => false;
 }
 
 class _ShopDockSurfacePainter extends CustomPainter {

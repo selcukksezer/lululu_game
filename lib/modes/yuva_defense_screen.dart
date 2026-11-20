@@ -16,6 +16,7 @@ import '../services/global_notify.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 
 class YuvaDefenseScreen extends StatefulWidget {
   const YuvaDefenseScreen({
@@ -1115,11 +1116,6 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     if (!widget.prototypeVisualState) _startLoop();
   }
 
-  String _formatCoins(int value) {
-    final digits = value.toString();
-    return digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
-  }
-
   /// Küçük duraklatma düğmesi (madde 37): başlık satırında '?' düğmesinin
   /// yanında, HUD düzenini kaydırmadan durur; prototip vitrininde gizlidir.
   Widget _pauseButton() {
@@ -1435,7 +1431,12 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                       const SizedBox(width: 6),
                                       Expanded(
                                         child: Text(
-                                          _formatCoins(coins),
+                                          formatGroupedInt(
+                                            coins,
+                                            Localizations.localeOf(
+                                              context,
+                                            ).languageCode,
+                                          ),
                                           maxLines: 1,
                                           overflow: TextOverflow.clip,
                                           softWrap: false,
@@ -1483,7 +1484,12 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                               alignment: Alignment.centerLeft,
                                               fit: BoxFit.scaleDown,
                                               child: Text(
-                                                _formatCoins(coins),
+                                                formatGroupedInt(
+                                                  coins,
+                                                  Localizations.localeOf(
+                                                    context,
+                                                  ).languageCode,
+                                                ),
                                                 style: GoogleFonts.nunito(
                                                   fontSize: 13.5,
                                                   fontWeight: FontWeight.w900,
@@ -1536,7 +1542,12 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                     width: 84,
                                     child: _HudCard(
                                       label: context.l10n.gameBestLabel,
-                                      value: _formatCoins(_best),
+                                      value: formatGroupedInt(
+                                        _best,
+                                        Localizations.localeOf(
+                                          context,
+                                        ).languageCode,
+                                      ),
                                       singleRowHearts: wideScreen,
                                     ),
                                   ),
@@ -1746,7 +1757,12 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                                         widget
                                                                             .prototypeVisualState
                                                                         ? 1.0
-                                                                        : 1 + sin(_pulse.value * pi) * 0.07,
+                                                                        : 1 +
+                                                                              sin(
+                                                                                    _pulse.value *
+                                                                                        pi,
+                                                                                  ) *
+                                                                                  0.07,
                                                                     child: Container(
                                                                       width:
                                                                           widget
@@ -1783,8 +1799,10 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                                           .prototypeVisualState
                                                                       ? 0.0
                                                                       : atan2(
-                                                                              _nestCenterY - bug.y,
-                                                                              _nestCenterX - bug.x,
+                                                                              _nestCenterY -
+                                                                                  bug.y,
+                                                                              _nestCenterX -
+                                                                                  bug.x,
                                                                             ) *
                                                                             0.18,
                                                                   child: Transform.scale(
@@ -1803,8 +1821,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                                                         : 1,
                                                                     child: Image.asset(
                                                                       bug.isHisir
-                                                                          ? HisirCharacter
-                                                                              .assetPath
+                                                                          ? HisirCharacter.assetPath
                                                                           : 'assets/bugs/tier${bug.tier.tier}_hd${bug.tier.tier == 5 ? '.webp' : '.png'}',
                                                                       width: 48,
                                                                       height:
@@ -2628,4 +2645,3 @@ class _BonusCard extends StatelessWidget {
     );
   }
 }
-

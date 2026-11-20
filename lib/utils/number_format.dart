@@ -6,7 +6,7 @@
 /// 12A kapsamında dokunulan dosyalardaki `_formatNumber` /
 /// `_formatDotNumber` / `_formatScore` / `_fmt` kopyalarının yerini
 /// alır (grid_2048_screen, arcade_chrome ve vault_top_hud içindeki
-/// aynı desenli kopyalar bu dalganın kapsamı dışındadır).
+/// aynı desenli kopyalar 14A'da çevrildi).
 library;
 
 /// Tam sayıyı dile göre gruplandırır: TR `1.240`, EN `1,240`.
