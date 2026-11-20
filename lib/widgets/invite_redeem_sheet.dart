@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
@@ -71,6 +72,19 @@ class _InviteRedeemSheetState extends State<InviteRedeemSheet> {
         SnackBar(content: Text(context.l10n.profileInviteFailed)),
       );
     }
+  }
+
+  /// 12C2: davet kodu kopyalama — paylaşım sayfası (K17/3D) zaten
+  /// kodu gösteriyordu; kopyalama eksikti. Panoya yazar ve
+  /// onay bildirimi gösterir.
+  Future<void> _copyInviteCode() async {
+    AudioManager().playPop();
+    final code = FriendInviteService.instance.inviteCode;
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.inviteCodeCopied)),
+    );
   }
 
   Future<void> _redeem() async {
@@ -172,6 +186,27 @@ class _InviteRedeemSheetState extends State<InviteRedeemSheet> {
                       fontFamily: 'Baloo 2',
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
+                      color: Color(0xFF141B2A),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Semantics(
+                button: true,
+                label: l10n.inviteCopyCodeLabel,
+                child: GestureDetector(
+                  key: const Key('invite_copy_code_button'),
+                  onTap: _copyInviteCode,
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F6FA),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.copy_rounded,
+                      size: 20,
                       color: Color(0xFF141B2A),
                     ),
                   ),

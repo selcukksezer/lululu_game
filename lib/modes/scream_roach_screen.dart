@@ -5,8 +5,6 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:noise_meter/noise_meter.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/hisir_character.dart';
@@ -19,6 +17,7 @@ import '../services/finish_run.dart';
 import '../services/global_notify.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/mic_scream_service.dart';
 import '../services/progress_manager.dart';
 import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
@@ -58,7 +57,6 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   static const _gravity = 1350.0;
   static const _flapImpulse = -430.0;
   static const _tutorialSeconds = 15.0;
-  static const _voiceThresholdDb = 64.0;
 
   late final Ticker _ticker;
 
@@ -66,9 +64,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// artırır; dinamik alt-ağaç [ValueListenableBuilder] ile yenilenir.
   final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
 
-  final NoiseMeter _noiseMeter = NoiseMeter();
+  /// 12C2: mikrofon dinleme artık satır-içi `NoiseMeter` ile değil
+  /// [MicScreamService] üzerinden yapılır (izin akışı, eşik,
+  /// 220 ms kapı, dokunmatik yedek tek yerdedir). Eşik, yeniden
+  /// kurulum ve histerezis servistedir.
+  final MicScreamService _micService = MicScreamService.instance;
   Duration _last = Duration.zero;
-  StreamSubscription<NoiseReading>? _noiseSubscription;
 
   /// Mikrofon aboneliği duraklatma/arka plan nedeniyle askıda mı?
   /// `pause()`/`resume()` çağrıları bu bayrakla tekilleştirilir
@@ -160,9 +161,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   bool _voiceBusy = false;
   bool _voiceInputEnabled = false;
   bool _voiceToggling = false;
-  bool _voiceArmed = true;
   bool _prototypeInitialized = false;
-  DateTime _lastVoiceTrigger = DateTime.fromMillisecondsSinceEpoch(0);
   late final double _gateSpacing;
   double _floorY = 420;
   double _ceilY = 72;
@@ -235,7 +234,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     ProgressManager().removeListener(_onProgressChanged);
     WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
-    _noiseSubscription?.cancel();
+    // 12C2: ekran kapanınca servis dinlemesi de durur (tekil servis;
+    // bir sonraki giriş yeniden başlatır).
+    unawaited(_micService.stopListening());
     _ticker.dispose();
     _tickNotifier.dispose();
     super.dispose();
@@ -286,18 +287,20 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   }
 
   /// Mikrofon aboneliğini askıya al (tekilleştirilmiş: çift `pause`
-  /// çağrısı aboneliği kalıcı askıda bırakmasın).
+  /// çağrısı aboneliği kalıcı askıda bırakmasın). 12C2: askı
+  /// [MicScreamService.pauseListening] ile yapılır — izin yeniden
+  /// istenmez, devam kaldığı yerden açılır.
   void _pauseNoiseSubscription() {
     if (_noisePaused) return;
     _noisePaused = true;
-    _noiseSubscription?.pause();
+    _micService.pauseListening();
   }
 
   /// Askıdaki mikrofon aboneliğini devam ettir (tekilleştirilmiş).
   void _resumeNoiseSubscription() {
     if (!_noisePaused) return;
     _noisePaused = false;
-    _noiseSubscription?.resume();
+    unawaited(_micService.resumeListening());
   }
 
   /// Elle duraklatma / devam (madde 37): ticker durur, fizik ve kapılar donar.
@@ -674,66 +677,118 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     setState(() {});
   }
 
+  /// Mikrofon aç/kapat (12C2 — [MicScreamService] üzerinden).
+  ///
+  /// Açmadan önce kullanıcıya ne olacağını anlatan kısa metin +
+  /// eşik ayarı gösterilir. İzin reddedilirse / kalıcı reddedilirse /
+  /// web'de mikrofon yoksa servis dokunmatik yedek moda düşer:
+  /// oyun oynanabilir kalır, mikrofon simgesi kapalı kalır (ses
+  /// girişi yokmuş gibi davranılmaz; ipucu servisin durum
+  /// mesajını gösterir).
   Future<void> _toggleVoiceInput() async {
     // Çift-dokunma yarışı: izin beklerken ikinci dokunma ikinci
-    // listen() açmasın, ilki sızmasın.
+    // dinleme açmasın, ilki sızmasın.
     if (_voiceToggling) return;
     _voiceToggling = true;
     try {
       if (_voiceInputEnabled) {
-        await _noiseSubscription?.cancel();
-        _noiseSubscription = null;
+        await _micService.stopListening();
         _noisePaused = false;
-        if (mounted) setState(() => _voiceInputEnabled = false);
-        return;
-      }
-
-      final permission = await Permission.microphone.request();
-      if (!permission.isGranted) {
         if (mounted) {
           setState(() {
-            _hint = permission.isPermanentlyDenied
-                ? context.l10n.screamMicPermissionSettings
-                : context.l10n.screamMicDeniedHint;
+            _voiceInputEnabled = false;
+            _hint = context.l10n.screamHintIdle;
           });
         }
         return;
       }
 
-      try {
-        _noiseSubscription = _noiseMeter.noise.listen(
-          _onNoiseReading,
-          onError: (Object _) {
-            if (mounted) setState(() => _voiceInputEnabled = false);
-            _noiseSubscription?.cancel();
-            _noiseSubscription = null;
-            _noisePaused = false;
-          },
-          cancelOnError: true,
-        );
-        _noisePaused = false;
-        if (mounted) setState(() => _voiceInputEnabled = true);
-      } catch (_) {
-        _noisePaused = false;
-        if (mounted) setState(() => _voiceInputEnabled = false);
-      }
+      final confirmed = await _showMicExplainDialog();
+      if (confirmed != true || !mounted) return;
+
+      await _micService.startListening(
+        onScreamTriggered: (_) => _onMicScream(),
+      );
+      if (!mounted) return;
+      setState(() {
+        if (_micService.isFallbackMode) {
+          // Yedek mod (web / izinsiz / masaüstü): dokunmatik yedek
+          // sessizce devrede; mikrofon simgesi kapalı kalır.
+          _voiceInputEnabled = false;
+          _hint = _micService.statusMessage;
+        } else if (_micService.permissionGranted) {
+          _voiceInputEnabled = true;
+          _hint = _micService.statusMessage;
+        } else {
+          _voiceInputEnabled = false;
+          _hint = _micService.permissionPermanentlyDenied
+              ? context.l10n.screamMicPermissionSettings
+              : context.l10n.screamMicDeniedHint;
+        }
+      });
     } finally {
       _voiceToggling = false;
     }
   }
 
-  void _onNoiseReading(NoiseReading reading) {
+  /// Servisten gelen çığlık tetiklemesi: eşik, histerezis ve 220 ms
+  /// kapı servistedir; burada yalnız oyun durumu denetlenir.
+  void _onMicScream() {
     // Duraklatmada ve arka planda ses zıplatmasın (abonelik askısı
     // birinci koruma; bu kontrol kuyrukta kalmış okumalar için).
     if (!mounted || !_alive || _paused || _pausedByLifecycle) return;
-    final level = reading.meanDecibel;
-    if (level < _voiceThresholdDb - 8) _voiceArmed = true;
-    if (level < _voiceThresholdDb || !_voiceArmed) return;
-    final now = DateTime.now();
-    if (now.difference(_lastVoiceTrigger).inMilliseconds < 220) return;
-    _lastVoiceTrigger = now;
-    _voiceArmed = false;
     _scream();
+  }
+
+  /// İzin istenmeden önce açıklama + eşik ayarı diyaloğu.
+  /// `true` = kullanıcı mikrofonu açmayı onayladı.
+  Future<bool?> _showMicExplainDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final l10n = ctx.l10n;
+          return AlertDialog(
+            title: Text(l10n.screamMicExplainTitle),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.screamMicExplainBody),
+                const SizedBox(height: 16),
+                Text(
+                  l10n.screamMicThreshold(
+                    _micService.thresholdDb.round(),
+                  ),
+                ),
+                Slider(
+                  value: _micService.thresholdDb,
+                  min: MicScreamService.minDecibel + 10,
+                  max: 90,
+                  divisions: 24,
+                  label: '${_micService.thresholdDb.round()} dB',
+                  onChanged: (value) {
+                    _micService.thresholdDb = value;
+                    setDialogState(() {});
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(l10n.cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(l10n.screamMicEnableAction),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   void _restart() {
@@ -771,7 +826,6 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _callout = '';
       _scorePopup = '';
       _voiceBusy = false;
-      _voiceArmed = true;
       _hint = context.l10n.screamHintIdle;
       _last = Duration.zero;
       if (_layoutReady) _spawnGate(initial: true);
@@ -958,7 +1012,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _pausedForExitConfirm = false;
     _paused = false;
     // Yardım deseni: diyalog açıkken arka plana alındıysa konan
-    // bayrak da temizlenir; yoksa `_onNoiseReading` koruması
+    // bayrak da temizlenir; yoksa `_onMicScream` koruması
     // mikrofonu kalıcı kilitler.
     _pausedByLifecycle = false;
     _shiftPauseDeadlines();
@@ -1397,7 +1451,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ),
                 ),
               ),
-              Container(
+              // 12C2: güç çubuğu mikrofon açıkken servisin
+              // `powerNotifier` değerini (canlı çığlık gücü), kapalıyken
+              // oyun gücünü (`_power`) gösterir.
+              ValueListenableBuilder<double>(
+                valueListenable: _micService.powerNotifier,
+                builder: (context, micPower, _) {
+                  final displayPower = _voiceInputEnabled ? micPower : _power;
+                  return Container(
                 height: 63,
                 padding: const EdgeInsets.fromLTRB(14, 11, 14, 13),
                 decoration: const BoxDecoration(
@@ -1430,11 +1491,11 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              _voiceInputEnabled || _power >= 0.7
+                              _voiceInputEnabled || displayPower >= 0.7
                                   ? context.l10n.screamShoutingPercent(
-                                      (_power * 100).round(),
+                                      (displayPower * 100).round(),
                                     )
-                                  : '${context.l10n.screamTapPercent((_power * 100).round())}${isTutorialActive ? context.l10n.screamSlowStart : ''}',
+                                  : '${context.l10n.screamTapPercent((displayPower * 100).round())}${isTutorialActive ? context.l10n.screamSlowStart : ''}',
                               maxLines: 1,
                               textAlign: TextAlign.right,
                               overflow: TextOverflow.ellipsis,
@@ -1465,7 +1526,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                               child: FractionallySizedBox(
                                 widthFactor: widget.prototypeVisualState
                                     ? 0.7
-                                    : _power,
+                                    : displayPower,
                                 heightFactor: 1,
                                 child: const DecoratedBox(
                                   decoration: BoxDecoration(
@@ -1487,6 +1548,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                     ),
                   ],
                 ),
+                  );
+                },
               ),
             ],
           );
@@ -1745,7 +1808,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       if (frozeHere && mounted) {
         _paused = false;
         // Diyalog açıkken arka plana alındıysa konan bayrak da
-        // temizlenir; yoksa `_onNoiseReading` koruması mikrofonu
+        // temizlenir; yoksa `_onMicScream` koruması mikrofonu
         // kalıcı kilitler (koordinatör incelemesinde bulundu).
         _pausedByLifecycle = false;
         _shiftPauseDeadlines();

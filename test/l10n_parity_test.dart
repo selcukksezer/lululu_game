@@ -13,7 +13,7 @@ import 'package:lululu_game/l10n/app_tr.dart';
 // iki dilde de boş olmayan karşılığı var.
 //
 // Kapsam notu: Dart'ta yansıma (mirrors) yok; anahtar listesi burada
-// açıkça sayılır (soyut sınıftaki 869 getter + 178 metot = 1047 anahtar,
+// açıkça sayılır (soyut sınıftaki 874 getter + 179 metot = 1053 anahtar,
 // aynı sırada). Liste, l10n dosyalarından programatik çıkarıldı
 // (`String get X` + `String X(` kalıpları taranarak); elle yazılmadı.
 // Yeni bir getter/metot eklendiğinde bu listeye de eklenmelidir;
@@ -157,6 +157,9 @@ void main() {
         'inviteRedeemHint': l10n.inviteRedeemHint,
         'inviteRedeemButton': l10n.inviteRedeemButton,
         'inviteRedeemLocalNote': l10n.inviteRedeemLocalNote,
+        // 12C2: davet kodu kopyalama
+        'inviteCopyCodeLabel': l10n.inviteCopyCodeLabel,
+        'inviteCodeCopied': l10n.inviteCodeCopied,
         'inviteRedeemErrorInvalid': l10n.inviteRedeemErrorInvalid,
         'inviteRedeemErrorOwn': l10n.inviteRedeemErrorOwn,
         'inviteRedeemErrorUsed': l10n.inviteRedeemErrorUsed,
@@ -693,6 +696,10 @@ void main() {
         'screamShieldSaved': l10n.screamShieldSaved,
         'screamMicPermissionSettings': l10n.screamMicPermissionSettings,
         'screamMicDeniedHint': l10n.screamMicDeniedHint,
+        // 12C2: mikrofon açıklaması + eşik
+        'screamMicExplainTitle': l10n.screamMicExplainTitle,
+        'screamMicExplainBody': l10n.screamMicExplainBody,
+        'screamMicEnableAction': l10n.screamMicEnableAction,
         'screamMegaJumpCallout': l10n.screamMegaJumpCallout,
         'screamMegaJumpHint': l10n.screamMegaJumpHint,
         'screamShieldBalloonCallout': l10n.screamShieldBalloonCallout,
@@ -1047,6 +1054,9 @@ void main() {
         'inviteRedeemHint': l10n.inviteRedeemHint,
         'inviteRedeemButton': l10n.inviteRedeemButton,
         'inviteRedeemLocalNote': l10n.inviteRedeemLocalNote,
+        // 12C2: davet kodu kopyalama
+        'inviteCopyCodeLabel': l10n.inviteCopyCodeLabel,
+        'inviteCodeCopied': l10n.inviteCodeCopied,
         'inviteRedeemErrorInvalid': l10n.inviteRedeemErrorInvalid,
         'inviteRedeemErrorOwn': l10n.inviteRedeemErrorOwn,
         'inviteRedeemErrorUsed': l10n.inviteRedeemErrorUsed,
@@ -1583,6 +1593,10 @@ void main() {
         'screamShieldSaved': l10n.screamShieldSaved,
         'screamMicPermissionSettings': l10n.screamMicPermissionSettings,
         'screamMicDeniedHint': l10n.screamMicDeniedHint,
+        // 12C2: mikrofon açıklaması + eşik
+        'screamMicExplainTitle': l10n.screamMicExplainTitle,
+        'screamMicExplainBody': l10n.screamMicExplainBody,
+        'screamMicEnableAction': l10n.screamMicEnableAction,
         'screamMegaJumpCallout': l10n.screamMegaJumpCallout,
         'screamMegaJumpHint': l10n.screamMegaJumpHint,
         'screamShieldBalloonCallout': l10n.screamShieldBalloonCallout,
@@ -1930,6 +1944,7 @@ void main() {
         'screamStatsLine': l10n.screamStatsLine(3, 3, 3),
         'screamNextGate': l10n.screamNextGate(3),
         'screamShoutingPercent': l10n.screamShoutingPercent(3),
+        'screamMicThreshold': l10n.screamMicThreshold(64),
         'screamArcadeHint': l10n.screamArcadeHint('X'),
         'screamPauseScore': l10n.screamPauseScore(3, 3),
         // W65-1: G8 stack_drop (i18n göç planı)
@@ -2125,6 +2140,7 @@ void main() {
         'screamStatsLine': l10n.screamStatsLine(3, 3, 3),
         'screamNextGate': l10n.screamNextGate(3),
         'screamShoutingPercent': l10n.screamShoutingPercent(3),
+        'screamMicThreshold': l10n.screamMicThreshold(64),
         'screamArcadeHint': l10n.screamArcadeHint('X'),
         'screamPauseScore': l10n.screamPauseScore(3, 3),
         // W65-1: G8 stack_drop (i18n göç planı)
@@ -2260,21 +2276,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 1042 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1051 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 869);
-    expect(tr.length, 869);
-    expect(enMethods.length, 178);
-    expect(trMethods.length, 178);
+    expect(en.length, 874);
+    expect(tr.length, 874);
+    expect(enMethods.length, 179);
+    expect(trMethods.length, 179);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1047);
+    expect(en.length + enMethods.length, 1053);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

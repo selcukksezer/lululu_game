@@ -445,6 +445,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get inviteRedeemLocalNote =>
       'Codes are checked only on this device; there is no server verification.';
 
+  // --- 12C2: invite code copy ---
+  @override
+  String get inviteCopyCodeLabel => 'Copy code';
+
+  @override
+  String get inviteCodeCopied => 'Invite code copied';
+
   @override
   String get inviteRedeemErrorInvalid =>
       'Invalid code format. Example: LULU-AB12345';
@@ -2466,6 +2473,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get screamMicDeniedHint => 'Voice permission not granted · you can jump by tapping.';
+
+  // --- 12C2: microphone explainer shown before asking + threshold ---
+  @override
+  String get screamMicExplainTitle => 'Shout to jump?';
+
+  @override
+  String get screamMicExplainBody =>
+      'If you turn on the microphone, the bug jumps when you shout. Your voice never leaves the device and nothing is recorded. If you decline, you keep playing by tapping.';
+
+  @override
+  String get screamMicEnableAction => 'Turn on microphone';
+
+  @override
+  String screamMicThreshold(int db) => 'Shout threshold: $db dB';
 
   @override
   String get screamMegaJumpCallout => 'MEGA JUMP!';

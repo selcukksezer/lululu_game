@@ -450,6 +450,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get inviteRedeemLocalNote =>
       'Kodlar yalnızca bu cihazda denetlenir; sunucu doğrulaması yoktur.';
 
+  // --- 12C2: davet kodu kopyalama ---
+  @override
+  String get inviteCopyCodeLabel => 'Kodu kopyala';
+
+  @override
+  String get inviteCodeCopied => 'Davet kodu kopyalandı';
+
   @override
   String get inviteRedeemErrorInvalid =>
       'Kod biçimi hatalı. Örnek: LULU-AB12345';
@@ -2464,6 +2471,20 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get screamMicDeniedHint => 'Ses izni verilmedi · dokunarak zıplayabilirsin.';
+
+  // --- 12C2: mikrofon açmadan önce bilgilendirme + eşik ayarı ---
+  @override
+  String get screamMicExplainTitle => 'Bağırarak zıpla?';
+
+  @override
+  String get screamMicExplainBody =>
+      'Mikrofonu açarsan bağırdığında böcek zıplar. Sesin cihazdan çıkmaz, kayıt yapılmaz. İzin vermezsen dokunarak oynamaya devam edersin.';
+
+  @override
+  String get screamMicEnableAction => 'Mikrofonu aç';
+
+  @override
+  String screamMicThreshold(int db) => 'Çığlık eşiği: $db dB';
 
   @override
   String get screamMegaJumpCallout => 'MEGA ZIPLAMA!';

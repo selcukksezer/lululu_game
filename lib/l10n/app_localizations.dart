@@ -274,6 +274,9 @@ abstract class AppLocalizations {
   String get inviteRedeemHint;
   String get inviteRedeemButton;
   String get inviteRedeemLocalNote;
+  // --- 12C2: davet kodu kopyalama ---
+  String get inviteCopyCodeLabel;
+  String get inviteCodeCopied;
   String get inviteRedeemErrorInvalid;
   String get inviteRedeemErrorOwn;
   String get inviteRedeemErrorUsed;
@@ -1111,6 +1114,11 @@ abstract class AppLocalizations {
   String get screamShieldSaved;
   String get screamMicPermissionSettings;
   String get screamMicDeniedHint;
+  // --- 12C2: mikrofon açmadan önce bilgilendirme + eşik ayarı ---
+  String get screamMicExplainTitle;
+  String get screamMicExplainBody;
+  String get screamMicEnableAction;
+  String screamMicThreshold(int db);
   String get screamMegaJumpCallout;
   String get screamMegaJumpHint;
   String get screamShieldBalloonCallout;

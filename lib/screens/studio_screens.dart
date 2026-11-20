@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/bug_video_service.dart';
 import '../services/progress_manager.dart';
+import '../services/sticker_gif_catalog.dart';
 import '../utils/number_format.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
@@ -1891,6 +1892,30 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
   bool _captionInitialized = false;
   bool _generateBusy = false;
 
+  /// 12C2: kare satırının veri kaynağı [StickerGifCatalog] — karelerin
+  /// kimliği, sırası ve sayısı katalogdan gelir (`gifFrameItems`).
+  /// GIF üretimi `BugVideoService.studioGifFrames` indeksleriyle
+  /// (0..2) çalışır; katalog listesi o indekslerin karşılığıdır.
+  final List<StickerGifItem> _gifFrames = StickerGifCatalog.gifFrameItems;
+
+  /// Piksel-perfect: kare düğmelerindeki görünen etiketler prototip
+  /// metnidir; katalog başlığından farklı yazılır ('Pijamalı Dansçı'
+  /// / 'Kongo Lideri'), o yüzden etiketler burada literal kalır —
+  /// katalog yalnız kimlik/sıra/sayı kaynağıdır.
+  static const List<String> _gifFrameDisplayLabels = <String>[
+    'Pijamalı Dansçı',
+    'Hamam Diva',
+    'Kongo Lideri',
+  ];
+
+  /// Kare düğmesi küçük görselleri (önizleme `_frameAssets`ten
+  /// ayrıdır: 0. kare düğmesi img_2.png kullanır).
+  static const List<String> _gifFrameButtonAssets = <String>[
+    'assets/design/ui/studio_gif/img_2.png',
+    'assets/design/ui/studio_gif/img_3.png',
+    'assets/design/ui/studio_gif/img_4.png',
+  ];
+
   final _frameAssets = [
     'assets/design/ui/studio_gif/gifImg.png',
     'assets/design/ui/studio_gif/img_3.png',
@@ -1920,9 +1945,15 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
     unawaited(AudioManager().playButtonTap());
     var succeeded = false;
     try {
+      // 12C2: seçim katalog aralığında doğrulanır — katalog dışı
+      // kalmış indeksler üretime girmez (katalog tek doğruluk
+      // kaynağı; boş kalırsa varsayılan {0, 1} kullanılır).
+      final validFrames = _selectedFrames
+          .where((i) => i >= 0 && i < _gifFrames.length)
+          .toSet();
       await BugVideoService.instance.createAnimatedGif(
         caption: _captionCtrl.text,
-        selectedFrames: _selectedFrames,
+        selectedFrames: validFrames.isEmpty ? const <int>{0, 1} : validFrames,
         speedIndex: _selectedSpeed,
       );
       succeeded = true;
@@ -2029,7 +2060,8 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                               width: _studioScaled(289.4, studioWidth),
                               height: 251.6,
                               child: _DropShadowImage(
-                                assetPath: _frameAssets[_activePreviewFrame],
+                                assetPath: _frameAssets[_activePreviewFrame
+                                    .clamp(0, _frameAssets.length - 1)],
                                 width: _studioScaled(289.4, studioWidth),
                                 height: 251.6,
                                 shadowOffset: const Offset(0, 10),
@@ -2112,23 +2144,18 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                               height: 77,
                               child: Row(
                                 children: [
-                                  _buildFrameBtn(
-                                    0,
-                                    'Pijamalı Dansçı',
-                                    'assets/design/ui/studio_gif/img_2.png',
-                                  ),
-                                  const SizedBox(width: 9),
-                                  _buildFrameBtn(
-                                    1,
-                                    'Hamam Diva',
-                                    'assets/design/ui/studio_gif/img_3.png',
-                                  ),
-                                  const SizedBox(width: 9),
-                                  _buildFrameBtn(
-                                    2,
-                                    'Kongo Lideri',
-                                    'assets/design/ui/studio_gif/img_4.png',
-                                  ),
+                                  // 12C2: kare satırı katalogdan beslenir
+                                  // (kimlik/sıra/sayı); etiketler ve
+                                  // görseller piksel-perfect listededir.
+                                  for (var i = 0; i < _gifFrames.length; i++) ...[
+                                    if (i > 0) const SizedBox(width: 9),
+                                    _buildFrameBtn(
+                                      i,
+                                      _gifFrameDisplayLabels[i],
+                                      _gifFrameButtonAssets[i],
+                                      _gifFrames[i],
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -2319,9 +2346,18 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
     );
   }
 
-  Widget _buildFrameBtn(int index, String label, String imagePath) {
+  /// Kare düğmesi: `catalogItem` düğmenin kimliğidir (12C2 — kare
+  /// satırı katalogdan beslenir); görünen etiket/görsel piksel-perfect
+  /// listedendir, katalog başlığı/asset'i ile değiştirilmez.
+  Widget _buildFrameBtn(
+    int index,
+    String label,
+    String imagePath,
+    StickerGifItem catalogItem,
+  ) {
     final on = _selectedFrames.contains(index);
     return Expanded(
+      key: ValueKey('gif_frame_${catalogItem.id}'),
       child: Semantics(
         button: true,
         label: label,

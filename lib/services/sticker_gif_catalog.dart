@@ -17,6 +17,25 @@ class StickerGifCatalog {
   StickerGifCatalog._();
   static final instance = StickerGifCatalog._();
 
+  /// Kimlikle öğe bulur; yoksa `null` döner.
+  static StickerGifItem? byId(String id) {
+    for (final item in items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  /// Stüdyo GIF ekranının kare satırındaki öğeler (sıralı): GIF
+  /// üretimi `BugVideoService.studioGifFrames` indeksleriyle (0..2)
+  /// çalışır; bu liste o indekslerin katalog karşılığıdır —
+  /// ekran kare satırını bu listeden besler, böylece karelerin
+  /// kimliği/etiketi tek kaynaktan gelir.
+  static const List<String> gifFrameIds = <String>['t4', 't5', 't7'];
+
+  /// [gifFrameIds] sırasındaki katalog öğeleri.
+  static List<StickerGifItem> get gifFrameItems =>
+      <StickerGifItem>[for (final id in gifFrameIds) byId(id)!];
+
   static const items = <StickerGifItem>[
     StickerGifItem(
       id: 't1',
