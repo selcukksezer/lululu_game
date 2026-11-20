@@ -1358,10 +1358,12 @@ class ChatService extends ChangeNotifier {
   /// prefs'i, `userNotifier`) değişmez, yazar kimliği her zaman
   /// kalıcı misafir UUID'sidir. (O13: eski kod
   /// `AuthService.signInAsGuest()` çağırıp sohbet retry'sini sessiz
-  /// bir misafir oturumuna dönüştürüyordu.) `AuthService` Firebase
-  /// auth durumu dinleyicisi kurmadığından anonim oturum uygulama
-  /// oturumuna sıçramaz; Firestore kurallarının istediği
-  /// `request.auth` varlığı ise bu taşıma oturumuyla sağlanır.
+  /// bir misafir oturumuna dönüştürüyordu.) `AuthService` artık
+  /// Firebase auth durumu dinleyicisi kuruyor ama dinleyici misafir
+  /// oturumunda ve anonim Firebase kullanıcısında erken döndüğü için
+  /// anonim oturum uygulama oturumuna sıçramaz; Firestore
+  /// kurallarının istediği `request.auth` varlığı ise bu taşıma
+  /// oturumuyla sağlanır.
   Future<void> _ensureGuestCloudCredential() async {
     if (!FirebaseBootstrap.isAvailable || _cloudAuthReady) return;
     try {

@@ -1210,7 +1210,14 @@ class AuthService extends ChangeNotifier {
               });
             }
             if (bestGuestScore > (pm.modeHighScores[modeId] ?? 0)) {
-              pm.modeHighScores[modeId] = bestGuestScore;
+              // Dalga 3 ek: göç skoru da AntiCheat kapısından geçer —
+              // recordModeScore bilinmeyen mod / negatif / tavan üstü
+              // skoru yazmaz (doğrudan harita yazımı kapısızdı).
+              await pm.recordModeScore(
+                modeId,
+                bestGuestScore,
+                fromRemoteSync: true,
+              );
             }
           }
         }
@@ -1229,12 +1236,19 @@ class AuthService extends ChangeNotifier {
         if (entry.value > 0) {
           final canonical = ProgressManager.normalizeModeId(entry.key);
           if (entry.value > (pm.modeHighScores[canonical] ?? 0)) {
-            pm.modeHighScores[canonical] = entry.value;
+            // Dalga 3 ek: göç skoru da AntiCheat kapısından geçer —
+            // recordModeScore bilinmeyen mod / negatif / tavan üstü
+            // skoru yazmaz (doğrudan harita yazımı kapısızdı).
+            await pm.recordModeScore(
+              canonical,
+              entry.value,
+              fromRemoteSync: true,
+            );
           }
           if (entry.value > LeaderboardService.instance.getBest(canonical)) {
             // 12C1: göç birleştirme — doğrulanmış anlık görüntüden gelen
-            // uzak skor; AntiCheat kap denetimi atlanır, mutlak + mod
-            // tavanı denetimi submitScore içinde kalır.
+            // uzak skor; AntiCheat kap denetimi submitScore içinde
+            // çalışır (uzak yol da aynı kapıdan geçer — Dalga 3 ek).
             await LeaderboardService.instance.submitScore(
               canonical,
               entry.value,

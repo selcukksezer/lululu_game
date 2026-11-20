@@ -147,6 +147,19 @@ class CloudSyncService extends ChangeNotifier {
   /// kelepçesiyle birebir.
   static const int maxValidBestCombo = 999999;
 
+  /// Dalga 3: günlük ücretsiz enerji hak sayısı —
+  /// `ProgressManager.maxDailyFreeEnergyClaimsWithAd` kelepçesiyle
+  /// birebir (kural allowlist'ine eklenmeden canlı yazım reddedilir;
+  /// bkz. `buildSignedProfilePayload` SIRA ŞARTI).
+  static const int maxDailyFreeEnergyClaims =
+      ProgressManager.maxDailyFreeEnergyClaimsWithAd;
+
+  /// Dalga 3: günlük görev ilerleme değeri — hedefler en fazla 5
+  /// (`dailyTaskTargets`) ama ilerleme hedefi aşabilir; makullük
+  /// sınırı 999'dur. Kural harita boyutunu denetler, değer aralığı
+  /// istemci ön-denetimindedir (`extraPowersUpdatedAtMs` deseni).
+  static const int maxDailyTaskProgressValue = 999;
+
   /// Dalga 2: kazanılan başarım kimliği listesi — en fazla 30
   /// (tanımlı başarım sayısı, `all30Achievements`).
   static const int maxUnlockedAchievementsEntries = 30;
@@ -460,6 +473,48 @@ class CloudSyncService extends ChangeNotifier {
     return val.clamp(minVal, maxVal);
   }
 
+  /// Dalga 3: gün anahtarını doğrular — boş (hiç alınmadı) ise aynen
+  /// döner, ayrıştırılabilir `yyyy-M-d` ise aynen döner, bozuksa `null`.
+  static String? _validDayKey(String key) {
+    if (key.isEmpty) return '';
+    return ProgressManager.tryParseDayKey(key) == null ? null : key;
+  }
+
+  /// Dalga 3: uzak görev ilerlemesini gevşek okur — yalnız bilinen
+  /// görev kimlikleri, int değerler, 0..[maxDailyTaskProgressValue]
+  /// (sınır dışı kelepçelenir, bilinmeyen kimlik atılır).
+  static Map<String, int> _parseDailyTaskProgress(Map data) {
+    final result = <String, int>{};
+    final raw = data['dailyTasksProgress'];
+    if (raw is! Map) return result;
+    for (final entry in raw.entries) {
+      final key = entry.key.toString();
+      if (!ProgressManager.dailyTaskTargets.containsKey(key)) continue;
+      final value = _validateBoundedInt(
+        entry.value,
+        minVal: 0,
+        maxVal: maxDailyTaskProgressValue,
+      );
+      if (value != null) result[key] = value;
+    }
+    return result;
+  }
+
+  /// Dalga 3: uzak görev ödül alımlarını gevşek okur — yalnız bilinen
+  /// görev kimlikleri.
+  static Set<String> _parseDailyTasksClaimed(Map data) {
+    final result = <String>{};
+    final raw = data['dailyTasksClaimed'];
+    if (raw is! Iterable) return result;
+    for (final id in raw) {
+      if (id is String &&
+          ProgressManager.dailyTaskTargets.containsKey(id)) {
+        result.add(id);
+      }
+    }
+    return result;
+  }
+
   /// Builds a sanitized, bounds-clamped, and HMAC-signed player profile payload.
   Map<String, dynamic> buildSignedProfilePayload({
     String? uid,
@@ -487,6 +542,25 @@ class CloudSyncService extends ChangeNotifier {
     // payload'u bozmaz); liste en fazla 30 öğe, sıralı (imza kararlılığı).
     final safeSeasonXp = aps.seasonXp.clamp(0, maxValidSeasonXp);
     final safeBestCombo = pm.bestCombo.clamp(0, maxValidBestCombo);
+    // Dalga 3: günlük ödül hak günü / görev ilerlemesi / ücretsiz
+    // enerji hakları — yalnız SharedPreferences'te tutuluyorlardı,
+    // başka cihazda aynı gün tekrar ödül alınabiliyordu. Gün
+    // anahtarı (`yyyy-M-d`) kendisi sürüm taşır: birleştirme günü
+    // karşılaştırarak yapılır (bozuk anahtar atılır, alan yazılmaz).
+    final safeClaimDay = _validDayKey(pm.lastStreakClaimDay) ?? '';
+    final safeTasksDay = _validDayKey(pm.dailyTasksDay) ?? '';
+    final safeTasksProgress = <String, int>{};
+    for (final taskId in ProgressManager.dailyTaskTargets.keys) {
+      safeTasksProgress[taskId] = (pm.dailyTaskProgress[taskId] ?? 0)
+          .clamp(0, maxDailyTaskProgressValue);
+    }
+    final safeTasksClaimed = pm.claimedDailyTasks
+        .where(ProgressManager.dailyTaskTargets.containsKey)
+        .toList()
+      ..sort();
+    final safeFreeEnergyDay = _validDayKey(pm.lastDailyFreeEnergyDay) ?? '';
+    final safeFreeEnergyClaims =
+        pm.dailyFreeEnergyClaimsToday.clamp(0, maxDailyFreeEnergyClaims);
     final validAchievementIds = AchievementPassService.all30Achievements
         .map((d) => d.id)
         .toSet();
@@ -563,6 +637,23 @@ class CloudSyncService extends ChangeNotifier {
       'seasonXp': safeSeasonXp,
       'unlockedAchievements': cappedAchievements,
       'bestCombo': safeBestCombo,
+      // Dalga 3: günlük ödül hak günü, görev günü/ilerlemesi/ödül
+      // alımları, ücretsiz enerji günü/hak sayısı. Damgalar
+      // `fieldUpdatedAtMap` yayılımıyla gelir (aşağıda). SIRA ŞARTI:
+      // bu 9 yeni anahtar (`lastStreakClaimDay`, `dailyTasksDay`,
+      // `dailyTasksProgress`, `dailyTasksClaimed`,
+      // `dailyFreeEnergyDay`, `dailyFreeEnergyClaims`,
+      // `lastStreakClaimDayUpdatedAtMs`, `dailyTasksUpdatedAtMs`,
+      // `dailyFreeEnergyUpdatedAtMs`) `firestore.rules`
+      // `isValidUserDoc` allowlist'ine eklenip dağıtılmadan canlı
+      // yazım kuralca reddedilir (kuyruk korunur) — önce kural
+      // dağıtılır, sonra bu istemci yayınlanır.
+      'lastStreakClaimDay': safeClaimDay,
+      'dailyTasksDay': safeTasksDay,
+      'dailyTasksProgress': safeTasksProgress,
+      'dailyTasksClaimed': safeTasksClaimed,
+      'dailyFreeEnergyDay': safeFreeEnergyDay,
+      'dailyFreeEnergyClaims': safeFreeEnergyClaims,
       // Y6/LWW (tasarım A10 §3.2.1): alan damgaları — değerin YEREL
       // son değişim anı (flush anı değil). Damgalar bütünlük
       // imzasına dahildir (`_canonicalize` yalnız `updatedAt` /
@@ -656,6 +747,59 @@ class CloudSyncService extends ChangeNotifier {
     // Dalga 2: sezon XP'si / en iyi kombo / kazanılan başarımlar.
     checkInt('seasonXp', 0, maxValidSeasonXp);
     checkInt('bestCombo', 0, maxValidBestCombo);
+    // Dalga 3: günlük ödül hak günü / görev günü / ücretsiz enerji günü.
+    void checkDayKey(String field) {
+      final v = payload[field];
+      if (v == null) return;
+      if (v is! String ||
+          (v.isNotEmpty && ProgressManager.tryParseDayKey(v) == null)) {
+        violations.add('$field boş ya da yyyy-M-d olmalı');
+      }
+    }
+
+    checkDayKey('lastStreakClaimDay');
+    checkDayKey('dailyTasksDay');
+    checkDayKey('dailyFreeEnergyDay');
+    final tasksProgress = payload['dailyTasksProgress'];
+    if (tasksProgress is Map) {
+      final maxKeys = ProgressManager.dailyTaskTargets.length;
+      if (tasksProgress.length > maxKeys) {
+        violations.add('dailyTasksProgress en fazla $maxKeys anahtar olmalı');
+      }
+      for (final entry in tasksProgress.entries) {
+        final v = entry.value;
+        if (!ProgressManager.dailyTaskTargets.containsKey(entry.key) ||
+            v is! int ||
+            v < 0 ||
+            v > maxDailyTaskProgressValue) {
+          violations.add(
+            'dailyTasksProgress[${entry.key}] 0..$maxDailyTaskProgressValue olmalı',
+          );
+          break;
+        }
+      }
+    } else if (tasksProgress != null) {
+      violations.add('dailyTasksProgress harita olmalı');
+    }
+    final tasksClaimed = payload['dailyTasksClaimed'];
+    if (tasksClaimed is List) {
+      final maxKeys = ProgressManager.dailyTaskTargets.length;
+      if (tasksClaimed.length > maxKeys) {
+        violations.add('dailyTasksClaimed en fazla $maxKeys öğe olmalı');
+      }
+      for (final id in tasksClaimed) {
+        if (id is! String ||
+            !ProgressManager.dailyTaskTargets.containsKey(id)) {
+          violations.add(
+            'dailyTasksClaimed yalnız bilinen görev kimliği içermeli',
+          );
+          break;
+        }
+      }
+    } else if (tasksClaimed != null) {
+      violations.add('dailyTasksClaimed liste olmalı');
+    }
+    checkInt('dailyFreeEnergyClaims', 0, maxDailyFreeEnergyClaims);
     final achievements = payload['unlockedAchievements'];
     if (achievements is List) {
       if (achievements.length > maxUnlockedAchievementsEntries) {
@@ -709,6 +853,10 @@ class CloudSyncService extends ChangeNotifier {
     // Dalga 2 damgaları.
     checkInt('seasonXpUpdatedAtMs', 0, maxFieldStampMs);
     checkInt('unlockedAchievementsUpdatedAtMs', 0, maxFieldStampMs);
+    // Dalga 3 damgaları.
+    checkInt('lastStreakClaimDayUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('dailyTasksUpdatedAtMs', 0, maxFieldStampMs);
+    checkInt('dailyFreeEnergyUpdatedAtMs', 0, maxFieldStampMs);
     final powerStamps = payload['extraPowersUpdatedAtMs'];
     if (powerStamps is Map) {
       if (powerStamps.length > maxExtraPowerEntries) {
@@ -830,6 +978,121 @@ class CloudSyncService extends ChangeNotifier {
     return max(safeLocal, safeRemote);
   }
 
+  /// Dalga 3: flush yazımı öncesi günlük alan yakınsaması (coin
+  /// yakınsamasının ([convergedCoinsForFlush]) günlük karşılığı).
+  /// Flush bayat yerelle bulutu ezmesin diye ön-okunmuş uzak belgeyle
+  /// pull'daki gün-birleştirme uygulanır: yeni gün kazanır, eşit günde
+  /// görev ilerlemesi max/birleşim, ücretsiz enerji hak sayısı max.
+  /// Değişim yoksa aynı harita döner; değişim varsa yeni harita +
+  /// taze bütünlük imzası döner.
+  static Map<String, dynamic> convergedDailyFieldsForFlush({
+    required Map<String, dynamic> localProfile,
+    Map<String, dynamic>? remoteData,
+  }) {
+    if (remoteData == null || remoteData.isEmpty) return localProfile;
+    final merged = Map<String, dynamic>.from(localProfile);
+    var changed = false;
+
+    String dayOf(Map<String, dynamic> doc, String field) {
+      final v = doc[field];
+      return v is String ? v : '';
+    }
+
+    // Hediye kutusu hak günü: yeni gün kazanır.
+    final remoteClaimDay = dayOf(remoteData, 'lastStreakClaimDay');
+    if (remoteClaimDay.isNotEmpty &&
+        ProgressManager.tryParseDayKey(remoteClaimDay) != null &&
+        ProgressManager.compareDayKeys(
+              remoteClaimDay,
+              dayOf(localProfile, 'lastStreakClaimDay'),
+            ) >
+            0) {
+      merged['lastStreakClaimDay'] = remoteClaimDay;
+      final remoteStamp = remoteData['lastStreakClaimDayUpdatedAtMs'];
+      if (remoteStamp is int) {
+        merged['lastStreakClaimDayUpdatedAtMs'] = remoteStamp;
+      }
+      changed = true;
+    }
+    // Görevler: yeni gün toptan, eşit gün max/birleşim.
+    final remoteTasksDay = dayOf(remoteData, 'dailyTasksDay');
+    final localTasksDay = dayOf(localProfile, 'dailyTasksDay');
+    if (remoteTasksDay.isNotEmpty &&
+        ProgressManager.tryParseDayKey(remoteTasksDay) != null) {
+      final cmp = ProgressManager.compareDayKeys(
+        remoteTasksDay,
+        localTasksDay,
+      );
+      if (cmp > 0) {
+        merged['dailyTasksDay'] = remoteTasksDay;
+        merged['dailyTasksProgress'] = _parseDailyTaskProgress(remoteData);
+        merged['dailyTasksClaimed'] =
+            _parseDailyTasksClaimed(remoteData).toList()..sort();
+        final remoteStamp = remoteData['dailyTasksUpdatedAtMs'];
+        if (remoteStamp is int) {
+          merged['dailyTasksUpdatedAtMs'] = remoteStamp;
+        }
+        changed = true;
+      } else if (cmp == 0) {
+        final localProgress = _parseDailyTaskProgress(localProfile);
+        var progressChanged = false;
+        for (final entry in _parseDailyTaskProgress(remoteData).entries) {
+          if ((localProgress[entry.key] ?? 0) < entry.value) {
+            localProgress[entry.key] = entry.value;
+            progressChanged = true;
+          }
+        }
+        final localClaimed = _parseDailyTasksClaimed(localProfile);
+        final beforeClaimed = localClaimed.length;
+        localClaimed.addAll(_parseDailyTasksClaimed(remoteData));
+        if (progressChanged || localClaimed.length != beforeClaimed) {
+          merged['dailyTasksProgress'] = localProgress;
+          merged['dailyTasksClaimed'] = localClaimed.toList()..sort();
+          changed = true;
+        }
+      }
+    }
+    // Ücretsiz enerji: yeni gün toptan, eşit gün max hak sayısı.
+    final remoteEnergyDay = dayOf(remoteData, 'dailyFreeEnergyDay');
+    final localEnergyDay = dayOf(localProfile, 'dailyFreeEnergyDay');
+    if (remoteEnergyDay.isNotEmpty &&
+        ProgressManager.tryParseDayKey(remoteEnergyDay) != null) {
+      final cmp = ProgressManager.compareDayKeys(
+        remoteEnergyDay,
+        localEnergyDay,
+      );
+      final remoteClaims = _validateBoundedInt(
+        remoteData['dailyFreeEnergyClaims'],
+        minVal: 0,
+        maxVal: maxDailyFreeEnergyClaims,
+      );
+      if (cmp > 0) {
+        merged['dailyFreeEnergyDay'] = remoteEnergyDay;
+        merged['dailyFreeEnergyClaims'] = remoteClaims ?? 0;
+        final remoteStamp = remoteData['dailyFreeEnergyUpdatedAtMs'];
+        if (remoteStamp is int) {
+          merged['dailyFreeEnergyUpdatedAtMs'] = remoteStamp;
+        }
+        changed = true;
+      } else if (cmp == 0 && remoteClaims != null) {
+        final localClaims = _validateBoundedInt(
+          localProfile['dailyFreeEnergyClaims'],
+          minVal: 0,
+          maxVal: maxDailyFreeEnergyClaims,
+        ) ??
+            0;
+        if (remoteClaims > localClaims) {
+          merged['dailyFreeEnergyClaims'] = remoteClaims;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) return localProfile;
+    merged['integrityHash'] =
+        CloudSyncService.instance.computeIntegrityHash(merged);
+    return merged;
+  }
+
   /// Validates and conflict-free merges a remote/offline profile snapshot into
   /// [ProgressManager] and [LeaderboardService]. Returns false if rejected by
   /// integrity verification or anti-cheat bounds checks.
@@ -862,6 +1125,11 @@ class CloudSyncService extends ChangeNotifier {
   ///   büyüme, damga karar verici değildir, denetim için taşınır.
   ///   Bilinmeyen başarım kimliği atılır, birleşmeyle açılan başarımın
   ///   ödülü tekrar verilmez.
+  /// * Dalga 3: günlük ödül hak günü / görev ilerlemesi / ücretsiz
+  ///   enerji — gün anahtarı sürümdür: yeni gün kazanır, eşit günde
+  ///   ilerleme görev-başına max + ödül birleşimi, eski gün yereli
+  ///   korur. Buluttan bilinen hak günleri ayrıca saklanır; claim
+  ///   kapıları pull sonrası bile bulut değerini esas alır.
   /// * `totalStars` / `total11ModesScore` / `bestOverallScore`:
   ///   türevdir, uzak değer okunmaz (§3.2.4).
   /// * `displayName` / `country`: AuthService'e aittir; pull'da
@@ -956,6 +1224,48 @@ class CloudSyncService extends ChangeNotifier {
       return false;
     }
 
+    // Dalga 3: bozuk gün anahtarı / sınır dışı ücretsiz enerji hak
+    // sayısı tüm snapshot'ı reddeder (coin/enerji deseni); görev
+    // harita/listesi gevşek okunur (tier deseni — yanlış tür sessizce
+    // atlanır, bkz. [_parseDailyTaskProgress]).
+    String? remoteClaimDay;
+    if (data.containsKey('lastStreakClaimDay')) {
+      final raw = data['lastStreakClaimDay'];
+      if (raw is! String ||
+          (raw.isNotEmpty && ProgressManager.tryParseDayKey(raw) == null)) {
+        return false;
+      }
+      remoteClaimDay = raw;
+    }
+    String? remoteTasksDay;
+    if (data.containsKey('dailyTasksDay')) {
+      final raw = data['dailyTasksDay'];
+      if (raw is! String ||
+          (raw.isNotEmpty && ProgressManager.tryParseDayKey(raw) == null)) {
+        return false;
+      }
+      remoteTasksDay = raw;
+    }
+    String? remoteFreeEnergyDay;
+    if (data.containsKey('dailyFreeEnergyDay')) {
+      final raw = data['dailyFreeEnergyDay'];
+      if (raw is! String ||
+          (raw.isNotEmpty && ProgressManager.tryParseDayKey(raw) == null)) {
+        return false;
+      }
+      remoteFreeEnergyDay = raw;
+    }
+    final freeEnergyClaimsVal = _validateBoundedInt(
+      data['dailyFreeEnergyClaims'],
+      minVal: 0,
+      maxVal: maxDailyFreeEnergyClaims,
+      rejectOutOfBounds: true,
+    );
+    if (data.containsKey('dailyFreeEnergyClaims') &&
+        freeEnergyClaimsVal == null) {
+      return false;
+    }
+
     final pm = ProgressManager();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (coinsVal != null) {
@@ -1035,6 +1345,88 @@ class CloudSyncService extends ChangeNotifier {
         clamp: (v) => v.clamp(1, maxValidStreak),
         nowMs: nowMs,
       );
+    }
+
+    // Dalga 3: günlük ödül / görev / ücretsiz enerji birleşmesi.
+    // Gün anahtarı sürümdür: yeni gün kazanır, eşit günde ilerleme
+    // birleşim/max ile birleşir, eski gün yereli korur. Damga karar
+    // verici değildir (gün kendisi sürüm taşır); birleşmede değişen
+    // alanın damgası aşağıdaki `touchChangedFieldStamps` ile
+    // ilerletilir. Buluttan bilinen hak günleri ayrıca saklanır —
+    // claim kapıları pull sonrası bile bulut değerini esas alır.
+    final hasDailyRemote = remoteClaimDay != null ||
+        remoteTasksDay != null ||
+        remoteFreeEnergyDay != null ||
+        freeEnergyClaimsVal != null;
+    if (remoteClaimDay != null && remoteClaimDay.isNotEmpty) {
+      pm.cloudLastStreakClaimDay = ProgressManager.latestDayKey(
+        pm.cloudLastStreakClaimDay,
+        remoteClaimDay,
+      );
+      if (ProgressManager.compareDayKeys(
+            remoteClaimDay,
+            pm.lastStreakClaimDay,
+          ) >
+          0) {
+        pm.lastStreakClaimDay = remoteClaimDay;
+      }
+    }
+    if (remoteTasksDay != null && remoteTasksDay.isNotEmpty) {
+      final cmp = ProgressManager.compareDayKeys(
+        remoteTasksDay,
+        pm.dailyTasksDay,
+      );
+      if (cmp > 0) {
+        // Yeni gün: uzak gün + ilerleme + ödül alımları toptan benimsenir.
+        pm.dailyTasksDay = remoteTasksDay;
+        pm.dailyTaskProgress.updateAll((_, _) => 0);
+        for (final entry in _parseDailyTaskProgress(data).entries) {
+          pm.dailyTaskProgress[entry.key] = entry.value;
+        }
+        pm.claimedDailyTasks
+          ..clear()
+          ..addAll(_parseDailyTasksClaimed(data));
+      } else if (cmp == 0) {
+        // Aynı gün: görev başına max ilerleme + ödül birleşimi.
+        for (final entry in _parseDailyTaskProgress(data).entries) {
+          final current = pm.dailyTaskProgress[entry.key] ?? 0;
+          if (entry.value > current) {
+            pm.dailyTaskProgress[entry.key] = entry.value;
+          }
+        }
+        pm.claimedDailyTasks.addAll(_parseDailyTasksClaimed(data));
+        if (pm.dailyTasksDay.isEmpty) {
+          pm.dailyTasksDay = remoteTasksDay;
+        }
+      }
+    }
+    if (remoteFreeEnergyDay != null && remoteFreeEnergyDay.isNotEmpty) {
+      final cloudCmp = ProgressManager.compareDayKeys(
+        remoteFreeEnergyDay,
+        pm.cloudDailyFreeEnergyDay,
+      );
+      if (cloudCmp > 0) {
+        pm.cloudDailyFreeEnergyDay = remoteFreeEnergyDay;
+        pm.cloudDailyFreeEnergyClaims = freeEnergyClaimsVal ?? 0;
+      } else if (cloudCmp == 0 && freeEnergyClaimsVal != null) {
+        pm.cloudDailyFreeEnergyClaims =
+            max(pm.cloudDailyFreeEnergyClaims, freeEnergyClaimsVal);
+      }
+      final localCmp = ProgressManager.compareDayKeys(
+        remoteFreeEnergyDay,
+        pm.lastDailyFreeEnergyDay,
+      );
+      if (localCmp > 0) {
+        pm.lastDailyFreeEnergyDay = remoteFreeEnergyDay;
+        pm.dailyFreeEnergyClaimsToday = freeEnergyClaimsVal ?? 0;
+      } else if (localCmp == 0 && freeEnergyClaimsVal != null) {
+        if (freeEnergyClaimsVal > pm.dailyFreeEnergyClaimsToday) {
+          pm.dailyFreeEnergyClaimsToday = freeEnergyClaimsVal;
+        }
+      }
+    }
+    if (hasDailyRemote) {
+      await pm.persistDailyCloudState();
     }
 
     // Dalga 2: sezon XP'si yalnız-büyür (max), başarımlar birleşim
@@ -1410,6 +1802,10 @@ class CloudSyncService extends ChangeNotifier {
   /// mod max(yerel, uzak) ile yazılır ([convergedScoreForFlush]); uzaktaki
   /// skor yüksekse tek modun bile batch'i reddetmesi önlenir.
   ///
+  /// Günlük yakınsama (Dalga 3): yazımdan önce ön-okunmuş uzak belgeyle
+  /// günlük alanlar da yakınsatılır ([convergedDailyFieldsForFlush]) —
+  /// bayat yerel, başka cihazda alınan hak gününü ezemez.
+  ///
   /// LWW (Y6): flush payload'undaki alan damgaları yerel değişim
   /// anıdır (flush anı değil); coin yakınsaması değeri kısmen yazsa
   /// bile damga değişmez — sonraki pull'da aynı damga + `max()`
@@ -1623,6 +2019,14 @@ class CloudSyncService extends ChangeNotifier {
           );
           flushed++;
         }
+        // Dalga 3: günlük alan yakınsaması — bayat yerel, uzaktaki
+        // yeni hak gününü / görev ilerlemesini ezmesin (coin
+        // yakınsaması için alınan `remoteData` yeniden kullanılır,
+        // ek okuma yok; değişim varsa imza tazelenir).
+        effectiveProfile = convergedDailyFieldsForFlush(
+          localProfile: effectiveProfile,
+          remoteData: remoteData,
+        );
         // Y2: uzak profilde `uid` yoksa (veya uzaktaki `uid` yerelden
         // farklıysa) merge payload'dan `uid` çıkarılır. Kural
         // `isValidUserUpdate` değişmez alanların diff'te görünmesini
@@ -1813,7 +2217,8 @@ class CloudSyncService extends ChangeNotifier {
     if (safeScore <= board.getBest(modeId)) return;
     // 12C1: uzak birleştirme — skor zaten kural düzeyinde doğrulandı
     // (`isValidScore`/`sanitizeModeScore`); AntiCheat kap denetimi
-    // atlanır, mutlak + mod tavanı denetimi submitScore içinde kalır.
+    // submitScore içinde çalışır (uzak yol da aynı kapıdan geçer —
+    // Dalga 3 ek).
     await board.submitScore(modeId, safeScore, fromRemoteSync: true);
   }
 

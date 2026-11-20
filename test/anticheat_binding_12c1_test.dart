@@ -129,7 +129,7 @@ void main() {
       expect(board.getBest(LeaderboardService.modeSuika), 5000);
     });
 
-    test('uzak birleştirme kap denetimini atlar ama tavanı korur',
+    test('uzak birleştirme de AntiCheat kapısından geçer (Dalga 3)',
         () async {
       // Tavan hizalama (14C1): AntiCheat tavanı PM tavanına eşit (match3
       // 300.000) — 250.000 artık yerelden de kabul edilir; 350.000 ise
@@ -150,6 +150,33 @@ void main() {
       );
       expect(remoteTooBig, isFalse);
       expect(board.getBest('match3'), 250000);
+
+      // Dalga 3: uzak yol AntiCheat'i atlamaz — bilinmeyen mod ve
+      // negatif skor uzaktan gelse de reddedilir, tahtaya girmez.
+      final remoteUnknownMode = await board.submitScore(
+        'bilinmeyen_mod',
+        1000,
+        fromRemoteSync: true,
+      );
+      expect(remoteUnknownMode, isFalse);
+      expect(board.getBest('bilinmeyen_mod'), 0);
+
+      final remoteNegative = await board.submitScore(
+        'suika',
+        -500,
+        fromRemoteSync: true,
+      );
+      expect(remoteNegative, isFalse);
+      expect(board.getBest('suika'), 0);
+
+      // Meşru uzak skor kabul edilir ve tahtaya yazılır.
+      final remoteValid = await board.submitScore(
+        'suika',
+        12000,
+        fromRemoteSync: true,
+      );
+      expect(remoteValid, isTrue);
+      expect(board.getBest('suika'), 12000);
     });
   });
 

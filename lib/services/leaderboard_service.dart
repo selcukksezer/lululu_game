@@ -442,6 +442,15 @@ class LeaderboardService extends ChangeNotifier {
     required int score,
     String country = 'TR',
   }) {
+    // Dalga 3: buluttan gelen skor da AntiCheat kapısından geçer
+    // (bilinmeyen mod, negatif, mod tavanı). Tavanlar PM tavanlarıyla
+    // birebir hizalıdır (anticheat_binding_12c1_test: tavan hizalama),
+    // bu yüzden meşru uzak skorlar bu kapıdan etkilenmez.
+    final remoteCheck = AntiCheatService.instance.validateGameScore(
+      board.modeId,
+      score,
+    );
+    if (!remoteCheck.isValid) return false;
     if (!isScoreValidForMode(board.modeId, score)) return false;
     final uid = AuthService.instance.playerId;
     final id = playerId.isEmpty
@@ -480,16 +489,18 @@ class LeaderboardService extends ChangeNotifier {
     return true;
   }
 
-  /// Skor gönderir (12C1 AntiCheat kapılı).
+  /// Skor gönderir (12C1 AntiCheat kapılı — her iki yolda da).
   ///
   /// Yerel oyun akışından gelen skorlar ÖNCE
   /// [AntiCheatService.validateGameScore] ile denetlenir: geçersiz skor
   /// sessizce reddedilir (`false` döner, tahtaya yazılmaz, hata
-  /// fırlatılmaz) ve ret telemetriye yazılır. Bulut birleştirme /
-  /// göç yolu kural-doğrulanmış uzak veriyi yazar; o yol
-  /// [fromRemoteSync] ile AntiCheat kap denetimini atlar — mutlak
-  /// tavan + mod tavanı denetimi aynen kalır (S1#35: eski/uzak veri
-  /// okuma yolları bilinçli olarak mutlak sınırdadır).
+  /// fırlatılmaz) ve ret telemetriye yazılır. Uzak birleştirme / göç yolu
+  /// (`fromRemoteSync: true`) ARTIK AYNI kapıdan geçer (Dalga 3: kapı
+  /// deliği kapatıldı) — bilinmeyen mod, negatif/NaN ve mod tavanı üstü
+  /// skorlar uzaktan gelse de tahtaya girmez. Süre bilgisi uzaktan
+  /// gelmediğinden kapı burada yalnız mod + işaret + tavan denetler
+  /// (hız denetimi süre gerektirir); mutlak + mod tavanı denetimi
+  /// [isScoreValidForMode] ile aynen kalır.
   Future<bool> submitScore(
     String modeId,
     int score, {
@@ -497,29 +508,30 @@ class LeaderboardService extends ChangeNotifier {
     bool fromRemoteSync = false,
   }) async {
     final canonicalMode = normalizeModeId(modeId);
-    if (!fromRemoteSync) {
-      final check = AntiCheatService.instance.validateGameScore(
-        canonicalMode,
-        score,
+    // Dalga 3: kapı her iki yolda da çalışır — uzak birleştirme / göç
+    // (`fromRemoteSync: true`) artık AntiCheat'i atlamaz. Uzak skor
+    // süresiz geldiğinden kapı burada mod + işaret + tavan denetler.
+    final check = AntiCheatService.instance.validateGameScore(
+      canonicalMode,
+      score,
+    );
+    if (!check.isValid) {
+      debugPrint(
+        '[lululu] AntiCheat: submitScore reddedildi '
+        '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
       );
-      if (!check.isValid) {
-        debugPrint(
-          '[lululu] AntiCheat: submitScore reddedildi '
-          '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
-        );
-        GameTelemetryService.instance.recordError(
-          'score_rejected',
-          category: 'anticheat',
-          action: 'score_rejected',
-          meta: <String, Object?>{
-            'mode': check.mode,
-            'reason': check.reason,
-            'score': score,
-            'source': 'leaderboard_submit',
-          },
-        );
-        return false;
-      }
+      GameTelemetryService.instance.recordError(
+        'score_rejected',
+        category: 'anticheat',
+        action: 'score_rejected',
+        meta: <String, Object?>{
+          'mode': check.mode,
+          'reason': check.reason,
+          'score': score,
+          'source': 'leaderboard_submit',
+        },
+      );
+      return false;
     }
     if (!isScoreValidForMode(canonicalMode, score)) return false;
     await ensureLoaded();
@@ -706,13 +718,11 @@ class LeaderboardService extends ChangeNotifier {
 
     final map = <String, LeaderboardEntry>{};
 
-    // 1. Base ladder entries for Turkey Top 100 / Global / 11-Mode Total
-    final seeds = _ladderAnchorsFor(category);
-    for (final s in seeds) {
-      map[s.playerId] = s;
-    }
+    // Dalga 3: sahte çapa YOK — merdiven yalnız gerçek bulut/yerel
+    // veriden kurulur. Gerçek kayıt yoksa merdiven boş döner; uydurma
+    // rakip/satır yazılmaz.
 
-    // 2. Real local/cloud entries from _data.modes
+    // 1. Real local/cloud entries from _data.modes
     if (category == LeaderboardCategory.total11Modes) {
       final totalsByPlayer = <String, int>{};
       final namesByPlayer = <String, String>{};
@@ -759,16 +769,21 @@ class LeaderboardService extends ChangeNotifier {
       }
     }
 
-    // 3. Upsert current player's live score
-    map[uid] = LeaderboardEntry(
-      modeId: modeId != null ? normalizeModeId(modeId) : 'overall',
-      playerId: uid,
-      playerName: myName,
-      score: myDynamicScore,
-      utcTicks: DateTime.now().toUtc().millisecondsSinceEpoch,
-      isLocalPlayer: true,
-      country: 'TR',
-    );
+    // 2. Upsert current player's live score — yalnız gerçek skoru
+    // varsa veya gerçek rakip varsa. Boş merdiven boş döner: skoru
+    // olmayan oyuncunun 0'lık SEN satırı tek başına merdiven sayılmaz
+    // (SCORES ekranındaki boş-bant kuralıyla aynı dürüstlük).
+    if (myDynamicScore > 0 || map.isNotEmpty) {
+      map[uid] = LeaderboardEntry(
+        modeId: modeId != null ? normalizeModeId(modeId) : 'overall',
+        playerId: uid,
+        playerName: myName,
+        score: myDynamicScore,
+        utcTicks: DateTime.now().toUtc().millisecondsSinceEpoch,
+        isLocalPlayer: true,
+        country: 'TR',
+      );
+    }
 
     final list = map.values.toList()
       ..sort((a, b) {
@@ -781,108 +796,6 @@ class LeaderboardService extends ChangeNotifier {
       });
 
     return list.take(limit).toList();
-  }
-
-  List<LeaderboardEntry> _ladderAnchorsFor(LeaderboardCategory category) {
-    const trNames = <(String, String, int, int)>[
-      ('tr_1', 'KongoKralı', 11204, 7),
-      ('tr_2', 'HamamCan_34', 9310, 6),
-      ('tr_3', 'DivaNur', 8977, 5),
-      ('tr_4', 'TerlikUstası', 8540, 4),
-      ('tr_5', 'MakaraMehmet', 7402, 3),
-      ('tr_6', 'HuniKafa', 6988, 1),
-      ('tr_7', 'BilgeDede', 6511, 8),
-      ('tr_8', 'PijamaDans_06', 6240, 4),
-      ('tr_9', 'TencereÇırak', 5980, 2),
-      ('tr_10', 'F16Pilotu_35', 5720, 7),
-      ('tr_11', 'AnneTerliği_16', 5490, 5),
-      ('tr_12', 'RaidAvcısı', 5210, 6),
-      ('tr_13', 'BornozluEfsane', 4980, 8),
-      ('tr_14', 'SuikaPrensi', 4750, 3),
-      ('tr_15', 'OsmantuşBeyi', 4520, 4),
-    ];
-
-    const globalNames = <(String, String, int, String)>[
-      ('gl_1', 'TokyoSuika_JP', 14850, 'JP'),
-      ('gl_2', 'KongoKralı', 11204, 'TR'),
-      ('gl_3', 'RoachMaster_KR', 10890, 'KR'),
-      ('gl_4', 'BerlinMerger_DE', 9840, 'DE'),
-      ('gl_5', 'HamamCan_34', 9310, 'TR'),
-      ('gl_6', 'DivaNur', 8977, 'TR'),
-      ('gl_7', 'NeonBug_US', 8720, 'US'),
-      ('gl_8', 'TerlikUstası', 8540, 'TR'),
-      ('gl_9', 'SambaRoach_BR', 7650, 'BR'),
-      ('gl_10', 'MakaraMehmet', 7402, 'TR'),
-      ('gl_11', 'HuniKafa', 6988, 'TR'),
-      ('gl_12', 'BilgeDede', 6511, 'TR'),
-    ];
-
-    final scale = category == LeaderboardCategory.total11Modes ? 3 : 1;
-    final out = <LeaderboardEntry>[];
-
-    if (category == LeaderboardCategory.global) {
-      for (var i = 0; i < 99; i++) {
-        if (i < globalNames.length) {
-          final g = globalNames[i];
-          out.add(
-            LeaderboardEntry(
-              modeId: 'global',
-              playerId: g.$1,
-              playerName: g.$2,
-              score: g.$3,
-              utcTicks: i + 1,
-              country: g.$4,
-            ),
-          );
-        } else {
-          final score = (6400 - (i - globalNames.length) * 55).clamp(400, 6400);
-          out.add(
-            LeaderboardEntry(
-              modeId: 'global',
-              playerId: 'gl_${i + 1}',
-              playerName: 'GlobalOyuncu_${i + 1}',
-              score: score,
-              utcTicks: i + 1,
-              country: i.isEven ? 'GLOBAL' : 'TR',
-            ),
-          );
-        }
-      }
-      return out;
-    }
-
-    for (var i = 0; i < 99; i++) {
-      if (i < trNames.length) {
-        final t = trNames[i];
-        out.add(
-          LeaderboardEntry(
-            modeId: category == LeaderboardCategory.total11Modes
-                ? 'total_11'
-                : 'tr_top100',
-            playerId: t.$1,
-            playerName: t.$2,
-            score: t.$3 * scale,
-            utcTicks: i + 1,
-            country: 'TR',
-          ),
-        );
-      } else {
-        final baseScore = (4400 - (i - trNames.length) * 42).clamp(350, 4400);
-        out.add(
-          LeaderboardEntry(
-            modeId: category == LeaderboardCategory.total11Modes
-                ? 'total_11'
-                : 'tr_top100',
-            playerId: 'tr_${i + 1}',
-            playerName: 'LülüAvcısı_${i + 1}',
-            score: baseScore * scale,
-            utcTicks: i + 1,
-            country: 'TR',
-          ),
-        );
-      }
-    }
-    return out;
   }
 
   List<LeaderboardEntry> getOverallTop({int n = 50}) {

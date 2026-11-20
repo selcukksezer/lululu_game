@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -123,6 +124,14 @@ class ProgressManager extends ChangeNotifier {
     'lululu_ts_tiers',
     'lululu_ts_display_name',
     'lululu_ts_extra_powers',
+    // Dalga 3: günlük ödül / görev / ücretsiz enerji damgaları +
+    // buluttan bilinen hak günleri.
+    'lululu_ts_last_streak_claim_day',
+    'lululu_ts_daily_tasks',
+    'lululu_ts_daily_free_energy',
+    'lululu_cloud_last_streak_claim_day',
+    'lululu_cloud_daily_free_energy_day',
+    'lululu_cloud_daily_free_energy_claims',
     'lululu_lww_stamps_seeded_v1',
   ];
 
@@ -214,6 +223,15 @@ class ProgressManager extends ChangeNotifier {
   int unlockedTiersUpdatedAtMs = 0;
   int displayNameUpdatedAtMs = 0;
 
+  /// Dalga 3: günlük ödül / görev / ücretsiz enerji LWW damgaları
+  /// (istemci-ms, UTC epoch). Gün anahtarı (`yyyy-M-d`) kendisi
+  /// sürüm taşır — birleştirme kararı günü karşılaştırarak verilir
+  /// (bkz. [CloudSyncService]); damga, Dalga 2 desenindeki gibi
+  /// taşınır, ön-denetimden geçer ve kural allowlist'indedir.
+  int lastStreakClaimDayUpdatedAtMs = 0;
+  int dailyTasksUpdatedAtMs = 0;
+  int dailyFreeEnergyUpdatedAtMs = 0;
+
   /// Güç anahtarı başına LWW damgası (`extraPowers` ile aynı anahtarlar).
   /// Anahtar başına LWW: eksik anahtar "değişim yok" sayılır; silme
   /// (tombstone) Faz 4 kapsamında eklenmez (tasarım A10 §3.2.4).
@@ -228,6 +246,18 @@ class ProgressManager extends ChangeNotifier {
   int _snapRaid = 0;
   int _snapTerlik = 0;
   int _snapStreak = 1;
+  // Dalga 3: günlük alanların fark anlık görüntüsü.
+  String _snapLastStreakClaimDay = '';
+  String _snapDailyTasksDay = '';
+  Map<String, int> _snapDailyTaskProgress = <String, int>{
+    'play': 0,
+    'merge': 0,
+    'video': 0,
+    'combo': 0,
+  };
+  Set<String> _snapClaimedDailyTasks = <String>{};
+  String _snapLastDailyFreeEnergyDay = '';
+  int _snapDailyFreeEnergyClaimsToday = 0;
   Set<int> _snapTiers = <int>{};
   Map<String, int> _snapExtraPowers = <String, int>{};
 
@@ -321,6 +351,15 @@ class ProgressManager extends ChangeNotifier {
   /// Günlük hediye kutusu serisi (`streak`).
   int streak = 1;
   String lastStreakClaimDay = '';
+
+  /// Dalga 3: buluttan son görülen hak günleri — başka cihazda alınan
+  /// ödül, bu cihaz pull yapana kadar yerel alanda görünmez; claim
+  /// kapıları bu değeri de esas alır (bkz.
+  /// [effectiveLastStreakClaimDay], [effectiveFreeEnergyClaimsToday]).
+  /// Yalnız CloudSync pull yazar; [clearLocalData] siler.
+  String cloudLastStreakClaimDay = '';
+  String cloudDailyFreeEnergyDay = '';
+  int cloudDailyFreeEnergyClaims = 0;
 
   int get dailyStreak => streak;
 
@@ -437,19 +476,39 @@ class ProgressManager extends ChangeNotifier {
 
   bool get canBuyLimitedDrop => limitedDropDay != _todayKey();
 
-  bool get canClaimDailyGiftBox => lastStreakClaimDay != _todayKey();
+  bool get canClaimDailyGiftBox =>
+      effectiveLastStreakClaimDay != _todayKey();
+
+  /// Dalga 3: hediye kutusu için esas alınan hak günü — yerel ve
+  /// buluttan bilinen günlerin yenisi. Başka cihazda bugün alındıysa
+  /// (pull'da görüldü) yerelde tekrar verilmez.
+  String get effectiveLastStreakClaimDay =>
+      latestDayKey(lastStreakClaimDay, cloudLastStreakClaimDay);
+
+  /// Dalga 3: bugün için esas alınan ücretsiz enerji hak sayısı —
+  /// yerel ve buluttan bilinen bugün sayımlarının büyüğü.
+  int get effectiveFreeEnergyClaimsToday {
+    final today = _todayKey();
+    var claims = 0;
+    if (lastDailyFreeEnergyDay == today) {
+      claims = max(claims, dailyFreeEnergyClaimsToday);
+    }
+    if (cloudDailyFreeEnergyDay == today) {
+      claims = max(claims, cloudDailyFreeEnergyClaims);
+    }
+    return claims;
+  }
 
   /// Ana Hub'daki "ENERJİ AL · +5" butonu için günlük ücretsiz hak kontrolü.
   bool get canClaimDailyFreeEnergy {
     final today = _todayKey();
-    if (lastDailyFreeEnergyDay != today) return true;
-    return false;
+    return lastDailyFreeEnergyDay != today &&
+        cloudDailyFreeEnergyDay != today;
   }
 
   /// Reklam izleyerek ek ücretsiz enerji alınıp alınamayacağını kontrol eder (cooldown + günlük limit).
   bool get canClaimAdFreeEnergy {
-    final today = _todayKey();
-    final claims = lastDailyFreeEnergyDay == today ? dailyFreeEnergyClaimsToday : 0;
+    final claims = effectiveFreeEnergyClaimsToday;
     if (claims >= maxDailyFreeEnergyClaimsWithAd) return false;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     return (nowMs - lastFreeEnergyClaimEpochMs) >= freeEnergyCooldownMs;
@@ -463,8 +522,10 @@ class ProgressManager extends ChangeNotifier {
   }) async {
     final today = _todayKey();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    // Dalga 3: başka cihazda bugün alınan haklar yerelde sıfırlanmaz —
+    // bugün sayımı buluttan bilinen değerden başlar.
     if (lastDailyFreeEnergyDay != today) {
-      dailyFreeEnergyClaimsToday = 0;
+      dailyFreeEnergyClaimsToday = effectiveFreeEnergyClaimsToday;
     }
 
     if (!fromRewardedAd) {
@@ -606,6 +667,43 @@ class ProgressManager extends ChangeNotifier {
     return '${n.year}-${n.month}-${n.day}';
   }
 
+  /// Dalga 3: gün anahtarı (`yyyy-M-d`, sıfır dolgusuz da olabilir)
+  /// ayrıştırır; bozuk anahtar `null` döner.
+  static DateTime? tryParseDayKey(String key) {
+    final parts = key.split('-');
+    if (parts.length != 3) return null;
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return null;
+    if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) {
+      return null;
+    }
+    final parsed = DateTime(y, m, d);
+    if (parsed.year != y || parsed.month != m || parsed.day != d) {
+      return null;
+    }
+    return parsed;
+  }
+
+  /// Dalga 3: gün anahtarlarını kronolojik karşılaştırır (<0: `a` eski,
+  /// 0: eşit, >0: `a` yeni). Sözlüksel karşılaştırma YANLIŞTIR
+  /// (`2026-11-5` sözlüksel olarak `2026-11-15`'ten büyüktür) — gün
+  /// karşılaştırması her zaman buradan yapılır. Bozuk anahtar en eski
+  /// sayılır.
+  static int compareDayKeys(String a, String b) {
+    final pa = tryParseDayKey(a);
+    final pb = tryParseDayKey(b);
+    if (pa == null && pb == null) return 0;
+    if (pa == null) return -1;
+    if (pb == null) return 1;
+    return pa.compareTo(pb);
+  }
+
+  /// Dalga 3: iki gün anahtarından yenisi (eşitse `a`).
+  static String latestDayKey(String a, String b) =>
+      compareDayKeys(a, b) >= 0 ? a : b;
+
   static String _yesterdayKey() {
     final n = DateTime.now().subtract(const Duration(days: 1));
     return '${n.year}-${n.month}-${n.day}';
@@ -738,6 +836,11 @@ class ProgressManager extends ChangeNotifier {
         prefs.getString('lululu_daily_free_energy_day') ?? '';
     dailyFreeEnergyClaimsToday =
         prefs.getInt('lululu_daily_free_energy_claims') ?? 0;
+    // Dalga 3: buluttan bilinen ücretsiz enerji hakları.
+    cloudDailyFreeEnergyDay =
+        prefs.getString('lululu_cloud_daily_free_energy_day') ?? '';
+    cloudDailyFreeEnergyClaims =
+        prefs.getInt('lululu_cloud_daily_free_energy_claims') ?? 0;
     lastFreeEnergyClaimEpochMs =
         prefs.getInt('lululu_last_free_energy_epoch_ms') ?? 0;
     if (lastDailyFreeEnergyDay != _todayKey()) {
@@ -816,6 +919,9 @@ class ProgressManager extends ChangeNotifier {
     // Günlük hediye kutusu serisi (streak)
     streak = prefs.getInt('lululu_daily_streak') ?? 1;
     lastStreakClaimDay = prefs.getString('lululu_last_streak_claim_day') ?? '';
+    // Dalga 3: buluttan bilinen hediye kutusu hak günü.
+    cloudLastStreakClaimDay =
+        prefs.getString('lululu_cloud_last_streak_claim_day') ?? '';
 
     // Ses ve titreşim ayarları
     sfxEnabled = prefs.getBool('lululu_sfx_enabled') ?? true;
@@ -1328,11 +1434,10 @@ class ProgressManager extends ChangeNotifier {
   /// 12C1: yazımdan ÖNCE [AntiCheatService.validateGameScore] çalışır.
   /// Geçersiz skor (bilinmeyen mod, negatif, tavan üstü) sessizce
   /// reddedilir (`false` döner, kayıt yazılmaz, hata fırlatılmaz).
-  /// Bulut birleştirme yolu ([CloudSyncService]/göç) kural-doğrulanmış
-  /// uzak veriyi yazar; o yol [fromRemoteSync] ile AntiCheat kap
-  /// denetimini atlar — mutlak tavan + mod tavanı denetimi aynen kalır
-  /// (eski/uzak veri okuma yolları bilinçli olarak mutlak sınırdadır,
-  /// S1#35).
+  /// Uzak birleştirme / göç yolu (`fromRemoteSync: true`) ARTIK AYNI
+  /// kapıdan geçer (Dalga 3 ek: kapı deliği kapatıldı) — bilinmeyen mod,
+  /// negatif ve mod tavanı üstü skorlar uzaktan gelse de kayda girmez.
+  /// `fromRemoteSync` yalnız çağrı niyetini belirtir, denetimi atlamaz.
   Future<bool> recordModeScore(
     String modeId,
     int score, {
@@ -1340,15 +1445,15 @@ class ProgressManager extends ChangeNotifier {
   }) async {
     final key = normalizeModeId(modeId);
     if (key.isEmpty) return false;
-    if (!fromRemoteSync) {
-      final check = AntiCheatService.instance.validateGameScore(key, score);
-      if (!check.isValid) {
-        debugPrint(
-          '[lululu] AntiCheat: recordModeScore reddedildi '
-          '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
-        );
-        return false;
-      }
+    // Dalga 3 ek: kapı her iki yolda da çalışır — uzak birleştirme /
+    // göç (`fromRemoteSync: true`) artık AntiCheat'i atlamaz.
+    final check = AntiCheatService.instance.validateGameScore(key, score);
+    if (!check.isValid) {
+      debugPrint(
+        '[lululu] AntiCheat: recordModeScore reddedildi '
+        '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
+      );
+      return false;
     }
     if (!isScoreValidForMode(key, score)) return false;
     final prev = modeHighScores[key] ?? 0;
@@ -1491,6 +1596,8 @@ class ProgressManager extends ChangeNotifier {
   }
 
   Future<void> _persistDailyTasks() async {
+    // Y6/LWW: değeri değişen alanı damgala, damgaları da yaz.
+    touchChangedFieldStamps();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('lululu_daily_tasks_day', dailyTasksDay);
     await prefs.setString(
@@ -1501,6 +1608,55 @@ class ProgressManager extends ChangeNotifier {
       'lululu_daily_tasks_claimed',
       claimedDailyTasks.toList(),
     );
+    if (!_loading) unawaited(_persistStamps(prefs));
+  }
+
+  /// Dalga 3: bulut birleşmesi sonrası günlük alanları + buluttan
+  /// bilinen hak günleri + damgaları kalıcı olarak yazar.
+  /// [CloudSyncService.applyTimestampedProfileSnapshot] birleşmiş
+  /// değerleri belleğe yazdıktan sonra çağırır (doğrudan prefs yazımı
+  /// yerine — günlük anahtarları tek yerdedir).
+  Future<void> persistDailyCloudState() async {
+    touchChangedFieldStamps();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'lululu_last_streak_claim_day',
+      lastStreakClaimDay,
+    );
+    await prefs.setString('lululu_daily_tasks_day', dailyTasksDay);
+    await prefs.setString(
+      'lululu_daily_tasks_progress',
+      jsonEncode(dailyTaskProgress),
+    );
+    await prefs.setStringList(
+      'lululu_daily_tasks_claimed',
+      claimedDailyTasks.toList(),
+    );
+    await prefs.setString(
+      'lululu_daily_free_energy_day',
+      lastDailyFreeEnergyDay,
+    );
+    await prefs.setInt(
+      'lululu_daily_free_energy_claims',
+      dailyFreeEnergyClaimsToday,
+    );
+    await prefs.setInt(
+      'lululu_last_free_energy_epoch_ms',
+      lastFreeEnergyClaimEpochMs,
+    );
+    await prefs.setString(
+      'lululu_cloud_last_streak_claim_day',
+      cloudLastStreakClaimDay,
+    );
+    await prefs.setString(
+      'lululu_cloud_daily_free_energy_day',
+      cloudDailyFreeEnergyDay,
+    );
+    await prefs.setInt(
+      'lululu_cloud_daily_free_energy_claims',
+      cloudDailyFreeEnergyClaims,
+    );
+    if (!_loading) await _persistStamps(prefs);
   }
 
   /// Günlük hediye kutusu ve seri (`streak`) ödülünü toplar.
@@ -1517,7 +1673,9 @@ class ProgressManager extends ChangeNotifier {
   }) async {
     // `doubled` bilinçli olarak okunmaz (bkz. yukarıdaki not).
     final today = _todayKey();
-    if (lastStreakClaimDay == today) return null;
+    // Dalga 3: buluttan bilinen hak günü de kapıdır — başka cihazda
+    // bugün alındıysa (pull'da görüldü) yerelde tekrar verilmez.
+    if (effectiveLastStreakClaimDay == today) return null;
     // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
     // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
     final snapshot = _ClaimSnapshot.capture(this);
@@ -2072,6 +2230,13 @@ class ProgressManager extends ChangeNotifier {
     streakUpdatedAtMs = readStamp('lululu_ts_streak');
     unlockedTiersUpdatedAtMs = readStamp('lululu_ts_tiers');
     displayNameUpdatedAtMs = readStamp('lululu_ts_display_name');
+    // Dalga 3: günlük alan damgaları (eski kurulumda yoksa 0 — damgasız
+    // sayılır; gün anahtarı kendisi sürüm taşıdığı için birleştirme
+    // damgaya muhtaç değildir).
+    lastStreakClaimDayUpdatedAtMs =
+        readStamp('lululu_ts_last_streak_claim_day');
+    dailyTasksUpdatedAtMs = readStamp('lululu_ts_daily_tasks');
+    dailyFreeEnergyUpdatedAtMs = readStamp('lululu_ts_daily_free_energy');
     extraPowersUpdatedAtMs.clear();
     final extraRaw = prefs.getString('lululu_ts_extra_powers');
     if (extraRaw != null && extraRaw.isNotEmpty) {
@@ -2101,6 +2266,10 @@ class ProgressManager extends ChangeNotifier {
     streakUpdatedAtMs = nowMs;
     unlockedTiersUpdatedAtMs = nowMs;
     displayNameUpdatedAtMs = nowMs;
+    // Dalga 3: günlük alanlar da göçte bir kez damgalanır.
+    lastStreakClaimDayUpdatedAtMs = nowMs;
+    dailyTasksUpdatedAtMs = nowMs;
+    dailyFreeEnergyUpdatedAtMs = nowMs;
     for (final key in extraPowers.keys) {
       extraPowersUpdatedAtMs[key] = nowMs;
     }
@@ -2142,6 +2311,35 @@ class ProgressManager extends ChangeNotifier {
     if (streak != _snapStreak) {
       streakUpdatedAtMs = nowMs;
       _snapStreak = streak;
+    }
+    // Dalga 3: günlük alanlar — hak günü, görev günü/ilerlemesi/
+    // ödül alımları, ücretsiz enerji günü/sayımı.
+    if (lastStreakClaimDay != _snapLastStreakClaimDay) {
+      lastStreakClaimDayUpdatedAtMs = nowMs;
+      _snapLastStreakClaimDay = lastStreakClaimDay;
+    }
+    var tasksChanged = dailyTasksDay != _snapDailyTasksDay ||
+        claimedDailyTasks.length != _snapClaimedDailyTasks.length ||
+        !claimedDailyTasks.containsAll(_snapClaimedDailyTasks);
+    if (!tasksChanged) {
+      for (final entry in dailyTaskProgress.entries) {
+        if (_snapDailyTaskProgress[entry.key] != entry.value) {
+          tasksChanged = true;
+          break;
+        }
+      }
+    }
+    if (tasksChanged) {
+      dailyTasksUpdatedAtMs = nowMs;
+      _snapDailyTasksDay = dailyTasksDay;
+      _snapDailyTaskProgress = Map<String, int>.of(dailyTaskProgress);
+      _snapClaimedDailyTasks = Set<String>.of(claimedDailyTasks);
+    }
+    if (lastDailyFreeEnergyDay != _snapLastDailyFreeEnergyDay ||
+        dailyFreeEnergyClaimsToday != _snapDailyFreeEnergyClaimsToday) {
+      dailyFreeEnergyUpdatedAtMs = nowMs;
+      _snapLastDailyFreeEnergyDay = lastDailyFreeEnergyDay;
+      _snapDailyFreeEnergyClaimsToday = dailyFreeEnergyClaimsToday;
     }
     if (unlockedTiers.length != _snapTiers.length ||
         !unlockedTiers.containsAll(_snapTiers)) {
@@ -2194,6 +2392,13 @@ class ProgressManager extends ChangeNotifier {
     _snapStreak = streak;
     _snapTiers = Set<int>.of(unlockedTiers);
     _snapExtraPowers = Map<String, int>.of(extraPowers);
+    // Dalga 3: günlük alanlar.
+    _snapLastStreakClaimDay = lastStreakClaimDay;
+    _snapDailyTasksDay = dailyTasksDay;
+    _snapDailyTaskProgress = Map<String, int>.of(dailyTaskProgress);
+    _snapClaimedDailyTasks = Set<String>.of(claimedDailyTasks);
+    _snapLastDailyFreeEnergyDay = lastDailyFreeEnergyDay;
+    _snapDailyFreeEnergyClaimsToday = dailyFreeEnergyClaimsToday;
   }
 
   /// Y6/LWW: enerji bildiricisinden gelen değişimde enerji damgasını
@@ -2229,6 +2434,10 @@ class ProgressManager extends ChangeNotifier {
       'streakUpdatedAtMs': streakUpdatedAtMs,
       'unlockedTiersUpdatedAtMs': unlockedTiersUpdatedAtMs,
       'displayNameUpdatedAtMs': displayNameUpdatedAtMs,
+      // Dalga 3: günlük alan damgaları.
+      'lastStreakClaimDayUpdatedAtMs': lastStreakClaimDayUpdatedAtMs,
+      'dailyTasksUpdatedAtMs': dailyTasksUpdatedAtMs,
+      'dailyFreeEnergyUpdatedAtMs': dailyFreeEnergyUpdatedAtMs,
       'extraPowersUpdatedAtMs':
           Map<String, int>.from(extraPowersUpdatedAtMs),
     };
@@ -2245,6 +2454,16 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setInt('lululu_ts_streak', streakUpdatedAtMs);
     await prefs.setInt('lululu_ts_tiers', unlockedTiersUpdatedAtMs);
     await prefs.setInt('lululu_ts_display_name', displayNameUpdatedAtMs);
+    // Dalga 3: günlük alan damgaları.
+    await prefs.setInt(
+      'lululu_ts_last_streak_claim_day',
+      lastStreakClaimDayUpdatedAtMs,
+    );
+    await prefs.setInt('lululu_ts_daily_tasks', dailyTasksUpdatedAtMs);
+    await prefs.setInt(
+      'lululu_ts_daily_free_energy',
+      dailyFreeEnergyUpdatedAtMs,
+    );
     await prefs.setString(
       'lululu_ts_extra_powers',
       jsonEncode(extraPowersUpdatedAtMs),
@@ -2348,6 +2567,10 @@ class _ClaimSnapshot {
         _streakUpdatedAtMs = pm.streakUpdatedAtMs,
         _unlockedTiersUpdatedAtMs = pm.unlockedTiersUpdatedAtMs,
         _displayNameUpdatedAtMs = pm.displayNameUpdatedAtMs,
+        // Dalga 3: günlük alan damgaları da geri alınır.
+        _lastStreakClaimDayUpdatedAtMs = pm.lastStreakClaimDayUpdatedAtMs,
+        _dailyTasksUpdatedAtMs = pm.dailyTasksUpdatedAtMs,
+        _dailyFreeEnergyUpdatedAtMs = pm.dailyFreeEnergyUpdatedAtMs,
         _extraPowersUpdatedAtMs =
             Map<String, int>.of(pm.extraPowersUpdatedAtMs);
 
@@ -2378,6 +2601,9 @@ class _ClaimSnapshot {
   final int _streakUpdatedAtMs;
   final int _unlockedTiersUpdatedAtMs;
   final int _displayNameUpdatedAtMs;
+  final int _lastStreakClaimDayUpdatedAtMs;
+  final int _dailyTasksUpdatedAtMs;
+  final int _dailyFreeEnergyUpdatedAtMs;
   final Map<String, int> _extraPowersUpdatedAtMs;
 
   /// Bellek durumunu anlık görüntüdeki hâle döndürür. `coins`
@@ -2423,6 +2649,9 @@ class _ClaimSnapshot {
     pm.streakUpdatedAtMs = _streakUpdatedAtMs;
     pm.unlockedTiersUpdatedAtMs = _unlockedTiersUpdatedAtMs;
     pm.displayNameUpdatedAtMs = _displayNameUpdatedAtMs;
+    pm.lastStreakClaimDayUpdatedAtMs = _lastStreakClaimDayUpdatedAtMs;
+    pm.dailyTasksUpdatedAtMs = _dailyTasksUpdatedAtMs;
+    pm.dailyFreeEnergyUpdatedAtMs = _dailyFreeEnergyUpdatedAtMs;
     pm.extraPowersUpdatedAtMs
       ..clear()
       ..addAll(_extraPowersUpdatedAtMs);

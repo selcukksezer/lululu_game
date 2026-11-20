@@ -137,6 +137,16 @@ service cloud.firestore {
               request.resource.data[field] <= maxVal);
     }
 
+    // Dalga 3: gün anahtarı (`yyyy-M-d`, sıfır dolgusuz da olabilir) —
+    // boş metin "hiç alınmadı" sayılır. Sözlüksel aralık denetimi
+    // yetmez (sıfır dolgusuz gün), bu yüzden RE2 deseni kullanılır.
+    function isValidOptionalDayKey(field) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              (request.resource.data[field] == '' ||
+               request.resource.data[field].matches('^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$')));
+    }
+
     function isValidModeId(modeId) {
       return modeId is string && modeId in [
         'suika',
@@ -186,6 +196,15 @@ service cloud.firestore {
         'seasonXp',
         'unlockedAchievements',
         'bestCombo',
+        // Dalga 3: günlük ödül hak günü / görev ilerlemesi /
+        // ücretsiz enerji hakları (bulut senkronuna eklendi;
+        // allowlist'e girmezse flush reddedilir).
+        'lastStreakClaimDay',
+        'dailyTasksDay',
+        'dailyTasksProgress',
+        'dailyTasksClaimed',
+        'dailyFreeEnergyDay',
+        'dailyFreeEnergyClaims',
         // Y6/LWW alan damgaları (Faz 4, 8E): istemci-ms, yalnız
         // tür/aralık denetlenir — `updatedAt == request.time` kuralı
         // yalnız belge `updatedAt`'ine uygulanır.
@@ -202,6 +221,10 @@ service cloud.firestore {
         // Dalga 2 LWW damgaları.
         'seasonXpUpdatedAtMs',
         'unlockedAchievementsUpdatedAtMs',
+        // Dalga 3 LWW damgaları.
+        'lastStreakClaimDayUpdatedAtMs',
+        'dailyTasksUpdatedAtMs',
+        'dailyFreeEnergyUpdatedAtMs',
         'integrityHash',
         'role',
         'isBanned',
@@ -225,6 +248,13 @@ service cloud.firestore {
              // Dalga 2: sezon XP'si / en iyi kombo (istemci kelepçesiyle birebir).
              isValidOptionalInt('seasonXp', 0, 9999999) &&
              isValidOptionalInt('bestCombo', 0, 999999) &&
+             // Dalga 3: günlük ödül hak günü / görev günü / ücretsiz
+             // enerji günü (boş = hiç alınmadı) ve hak sayısı
+             // (günlük üst sınır 3, istemci kelepçesiyle birebir).
+             isValidOptionalDayKey('lastStreakClaimDay') &&
+             isValidOptionalDayKey('dailyTasksDay') &&
+             isValidOptionalDayKey('dailyFreeEnergyDay') &&
+             isValidOptionalInt('dailyFreeEnergyClaims', 0, 3) &&
              isValidOptionalInt('f16Count', 0, 9999) &&
              isValidOptionalInt('raidCount', 0, 9999) &&
              isValidOptionalInt('terlikCount', 0, 9999) &&
@@ -246,10 +276,21 @@ service cloud.firestore {
              // Dalga 2 LWW damgaları.
              isValidOptionalInt('seasonXpUpdatedAtMs', 0, 9999999999999) &&
              isValidOptionalInt('unlockedAchievementsUpdatedAtMs', 0, 9999999999999) &&
+             // Dalga 3 LWW damgaları.
+             isValidOptionalInt('lastStreakClaimDayUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('dailyTasksUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('dailyFreeEnergyUpdatedAtMs', 0, 9999999999999) &&
              (!('extraPowersUpdatedAtMs' in data) || (data.extraPowersUpdatedAtMs is map && data.extraPowersUpdatedAtMs.size() <= 40)) &&
              (!('unlockedTiers' in data) || (data.unlockedTiers is list && data.unlockedTiers.size() <= 16)) &&
              // Dalga 2: kazanılan başarım kimlikleri, en fazla 30.
              (!('unlockedAchievements' in data) || (data.unlockedAchievements is list && data.unlockedAchievements.size() <= 30)) &&
+             // Dalga 3: günlük görev ilerlemesi (harita, en fazla 4
+             // görev) ve ödül alımları (liste, en fazla 4). Harita
+             // değerleri kural dilinde yinelenemez — harita + boyut
+             // denetlenir, değer aralığı istemci ön-denetimindedir
+             // (`extraPowersUpdatedAtMs` deseni).
+             (!('dailyTasksProgress' in data) || (data.dailyTasksProgress is map && data.dailyTasksProgress.size() <= 4)) &&
+             (!('dailyTasksClaimed' in data) || (data.dailyTasksClaimed is list && data.dailyTasksClaimed.size() <= 4)) &&
              (!('modeHighScores' in data) || (data.modeHighScores is map && data.modeHighScores.size() <= 16)) &&
              isValidOptionalString('integrityHash', 64, 64) &&
              (!('role' in data) || data.role == 'player') &&
