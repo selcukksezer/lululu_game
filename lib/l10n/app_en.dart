@@ -574,7 +574,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get splashContinueButton => 'CONTINUE ›';
 
   @override
-  String get splashVersionLabel => 'v1.0 · Design Prototype';
+  String get splashVersionLabel => 'v1.0';
 
   @override
   String get splashKicker1 => 'NEW ADVENTURE';

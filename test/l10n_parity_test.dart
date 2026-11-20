@@ -2207,6 +2207,7 @@ void main() {
   const allowedIdentical = {
     // --- Getter'lar: EN ve TR değeri birebir aynı ---
     'appName', // marka adı: 'LÜLÜLÜ'
+    'splashVersionLabel', // 12Y: sürüm etiketi 'v1.0', iki dilde de aynı
     'badgeHot', // rozet etiketi, iki dilde de İngilizce: 'HOT'
     'badgeBonus', // rozet etiketi, ortak kelime: 'BONUS'
     'match3Title', // oyun/mod adı: 'MATCH 3'

@@ -580,7 +580,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get splashContinueButton => 'DEVAM ›';
 
   @override
-  String get splashVersionLabel => 'v1.0 · Tasarım Prototipi';
+  String get splashVersionLabel => 'v1.0';
 
   @override
   String get splashKicker1 => 'YENİ MACERA';
