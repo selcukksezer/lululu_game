@@ -122,7 +122,7 @@ void main() {
   /// dilimler ağaçta yoktur.
   int topFloor(WidgetTester tester) {
     var top = -1;
-    for (var floor = 6; floor <= 40; floor++) {
+    for (var floor = 1; floor <= 40; floor++) {
       if (find.text('KAT $floor').evaluate().isNotEmpty) top = floor;
     }
     return top;
@@ -197,11 +197,12 @@ void main() {
 
     await pumpWithL10n(tester, StackDropScreen(), theme: buildLululuTheme());
     await pumpFrames(tester, 32);
-    expect(find.text('KAT 12'), findsOneWidget);
+    // 12U: oyun artık tek katla (KAT 1) başlar.
+    expect(find.text('KAT 1'), findsOneWidget);
     expect(moverFinder(), findsOneWidget);
 
-    // KAT 12 -> 15: üç mükemmel bırakma.
-    for (var floor = 12; floor < 15; floor++) {
+    // KAT 1 -> 15: on dört mükemmel bırakma.
+    for (var floor = 1; floor < 15; floor++) {
       await dropWhenCentered(tester, floor, 'KAT ${floor + 1} bırakması');
       expect(
         topFloor(tester),

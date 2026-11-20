@@ -84,6 +84,12 @@ class _CutPiece {
   double life;
 }
 
+  // 12U kamera çapası: kulenin en üst dilimi ekranda bu yüksekliğe
+  // oturtulur (arena yüksekliğinin %42'si). Kamera, üst dilim bu
+  // çizginin üstüne çıkacakken devreye girer ve tepeyi orada tutar;
+  // kayma kat başına %100'dür (eski %55 + 7 kat eşiği, kat başına
+  // 18 px yukarı kaydırıp tepeyi ekran dışına itiyordu).
+
 enum _Phase { ready, falling, failed }
 
 class _StackDropScreenState extends State<StackDropScreen>
@@ -361,9 +367,12 @@ class _StackDropScreenState extends State<StackDropScreen>
     _cutPieces.clear();
     _activePowerFx = null;
     _powerFxLife = 0;
-    const widths = [150.0, 168.0, 182.0, 182.0, 196.0, 210.0, 210.0];
-    const tiers = [4, 7, 6, 5, 4, 3, 2];
+    const widths = [210.0];
+    const tiers = [2];
     final scaleW = (_arenaW / 398.0).clamp(0.75, 1.15);
+    // 12U: oyun tek tohum katla (KAT 1) başlar. Tek kat en geniş
+    // taban dilimdir (eski kulenin en üst dilimi, 210) — ilk bırakma
+    // eski oyundaki kadar bağışlayıcı kalır, kule 1'den büyür.
     _stack.addAll(
       List.generate(
         widths.length,
@@ -371,8 +380,8 @@ class _StackDropScreenState extends State<StackDropScreen>
           center: _arenaW / 2,
           width: widths[index] * scaleW,
           tier: tiers[index],
-          floor: index + 6,
-          perfect: index == widths.length - 1,
+          floor: 1,
+          perfect: false,
         ),
       ),
     );
@@ -387,7 +396,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     _score = 0;
     _combo = 0;
     _maxCombo = 0;
-    _floors = 12;
+    _floors = 1;
     _perfects = 0;
     _nears = 0;
     _comboMeter = 0;
@@ -447,6 +456,8 @@ class _StackDropScreenState extends State<StackDropScreen>
   }
 
   void _applyPrototypeVisualState() {
+    // Prototip vitrin durumu: 12 katlı kule + skor korunur (piksel
+    // yakalama referansı); bu, oyun başlangıcı değildir (12U: 1 kat).
     const widths = [150.0, 168.0, 182.0, 182.0, 196.0, 210.0, 210.0];
     const tiers = [4, 7, 6, 5, 4, 3, 2];
     _stack
@@ -522,8 +533,15 @@ class _StackDropScreenState extends State<StackDropScreen>
       _powerFxLife = max(0, _powerFxLife - dt * 1.4);
       if (_powerFxLife <= 0) _activePowerFx = null;
     }
-    // Keep top of tower near landY; older floors scroll down.
-    final targetCam = -max(0.0, (_stack.length - 7) * (slabH + 4) * 0.55);
+    // 12U: tepe her zaman görünür — kamera hedefi, en üst dilimin
+    // ekran konumunu çapaya (`_arenaH * 0.42`) kilitler. Kule kısayken
+    // hedef 0'dır (kamera oynamaz); kule uzadıkça hedef kat başına
+    // tam bir dilim aralığı (slabH + 4) kadar kayar, %100 telafi.
+    final anchor = _arenaH * 0.42;
+    final targetCam = min(
+      0.0,
+      _baseY - (_stack.length - 1) * (slabH + 4) - anchor,
+    );
     _cameraY += (targetCam - _cameraY) * min(1.0, dt * 6);
 
     if (_paused || _phase == _Phase.failed) {
@@ -579,8 +597,15 @@ class _StackDropScreenState extends State<StackDropScreen>
 
   double get _baseY => max(0, _arenaH - _stageHintHeight - 12 - slabH);
 
+  // 12U: `_fallY` ekran koordinatıdır (16 = arenanın üstü). İniş
+  // hedefi de ekran koordinatıdır: yerleşecek YENİ dilimin üstü
+  // (mevcut en üst dilimin bir aralık üstü). Eski tanım mevcut en üst
+  // dilimin üstünü veriyordu; hareketli blok hem hedefte bir aralık
+  // aşağıda duruyor hem de çizimde `- _cameraY` ile ikinci kez
+  // kaydırılıyordu (kamera büyüdükçe blok kulenin içinden geçerek
+  // iniyordu).
   double get _currentLandY =>
-      _baseY - (_stack.length - 1) * (slabH + 4) - _cameraY;
+      _baseY - _stack.length * (slabH + 4) - _cameraY;
 
   double get _landY => _currentLandY;
 
@@ -710,10 +735,8 @@ class _StackDropScreenState extends State<StackDropScreen>
 
     if (_score > _best) _best = _score;
     _checkFloorMilestones();
-    // Kat etiketi sayaca eşit olmalı: tohum katlar 6..12 ve sayaç 12'den
-    // başlar; bırakmada _floors++ sonrası yeni kat _floors'tur.
-    // Eski `_floors + 1`, KAT 13'ü atlayıp etiketi sayaçtan 1 fazla
-    // gösteriyordu (playtest S1).
+    // Kat etiketi sayaca eşit olmalı: tek tohum kat KAT 1 ve sayaç
+    // 1'den başlar; bırakmada _floors++ sonrası yeni kat _floors'tur.
     final floor = _floors;
     _tier = 1 + _rng.nextInt(5);
     _moverIsHisir =
@@ -1240,7 +1263,10 @@ class _StackDropScreenState extends State<StackDropScreen>
                         for (final cp in _cutPieces)
                           Positioned(
                             left: cp.center - cp.width / 2,
-                            top: cp.y - _cameraY,
+                            // 12U: `cp.y` zaten ekran koordinatıdır
+                            // (`_landY`); kamera kaydırması tekrar
+                            // uygulanmaz.
+                            top: cp.y,
                             width: cp.width,
                             height: slabH,
                             child: IgnorePointer(
@@ -1315,7 +1341,10 @@ class _StackDropScreenState extends State<StackDropScreen>
                           ),
                         if (_phase != _Phase.failed)
                           _movingSlab(
-                            (_phase == _Phase.falling ? _fallY : 16) - _cameraY,
+                          // 12U: `_fallY` ekran koordinatıdır; kamera
+                          // kaydırması tekrar uygulanmaz (çift kayma
+                          // inişi kulenin içine itiyordu).
+                            _phase == _Phase.falling ? _fallY : 16,
                           ),
                         if (comboMessage != null)
                           Positioned(
