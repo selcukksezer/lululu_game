@@ -6,8 +6,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:lululu_game/l10n/app_localizations.dart';
+import 'package:lululu_game/modes/makarayiz_screen.dart';
+import 'package:lululu_game/modes/osmantus_screen.dart';
+import 'package:lululu_game/modes/scream_roach_screen.dart';
+import 'package:lululu_game/screens/result_screen.dart';
 import 'package:lululu_game/services/audio_manager.dart';
 import 'package:lululu_game/services/energy_service.dart';
+import 'package:lululu_game/services/leaderboard_service.dart';
 import 'package:lululu_game/services/progress_manager.dart';
 import 'package:lululu_game/utils/number_format.dart';
 import 'package:lululu_game/widgets/home/vault_top_hud.dart';
@@ -57,6 +62,44 @@ Widget _buildTestApp(Locale locale, Widget home) {
     localeResolutionCallback: AppLocalizations.localeResolutionCallback,
     home: Scaffold(body: home),
   );
+}
+
+/// Telefon yüzeyi (430x932, coin_fly deseni): oyun ekranları telefon
+/// ölçüsünde çizilir; varsayılan 800x600 yüzeyde Osmantus sütunu taşar.
+Future<void> _setPhoneSurface(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(430, 932);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+}
+
+/// Hafif ağaç sökme: ağaç sökülür, gerçek 1 sn beklenir, pompalanır.
+/// Ticker'lı ekranlarda bekleyen geri çağrı kalmasın diye.
+Future<void> _disposeTree(WidgetTester tester) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.runAsync(() async {
+    await Future<void>.delayed(const Duration(seconds: 1));
+  });
+  await tester.pump();
+  await tester.pump();
+  await tester.pump();
+}
+
+/// Sonuç ekranı sökme (coin_fly `tearDownTree` deseni): saat 6 sn
+/// ilerletilir — flutter_animate sıfır-süreli zamanlayıcısı + CoinFly
+/// gecikmesi ağaç sökülmeden bitsin — sonra sökülüp gerçek 1 sn
+/// beklenir; yoksa test sonu denetimi bekleyen zamanlayıcıyla düşer.
+Future<void> _disposeResultTree(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 6));
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.runAsync(() async {
+    await Future<void>.delayed(const Duration(seconds: 1));
+  });
+  await tester.pump();
+  await tester.pump();
+  await tester.pump();
 }
 
 /// Teardown flake tahliyesi (suika_best_hud_6e / 12I deseni):
@@ -217,6 +260,168 @@ void main() {
       );
       await tester.pump();
       expect(find.text('999'), findsOneWidget);
+    });
+  });
+
+  group('Dalga 14A2 — Soru 4 takip (makara/osmantus/çığlık/sonuç)', () {
+    testWidgets('Makara prototip TR: coin 12.450, skor 1.105, rekor 1.760', (
+      tester,
+    ) async {
+      _registerFontCallbackDrain();
+      await tester.pumpWidget(
+        _buildTestApp(
+          const Locale('tr'),
+          const MakarayizScreen(prototypeVisualState: true),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('12.450'), findsOneWidget);
+      expect(find.text('1.105'), findsOneWidget);
+      expect(find.text('1.760'), findsOneWidget);
+    });
+
+    testWidgets('Makara prototip EN: coin 12,450, skor 1,105, rekor 1,760', (
+      tester,
+    ) async {
+      _registerFontCallbackDrain();
+      await tester.pumpWidget(
+        _buildTestApp(
+          const Locale('en'),
+          const MakarayizScreen(prototypeVisualState: true),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('12,450'), findsOneWidget);
+      expect(find.text('1,105'), findsOneWidget);
+      expect(find.text('1,760'), findsOneWidget);
+    });
+
+    testWidgets('Osmantus coin TR: 1240 -> 1.240', (tester) async {
+      _registerFontCallbackDrain();
+      await _setPhoneSurface(tester);
+      ProgressManager.instance.coins = 1240;
+      await tester.pumpWidget(
+        _buildTestApp(const Locale('tr'), const OsmantusScreen()),
+      );
+      await tester.pump();
+      expect(find.text('1.240'), findsOneWidget);
+      await _disposeTree(tester);
+    });
+
+    testWidgets('Osmantus coin EN: 1240 -> 1,240', (tester) async {
+      _registerFontCallbackDrain();
+      await _setPhoneSurface(tester);
+      ProgressManager.instance.coins = 1240;
+      await tester.pumpWidget(
+        _buildTestApp(const Locale('en'), const OsmantusScreen()),
+      );
+      await tester.pump();
+      expect(find.text('1,240'), findsOneWidget);
+      await _disposeTree(tester);
+    });
+
+    testWidgets('Osmantus prototip vitrin sabiti dile bakmaz: 12.450', (
+      tester,
+    ) async {
+      _registerFontCallbackDrain();
+      await _setPhoneSurface(tester);
+      await tester.pumpWidget(
+        _buildTestApp(
+          const Locale('en'),
+          const OsmantusScreen(prototypeVisualState: true),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('12.450'), findsOneWidget);
+      expect(find.text('12,450'), findsNothing);
+      await _disposeTree(tester);
+    });
+
+    testWidgets('Çığlık prototip TR: coin 12.450, skor 1.320, rekor 2.105', (
+      tester,
+    ) async {
+      _registerFontCallbackDrain();
+      await _setPhoneSurface(tester);
+      // Rekor tohumu (ciglik_pixel_capture deseni): prototip _best'i
+      // `max(_best, 2105)` yapar ama `_loadBest` tahtadaki değerle
+      // ezer — tahta 2105 olmazsa rekor 0'a döner.
+      await LeaderboardService.instance.ensureLoaded();
+      await LeaderboardService.instance.submitScore(
+        LeaderboardService.modeScream,
+        2105,
+      );
+      await tester.pumpWidget(
+        _buildTestApp(
+          const Locale('tr'),
+          const TickerMode(
+            enabled: false,
+            child: ScreamRoachScreen(prototypeVisualState: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('12.450'), findsOneWidget);
+      expect(find.text('1.320'), findsOneWidget);
+      expect(find.text('2.105'), findsOneWidget);
+      await _disposeTree(tester);
+    });
+
+    testWidgets('Çığlık prototip EN: coin 12,450, skor 1,320, rekor 2,105', (
+      tester,
+    ) async {
+      _registerFontCallbackDrain();
+      await _setPhoneSurface(tester);
+      await LeaderboardService.instance.ensureLoaded();
+      await LeaderboardService.instance.submitScore(
+        LeaderboardService.modeScream,
+        2105,
+      );
+      await tester.pumpWidget(
+        _buildTestApp(
+          const Locale('en'),
+          const TickerMode(
+            enabled: false,
+            child: ScreamRoachScreen(prototypeVisualState: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('1,320'), findsOneWidget);
+      expect(find.text('2,105'), findsOneWidget);
+      expect(find.text('12,450'), findsOneWidget);
+      await _disposeTree(tester);
+    });
+
+    testWidgets('Sonuç ekranı TR: skor 1.240, rekor 1.234.567', (tester) async {
+      _registerFontCallbackDrain();
+      await _setPhoneSurface(tester);
+      await tester.pumpWidget(
+        _buildTestApp(
+          const Locale('tr'),
+          const GameResultScreen(score: 1240, bestScore: 1234567),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('1.240'), findsOneWidget);
+      expect(find.text('1.234.567'), findsOneWidget);
+      await _disposeResultTree(tester);
+    });
+
+    testWidgets('Sonuç ekranı EN: skor 1,240, rekor 1,234,567', (tester) async {
+      _registerFontCallbackDrain();
+      await _setPhoneSurface(tester);
+      await tester.pumpWidget(
+        _buildTestApp(
+          const Locale('en'),
+          const GameResultScreen(score: 1240, bestScore: 1234567),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('1,240'), findsOneWidget);
+      expect(find.text('1,234,567'), findsOneWidget);
+      await _disposeResultTree(tester);
     });
   });
 }

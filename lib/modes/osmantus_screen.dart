@@ -18,6 +18,7 @@ import '../services/global_notify.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
 
@@ -1055,9 +1056,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   Text(
                     widget.prototypeVisualState
                         ? '12.450'
-                        : ProgressManager().coins.toString().replaceAllMapped(
-                            RegExp(r'\B(?=(\d{3})+(?!\d))'),
-                            (_) => '.',
+                        : formatGroupedInt(
+                            ProgressManager().coins,
+                            Localizations.localeOf(context).languageCode,
                           ),
                     style: GoogleFonts.nunito(
                       fontSize: 13.5,

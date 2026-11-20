@@ -16,6 +16,7 @@ import '../services/global_notify.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
 import '../widgets/mode_bonus_bar.dart';
@@ -1790,8 +1791,9 @@ class _MakarayizChrome extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      _format(
+                      formatGroupedInt(
                         prototypeVisualState ? 12450 : ProgressManager().coins,
+                        Localizations.localeOf(context).languageCode,
                       ),
                       style: GoogleFonts.nunito(
                         fontSize: 13.5,
@@ -1935,7 +1937,10 @@ class _MakarayizChrome extends StatelessWidget {
                   Image.asset('assets/icons2/coin.png', width: 20, height: 20),
                   const SizedBox(width: 6),
                   Text(
-                    _format(ProgressManager().coins),
+                    formatGroupedInt(
+                      ProgressManager().coins,
+                      Localizations.localeOf(context).languageCode,
+                    ),
                     style: GoogleFonts.nunito(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w900,
@@ -1989,7 +1994,10 @@ class _MakarayizChrome extends StatelessWidget {
                   width: wideScreen ? 104 : 108,
                   child: _stat(
                     context.l10n.gameScoreLabel,
-                    _format(score),
+                    formatGroupedInt(
+                      score,
+                      Localizations.localeOf(context).languageCode,
+                    ),
                     wideScreen: wideScreen,
                   ),
                 ),
@@ -1998,7 +2006,10 @@ class _MakarayizChrome extends StatelessWidget {
                   width: 84,
                   child: _stat(
                     context.l10n.gameBestLabel,
-                    _format(best),
+                    formatGroupedInt(
+                      best,
+                      Localizations.localeOf(context).languageCode,
+                    ),
                     wideScreen: wideScreen,
                   ),
                 ),
@@ -2232,11 +2243,6 @@ class _MakarayizChrome extends StatelessWidget {
       ),
     );
   }
-
-  static String _format(int value) => value.toString().replaceAllMapped(
-    RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => '.',
-  );
 }
 
 /// Küçük duraklatma düğmesi (madde 37): başlık satırında '?' düğmesinin

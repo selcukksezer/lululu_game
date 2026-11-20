@@ -14,6 +14,7 @@ import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
 import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import '../widgets/coin_fly.dart';
 import '../widgets/lululu_press.dart';
 
@@ -775,10 +776,10 @@ class _GameResultScreenState extends State<GameResultScreen>
                                 widget.score == 2346))
                         ? 2346
                         : widget.score;
-                    final formatted = effectiveScore.toString().replaceAllMapped(
-                          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                          (Match m) => '${m[1]}.',
-                        );
+                    final formatted = formatGroupedInt(
+                      effectiveScore,
+                      Localizations.localeOf(context).languageCode,
+                    );
                     if (isTesting) {
                       return Text(
                         formatted,
@@ -795,10 +796,10 @@ class _GameResultScreenState extends State<GameResultScreen>
                       tween: IntTween(begin: 0, end: widget.score),
                       duration: const Duration(milliseconds: 900),
                       builder: (context, val, _) => Text(
-                        val.toString().replaceAllMapped(
-                              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                              (Match m) => '${m[1]}.',
-                            ),
+                        formatGroupedInt(
+                          val,
+                          Localizations.localeOf(context).languageCode,
+                        ),
                         textAlign: TextAlign.center,
                         style: GoogleFonts.baloo2(
                           fontSize: 34,
@@ -843,10 +844,10 @@ class _GameResultScreenState extends State<GameResultScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      widget.bestScore.toString().replaceAllMapped(
-                            RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                            (Match m) => '${m[1]}.',
-                          ),
+                      formatGroupedInt(
+                        widget.bestScore,
+                        Localizations.localeOf(context).languageCode,
+                      ),
                       style: GoogleFonts.baloo2(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,

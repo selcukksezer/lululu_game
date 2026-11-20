@@ -20,6 +20,7 @@ import '../services/global_notify.dart';
 import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
 import '../widgets/shop_dialog.dart';
@@ -1885,10 +1886,11 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      _fmtInt(
+                      formatGroupedInt(
                         widget.prototypeVisualState
                             ? 12450
                             : ProgressManager().coins,
+                        Localizations.localeOf(context).languageCode,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.clip,
@@ -1953,9 +1955,23 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
         child: Row(
           children: [
-            _prototypeStat(context.l10n.gameScoreLabel, _fmtInt(_score), 104),
+            _prototypeStat(
+              context.l10n.gameScoreLabel,
+              formatGroupedInt(
+                _score,
+                Localizations.localeOf(context).languageCode,
+              ),
+              104,
+            ),
             const SizedBox(width: 8),
-            _prototypeStat(context.l10n.gameBestLabel, _fmtInt(_best), 84),
+            _prototypeStat(
+              context.l10n.gameBestLabel,
+              formatGroupedInt(
+                _best,
+                Localizations.localeOf(context).languageCode,
+              ),
+              84,
+            ),
             const Spacer(),
             _prototypeStat(context.l10n.screamGateStat, '$_gatesPassed', 74),
             const SizedBox(width: 8),
@@ -2201,11 +2217,6 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       ),
     );
   }
-
-  static String _fmtInt(int value) => value.toString().replaceAllMapped(
-    RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => '.',
-  );
 
   List<Widget> _buildGate(_Gate g) {
     final topHeight = max(0.0, g.gapCenter - g.gapHalf);
