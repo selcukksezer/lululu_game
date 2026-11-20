@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/progress_manager.dart';
 import '../utils/number_format.dart';
 import '../widgets/achievement_toast_overlay.dart';
+import '../widgets/auth_panel.dart';
 import '../widgets/invite_redeem_sheet.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
@@ -34,10 +35,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     0,      0,      0,      1, 0,
   ];
 
-  void _openAuth() {
+  /// 12D2: profil "Hesap" girişi gömülü AuthPanel sheet'idir (eskiden
+  /// tam ekran AuthScreen'e `'/account'` push'lanırdı). Panel; giriş,
+  /// kayıt, misafir, Apple/Google ve (oturum açıkken) oturum bandı +
+  /// çıkış akışını aynı [AuthService] çağrılarıyla yapar, bu yüzden
+  /// misafir göçü / Faz 2 sohbet güvenliği / hesap silme kuralları
+  /// aynen korunur. Kanonik tam ekran akış (AuthScreen) kaldırılmadı:
+  /// ayarlar "Hesap" satırı ve `'/account'` rotası ona gitmeye devam
+  /// eder. Sheet başarıyla kapanınca profil, [AuthService] dinleyicisi
+  /// üzerinden kendini yeniler.
+  Future<void> _openAuth() async {
     // S11: avatar + misafir CTA dokunuş sesi (iki giriş de bu yoldan).
     AudioManager().playPop();
-    Navigator.of(context).pushNamed('/account');
+    await AuthPanel.showSheet(context);
   }
 
   void _handleBack() {
