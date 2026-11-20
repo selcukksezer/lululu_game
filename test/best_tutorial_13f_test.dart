@@ -226,8 +226,8 @@ void main() {
     ) async {
       var nowMs = 0;
       final point = await pumpOsmantus(tester, () => nowMs);
-      // İlk vuruş 1600 ms'de, pencere ±190 ms; 1000 ms'de basış
-      // pencerenin çok öncesindedir (delta -600 < -190*2.2).
+      // İlk vuruş 1600 ms'de, pencere ±260 ms; 1000 ms'de basış
+      // pencerenin çok öncesindedir (delta -600 < -260*1.2).
       nowMs = 1000;
       await tester.pump();
       await tester.tapAt(point);
@@ -245,9 +245,9 @@ void main() {
     ) async {
       var nowMs = 0;
       final point = await pumpOsmantus(tester, () => nowMs);
-      // 3 vuruş aralığı: 1600 / 2700 / 3800 ms; her birinden 200 ms
-      // önce basış pencereye yakın-erken düşer (delta -200).
-      for (final tapMs in [1400, 2500, 3600]) {
+      // 3 vuruş aralığı: 1600 / 2734 / 3868 ms (DDA 0.97 ile); her birinden
+      // 300 ms önce basış tuzak bandına düşer (delta -300, bant [-321.6, -268)).
+      for (final tapMs in [1300, 2434, 3568]) {
         nowMs = tapMs;
         await tester.pump();
         await tester.tapAt(point);
@@ -342,17 +342,17 @@ void main() {
       final notes = state.debugNotes.toList()
         ..sort((a, b) => a.hitMs.compareTo(b.hitMs));
       final first = notes.first;
-      // Nota ~1000 ms uzaktayken (pencere ±230 ms) kendi şeridine bas.
+      // Nota ~1000 ms uzaktayken (pencere ±280 ms) kendi şeridine bas.
       state.advance(max(0, first.hitMs - 1000 - state.debugNow));
       state.tryHit(first.lane);
       expect(state.debugHint, contains('ERKEN DOKUNDUN'));
-      expect(state.debugHint, contains('±230 ms'));
+      expect(state.debugHint, contains('±280 ms'));
       expect(state.debugLives, 3);
       expect(state.debugMisses, 1);
       await tester.pump();
       expect(find.text('ERKEN DOKUNDUN'), findsOneWidget);
       expect(
-        find.textContaining('vuruş penceresi: ±230 ms'),
+        find.textContaining('vuruş penceresi: ±280 ms'),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);

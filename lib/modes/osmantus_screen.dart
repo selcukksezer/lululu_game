@@ -54,23 +54,20 @@ class OsmantusPacing {
   static const tutorialMs = 15000;
   static const rampMs = 60000;
   static const tutorialIntervalMs = 1100;
-  static const minIntervalMs = 620;
-  static const tutorialWindowMs = 190;
-  static const minWindowMs = 110;
+  static const minIntervalMs = 680;
+  static const tutorialWindowMs = 260;
+  static const minWindowMs = 160;
 
   @visibleForTesting
   static Color ringColorAt(double phase) {
     // Yeşil SADECE puan penceresinin içinde görünür: pencere/genişlik
-    // oranı öğreticide 190/1100 ≈ 0.173, sonda 110/620 ≈ 0.177 —
-    // pencere faz ≈ 0.82'de açılır. Eski eşik (0.3) halkanın faz
-    // 0.65'te bile belirgin yeşil görünmesine yol açıyordu; o fazda
-    // vuruş penceresine daha ~385 ms vardı ve "yeşilde" basan oyuncu
-    // erken-basış ıskası + can kaybı alıyordu ("YEŞİLDE BAS!" yazısına
-    // rağmen kırmızıya dönüp oyun bitiyordu). 0.82 eşiğinde algılanır
-    // yeşil ton her zaman pencere içindedir (öğretici: pencere
-    // faz 0.827'de açılır; yeşil ~0.85'ten itibaren seçilir).
+    // oranı öğreticide 260/1100 ≈ 0.236, sonda 160/680 ≈ 0.235 —
+    // pencere faz ≈ 0.76'da açılır. 0.82 eşiği pencerenin içinde
+    // kalır (yeşil ~0.86'dan itibaren seçilir) ve doygunluk eğrisi
+    // (phase−0.82)/0.12 ile 0.94'te tam yeşile ulaşır; eski
+    // /0.18 eğrisi yeşili pencere sonuna kadar geciktiriyordu.
     final progress = Curves.easeInOut.transform(
-      ((phase - 0.82) / 0.18).clamp(0.0, 1.0),
+      ((phase - 0.82) / 0.12).clamp(0.0, 1.0),
     );
     return Color.lerp(
       const Color(0xFF5B6B86),
@@ -128,6 +125,11 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   bool _alive = true;
   bool _resultShown = false;
 
+  /// Öğretici sonrası lütuf: tur başına ilk 2 can-kaybettirecek ıska
+  /// bedavadır (can kaybı yok, kombo kırılır). Isınma turundaki
+  /// ıskalar zaten cansızdır, sayaç yalnız öğretici sonrası ıskalarda
+  /// erir; `_restart` yeniler.
+  int _freeMissesLeft = 2;
   /// Y3 idempotency damgası: tur başlangıcında bir kez alınır
   /// (`initState` / `_restart`); aynı turun tüm bitiş yolları aynı
   /// anahtarı kullanır, yeni tur yeni damga alır. Bitiş anında
@@ -431,8 +433,15 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       return;
     }
     if (costsLife && !_tutorial) {
-      _lives -= 1;
-      _hint = context.l10n.osmantusLifeStatus(reason, _lives);
+      if (_freeMissesLeft > 0) {
+        // Öğretici sonrası ilk 2 ölümcül ıska bedava: can gitmez,
+        // yalnız kombo kırılır (yukarıda kırıldı).
+        _freeMissesLeft--;
+        _hint = context.l10n.osmantusWarmupMiss(reason);
+      } else {
+        _lives -= 1;
+        _hint = context.l10n.osmantusLifeStatus(reason, _lives);
+      }
     } else {
       _hint = context.l10n.osmantusWarmupMiss(reason);
     }
@@ -500,7 +509,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         );
       }
       setState(() {});
-    } else if (delta < 0 && delta >= -win * 2.2) {
+    } else if (delta < 0 && delta >= -win * 1.2) {
       _hitThisBeat = true;
       _miss(context.l10n.osmantusEarlyPress);
     } else if (delta < 0) {
@@ -523,6 +532,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _combo = 0;
       _maxCombo = 0;
       _lives = 3;
+      _freeMissesLeft = 2;
       _alive = true;
       _resultShown = false;
       _speakerIndex = 0;

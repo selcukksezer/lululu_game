@@ -1132,7 +1132,6 @@ abstract class AppLocalizations {
   String get screamMicOnLabel;
   String get screamVoicePower;
   String get screamGateStat;
-  String get screamCrushedTitle;
   String get gateTerlikDeath;
   String get gateTerlikPass;
   String get gateRaidDeath;
@@ -1148,10 +1147,8 @@ abstract class AppLocalizations {
   String screamDeathLine(String deathLine, int gates);
   String screamGateStreak(int streak);
   String screamCrushedHint(int gates, int streak);
-  String screamStatsLine(int gates, int streak, int dayStreak);
   String screamNextGate(int gate);
   String screamShoutingPercent(int percent);
-  String screamArcadeHint(String hint);
   String screamPauseScore(int score, int gates);
   // --- W65-1: G8 stack_drop (i18n göç planı) ---
   String get stackHintIdle;
@@ -1177,6 +1174,7 @@ abstract class AppLocalizations {
   String stackMilestoneFloors(int m);
   String stackStatsLine(int floors, int perfects, int nears, int combo);
   String stackTutorialHint(String hint);
+  String get stackWarmupForgiven;
   String stackFloorLabel(int floor);
   // --- W65-1: G9 yuva_defense (i18n göç planı) ---
   String get yuvaHintIdle;
@@ -1381,7 +1379,7 @@ abstract class AppLocalizations {
   /// Yuva savunması: arena başlık bandı.
   String get yuvaBanner;
 
-  /// Osmantuş: ikili tuş, rol alt yazıları, ritim ipucu.
+  /// Osmantuş: tek dokunuş, rol alt yazıları, ritim ipucu.
   String get osmantusDoubleButton;
   String get osmanRoleSub;
   String get tusRoleSub;

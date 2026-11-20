@@ -62,8 +62,9 @@ void main() {
     final state = key.currentState!;
     expect(state.debugLives, 3);
 
-    // Hic vurmadan ilerle: notalar beat cizgisini gecer, her karede
-    // en fazla 1 can gider; 3 can da bu yoldan biter.
+    // Hic vurmadan ilerle: notalar beat cizgisini gecer; 2 kacan nota
+    // 1 can goturur (kare basina en fazla 1 can) — 3 can 6 kacan
+    // notada biter. Acilis lutfu ilk 4 notayi affeder (hitMs <= ~5400).
     var guard = 0;
     while (state.debugAlive && guard < 2000) {
       state.advance(50);
@@ -230,7 +231,8 @@ void main() {
     final key = await pumpMakara(tester);
     final state = key.currentState!;
 
-    // 1 can kaybettir: sahnede 3 kalp simgesi de gorunur olmali.
+    // 1 can kaybettir: 2 kacan nota gerekir (2 iska = 1 can);
+    // sahnede 3 kalp simgesi de gorunur olmali.
     var guard = 0;
     while (state.debugLives == 3 && guard < 2000) {
       state.advance(50);

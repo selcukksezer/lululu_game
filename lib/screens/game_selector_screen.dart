@@ -249,6 +249,18 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
 
   Future<void> _claimDailyEnergy() async {
     final pm = ProgressManager.instance;
+    // FULL dalı (Dalga 16 ek bulgu): enerji 30/30 doluyken talep
+    // günlük hakkı TÜKETMEZ ve +0'a "+5 eklendi" denmez — doğru
+    // bildirim "dolu"dur; hak, enerji düşünce kullanılmak üzere kalır.
+    if (EnergyService.instance.isFull) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.shopEnergyFullToast),
+        ),
+      );
+      return;
+    }
     if (!_dailyEnergyClaimed && pm.canClaimDailyFreeEnergy) {
       setState(() => _dailyEnergyClaimed = true);
       final granted = await pm.claimDailyFreeEnergy(amount: 5);
@@ -1270,12 +1282,26 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
           ),
           const SizedBox(height: 10),
           // #dailyEnergy button (height: 48)
-          Semantics(
-            button: true,
-            label: l10n.claimEnergy5,
-            child: GestureDetector(
-              onTap: _claimDailyEnergy,
-              child: CustomPaint(
+          ListenableBuilder(
+            listenable: ProgressManager.instance,
+            builder: (context, _) {
+              // Talep durumu kalıcı kaynaktan türetilir (hediye kutusu
+              // düğmesiyle aynı desen): hak kullanılmışsa düğme
+              // talep-edilmiş görünür ve dokunmaz.
+              final energyClaimed =
+                  _dailyEnergyClaimed ||
+                  !ProgressManager.instance.canClaimDailyFreeEnergy;
+              return Semantics(
+                button: true,
+                enabled: !energyClaimed,
+                label: energyClaimed
+                    ? l10n.claimedShort
+                    : l10n.claimEnergy5,
+                child: GestureDetector(
+                  onTap: energyClaimed ? null : _claimDailyEnergy,
+                  child: Opacity(
+                    opacity: energyClaimed ? 0.55 : 1.0,
+                    child: CustomPaint(
                 painter: const _RealBoxShadowPainter(
                   radius: 14,
                   shadows: [
@@ -1326,7 +1352,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          l10n.claimEnergy5,
+                          energyClaimed
+                              ? l10n.claimedShort
+                              : l10n.claimEnergy5,
                           style: GoogleFonts.baloo2(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
@@ -1346,7 +1374,10 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   ),
                 ),
               ),
+              ),
             ),
+          );
+            },
           ),
         ],
       ),

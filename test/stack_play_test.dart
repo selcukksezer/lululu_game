@@ -63,7 +63,7 @@ void main() {
     await tester.tap(find.text('?'));
     await tester.pump();
     expect(
-      find.textContaining('İlk 15 saniye öğretici tempoda'),
+      find.textContaining('İlk 20 saniye öğretici tempoda'),
       findsOneWidget,
     );
     await tester.tap(find.text('ANLADIM'));

@@ -37,6 +37,16 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    // 6D/7B deseni (stack_kat15_6g_test ile aynı): GoogleFonts'un tembel
+    // yüklemesi `fontsChange` bildirimi bırakır; bildirim gövdenin son
+    // pump'ından sonra gelirse `postTest` değişmez denetimine takılır
+    // ("animation is still running"). Üretim kodu hatası değildir.
+    addTearDown(() async {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      for (var i = 0; i < 3 && binding.transientCallbackCount > 0; i++) {
+        await binding.pump();
+      }
+    });
 
     await pumpWithL10n(
       tester,

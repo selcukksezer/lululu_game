@@ -711,7 +711,6 @@ void main() {
         'screamMicOnLabel': l10n.screamMicOnLabel,
         'screamVoicePower': l10n.screamVoicePower,
         'screamGateStat': l10n.screamGateStat,
-        'screamCrushedTitle': l10n.screamCrushedTitle,
         'gateTerlikDeath': l10n.gateTerlikDeath,
         'gateTerlikPass': l10n.gateTerlikPass,
         'gateRaidDeath': l10n.gateRaidDeath,
@@ -1608,7 +1607,6 @@ void main() {
         'screamMicOnLabel': l10n.screamMicOnLabel,
         'screamVoicePower': l10n.screamVoicePower,
         'screamGateStat': l10n.screamGateStat,
-        'screamCrushedTitle': l10n.screamCrushedTitle,
         'gateTerlikDeath': l10n.gateTerlikDeath,
         'gateTerlikPass': l10n.gateTerlikPass,
         'gateRaidDeath': l10n.gateRaidDeath,
@@ -1941,11 +1939,9 @@ void main() {
         'screamDeathLine': l10n.screamDeathLine('X', 3),
         'screamGateStreak': l10n.screamGateStreak(3),
         'screamCrushedHint': l10n.screamCrushedHint(3, 3),
-        'screamStatsLine': l10n.screamStatsLine(3, 3, 3),
         'screamNextGate': l10n.screamNextGate(3),
         'screamShoutingPercent': l10n.screamShoutingPercent(3),
         'screamMicThreshold': l10n.screamMicThreshold(64),
-        'screamArcadeHint': l10n.screamArcadeHint('X'),
         'screamPauseScore': l10n.screamPauseScore(3, 3),
         // W65-1: G8 stack_drop (i18n göç planı)
         'stackDirectHit': l10n.stackDirectHit(3, 3),
@@ -2137,11 +2133,9 @@ void main() {
         'screamDeathLine': l10n.screamDeathLine('X', 3),
         'screamGateStreak': l10n.screamGateStreak(3),
         'screamCrushedHint': l10n.screamCrushedHint(3, 3),
-        'screamStatsLine': l10n.screamStatsLine(3, 3, 3),
         'screamNextGate': l10n.screamNextGate(3),
         'screamShoutingPercent': l10n.screamShoutingPercent(3),
         'screamMicThreshold': l10n.screamMicThreshold(64),
-        'screamArcadeHint': l10n.screamArcadeHint('X'),
         'screamPauseScore': l10n.screamPauseScore(3, 3),
         // W65-1: G8 stack_drop (i18n göç planı)
         'stackDirectHit': l10n.stackDirectHit(3, 3),
@@ -2276,21 +2270,21 @@ void main() {
     'chestClaimLabel', // ternary zinciri (state)
   };
 
-  test('EN ve TR anahtar kümeleri eşit ve 1051 anahtar kapsanıyor', () {
+  test('EN ve TR anahtar kümeleri eşit ve 1048 anahtar kapsanıyor', () {
     final en = enStrings(AppLocalizationsEn());
     final tr = trStrings(AppLocalizationsTr());
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 874);
-    expect(tr.length, 874);
-    expect(enMethods.length, 179);
-    expect(trMethods.length, 179);
+    expect(en.length, 873);
+    expect(tr.length, 873);
+    expect(enMethods.length, 177);
+    expect(trMethods.length, 177);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1053);
+    expect(en.length + enMethods.length, 1050);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

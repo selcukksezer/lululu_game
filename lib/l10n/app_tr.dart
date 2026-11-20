@@ -2458,11 +2458,11 @@ class AppLocalizationsTr extends AppLocalizations {
 
   // --- W65-1: G7 scream_roach (i18n göç planı) ---
   @override
-  String get screamHintIdle => 'Spam dokun = zıpla. Terlik · sprey · tava arasından geç!';
+  String get screamHintIdle => 'Dokun veya Boşluk = zıpla. Terlik · sprey · tava arasından geç!';
 
   @override
   String get screamHowToBody =>
-      'Dokunarak böceği zıplat; dokunmadığın sürece yer çekimiyle düşer. Puan yalnız kapıların arasından geçerek kazanılır; ne kadar çok zıplarsan kapı başına o kadar çok puan alırsın. İlk 15 saniye oyun daha yavaş ve kapı aralıkları daha geniştir. Kapıya çarparsan veya yerde çok beklersen tur biter. Mikrofon isteğe bağlıdır: mikrofon düğmesiyle açarsan bağırarak da zıplatabilirsin; izin verilmezse dokunarak oynamaya devam edersin. Güçler: Zıplama güçlü bir sıçrama yapar ve bir kapı çarpmasını affeder, Kalkan bir ölümü affeder, Nitro 8 saniye boyunca hızlandırır ve kapı başına +25 puan verir. BİTİR düğmesiyle turu erken bitirebilirsin.';
+      'Dokunarak böceği zıplat; dokunmadığın sürece yer çekimiyle düşer. Puan yalnız kapıların arasından geçerek kazanılır; ne kadar çok zıplarsan kapı başına o kadar çok puan alırsın. İlk 15 saniye oyun daha yavaş ve kapı aralıkları daha geniştir. Kapıya çarparsan veya yerde çok beklersen tur biter. Mikrofon isteğe bağlıdır: mikrofon düğmesiyle açarsan bağırarak da zıplatabilirsin; izin verilmezse dokunarak oynamaya devam edersin. Güçler: Zıplama güçlü bir sıçrama yapar ve bir kapı çarpmasını affeder, Kalkan bir ölümü affeder, Nitro 8 saniye boyunca hızlandırır ve kapı başına +25 puan verir. BİTİR düğmesiyle turu erken bitirebilirsin. Klavyede Boşluk / Yukarı-ok / W ile de zıplatabilirsin.';
 
   @override
   String get screamGatePrototype => 'KAPI X7!';
@@ -2477,7 +2477,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get screamMicPermissionSettings => 'Ses kontrolü için Ayarlar’dan mikrofon izni ver.';
 
   @override
-  String get screamMicDeniedHint => 'Ses izni verilmedi · dokunarak zıplayabilirsin.';
+  String get screamMicDeniedHint => 'Ses izni verilmedi · dokunarak veya Boşluk ile zıplayabilirsin.';
 
   // --- 12C2: mikrofon açmadan önce bilgilendirme + eşik ayarı ---
   @override
@@ -2527,9 +2527,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get screamGateStat => 'KAPI';
 
   @override
-  String get screamCrushedTitle => 'EZİLDİN';
-
-  @override
   String get gateTerlikDeath => 'Terlik şılapp!';
 
   @override
@@ -2575,16 +2572,10 @@ class AppLocalizationsTr extends AppLocalizations {
   String screamCrushedHint(int gates, int streak) => 'Ezildin! Kapı $gates · max spam x$streak';
 
   @override
-  String screamStatsLine(int gates, int streak, int dayStreak) => 'Kapı $gates · Max spam x$streak · Streak $dayStreak';
-
-  @override
   String screamNextGate(int gate) => 'SONRAKİ: KAPI $gate';
 
   @override
   String screamShoutingPercent(int percent) => '%$percent · BAĞIRIYOR';
-
-  @override
-  String screamArcadeHint(String hint) => 'Dokun veya mikrofonu açıp bağırarak zıpla. $hint';
 
   @override
   String screamPauseScore(int score, int gates) => 'Skor $score · Kapı $gates';
@@ -2657,7 +2648,10 @@ class AppLocalizationsTr extends AppLocalizations {
   String stackStatsLine(int floors, int perfects, int nears, int combo) => 'Kat $floors · Perfect $perfects · Near $nears · Max combo x$combo';
 
   @override
-  String stackTutorialHint(String hint) => 'İlk 15 saniye öğretici tempoda. $hint';
+  String stackTutorialHint(String hint) => 'İlk 20 saniye öğretici tempoda. $hint';
+
+  @override
+  String get stackWarmupForgiven => 'Isınma katı — ıska affedildi, dilim korundu!';
 
   @override
   String stackFloorLabel(int floor) => 'KAT $floor';

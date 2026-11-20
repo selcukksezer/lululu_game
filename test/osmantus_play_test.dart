@@ -27,8 +27,10 @@ void main() {
     expect(OsmantusPacing.isTutorial(15000), isFalse);
     expect(OsmantusPacing.intervalMs(0), OsmantusPacing.tutorialIntervalMs);
     expect(OsmantusPacing.intervalMs(14999), OsmantusPacing.tutorialIntervalMs);
-    expect(OsmantusPacing.intervalMs(45000), lessThan(900));
-    expect(OsmantusPacing.windowMs(45000), greaterThan(110));
+    // 45. sn (rampa 0.5): aralık 1100 − (1100−680)×0.5 = 890,
+    // pencere 260 − (260−160)×0.5 = 210.
+    expect(OsmantusPacing.intervalMs(45000), 890);
+    expect(OsmantusPacing.windowMs(45000), 210);
   });
 
   test('ring colour eases continuously toward green', () {
@@ -88,7 +90,13 @@ void main() {
 
     nowMs = 2891;
     await tester.pump();
-    nowMs = 3500;
+    // Erken-basış tuzağı ×1.2 — DDA hızı taze profilde 0.97 olduğu için
+    // (nötr başlangıç: (0−1).clamp(−0.2,0.4)×0.15 = −0.03) pencere
+    // 260/0.97 ≈ 268 ms, aralık 1100~/0.97 = 1134 ms olur; vuruşlar
+    // 1600 → 2734 → 3868 ms'e oturur. Tuzak bandı delta ∈ [−321.6, −268):
+    // 3568 ms'de delta −300 ms → 'ERKEN BASTIN' (pencere dışına 32 ms,
+    // tuzak kenarına 21.6 ms pay).
+    nowMs = 3568;
     await tester.pump();
     await tester.tapAt(inputPoint);
     await tester.pump();

@@ -130,7 +130,7 @@ class LululuGameMode {
       case LululuGameModeId.yuvaDefense:
         return 'Slap anything reaching the nest with a slipper';
       case LululuGameModeId.osmantus:
-        return 'Hit the double tap in the green ring!';
+        return 'Tap once in the green ring!';
       case LululuGameModeId.screamBug:
         return 'Shout to fly through the gates without getting squashed';
       case LululuGameModeId.makarayiz:
@@ -361,7 +361,7 @@ class LululuGameMode {
       id: LululuGameModeId.osmantus,
       index: 9,
       title: 'Osmantuş',
-      subtitle: 'Yeşil halkada ikili tuş!',
+      subtitle: 'Yeşil halkada bir kez dokun!',
       badgeLabel: 'VİRAL',
       badgeColor: Color(0xFFFFD700),
       badgeTextColor: Color(0xFF4A2E00),

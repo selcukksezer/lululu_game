@@ -765,7 +765,7 @@ class CircularPhysicsEngine {
         final r2 = b2.radius * b2.spawnScale;
         final targetDist = r1 + r2;
 
-        final touch = targetDist + 1.5;
+        final touch = targetDist + 4;
         // S1#4: tam çakışan çiftler (distSq ≤ 0.0001, yani merkezler
         // arası ≤ 0.01 px) eskiden bütünüyle yoksayılıyordu: aynı
         // yerçekimiyle kilit-adım hareket eden çift hiç ayrılmıyor,
@@ -914,7 +914,13 @@ class CircularPhysicsEngine {
     final br = b.radius * b.spawnScale;
     if (squareArena) {
       // Flat floor holds unconditionally (it never moves).
-      if (b.y >= arenaBounds.bottom - br - _supportSlack) return true;
+      // Dalga 16 (F-P2): taban keneti görsel yarı-yüksekliğe (1.55r)
+      // göre yapılır (bkz. _resolveSquareBounds), o yüzden destek
+      // testi de 1.55r kullanır; aksi hâlde dibe oturan gövde asla
+      // taban-destekli sayılmazdı.
+      if (b.y >= arenaBounds.bottom - br * 1.55 - _supportSlack) {
+        return true;
+      }
     } else {
       // Bowl wall holds only where its normal points sufficiently
       // upward — i.e. the body is meaningfully below arena center

@@ -66,14 +66,14 @@ class TerlikTapPacing {
     final rampTime = max(0.0, elapsedSeconds - tutorialSeconds);
     return elapsedSeconds < tutorialSeconds
         ? 1.3
-        : max(0.65, 1.2 - rampTime * 0.01);
+        : max(0.80, 1.2 - rampTime * 0.01);
   }
 
   static double targetVisibleSeconds(double elapsedSeconds) {
     final rampTime = max(0.0, elapsedSeconds - tutorialSeconds);
     return elapsedSeconds < tutorialSeconds
         ? 2.4
-        : max(1.3, 2.05 - rampTime * 0.008);
+        : max(1.6, 2.4 - rampTime * 0.008);
   }
 }
 
@@ -425,7 +425,15 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     final now = DateTime.now();
     var dt = now.difference(_last).inMicroseconds / 1e6;
     _last = now;
-    if (dt <= 0 || dt > 0.05) dt = 0.016;
+    // Kare süresi kısması: 50 ms üstü gecikme eskiden tek 16 ms kare
+    // sayılıyordu (`dt = 0.016`) — geçen süre çöpe atılıyor, kısılan
+    // zamanlayıcıda (arka-plan sekmesi) oyun 30-60× yavaşlıyor, böcekler
+    // 30-60 sn delikte kalıyordu (T-2). Şimdi dt 0.25 sn'de kelepçelenir:
+    // 60 fps'de dt ~0.016 olduğundan normal oyun aynen; kısılan tikte
+    // oyun gerçek zamana yaklaşır, sıçrama yine sınırlıdır (kare başına
+    // en fazla 1 sayılan ıska kuralı ayrıca korur).
+    if (dt < 0) dt = 0;
+    if (dt > 0.25) dt = 0.25;
 
     if (_hitStop > 0) {
       _hitStop = max(0, _hitStop - dt);
@@ -524,11 +532,17 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     }
     final holeIndex = freeHoles[_rng.nextInt(freeHoles.length)];
     // 12C1: adaptif zorluk — merhamette hedef daha uzun görünür.
+    // DDA hız çarpanı görünme bölmesinde 1.15 ile kelepçelenir:
+    // seri oyuncuda (speed 1.35) taban görünme 1.6 / 1.35 ≈ 1.19 sn'ye
+    // inmez, en az 1.6 / 1.15 ≈ 1.39 sn kalır.
     final visibleFor =
         TerlikTapPacing.targetVisibleSeconds(_elapsedSeconds) /
-        DifficultyBinding.instance
-            .cachedProfileForMode('terlik')
-            .speedMultiplier;
+        min(
+          DifficultyBinding.instance
+              .cachedProfileForMode('terlik')
+              .speedMultiplier,
+          1.15,
+        );
 
     // Skor yükselince %12 ihtimalle dokunulmaması gereken elektrik/bomba tuzağı.
     if (!widget.prototypeVisualState &&
@@ -1042,14 +1056,15 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   void _applyMiss(String reason) {
     _missed++;
     _combo = 0;
-    final lifeLost = _missed % 3 == 0;
+    // Iska toleransı: 4 ıska = 1 can (3 değil).
+    final lifeLost = _missed % 4 == 0;
     if (lifeLost) _lives--;
     _missMessage = lifeLost
         ? context.l10n.missLifeLost(reason)
-        : context.l10n.terlikComboBreakLives(reason, 3 - (_missed % 3));
+        : context.l10n.terlikComboBreakLives(reason, 4 - (_missed % 4));
     _hint = lifeLost
         ? context.l10n.terlikComboBreakLifeLost(reason, _lives)
-        : context.l10n.terlikComboBreakLives(reason, 3 - (_missed % 3));
+        : context.l10n.terlikComboBreakLives(reason, 4 - (_missed % 4));
     _pushFx(
       context.l10n.comboBrokenShort,
       _arena.width / 2,
@@ -2132,9 +2147,15 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                                                         ),
                                                         Text(
                                                           context.l10n.terlikSpeedMultiplier(
-                                                            (1 +
-                                                                    _elapsedSeconds /
-                                                                        30)
+                                                            // T-6: gösterilen hız gerçek doğma
+                                                            // oranıdır (1.3 / o anki doğma
+                                                            // aralığı); eski `(1 + süre/30)`
+                                                            // formülü 30. sn'de X2.0 yazıyordu,
+                                                            // gerçek oran ~1.24× idi.
+                                                            (1.3 /
+                                                                    TerlikTapPacing.spawnInterval(
+                                                                      _elapsedSeconds,
+                                                                    ))
                                                                 .clamp(1.0, 2.5)
                                                                 .toStringAsFixed(
                                                                   1,

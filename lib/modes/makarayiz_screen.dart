@@ -83,7 +83,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   /// Kare sayacı (10E, 8C VLB deseni): `advance` yalnız bu sayacı
   /// artırır; sahne [ValueListenableBuilder] ile yenilenir. Tick
-  /// sıklığı ve vuruş penceresi (140-230 ms) aynen korunur.
+  /// sıklığı ve vuruş penceresi (190-280 ms) aynen korunur.
   final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
   final _rng = Random();
 
@@ -97,6 +97,12 @@ class MakarayizScreenState extends State<MakarayizScreen>
   int _lives = 3;
   int _hits = 0;
   int _misses = 0;
+
+  /// Kaçan-nota sayacı (can kuralı): 2 kaçan nota = 1 can. `_misses`
+  /// her kombo-kırılmayı sayar (yanlış şerit / erken dokunuş dahil —
+  /// `debugMisses` anlamı aynen korunur); bu sayaç YALNIZ kaçan
+  /// notaları sayar ve 2'ye ulaşınca sıfırlanır.
+  int _missesSinceLife = 0;
   double _reel = 0;
   double _nextPulseMs = 1800;
   bool _alive = true;
@@ -171,11 +177,11 @@ class MakarayizScreenState extends State<MakarayizScreen>
   /// İlk 15 sn eğitim hızı; sonra beat sıklaşır, nota daha hızlı iner.
   double _rampAt(double timeMs) =>
       ((timeMs - tutorialMs) / 60000).clamp(0.0, 1.0).toDouble();
-  double _beatAt(double timeMs) => lerpDouble(900, 520, _rampAt(timeMs))!;
-  double _travelAt(double timeMs) => lerpDouble(2600, 1500, _rampAt(timeMs))!;
+  double _beatAt(double timeMs) => lerpDouble(950, 600, _rampAt(timeMs))!;
+  double _travelAt(double timeMs) => lerpDouble(2800, 1800, _rampAt(timeMs))!;
   double get beatMs => _beatAt(_now);
-  double get windowMs => lerpDouble(230, 140, _rampAt(_now))!;
-  double get perfectMs => 70;
+  double get windowMs => lerpDouble(280, 190, _rampAt(_now))!;
+  double get perfectMs => 80;
 
   @visibleForTesting
   List<({int lane, double hitMs})> get debugNotes => [
@@ -276,6 +282,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _lives = 3;
     _hits = 0;
     _misses = 0;
+    _missesSinceLife = 0;
     _reel = 0;
     _nextPulseMs = _nextHit;
     _alive = true;
@@ -397,9 +404,10 @@ class MakarayizScreenState extends State<MakarayizScreen>
     // Kare süresi kısması: arka plan dönüşü / takılma sonrası dev dt,
     // oyun saatini ileri fırlatıp birikmiş notaları toplu kaçırmasın.
     dt = dt.clamp(0.0, 33.0).toDouble();
-    // Opening grace in live ticker mode so the very first note before the
-    // player's first tap doesn't immediately deduct a life at 1.9s.
-    if (_hits == 0 && _now + dt < 4200) {
+    // Opening grace in live ticker mode so the very first notes before
+    // the player's first tap don't immediately deduct a life at 1.9s.
+    // Lütuf ilk 4 notaya uzanır (hitMs ≤ ~5400 ms: 1800/2750/3700/4650).
+    if (_hits == 0 && _now + dt < 5400) {
       for (final n in _notes) {
         if (!n.done && (_now + dt) - n.hitMs > windowMs * 0.85) {
           n.done = true;
@@ -442,12 +450,17 @@ class MakarayizScreenState extends State<MakarayizScreen>
     }
     // Kare başına en fazla 1 can kaybı: aynı karede birden çok nota
     // kaçsa bile diğerleri yalnız kombo/ıska sayar, can almaz.
+    // Can kuralı: 2 kaçan nota = 1 can (`_missesSinceLife`).
     var lifeLost = false;
     for (final n in _notes) {
       if (!n.done && _now - n.hitMs > windowMs) {
         n.done = true;
-        final loseLife = !lifeLost;
-        lifeLost = true;
+        _missesSinceLife++;
+        final loseLife = !lifeLost && _missesSinceLife >= 2;
+        if (loseLife) {
+          lifeLost = true;
+          _missesSinceLife = 0;
+        }
         _breakCombo(context.l10n.missedCaps, loseLife: loseLife);
         // F18: canlar bittiyse (_gameOver) aynı karedeki diğer kaçan
         // notalar _misses'i şişirmesin; döngüden çık.
@@ -529,7 +542,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
     final perfect = d <= perfectMs;
     final gain = (60 + _combo * 10 + (perfect ? 40 : 0)) * (_x2 ? 2 : 1);
     _score += gain;
-    _reel += 0.08;
+    _reel += 0.10;
     if (_reel >= 1) {
       _reel = 0;
       _score += 250;
@@ -608,7 +621,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
             );
       if (other.isNotEmpty) {
         other.first.done = true;
-        _breakCombo(context.l10n.makaraWrongLane, loseLife: true);
+        // Yanlış şerit: can kaybı yok — yalnız kombo kırılır + nota
+        // kaybolur (yukarıda `done` yapıldı).
+        _breakCombo(context.l10n.makaraWrongLane, loseLife: false);
       } else if (_notes.any((n) => !n.done && n.lane == lane)) {
         _breakCombo(context.l10n.makaraEarlyTap, loseLife: false);
       } else {

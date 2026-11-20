@@ -119,7 +119,9 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
   int _nextBugId = 0;
   int _score = 0;
   int _best = 0;
-  int _lives = 3;
+  int _lives = 4;
+  // Dalga 16 (F-Y7): azami can — kalp HUD'u bu sayıyla çizilir.
+  static const int _maxLives = 4;
   int _combo = 0;
   int _maxCombo = 0;
   int _hits = 0;
@@ -267,9 +269,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _spawn(lane: 2, fromLeft: true, x: 0.2515, tier: InsectTier.cone);
       _spawn(lane: 2, fromLeft: false, x: 0.4326, tier: InsectTier.fan);
     } else {
-      _spawnRadial(angleRad: 0.25, radiusFrac: 0.42);
+      // Dalga 16 (F-Y6): açılış dalgası 4→2 böcek (yayılım korunur).
       _spawnRadial(angleRad: 2.35, radiusFrac: 0.44);
-      _spawnRadial(angleRad: 4.20, radiusFrac: 0.40);
       _spawnRadial(angleRad: 5.35, radiusFrac: 0.43);
       _loop = Timer.periodic(const Duration(milliseconds: 16), _tick);
     }
@@ -486,17 +487,17 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
     _spawnElapsed += dt;
     // Zaman ve vuruş sayısı arttıkça hem doğma sıklığı hem hız gitgide artar!
     final ramp = _elapsedSeconds + _hits * 0.65;
-    final spawnEvery = max(0.36, 1.25 - ramp * 0.016);
+    final spawnEvery = max(0.36, 1.6 - ramp * 0.011);
     if (_spawnElapsed >= spawnEvery) {
       _spawnElapsed = 0;
       _spawnRadial();
       // İlerleyen saniyelerde aynı anda farklı köşelerden çift böcek gelebilir
-      if (ramp > 18 && _bugs.length < 9 && _random.nextDouble() < 0.38) {
+      if (ramp > 30 && _bugs.length < 9 && _random.nextDouble() < 0.38) {
         _spawnRadial();
       }
     }
 
-    final baseSpeed = 0.095 + min(0.24, ramp * 0.0036);
+    final baseSpeed = 0.095 + min(0.24, ramp * 0.0028);
     final speed = _isFrozen ? baseSpeed * 0.42 : baseSpeed;
     _bugs.removeWhere((bug) {
       if (!bug.popping) return false;
@@ -517,7 +518,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         bug.x += (dx / dist) * step;
         bug.y += (dy / dist) * step;
       }
-      if (dist <= 0.072) {
+      if (dist <= 0.06) {
         if (_shieldActive) {
           _shieldActive = false;
           final pushTheta = atan2(bug.y - _nestCenterY, bug.x - _nestCenterX);
@@ -1090,7 +1091,7 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
       _pauseStartedAt = null;
       _resultShown = false;
       _score = 0;
-      _lives = 3;
+      _lives = 4;
       _combo = 0;
       _maxCombo = 0;
       _hits = 0;
@@ -1120,9 +1121,8 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
         _spawn(lane: 1, fromLeft: false, x: 0.67);
         _spawn(lane: 2, fromLeft: true, x: 0.45);
       } else {
-        _spawnRadial(angleRad: -2.4, radiusFrac: 0.44);
+        // Dalga 16 (F-Y6): açılış dalgası 4→2 böcek (yayılım korunur).
         _spawnRadial(angleRad: -0.6, radiusFrac: 0.45);
-        _spawnRadial(angleRad: 1.1, radiusFrac: 0.43);
         _spawnRadial(angleRad: 2.5, radiusFrac: 0.46);
       }
     });
@@ -1570,7 +1570,9 @@ class _YuvaDefenseScreenState extends State<YuvaDefenseScreen>
                                   else
                                     const SizedBox(width: 8),
                                   SizedBox(
-                                    width: wideScreen ? 98.4 : 80,
+                                    // Dalga 16 (F-Y7): 4 kalp sığsın diye
+                                    // geniş kart 98.4→108 (kalp 17 px).
+                                    width: wideScreen ? 108 : 80,
                                     child: _HudCard(
                                       label: context.l10n.livesLabel,
                                       value: '$_lives',
@@ -2420,14 +2422,14 @@ class _HudCard extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (var i = 0; i < 3; i++) ...[
-                if (i > 0) const SizedBox(width: 4.2),
+              for (var i = 0; i < _YuvaDefenseScreenState._maxLives; i++) ...[
+                if (i > 0) const SizedBox(width: 3.0),
                 Opacity(
                   opacity: i < (int.tryParse(value) ?? 0) ? 1 : 0.25,
                   child: Image.asset(
                     'assets/icons/health.png',
-                    width: 20,
-                    height: 20,
+                    width: 17,
+                    height: 17,
                   ),
                 ),
               ],
@@ -2438,7 +2440,7 @@ class _HudCard extends StatelessWidget {
             spacing: 4,
             runSpacing: 1,
             children: [
-              for (var i = 0; i < 3; i++)
+              for (var i = 0; i < _YuvaDefenseScreenState._maxLives; i++)
                 Image.asset(
                   'assets/icons/health.png',
                   width: 20,

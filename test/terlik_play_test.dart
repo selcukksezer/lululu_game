@@ -96,7 +96,9 @@ void main() {
     expect(TerlikTapPacing.targetVisibleSeconds(14.9), 2.4);
     expect(TerlikTapPacing.spawnInterval(16), lessThan(1.3));
     expect(TerlikTapPacing.targetVisibleSeconds(16), lessThan(2.4));
-    expect(TerlikTapPacing.spawnInterval(200), 0.65);
+    expect(TerlikTapPacing.spawnInterval(200), 0.80);
+    // Görünme tabanı 1.6 sn (basamaksız erime: 15. sn'de 2.4'ten başlar).
+    expect(TerlikTapPacing.targetVisibleSeconds(200), 1.6);
   });
 
   testWidgets('players can hit a mole and miss penalty is clear', (

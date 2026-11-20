@@ -43,7 +43,7 @@ const _modeSubtitlesEn = <LululuGameModeId, String>{
   LululuGameModeId.terlikTap: 'Slap what pops out of the holes with a slipper',
   LululuGameModeId.yuvaDefense:
       'Slap anything reaching the nest with a slipper',
-  LululuGameModeId.osmantus: 'Hit the double tap in the green ring!',
+  LululuGameModeId.osmantus: 'Tap once in the green ring!',
   LululuGameModeId.screamBug:
       'Shout to fly through the gates without getting squashed',
   LululuGameModeId.makarayiz: 'Swipe on the beat, wind the reel',

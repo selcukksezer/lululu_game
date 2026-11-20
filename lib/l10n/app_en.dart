@@ -2460,11 +2460,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   // --- W65-1: G7 scream_roach (i18n göç planı) ---
   @override
-  String get screamHintIdle => 'Spam-tap = jump. Get through slipper · spray · pan!';
+  String get screamHintIdle => 'Tap or Space = jump. Get through slipper · spray · pan!';
 
   @override
   String get screamHowToBody =>
-      'Tap to make the bug jump; when you stop tapping, gravity pulls it down. You score only by passing through gates — the more you jump, the more each gate is worth. The first 15 seconds are slower, with wider gate gaps. Hitting a gate or resting on the ground too long ends the run. The microphone is optional: turn it on with the mic button to jump by shouting; if permission is denied, you can keep playing by tapping. Powers: Jump launches a mighty leap and forgives one gate hit, Shield saves you from death once, and Nitro speeds you up for 8 seconds and adds +25 points per gate. You can end the run early with the FINISH button.';
+      'Tap to make the bug jump; when you stop tapping, gravity pulls it down. You score only by passing through gates — the more you jump, the more each gate is worth. The first 15 seconds are slower, with wider gate gaps. Hitting a gate or resting on the ground too long ends the run. The microphone is optional: turn it on with the mic button to jump by shouting; if permission is denied, you can keep playing by tapping. Powers: Jump launches a mighty leap and forgives one gate hit, Shield saves you from death once, and Nitro speeds you up for 8 seconds and adds +25 points per gate. You can end the run early with the FINISH button. You can also jump with Space / Up-arrow / W on the keyboard.';
 
   @override
   String get screamGatePrototype => 'GATE X7!';
@@ -2479,7 +2479,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get screamMicPermissionSettings => 'Allow microphone permission from Settings for voice control.';
 
   @override
-  String get screamMicDeniedHint => 'Voice permission not granted · you can jump by tapping.';
+  String get screamMicDeniedHint => 'Voice permission not granted · you can jump by tapping or with Space.';
 
   // --- 12C2: microphone explainer shown before asking + threshold ---
   @override
@@ -2529,9 +2529,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get screamGateStat => 'GATE';
 
   @override
-  String get screamCrushedTitle => 'CRUSHED';
-
-  @override
   String get gateTerlikDeath => 'Slipper slap!';
 
   @override
@@ -2577,16 +2574,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String screamCrushedHint(int gates, int streak) => 'Crushed! Gate $gates · max spam x$streak';
 
   @override
-  String screamStatsLine(int gates, int streak, int dayStreak) => 'Gate $gates · Max spam x$streak · Streak $dayStreak';
-
-  @override
   String screamNextGate(int gate) => 'NEXT: GATE $gate';
 
   @override
   String screamShoutingPercent(int percent) => '%$percent · SHOUTING';
-
-  @override
-  String screamArcadeHint(String hint) => 'Tap or turn on the mic and shout to jump. $hint';
 
   @override
   String screamPauseScore(int score, int gates) => 'Score $score · Gate $gates';
@@ -2659,7 +2650,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String stackStatsLine(int floors, int perfects, int nears, int combo) => 'Floor $floors · Perfect $perfects · Near $nears · Max combo x$combo';
 
   @override
-  String stackTutorialHint(String hint) => 'First 15 seconds at tutorial pace. $hint';
+  String stackTutorialHint(String hint) => 'First 20 seconds at tutorial pace. $hint';
+
+  @override
+  String get stackWarmupForgiven => 'Warm-up floor — miss forgiven, slice kept!';
 
   @override
   String stackFloorLabel(int floor) => 'FLOOR $floor';

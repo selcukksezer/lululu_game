@@ -344,11 +344,18 @@ class _GameScreenState extends State<GameScreen>
         .spawnFavorability;
     var r = _rng.nextDouble() * (2.0 - favorability);
     if (widget.arcade) {
+      // Dalga 16 (F-G1): ilk 6 bırakışta yalnız T1/T2 düşsün
+      // (T1 %55 / T2 %45) — ilk birleşme ~3. bırakışa iner.
+      if (_arcadeDropCount < 6) {
+        return _rng.nextDouble() < 0.55
+            ? InsectTier.cone
+            : InsectTier.helmet;
+      }
       final ramp = min(0.24, _arcadeDropCount * 0.003 + _score / 12000);
       if (r < ramp) {
         // Düşürücü tavanı Dansçı (tier 4): Diva (tier 5) doğrudan
         // düşürülmez, yalnızca birleşmeyle doğar.
-        if (_arcadeDropCount >= 18 || _score >= 2400) {
+        if (_arcadeDropCount >= 10 || _score >= 2400) {
           return InsectTier.dancer;
         }
         return InsectTier.fan;

@@ -101,7 +101,7 @@ class _StackDropScreenState extends State<StackDropScreen>
   // near = perfectPx < offset ≤ nearPx, diğer = offset > nearPx.
   // nearPx her zaman perfectPx'ten büyük tutulmalıdır; bant tanımı
   // _settle() içinde açık aralık olarak yazılır.
-  static const double perfectPx = 7;
+  static const double perfectPx = 9;
   static const double nearPx = 16;
   static const _slabColors = <Color>[
     Color(0xFFFFE9C9),
@@ -124,6 +124,10 @@ class _StackDropScreenState extends State<StackDropScreen>
   // yeni turu bozmasın).
   DateTime? _failedAt;
   bool _resultShown = false;
+
+  // Dalga 16 (F-S4): ısınma affı — ilk 5 katta tek ıska affedilir
+  // (dilim korunur, kombo sıfırlanır); tur başına bir kez.
+  bool _warmupForgiven = false;
 
   /// Tur kimliği (F2): her `_boot` artırır. Bekleyen `_presentResult`,
   /// tur değiştiyse eski turun sonucunu göstermez (`stillValid`).
@@ -428,6 +432,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     _resultShown = false;
     _phase = _Phase.ready;
     _failedAt = null;
+    _warmupForgiven = false;
   }
 
   void _ensure(double w, double h) {
@@ -556,17 +561,17 @@ class _StackDropScreenState extends State<StackDropScreen>
       return;
     }
 
-    final wasTutorial = _elapsedSeconds < 15;
+    final wasTutorial = _elapsedSeconds < 20;
     _elapsedSeconds += dt;
-    // Öğretici öneki 15. saniyede kalkar: `hint` ArcadeScreen
+    // Öğretici öneki 20. saniyede kalkar: `hint` ArcadeScreen
     // başlığında (VLB dışında) gösterildiği için bu tek geçişte
     // bir kez dış `setState` gerekir.
-    if (wasTutorial && _elapsedSeconds >= 15) setState(() {});
+    if (wasTutorial && _elapsedSeconds >= 20) setState(() {});
     _sway += dt * 2.4;
     _comboMeter = max(0, _comboMeter - dt * 0.12);
 
     if (_phase == _Phase.ready) {
-      final tutorialProgress = (_elapsedSeconds / 15).clamp(0.0, 1.0);
+      final tutorialProgress = (_elapsedSeconds / 20).clamp(0.0, 1.0);
       final tutorialSpeed = 0.52 + tutorialProgress * 0.48;
       final now = DateTime.now();
       final perfectSlow =
@@ -638,6 +643,23 @@ class _StackDropScreenState extends State<StackDropScreen>
     setState(() {});
   }
 
+  /// Dalga 16 (F-S4): ısınma affı — ilk 5 katta (`_floors <= 5`,
+  /// tohum KAT 1 sayılır) tur başına bir kez ıska affedilir: dilim
+  /// korunur (kesilmez, kat sayılmaz), kombo sıfırlanır, faz `ready`'ye
+  /// döner ve oyuncu aynı katı dener. true ise affedildi (çağıran
+  /// `_fail`'i atlar).
+  bool _forgiveWarmupMiss() {
+    if (_floors > 5 || _warmupForgiven) return false;
+    _warmupForgiven = true;
+    _combo = 0;
+    _comboMeter = 0;
+    _phase = _Phase.ready;
+    _fallY = 16;
+    _showFeedback(context.l10n.stackWarmupForgiven);
+    setState(() {});
+    return true;
+  }
+
   void _settle() {
     final top = _stack.last;
     final left = _moverX - _moverW / 2;
@@ -650,11 +672,12 @@ class _StackDropScreenState extends State<StackDropScreen>
     final offset = (_moverX - top.center).abs();
 
     if (overlap <= 2) {
+      if (_forgiveWarmupMiss()) return;
       _fail();
       return;
     }
 
-    // Bantlar ayrık aralıklar: perfect [0, 7], near (7, 16], diğer (16, ∞).
+    // Bantlar ayrık aralıklar: perfect [0, 9], near (9, 16], diğer (16, ∞).
     // Eski `!perfect && ...` yazımı da ayrık sonuç veriyordu; açık aralık
     // yazımı perfect tanımı değişse bile çakışmayı imkânsız kılar.
     final perfect = offset <= perfectPx;
@@ -664,6 +687,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     final placedTier = _tier;
     final placedIsHisir = _moverIsHisir;
     if (width < 14) {
+      if (_forgiveWarmupMiss()) return;
       _fail();
       return;
     }
@@ -748,7 +772,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     _tier = 1 + _rng.nextInt(5);
     _moverIsHisir =
         !widget.prototypeVisualState && HisirCharacter.roll(_rng);
-    _speed = min(360.0, _speed + 8 + (_floors > 10 ? 2 : 0));
+    _speed = min(300.0, _speed + 6 + (_floors > 10 ? 2 : 0));
     _phase = _Phase.ready;
     _moverX = _moverX.clamp(_moverW / 2, _arenaW - _moverW / 2);
     _stack.add(
@@ -1133,10 +1157,10 @@ class _StackDropScreenState extends State<StackDropScreen>
         backgroundAsset: 'assets/design/backgrounds/stack_nightcity.webp',
         title: context.l10n.shopModeStackDrop,
         // Yardım (F4): chrome '?' diyaloğu bu `hint` metnini gösterir;
-        // canlı oyun geri bildirimi değil, kural metni verilir. İlk 15
+        // canlı oyun geri bildirimi değil, kural metni verilir. İlk 20
         // saniyedeki öğretici öneki korunur (stack_play_test diyaloğun
         // bu öneki içerdiğini doğrular).
-        hint: _elapsedSeconds < 15 && !widget.prototypeVisualState
+        hint: _elapsedSeconds < 20 && !widget.prototypeVisualState
             ? context.l10n.stackTutorialHint(context.l10n.stackHelpBody)
             : context.l10n.stackHelpBody,
         score: _score,
