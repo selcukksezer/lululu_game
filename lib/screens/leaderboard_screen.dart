@@ -166,7 +166,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             ? boardItems.sublist(3)
             : const <_ScoreRowData>[];
 
-        final mqTop = MediaQuery.of(context).padding.top;
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F6FA),
@@ -177,7 +176,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 bottom: false,
                 child: Column(
                   children: [
-                    if (mqTop == 0) const _ScoresPrototypeStatusBar(),
                     // .page-title (y=35.4, h=47, padding: 10px 14px 2px 14px)
                     Container(
                       height: 47,
@@ -1476,108 +1474,4 @@ class _DockCircleInsetPainter extends CustomPainter {
   bool shouldRepaint(covariant _DockCircleInsetPainter oldDelegate) =>
       oldDelegate.dy != dy || oldDelegate.color != color;
 }
-
-class _ScoresPrototypeStatusBar extends StatelessWidget {
-  const _ScoresPrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.0,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 1.6),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text(
-              '09:41',
-              style: TextStyle(
-                fontFamily: 'Nunito',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF141B2A),
-                height: 1.55,
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ScoresSignalPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ScoresBatteryPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ScoresSignalPainter extends CustomPainter {
-  const _ScoresSignalPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _ScoresBatteryPainter extends CustomPainter {
-  const _ScoresBatteryPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-
 

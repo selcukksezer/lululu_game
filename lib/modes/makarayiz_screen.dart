@@ -1598,11 +1598,7 @@ class _MakarayizChrome extends StatelessWidget {
             background,
             Column(
               children: [
-                _statusBar(
-                  hasShellStatusBar: hasShellStatusBar,
-                  wideScreen: wideScreen,
-                  topPad: topPad,
-                ),
+                if (hasShellStatusBar) SizedBox(height: topPad),
                 _header(context, wideScreen: wideScreen),
                 _hud(wideScreen: wideScreen),
                 Expanded(
@@ -1633,43 +1629,6 @@ class _MakarayizChrome extends StatelessWidget {
               ],
             ),
             ?overlay,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _statusBar({
-    required bool hasShellStatusBar,
-    required bool wideScreen,
-    required double topPad,
-  }) {
-    final h = wideScreen ? 35.4 : 38.0;
-    if (hasShellStatusBar) {
-      return SizedBox(height: prototypeVisualState ? h : topPad);
-    }
-    return SizedBox(
-      height: h,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(22, wideScreen ? 14 : 12, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '09:41',
-              style: GoogleFonts.nunito(
-                fontSize: 12.5,
-                height: 1,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(
-              width: 38,
-              height: 16,
-              child: CustomPaint(painter: _StatusIndicatorsPainter()),
-            ),
           ],
         ),
       ),
@@ -2322,47 +2281,6 @@ class _RoundButton extends StatelessWidget {
     }
     return button;
   }
-}
-
-class _StatusIndicatorsPainter extends CustomPainter {
-  const _StatusIndicatorsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    for (var i = 0; i < 4; i++) {
-      final height = 4.0 + i * 3.0;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(1 + i * 4.5, size.height - height, 2.4, height),
-          const Radius.circular(0.7),
-        ),
-        paint,
-      );
-    }
-    final battery = RRect.fromRectAndRadius(
-      Rect.fromLTWH(22, 3, 14, 9),
-      const Radius.circular(2),
-    );
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawRRect(battery, paint);
-    paint.style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(24, 5, 9, 5),
-        const Radius.circular(1),
-      ),
-      paint,
-    );
-    canvas.drawRect(const Rect.fromLTWH(36.5, 5.5, 1.5, 4), paint);
-  }
-
-  @override
-  bool shouldRepaint(_StatusIndicatorsPainter oldDelegate) => false;
 }
 
 class _DashPainter extends CustomPainter {

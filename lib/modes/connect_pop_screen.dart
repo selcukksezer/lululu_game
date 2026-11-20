@@ -1175,7 +1175,6 @@ class _ConnectPopScreenState extends State<ConnectPopScreen>
       tag: context.l10n.connectChainTag,
       tagColor: const Color(0xFFFFD700),
       tagTextColor: const Color(0xFF4A2E00),
-      showStatusBar: true,
       hint: _paused ? context.l10n.pausedStatusCaps : _hintString(context.l10n),
       score: _score,
       best: _best,

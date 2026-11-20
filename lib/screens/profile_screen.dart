@@ -167,7 +167,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final l10n = context.l10n;
         final auth = AuthService.instance;
         final pm = ProgressManager.instance;
-        final mqTop = MediaQuery.of(context).padding.top;
         final isNarrow = MediaQuery.sizeOf(context).width < 400;
 
         // Misafir (oturum yok ya da misafir oturumu) asla "Apple Oyuncu" gibi
@@ -274,7 +273,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 bottom: false,
                 child: Column(
                   children: [
-                    if (mqTop == 0) const _ProfilePrototypeStatusBar(),
                     // .page-title (y=35.4, h=60, padding: 10px 14px 2px 14px)
                     Container(
                       height: 60,
@@ -1274,108 +1272,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
-}
-
-class _ProfilePrototypeStatusBar extends StatelessWidget {
-  const _ProfilePrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text(
-              '09:41',
-              style: TextStyle(
-                fontFamily: 'Nunito',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF141B2A),
-                height: 1.55,
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ProfileSignalIconPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ProfileBatteryIconPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProfileSignalIconPainter extends CustomPainter {
-  const _ProfileSignalIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _ProfileBatteryIconPainter extends CustomPainter {
-  const _ProfileBatteryIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _BadgeData {

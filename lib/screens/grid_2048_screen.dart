@@ -1151,7 +1151,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
         body: LayoutBuilder(
           builder: (context, constraints) {
             final mq = MediaQuery.of(context);
-            final topInset = mq.padding.top > 0 ? mq.padding.top : 35.375;
+            final topInset = mq.padding.top;
 
             return Stack(
               fit: StackFit.expand,
@@ -1212,16 +1212,6 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
                   ),
                 ),
 
-                // Top statusbar (`9:41` + signal + battery) — only in headless/prototype mode
-                if (mq.padding.top <= 0 || widget.prototypeVisualState)
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 35.375,
-                    child: _PrototypeStatusBar(),
-                  ),
-
                 if (_showHelpModal) _buildHelpOverlay(),
                 if (_paused) _buildPauseOverlay(),
               ],
@@ -1233,7 +1223,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
     );
   }
 
-  /// `.mode-top` (`rect: [0, 35.4, 430, 54]`)
+  /// `.mode-top` (sahte durum cubugu kaldirildi, 12X — headless'ta y=0)
   Widget _buildModeTop() {
     final coins = ProgressManager().coins;
 
@@ -2412,48 +2402,3 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
   }
 }
 
-class _PrototypeStatusBar extends StatelessWidget {
-  const _PrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return const IgnorePointer(
-      child: Stack(
-        children: [
-          Positioned(
-            top: 14,
-            left: 22,
-            right: 22,
-            height: 19.4,
-            child: Row(
-              children: [
-                Text(
-                  '09:41',
-                  style: TextStyle(
-                    fontFamily: 'Nunito',
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
-                    height: 1.55,
-                    color: Colors.white,
-                  ),
-                ),
-                Spacer(),
-                Icon(
-                  Icons.signal_cellular_alt_rounded,
-                  size: 15,
-                  color: Colors.white,
-                ),
-                SizedBox(width: 5),
-                Icon(
-                  Icons.battery_full_rounded,
-                  size: 15,
-                  color: Colors.white,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

@@ -587,49 +587,6 @@ class _ShopScreenState extends State<ShopScreen> {
     );
   }
 
-  Widget _buildStatusBar() {
-    return SizedBox(
-      height: 35.0,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Transform.translate(
-              offset: const Offset(-0.5, 0),
-              child: const Text(
-                '09:41',
-                style: TextStyle(
-                  fontFamily: 'Nunito',
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w900,
-                  fontVariations: [FontVariation('wght', 820)],
-                  color: Color(0xFF141B2A),
-                  height: 1.4,
-                ),
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ShopSignalPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ShopBatteryPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -639,7 +596,6 @@ class _ShopScreenState extends State<ShopScreen> {
         final l10n = context.l10n;
         final coinsText = _formatNumber(rawCoins);
         final mqTop = MediaQuery.of(context).padding.top;
-        final topPad = mqTop > 0 ? mqTop : 35.0;
         final parentHasExtendBody =
             Scaffold.maybeOf(context)?.widget.extendBody == true;
         final renderDock = widget.showBottomNav && !parentHasExtendBody;
@@ -651,10 +607,7 @@ class _ShopScreenState extends State<ShopScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (mqTop == 0)
-                    _buildStatusBar()
-                  else
-                    SizedBox(height: topPad),
+                  if (mqTop > 0) SizedBox(height: mqTop),
                   // .pillbar { display:flex; align-items:center; gap:8px; padding:8px 14px 4px; height:47px }
                   SizedBox(
                     height: 47,
@@ -2268,64 +2221,6 @@ class _DashedBottomBorderPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DashedBottomBorderPainter oldDelegate) =>
       oldDelegate.color != color;
-}
-
-class _ShopSignalPainter extends CustomPainter {
-  const _ShopSignalPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _ShopSignalPainter oldDelegate) => false;
-}
-
-class _ShopBatteryPainter extends CustomPainter {
-  const _ShopBatteryPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _ShopBatteryPainter oldDelegate) => false;
 }
 
 class _ShopBtnShadowPainter extends CustomPainter {

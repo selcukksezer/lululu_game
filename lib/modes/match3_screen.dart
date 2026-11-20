@@ -1783,41 +1783,8 @@ class _Match3ScreenState extends State<Match3Screen>
               top: false,
               child: Column(
                 children: [
-                  // Statusbar (35.4px in headless/prototype, topPad on real device)
-                  if (useHostTopInset)
-                    SizedBox(height: topPad)
-                  else
-                    _scaleBand(
-                      screenW,
-                      35.4,
-                      Stack(
-                        children: [
-                          Positioned(
-                            left: 21,
-                            top: 16,
-                            child: Text(
-                              '09:41',
-                              style: GoogleFonts.nunito(
-                                fontSize: 12.5,
-                                height: 1.2,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.25,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const Positioned(
-                            left: 373,
-                            top: 16.2,
-                            child: CustomPaint(
-                              size: Size(35, 15),
-                              painter: _Match3StatusIconsPainter(),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  // mode-top (54px: top=35.4..89.4)
+                  if (useHostTopInset) SizedBox(height: topPad),
+                  // mode-top (54px)
                   _scaleBand(
                     screenW,
                     54,
@@ -2519,66 +2486,3 @@ class _CellBoxPainter extends CustomPainter {
       oldDelegate.snapToPixel != snapToPixel;
 }
 
-class _Match3StatusIconsPainter extends CustomPainter {
-  const _Match3StatusIconsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final strokePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round;
-
-    final sx = 15 / 24.0;
-    final sy = 15 / 24.0;
-
-    final outerArc = Path()
-      ..moveTo(2 * sx, 8.5 * sy)
-      ..quadraticBezierTo(12 * sx, 1.5 * sy, 22 * sx, 8.5 * sy);
-    canvas.drawPath(outerArc, strokePaint);
-
-    final midArc = Path()
-      ..moveTo(5 * sx, 12 * sy)
-      ..quadraticBezierTo(12 * sx, 7.2 * sy, 19 * sx, 12 * sy);
-    canvas.drawPath(midArc, strokePaint);
-
-    final innerArc = Path()
-      ..moveTo(8.5 * sx, 15.5 * sy)
-      ..quadraticBezierTo(12 * sx, 13 * sy, 15.5 * sx, 15.5 * sy);
-    canvas.drawPath(innerArc, strokePaint);
-
-    canvas.drawCircle(
-      Offset(12 * sx, 19 * sy),
-      1.5 * sx,
-      Paint()..color = Colors.white,
-    );
-
-    const bx = 20.0;
-    final bodyRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(bx + 2 * sx, 7 * sy, 17 * sx, 10 * sy),
-      Radius.circular(2 * sx),
-    );
-    canvas.drawRRect(
-      bodyRect,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2 * sx,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(bx + 4 * sx, 9 * sy, 11 * sx, 6 * sy),
-        Radius.circular(1 * sx),
-      ),
-      Paint()..color = Colors.white,
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(bx + 20 * sx, 10 * sy, 2 * sx, 4 * sy),
-      Paint()..color = Colors.white,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

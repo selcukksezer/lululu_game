@@ -2552,7 +2552,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildArcadeLayout() {
-    final topInset = max(MediaQuery.paddingOf(context).top, 35.375);
+    final topInset = MediaQuery.paddingOf(context).top;
     return Padding(
       padding: EdgeInsets.only(top: topInset),
       child: Column(
@@ -2702,14 +2702,6 @@ class _GameScreenState extends State<GameScreen>
                   Positioned.fill(child: child!),
                   Positioned.fill(child: hudAndPlay),
                   if (_hisirVisible) _buildHisirOverlay(),
-                  if (widget.prototypeVisualState)
-                    const Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: 35.375,
-                      child: IgnorePointer(child: _PrototypeStatusBar()),
-                    ),
                   if (_paused && !_isFinished) _buildPauseOverlay(),
                   if (_mergeFlashStrength > 0)
                     Positioned.fill(
@@ -3324,46 +3316,6 @@ class _GameScreenState extends State<GameScreen>
           ),
         ),
       ),
-    );
-  }
-}
-
-class _PrototypeStatusBar extends StatelessWidget {
-  const _PrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        Positioned(
-          top: 14,
-          left: 22,
-          right: 22,
-          height: 19.4,
-          child: Row(
-            children: [
-              Text(
-                '09:41',
-                style: TextStyle(
-                  fontFamily: 'Nunito',
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w900,
-                  height: 1.55,
-                  color: Colors.white,
-                ),
-              ),
-              Spacer(),
-              Icon(
-                Icons.signal_cellular_alt_rounded,
-                size: 15,
-                color: Colors.white,
-              ),
-              SizedBox(width: 5),
-              Icon(Icons.battery_full_rounded, size: 15, color: Colors.white),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

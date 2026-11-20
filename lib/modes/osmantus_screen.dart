@@ -870,10 +870,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   offset: shiftOffset,
                   child: Column(
                     children: [
-                      _statusBar(
-                        hasShellStatusBar: hasShellStatusBar,
-                        topPad: topPad,
-                      ),
+                      if (hasShellStatusBar) SizedBox(height: topPad),
                       _modeHeader(wideScreen: wideScreen),
                       _statsBar(),
                       Expanded(
@@ -898,40 +895,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                 _pauseOverlay(),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _statusBar({
-    required bool hasShellStatusBar,
-    required double topPad,
-  }) {
-    if (hasShellStatusBar) {
-      return SizedBox(height: widget.prototypeVisualState ? 35.38 : topPad);
-    }
-    return SizedBox(
-      height: 35.38,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '09:41',
-              style: GoogleFonts.nunito(
-                fontSize: 12.5,
-                height: 1,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(
-              width: 38,
-              height: 16,
-              child: CustomPaint(painter: _OsmantusStatusIndicatorsPainter()),
-            ),
-          ],
         ),
       ),
     );
@@ -1843,43 +1806,3 @@ class _Fig extends StatelessWidget {
   }
 }
 
-class _OsmantusStatusIndicatorsPainter extends CustomPainter {
-  const _OsmantusStatusIndicatorsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    for (var i = 0; i < 4; i++) {
-      final height = 4.0 + i * 3.0;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(1 + i * 4.5, size.height - height, 2.4, height),
-          const Radius.circular(0.7),
-        ),
-        paint,
-      );
-    }
-    final battery = RRect.fromRectAndRadius(
-      Rect.fromLTWH(22, 3, 14, 9),
-      const Radius.circular(2),
-    );
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawRRect(battery, paint);
-    paint.style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(24, 5, 9, 5),
-        const Radius.circular(1),
-      ),
-      paint,
-    );
-    canvas.drawRect(const Rect.fromLTWH(36.5, 5.5, 1.5, 4), paint);
-  }
-
-  @override
-  bool shouldRepaint(_OsmantusStatusIndicatorsPainter oldDelegate) => false;
-}

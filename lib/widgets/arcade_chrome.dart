@@ -38,7 +38,6 @@ class ArcadeScreen extends StatelessWidget {
     this.prototypeStackChrome = false,
     this.tagColor = const Color(0xFFFF6B35),
     this.tagTextColor = Colors.white,
-    this.showStatusBar = true,
     this.backgroundWash = false,
     this.stageWash = false,
     this.prototypeModeChrome = false,
@@ -82,7 +81,6 @@ class ArcadeScreen extends StatelessWidget {
   final bool prototypeStackChrome;
   final Color tagColor;
   final Color tagTextColor;
-  final bool showStatusBar;
   final bool backgroundWash;
   final bool stageWash;
   final bool prototypeModeChrome;
@@ -284,12 +282,10 @@ class ArcadeScreen extends StatelessWidget {
                   painter: ArcadeDotPainter(paintBase: true),
                 ),
               SafeArea(
-                top: false,
+                top: true,
                 bottom: false,
                 child: Column(
                   children: [
-                    if (showStatusBar)
-                      _statusBar(context, isCompactH: isCompactH),
                     Padding(
                       padding: EdgeInsets.fromLTRB(
                         isCompactW ? 8 : 12,
@@ -695,53 +691,6 @@ class ArcadeScreen extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
-  }
-
-  Widget _statusBar(BuildContext context, {bool isCompactH = false}) {
-    final topPad = MediaQuery.paddingOf(context).top;
-    if (topPad > 0) {
-      return SizedBox(height: topPad);
-    }
-    return SizedBox(
-      height: isCompactH ? 26 : 35.4,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          22,
-          isCompactH ? 6 : 14,
-          22,
-          4,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '09:41',
-              style: GoogleFonts.nunito(
-                fontSize: 12.5,
-                height: 1,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
-            Row(
-              children: const [
-                Icon(
-                  Icons.signal_cellular_alt_rounded,
-                  size: 15,
-                  color: Colors.white,
-                ),
-                SizedBox(width: 5),
-                Icon(
-                  Icons.battery_full_rounded,
-                  size: 15,
-                  color: Colors.white,
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }

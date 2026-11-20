@@ -44,122 +44,6 @@ import 'package:lululu_game/theme/lululu_theme.dart';
 
 import 'test_helpers.dart';
 
-class SignalIconPainter extends CustomPainter {
-  const SignalIconPainter();
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    final scale = size.width / 24.0;
-    canvas.scale(scale, scale);
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class BatteryIconPainter extends CustomPainter {
-  const BatteryIconPainter();
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(const Rect.fromLTWH(2.5, 8, 17, 9), const Radius.circular(2.5)),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(const Rect.fromLTWH(4.5, 10, 10, 5), const Radius.circular(1)),
-      fillPaint,
-    );
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-ui.Image? _refStatusBarImage;
-
-class _StatusBarImagePainter extends CustomPainter {
-  final ui.Image image;
-  _StatusBarImagePainter(this.image);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawImageRect(
-      image,
-      const Rect.fromLTWH(0, 0, 430, 35.4),
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint(),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class MockStatusBarWidget extends StatelessWidget {
-  const MockStatusBarWidget({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    if (_refStatusBarImage != null) {
-      return SizedBox(
-        width: 430,
-        height: 35.4,
-        child: CustomPaint(
-          painter: _StatusBarImagePainter(_refStatusBarImage!),
-        ),
-      );
-    }
-    return Container(
-      height: 35.4,
-      width: 430,
-      padding: const EdgeInsets.fromLTRB(22, 11, 22, 2),
-      color: Colors.transparent,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            '09:41',
-            style: GoogleFonts.nunito(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF141B2A),
-              height: 1.0,
-            ),
-          ),
-          const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CustomPaint(
-                size: Size(15, 15),
-                painter: SignalIconPainter(),
-              ),
-              SizedBox(width: 5),
-              CustomPaint(
-                size: Size(15, 15),
-                painter: BatteryIconPainter(),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 const List<String> _kAllPrecacheAssets = [
   // Dock & Bottom Navigation Icons (LululuDockBar, etc.)
   'assets/design/ui/icons2/home.png',
@@ -534,13 +418,6 @@ void main() {
     await loadAppFonts();
     await loadCustomFonts();
     Animate.defaultDuration = Duration.zero;
-    final refFile = File('/Users/selcuk/Documents/lululu/pixel_audit/reference-studio-downloads.png');
-    if (refFile.existsSync()) {
-      final bytes = refFile.readAsBytesSync();
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      _refStatusBarImage = frame.image;
-    }
   });
 
   setUp(() async {
@@ -564,7 +441,6 @@ void main() {
     required Widget widget,
     required String outputPath,
     String? extraOutputPath,
-    bool showStatusBar = false,
   }) async {
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1.0;
@@ -588,12 +464,8 @@ void main() {
                       data: MediaQueryData(
                         size: const Size(430, 932),
                         devicePixelRatio: 1.0,
-                        padding: showStatusBar
-                            ? const EdgeInsets.only(top: 35.4, bottom: 24)
-                            : EdgeInsets.zero,
-                        viewPadding: showStatusBar
-                            ? const EdgeInsets.only(top: 35.4, bottom: 24)
-                            : EdgeInsets.zero,
+                        padding: EdgeInsets.zero,
+                        viewPadding: EdgeInsets.zero,
                       ),
                       child: TickerMode(
                         enabled: false,
@@ -601,13 +473,6 @@ void main() {
                       ),
                     ),
                   ),
-                  if (showStatusBar)
-                    const Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: MockStatusBarWidget(),
-                    ),
                 ],
               ),
             ),
@@ -665,7 +530,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const HomeShell(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-hub.png',
       extraOutputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual.png',
     );
@@ -679,7 +543,6 @@ void main() {
         arcade: true,
         prototypeVisualState: true,
       ),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-game.png',
     );
   });
@@ -688,7 +551,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const OnlineScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-online.png',
     );
   });
@@ -697,7 +559,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const ChatScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-chat.png',
     );
   });
@@ -706,7 +567,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const StudioWatchScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-studio-watch.png',
     );
   });
@@ -715,7 +575,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const StudioCreateScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-studio-create.png',
     );
   });
@@ -724,7 +583,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const StudioUploadScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-studio-upload.png',
     );
   });
@@ -733,7 +591,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const StudioGifScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-studio-gif.png',
     );
   });
@@ -742,7 +599,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const StudioDownloadsScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-studio-downloads.png',
     );
   });
@@ -758,7 +614,6 @@ void main() {
         coins: 0,
         stars: 2,
       ),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-result.png',
     );
   });
@@ -774,7 +629,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const AuthScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-account.png',
     );
   });
@@ -783,7 +637,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const LeaderboardScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-scores.png',
     );
   });
@@ -792,7 +645,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const TasksScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-tasks.png',
     );
   });
@@ -801,7 +653,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const ShopScreen(embedded: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-shop.png',
     );
   });
@@ -810,7 +661,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const ModesScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-modes.png',
     );
   });
@@ -819,7 +669,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const TiersScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-tiers.png',
     );
   });
@@ -828,7 +677,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const ProfileScreen(),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-profile.png',
     );
   });
@@ -837,7 +685,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: SplashScreen(onDone: () {}),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-splash.png',
     );
   });
@@ -846,7 +693,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const Grid2048Screen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-m2048.png',
     );
   });
@@ -859,7 +705,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const BalloonPopScreen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-balon.png',
     );
   });
@@ -868,7 +713,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const Match3Screen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-match3.png',
     );
   });
@@ -877,7 +721,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const ConnectPopScreen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-bagla.png',
     );
   });
@@ -886,7 +729,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const StackDropScreen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-stack.png',
     );
   });
@@ -895,7 +737,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const TerlikTapScreen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-terlik.png',
     );
   });
@@ -908,7 +749,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const YuvaDefenseScreen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-yuva.png',
     );
   });
@@ -917,7 +757,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const OsmantusScreen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-osmantus.png',
     );
   });
@@ -930,7 +769,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const ScreamRoachScreen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-ciglik.png',
     );
   });
@@ -943,7 +781,6 @@ void main() {
     await captureScreen(
       tester: tester,
       widget: const MakarayizScreen(prototypeVisualState: true),
-      showStatusBar: false,
       outputPath: '/Users/selcuk/Documents/lululu/pixel_audit/actual-makara.png',
     );
     debugPrint('>>> TEST FINISHED');

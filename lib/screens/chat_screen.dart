@@ -1122,7 +1122,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mqTop = MediaQuery.of(context).padding.top;
     final items = _displayItems();
     final showEmptyState = _showingLive && items.isEmpty;
 
@@ -1136,7 +1135,6 @@ class _ChatScreenState extends State<ChatScreen> {
               bottom: false,
               child: Column(
                 children: [
-                  if (mqTop == 0) const _ChatPrototypeStatusBar(),
                   _buildPageTitle(),
                   _buildChannelRow(),
                   Expanded(
@@ -2254,103 +2252,3 @@ class _ChatDockCircleInsetPainter extends CustomPainter {
       oldDelegate.dy != dy || oldDelegate.color != color;
 }
 
-class _ChatPrototypeStatusBar extends StatelessWidget {
-  const _ChatPrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '09:41',
-              style: _ChatScreenState._nunito(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: const Color(0xFF141B2A),
-                height: 1.55,
-              ),
-            ),
-            const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ChatSignalPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ChatBatteryPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ChatSignalPainter extends CustomPainter {
-  const _ChatSignalPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _ChatBatteryPainter extends CustomPainter {
-  const _ChatBatteryPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

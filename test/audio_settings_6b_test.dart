@@ -698,7 +698,9 @@ void main() {
       final restore = sliceBetween(
         code,
         'Future<void> _restorePurchases()',
-        'Widget _buildStatusBar()',
+        // 12X: sahte durum cubugu kaldirildi; _restorePurchases'ten
+        // sonraki ilk metot artik build'dir.
+        'Widget build(BuildContext context)',
       );
       expect(restore.contains('playWin'), isFalse);
     });

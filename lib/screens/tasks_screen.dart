@@ -267,7 +267,6 @@ class _TasksScreenState extends State<TasksScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mqTop = MediaQuery.of(context).padding.top;
     final screenW = MediaQuery.sizeOf(context).width;
     final shrinkSubtitle = screenW < 500;
 
@@ -296,7 +295,6 @@ class _TasksScreenState extends State<TasksScreen> {
                 bottom: false,
                 child: Column(
                   children: [
-                    if (mqTop == 0) const _TasksPrototypeStatusBar(),
                     // .page-title (y=35.4, h=60, padding: 10px 14px 2px 14px)
                     Container(
                       height: 60,
@@ -1767,107 +1765,4 @@ class _TasksDockCircleInsetPainter extends CustomPainter {
   bool shouldRepaint(covariant _TasksDockCircleInsetPainter oldDelegate) =>
       oldDelegate.dy != dy || oldDelegate.color != color;
 }
-
-class _TasksPrototypeStatusBar extends StatelessWidget {
-  const _TasksPrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text(
-              '09:41',
-              style: TextStyle(
-                fontFamily: 'Nunito',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF141B2A),
-                height: 1.55,
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _TasksSignalPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _TasksBatteryPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TasksSignalPainter extends CustomPainter {
-  const _TasksSignalPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _TasksBatteryPainter extends CustomPainter {
-  const _TasksBatteryPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
 

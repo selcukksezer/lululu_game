@@ -342,21 +342,15 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     final l10n = context.l10n;
     final topPad = MediaQuery.paddingOf(context).top;
     final hasHostStatusBar = topPad > 0;
-    final statusBarHeight = hasHostStatusBar ? topPad : 35.4;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
       body: Column(
         children: [
-          // .statusbar (y: 0..35.4 in headless golden test; SafeArea top inset on real device)
-          SizedBox(
-            height: statusBarHeight,
-            width: double.infinity,
-            child: hasHostStatusBar
-                ? const SizedBox.shrink()
-                : _buildStatusBar(),
-          ),
-          // .pillbar (y: 35.4..91.4, height: 56, padding: 8.6px 8px 3.4px -> top=44.0 integer!)
+          // Ust pay: gercek cihazda sistem durum cubugu yuksekligi;
+          // headless ortamda pay yok (sahte cubuk kaldirildi, 12X).
+          if (hasHostStatusBar) SizedBox(height: topPad),
+          // .pillbar (height: 56, padding: 8.6px 8px 3.4px -> top=44.0 integer!)
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8.6, 8, 3.4),
             child: LululuTopBar(
@@ -600,32 +594,6 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                 const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            '09:41',
-            style: GoogleFonts.nunito(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF141B2A),
-              height: 1.55,
-            ),
-          ),
-          const SizedBox(
-            width: 55,
-            height: 15,
-            child: CustomPaint(painter: _StatusBarIconsPainter()),
           ),
         ],
       ),
@@ -2801,80 +2769,6 @@ class _HubModeData {
   final Color artBg;
   final String bugAsset;
   final String defaultBest;
-}
-
-class _StatusBarIconsPainter extends CustomPainter {
-  const _StatusBarIconsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const color = Color(0xFF141B2A);
-    final fillPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    // 1. Signal bars (0..15, 0..15) based on viewBox 0 0 24 24
-    const s = 15.0 / 24.0;
-    canvas.drawRect(
-      const Rect.fromLTWH(2 * s, 17 * s, 3 * s, 4 * s),
-      fillPaint,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(7.5 * s, 13 * s, 3 * s, 8 * s),
-      fillPaint,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(13 * s, 9 * s, 3 * s, 12 * s),
-      fillPaint,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(18.5 * s, 5 * s, 3 * s, 16 * s),
-      fillPaint,
-    );
-
-    // 2. Wifi icon (x offset 20, 0..15)
-    canvas.save();
-    canvas.translate(20, 0);
-    final wifiStroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4 * s
-      ..strokeCap = StrokeCap.round;
-    final wifiPath = Path()
-      ..moveTo(4 * s, 10.5 * s)
-      ..quadraticBezierTo(12 * s, 4.5 * s, 20 * s, 10.5 * s)
-      ..moveTo(7 * s, 14 * s)
-      ..quadraticBezierTo(12 * s, 10.2 * s, 17 * s, 14 * s);
-    canvas.drawPath(wifiPath, wifiStroke);
-    canvas.drawCircle(Offset(12 * s, 17.6 * s), 1.4 * s, fillPaint);
-    canvas.restore();
-
-    // 3. Battery icon (x offset 40, 0..15)
-    canvas.save();
-    canvas.translate(40, 0);
-    final batStroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0 * s;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5 * s, 8 * s, 17 * s, 9 * s),
-        const Radius.circular(2.5 * s),
-      ),
-      batStroke,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5 * s, 10 * s, 10 * s, 5 * s),
-        const Radius.circular(1.0 * s),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _CssBottomShadowPainter extends CustomPainter {

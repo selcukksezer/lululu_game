@@ -1132,7 +1132,6 @@ class _StackDropScreenState extends State<StackDropScreen>
         tag: context.l10n.stackTowerTag,
         tagColor: const Color(0xFFE52E2E),
         prototypeChrome: true,
-        showStatusBar: true,
         prototypeModeChrome: true,
         statLabel: context.l10n.stackFloorStat,
         statValue: '$_floors',
