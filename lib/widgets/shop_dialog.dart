@@ -700,7 +700,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          // Dark star pill (86)
+                          // Dark star pill — yıldız TEK KAYNAKTAN:
+                          // ProgressManager.totalStars (üst bar /
+                          // vault_top_hud ile aynı). Eskiden burada
+                          // sabit '86' yazıyordu (bulgu 11).
                           Container(
                             height: 35,
                             padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
@@ -729,9 +732,9 @@ class _ShopScreenState extends State<ShopScreen> {
                                 const SizedBox(width: 6),
                                 Transform.translate(
                                   offset: const Offset(0, -0.5),
-                                  child: const Text(
-                                    '86',
-                                    style: TextStyle(
+                                  child: Text(
+                                    '${_pm.totalStars}',
+                                    style: const TextStyle(
                                       fontFamily: 'Nunito',
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.w900,

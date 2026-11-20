@@ -627,6 +627,8 @@ abstract class AppLocalizations {
   String get leaderboardLoadingLabel;
   String get noScoresYet;
   String get noScoresHint;
+  String get noRivalsYet;
+  String get noRivalsHint;
 
   // --- Dalga 20 göçü: Hesap (auth_screen, auth_panel) ---
 

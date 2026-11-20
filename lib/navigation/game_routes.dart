@@ -637,7 +637,27 @@ Future<void> goTo(
 /// [LululuRoutes.onGenerateRoute] içindeki `_EnergyGatedGameMode`
 /// tarafından uygulanır. Tüketim her girişte tam bir kez yapılır;
 /// oyun ekranı `energyConsumed: true` ile kurulur.
+/// Dalga 15 bulgu 14: uçuş-sırası başlatma kilidi — [_launchMode] ile
+/// aynı sınıf hata: ilk dokunuşun zinciri (enerji yüklemesi + 340ms
+/// rota) bitmeden gelen ikinci dokunuş ayrı bir tüketim + ayrı bir
+/// rota açıyordu. Zincir bitene kadar yeni başlatma yutulur; sıralı
+/// başlatmalar (oyundan dönüp yeniden açma) kilitten etkilenmez.
+bool _openGameModeInFlight = false;
+
 Future<void> openGameMode(BuildContext context, GameModeKind kind) async {
+  if (_openGameModeInFlight) return;
+  _openGameModeInFlight = true;
+  try {
+    await _openGameModeNow(context, kind);
+  } finally {
+    _openGameModeInFlight = false;
+  }
+}
+
+Future<void> _openGameModeNow(
+  BuildContext context,
+  GameModeKind kind,
+) async {
   ZeroJankPreloader.instance.notePointerDown();
 
   // Enerji yoksa oyun açılmasın — popup göster, geri dön.

@@ -9,6 +9,10 @@ import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../utils/number_format.dart';
 import '../widgets/home/lululu_dock_bar.dart';
+import '../widgets/shop_dialog.dart';
+import '../widgets/top_bar.dart';
+import 'profile_screen.dart';
+import 'settings_screen.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   final bool embedded;
@@ -66,6 +70,25 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     goTo(context, LululuRoutes.hub, replace: true);
   }
 
+  // Dalga 15 (bulgu 10): üst durum çubuğu işlemleri — ana sayfadaki
+  // GameSelectorScreen ile aynı hedefler (profil / ayarlar / mağaza).
+  void _openProfile() {
+    AudioManager().playPop();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
+    );
+  }
+
+  void _openSettings() {
+    AudioManager().playPop();
+    SettingsScreen.show(context);
+  }
+
+  void _openShop() {
+    AudioManager().playPop();
+    showShopDialog(context);
+  }
+
   void _handleDockSelect(BuildContext context, LululuDockTab tab) {
     if (widget.onSelectDockTab != null) {
       AudioManager().playPop();
@@ -120,6 +143,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         final others = entries
             .where((e) => !e.isLocalPlayer && e.playerId != uid)
             .toList();
+        // Dalga 15 (bulgu 10): tahtada yalnız SEN satırı varsa rakip
+        // yoktur — liste "neredeyse boş"ken bunu dürüstçe söyleyen
+        // bant gösterilir; uydurma rakip/satır yazılmaz.
+        final hasRivals = others.isNotEmpty;
         // SEN satırı: gerçek toplam skor gösterilir; sıralamadaki yeri
         // gerçek rakip skorlarına göre hesaplanır.
         // Tahta boşken SEN satırı da gösterilmez, yalnız boş bant görünür.
@@ -176,6 +203,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 bottom: false,
                 child: Column(
                   children: [
+                    // Dalga 15 (bulgu 10): üst durum çubuğu
+                    // (coin/yıldız/kalp/ayarlar) — ana sayfadaki
+                    // LululuTopBar ile aynı kaynaklar; bu ekranda
+                    // hiç görünmüyordu.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      child: LululuTopBar(
+                        light: true,
+                        onProfileTap: _openProfile,
+                        onSettingsTap: _openSettings,
+                        onShopTap: _openShop,
+                      ),
+                    ),
                     // .page-title (y=35.4, h=47, padding: 10px 14px 2px 14px)
                     Container(
                       height: 47,
@@ -299,6 +339,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         padding: const EdgeInsets.only(bottom: 120),
                         children: [
                           if (isBoardEmpty) _buildEmptyStateBanner(),
+                          if (!isBoardEmpty && !hasRivals)
+                            _buildNoRivalsBanner(),
                           if (!isBoardEmpty) ...[
                             // .podium (y=82, h=190, padding: 14px 16px 4px 16px)
                             Container(
@@ -423,7 +465,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   /// Boş durum bandı: gerçek kayıtlarda hiç skor yokken gösterilir.
-  Widget _buildEmptyStateBanner() {
+  /// [title]/[hint] verilmezse "henüz skor yok" metinleri kullanılır.
+  Widget _buildEmptyStateBanner({String? title, String? hint}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       child: Container(
@@ -447,7 +490,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    context.l10n.noScoresYet,
+                    title ?? context.l10n.noScoresYet,
                     style: TextStyle(
                       fontFamily: 'Baloo 2',
                       fontSize: 15,
@@ -458,7 +501,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   ),
                   SizedBox(height: 2),
                   Text(
-                    context.l10n.noScoresHint,
+                    hint ?? context.l10n.noScoresHint,
                     style: TextStyle(
                       fontFamily: 'Nunito',
                       fontSize: 12,
@@ -473,6 +516,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// "Yalnız SEN" bandı (Dalga 15, bulgu 10): tahtada skor var ama
+  /// rakip yokken gösterilir — uydurma rakip yazılmaz.
+  Widget _buildNoRivalsBanner() {
+    return _buildEmptyStateBanner(
+      title: context.l10n.noRivalsYet,
+      hint: context.l10n.noRivalsHint,
     );
   }
 

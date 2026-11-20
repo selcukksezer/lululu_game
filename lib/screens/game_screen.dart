@@ -1251,7 +1251,9 @@ class _GameScreenState extends State<GameScreen>
       coins: totalCoins,
       stars: stars,
       bestScore: max(_score, _bestScore),
-      bestCombo: max(1, _maxCombo),
+      // Dalga 15 (bulgu 12): kombo 0 olan tur 1'e yuvarlanmaz —
+      // finishRun `max(tur, kalıcı rekor)` ile tek kaynaktan gösterir.
+      bestCombo: _maxCombo,
       merges: _mergeTotal,
       modeScoreId: LeaderboardService.modeSuika,
       idempotencyKey: _runIdempotencyKey,
@@ -1323,7 +1325,9 @@ class _GameScreenState extends State<GameScreen>
       coins: earnedCoins,
       stars: stars,
       bestScore: max(_score, _bestScore),
-      bestCombo: max(1, _maxCombo),
+      // Dalga 15 (bulgu 12): kombo 0 olan tur 1'e yuvarlanmaz —
+      // finishRun `max(tur, kalıcı rekor)` ile tek kaynaktan gösterir.
+      bestCombo: _maxCombo,
       merges: _mergeTotal,
       modeScoreId: LeaderboardService.modeSuika,
       idempotencyKey: _runIdempotencyKey,

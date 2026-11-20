@@ -1255,6 +1255,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get noScoresHint =>
       'Bir oyun oyna — skorun kaydedilince burada görünecek.';
 
+  @override
+  String get noRivalsYet => 'Henüz rakip yok';
+
+  @override
+  String get noRivalsHint =>
+      'Skor tablosunda şimdilik yalnız sen varsın — uydurma rakip yok.';
+
   // --- Dalga 20 göçü: Hesap (auth_screen, auth_panel) ---
 
   @override

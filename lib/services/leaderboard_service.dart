@@ -612,10 +612,20 @@ class LeaderboardService extends ChangeNotifier {
     return true;
   }
 
+  /// Mod rekorunun TEK OKUMA NOKTASI (Dalga 15, bulgu 12): o anki
+  /// oyuncunun tahta rekoru (`ModeBoard.bestScore`, `onAuthChanged`
+  /// / yüklemede o anki `playerId`'ye yeniden bağlanır). YALNIZ
+  /// tahta okunur — [ProgressManager.modeHighScores] cihaz düzeyinde
+  /// bir yedektir ve oyuncu değişince eski oyuncunun rekorunu
+  /// taşır; `max(tahta, PM)` birleştirmesi oyuncu değiştirince
+  /// rekoru sızdırır (auth_leaderboard: player_b'de 500 yerine
+  /// 2000 gösterirdi). Kimlik eşleşmesi kaçırılırsa tahta 0 döner;
+  /// oyun içi HUD bu durumu PM hızlı yoluyla ayrıca kapatır
+  /// (game_screen `_loadBest` / `_refreshBestFromServices`).
   int getBest(String modeId) {
     final canonical = normalizeModeId(modeId);
     final b = _find(canonical);
-    return b?.bestScore ?? ProgressManager().getModeHighScore(canonical);
+    return b?.bestScore ?? 0;
   }
 
   List<LeaderboardEntry> getTop(String modeId, {int n = maxTop}) {
@@ -906,15 +916,13 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   int get myBestOverall {
-    final uid = AuthService.instance.playerId;
+    // Dalga 15, bulgu 12: tek kaynak [getBest] (o anki oyuncunun
+    // tahta rekoru) okunur; PM cihaz düzeyi yedek olduğu için
+    // burada birleştirilmez.
     var best = 0;
-    for (final m in _data.modes) {
-      if (m.bestScore > best) best = m.bestScore;
-      for (final e in m.top) {
-        if ((e.playerId == uid || e.isLocalPlayer) && e.score > best) {
-          best = e.score;
-        }
-      }
+    for (final id in allModeIds) {
+      final modeBest = getBest(id);
+      if (modeBest > best) best = modeBest;
     }
     return best;
   }

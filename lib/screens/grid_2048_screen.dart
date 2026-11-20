@@ -973,7 +973,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen>
       score: _score,
       best: _best,
       bestScore: max(_score, _best),
-      bestCombo: max(1, _maxStreak),
+      // Dalga 15 (bulgu 12): kombo 0 olan tur 1'e yuvarlanmaz —
+      // finishRun `max(tur, kalıcı rekor)` ile tek kaynaktan gösterir.
+      bestCombo: _maxStreak,
       merges: _mergeTotal,
       // B15: kademe-11 zaferi sonuç ekranına taşınır. `_score > 0`
       // yedeği `finishRun` varsayılanını korur: 2048'e ulaşmadan

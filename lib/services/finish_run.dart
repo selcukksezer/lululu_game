@@ -152,7 +152,12 @@ String _taskTitleFor(AppLocalizations l10n, String taskId) =>
 /// rozetle gösterilir. [bestScore] verilmezse `max(score, best)` (tura
 /// ait gerçek rekor) kullanılır; [bestCombo]/[merges] verilmezse 0
 /// gösterilir — tohum varsayılanlar (4820/x6/18) oyun-içi sonuç
-/// ekranına sızmaz (playtest bulgu #3). [ResultScoring] sabitleri
+/// ekranına sızmaz (playtest bulgu #3). Dalga 15 (bulgu 12):
+/// gösterilen kombo `max(tur kombosu, ProgressManager.bestCombo)`
+/// — tüm zamanların kalıcı en iyi kombosu — olur ve settle adımında
+/// kalıcı yazılır; profil ("BEST COMBO") ile oyun sonu ekranı aynı
+/// değeri gösterir. Kombo 0 olan tur 1'e yuvarlanmaz (eski
+/// `max(1, …)` tabanları kaldırıldı). [ResultScoring] sabitleri
 /// yalnız doğrudan açılan `/result` prototip sayfasının varsayılanı
 /// olarak kalır.
 ///
@@ -253,6 +258,10 @@ Future<bool> finishRun(
   // Reddedilen turda rozet gösterilmez.
   final effectiveIsNewRecord =
       !scoreRejected && ResultScoring.isNewRecord(score: score, best: best);
+  // Dalga 15 (bulgu 12): sonuç ekranında gösterilen kombo, turun
+  // kombosu ile kalıcı tüm-zamanlar rekorunun büyüğüdür; settle
+  // adımında kalıcı yazılır (profil aynı değeri okur).
+  final effectiveBestCombo = max(bestCombo ?? 0, pm.bestCombo);
 
   // Y3: çift-kayıt koruması — anahtar ödeme öncesinde sahiplenilir.
   final explicitKey = idempotencyKey?.trim();
@@ -306,6 +315,14 @@ Future<bool> finishRun(
           (!leaderboardOnlyIfPositiveScore || score > 0)) {
         await _runSettleStep('leaderboard', () async {
           await LeaderboardService.instance.submitScore(leaderboardMode, score);
+        });
+      }
+      // Dalga 15 (bulgu 12): tüm-zamanlar en iyi kombo kalıcı kayda
+      // girer — reddedilen tur yazılmaz; 0 kombolu tur kaydı
+      // düşürmez (recordBestCombo yalnız artışta yazar).
+      if (!scoreRejected) {
+        await _runSettleStep('bestCombo', () async {
+          await pm.recordBestCombo(effectiveBestCombo);
         });
       }
       if (recordPlayTask) {
@@ -393,7 +410,7 @@ Future<bool> finishRun(
     // 12C1: reddedilen turda en iyi skor olarak önceki rekor gösterilir
     // (kayda yazılmayan skor "en iyi" diye sunulmaz).
     bestScore: scoreRejected ? best : (bestScore ?? max(score, best)),
-    bestCombo: bestCombo ?? 0,
+    bestCombo: effectiveBestCombo,
     merges: merges ?? 0,
     won: effectiveWon,
     isNewRecord: effectiveIsNewRecord,

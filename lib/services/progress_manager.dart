@@ -97,6 +97,7 @@ class ProgressManager extends ChangeNotifier {
     'lululu_owned_cosmetics',
     'lululu_unlocked_tiers',
     'lululu_mode_high_scores',
+    'lululu_best_combo',
     'lululu_daily_tasks_day',
     'lululu_daily_tasks_progress',
     'lululu_daily_tasks_claimed',
@@ -282,6 +283,17 @@ class ProgressManager extends ChangeNotifier {
 
   /// 11 oyun modunun yerel en yüksek skorları.
   final Map<String, int> modeHighScores = <String, int>{};
+
+  /// Tüm modlardaki tüm zamanların en yüksek kombosu (Dalga 15,
+  /// bulgu 12): TEK KAYNAK. Profil ("BEST COMBO") ve oyun sonu
+  /// ekranı bu değeri okur. Eskiden profil, günlük görev sayacı
+  /// (`dailyTaskProgress['combo']` — her gün sıfırlanır, kombo < 2
+  /// ise hiç yazılmaz) okuyordu; bu yüzden profil x0 gösterirken
+  /// oyun sonu x1 gösteriyordu. Kalıcı anahtar
+  /// `lululu_best_combo`; yalnız artışta yazılır, asla sıfırlanmaz
+  /// (sıfırlama yalnız [clearLocalData] ile olur).
+  static const String _bestComboPrefKey = 'lululu_best_combo';
+  int bestCombo = 0;
 
   /// Günlük görev tamamlama eşikleri — `TasksScreen` aynası (PM-detailed).
   ///
@@ -769,6 +781,9 @@ class ProgressManager extends ChangeNotifier {
         modeHighScores[normalizeModeId(entry.key)] = entry.value;
       }
     }
+
+    // Tüm zamanların en yüksek kombosu (Dalga 15, bulgu 12).
+    bestCombo = (prefs.getInt(_bestComboPrefKey) ?? 0).clamp(0, 999999);
 
     // Günlük görev ilerlemeleri
     final today = _todayKey();
@@ -1347,6 +1362,21 @@ class ProgressManager extends ChangeNotifier {
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
     await _persistAntiCheatSeal(prefs);
+    notifyListeners();
+    return true;
+  }
+
+  /// Tüm zamanların en yüksek kombosunu kaydeder (Dalga 15, bulgu 12):
+  /// yalnız artışta kalıcı yazılır (`lululu_best_combo`); düşük/eşit
+  /// değer yazılmaz, `false` döner. Negatif değer yoksayılır.
+  /// Tek yazım noktası [finishRun] settle adımıdır — 11 modun tamamı
+  /// oradan geçtiği için tur kombosu tek yerden kayda girer.
+  Future<bool> recordBestCombo(int combo) async {
+    if (combo <= bestCombo) return false;
+    if (combo < 0) return false;
+    bestCombo = combo;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_bestComboPrefKey, bestCombo);
     notifyListeners();
     return true;
   }

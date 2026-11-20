@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
@@ -59,6 +60,11 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   static const _tutorialSeconds = 15.0;
 
   late final Ticker _ticker;
+
+  /// Klavye odağı (Dalga 15 Bulgu 9): masaüstünde Boşluk / Yukarı-ok
+  /// (W dahil) kanat çırpar — 2048'deki `Focus` + `onKeyEvent` deseni.
+  /// Dokunmatik (`onTapDown`) ve mikrofon yollarına dokunulmaz.
+  final FocusNode _keyboardFocusNode = FocusNode();
 
   /// Kare sayacı (10E, 8C VLB deseni): `_onTick` yalnız bu sayacı
   /// artırır; dinamik alt-ağaç [ValueListenableBuilder] ile yenilenir.
@@ -239,6 +245,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     unawaited(_micService.stopListening());
     _ticker.dispose();
     _tickNotifier.dispose();
+    _keyboardFocusNode.dispose();
     super.dispose();
   }
 
@@ -675,6 +682,21 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       }
     }());
     setState(() {});
+  }
+
+  /// Klavye kanat çırpma (Dalga 15 Bulgu 9): Boşluk / Yukarı-ok / W —
+  /// dokunmatik ve mikrofonla aynı `_scream` yolu; mikrofon izni
+  /// gerekmez, mikrofonsuz masaüstünde oyun oynanabilir kalır.
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.keyW) {
+      _scream();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   /// Mikrofon aç/kapat (12C2 — [MicScreamService] üzerinden).
@@ -1560,7 +1582,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     // Canlı _hint'in erişilebilirlik etiketi (Terlik deseni): F4'ten
     // beri yardım sayfası kural metnini gösteriyor; _hint artık
     // burada okunur, oyun-içi atamalar aynen durur.
-    Widget buildLabeledStage() => Semantics(label: _hint, child: buildStage());
+    // Dalga 15 Bulgu 9: klavye odağı burada — dar + geniş düzenin
+    // ikisi de bu sahneyi kullanır, tek sarım yeter.
+    Widget buildLabeledStage() => Focus(
+      focusNode: _keyboardFocusNode,
+      autofocus: true,
+      onKeyEvent: _onKeyEvent,
+      child: Semantics(label: _hint, child: buildStage()),
+    );
 
     if (!wideScreen) {
       return PopScope(

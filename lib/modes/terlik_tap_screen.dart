@@ -65,15 +65,15 @@ class TerlikTapPacing {
   static double spawnInterval(double elapsedSeconds) {
     final rampTime = max(0.0, elapsedSeconds - tutorialSeconds);
     return elapsedSeconds < tutorialSeconds
-        ? 1.15
-        : max(0.58, 1.05 - rampTime * 0.01);
+        ? 1.3
+        : max(0.65, 1.2 - rampTime * 0.01);
   }
 
   static double targetVisibleSeconds(double elapsedSeconds) {
     final rampTime = max(0.0, elapsedSeconds - tutorialSeconds);
     return elapsedSeconds < tutorialSeconds
-        ? 1.8
-        : max(1.0, 1.55 - rampTime * 0.008);
+        ? 2.4
+        : max(1.3, 2.05 - rampTime * 0.008);
   }
 }
 

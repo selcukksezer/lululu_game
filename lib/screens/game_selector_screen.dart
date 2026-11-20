@@ -97,6 +97,18 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
   bool _dailyEnergyClaimed = false;
   bool _dailyChallengeClaiming = false;
 
+  /// Dalga 15 bulgu 14: uçuş-sırası başlatma kilidi. İlk dokunuşun
+  /// zinciri (enerji yüklemesi + 520ms kalp katmanı + 340ms rota)
+  /// bitmeden gelen ikinci dokunuş ayrı bir tüketim + ayrı bir rota
+  /// açıyordu (çift kalp, üst üste iki oyun) — kullanıcı da ilk
+  /// dokunuşu "tepkisiz" sanıyordu. Zincir bitene kadar yeni
+  /// başlatma yutulur.
+  bool _launching = false;
+
+  /// PLAY NOW basılı görsel geri bildirimi (anında tepki hissi):
+  /// düğmenin basıldığı an görülür, zincir bitene kadar beklenmez.
+  bool _playPressed = false;
+
   /// 12N: son ödül düğmesi dokunma noktaları — uçuş kalkış yeridir.
   Offset? _lastGiftTap;
   Offset? _lastChallengeTap;
@@ -106,6 +118,11 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     super.initState();
     unawaited(DailyChallengeService.instance.ensureLoaded());
     unawaited(OnlineNotifyService.instance.ensureLoaded());
+    // Dalga 15 bulgu 14: ilk PLAY NOW dokunuşu, kalıcı enerjinin ilk
+    // yüklemesini (SharedPreferences) beklerken görünürde tepkisiz
+    // kalıyordu. Yüklemeyi açılışta önceden yap — ilk dokunuş zinciri
+    // beklemez, yalnız kalp katmanı + rota süresi kalır.
+    unawaited(EnergyService.instance.ensureLoaded());
   }
 
   void _openProfile() {
@@ -135,33 +152,43 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
   }
 
   Future<void> _launchMode(GameModeKind kind) async {
-    AudioManager().playPop();
-    ZeroJankPreloader.instance.notePointerDown();
-    // B31 — sıralama: enerji ÖNCE tüketilir, kalp kırılma overlay'i
-    // YALNIZ başarılı tüketimden sonra oynatılır. Tüketim burada
-    // yapıldığı için gezinme openGameMode'un tüketimsiz eşdeğeridir
-    // (aynı widget + aynı zero-jank rota + GameAudioGate); enerji
-    // yoksa aynı boş-enerji popup'ı gösterilir, overlay oynatılmaz.
-    final consumed = await EnergyService.instance.tryConsume();
-    if (!consumed) {
-      if (mounted) {
-        await showEnergyEmptyPopup(context);
+    // Dalga 15 bulgu 14: uçuş-sırası kilidi (alan tanımındaki nota bak).
+    if (_launching) return;
+    _launching = true;
+    try {
+      AudioManager().playPop();
+      ZeroJankPreloader.instance.notePointerDown();
+      // B31 — sıralama: enerji ÖNCE tüketilir, kalp kırılma overlay'i
+      // YALNIZ başarılı tüketimden sonra oynatılır. Tüketim burada
+      // yapıldığı için gezinme openGameMode'un tüketimsiz eşdeğeridir
+      // (aynı widget + aynı zero-jank rota + GameAudioGate); enerji
+      // yoksa aynı boş-enerji popup'ı gösterilir, overlay oynatılmaz.
+      final consumed = await EnergyService.instance.tryConsume();
+      if (!consumed) {
+        if (mounted) {
+          await showEnergyEmptyPopup(context);
+        }
+        return;
       }
-      return;
+      if (!mounted) return;
+      await HbOverlay.play(context);
+      if (!mounted) return;
+      final child = LululuRoutes.buildGameModeWidget(
+        kind,
+        energyConsumed: true,
+      );
+      await Navigator.of(context).push(
+        LululuRoutes.buildZeroJankRoute<void>(
+          child: GameAudioGate(child: child),
+          routeName: kind.name,
+          duration: const Duration(milliseconds: 340),
+          reverseDuration: const Duration(milliseconds: 220),
+          scaleTransition: true,
+        ),
+      );
+    } finally {
+      _launching = false;
     }
-    if (!mounted) return;
-    await HbOverlay.play(context);
-    if (!mounted) return;
-    final child = LululuRoutes.buildGameModeWidget(kind, energyConsumed: true);
-    await Navigator.of(context).push(
-      LululuRoutes.buildZeroJankRoute<void>(
-        child: GameAudioGate(child: child),
-        routeName: kind.name,
-        duration: const Duration(milliseconds: 340),
-        reverseDuration: const Duration(milliseconds: 220),
-        scaleTransition: true,
-      ),
-    );
   }
 
   void _playSuika() {
@@ -251,9 +278,18 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       return;
     }
 
-    // Ücretsiz hak tükendi: reklam dalı ödül vermez, bilgi gösterir.
+    // Ücretsiz hak tükendi: bu dala yalnız günlük ücretsiz hak zaten
+    // kullanılmışken gelinir (_dailyEnergyClaimed yalnız başarılı
+    // talepte kurulur; canClaimDailyFreeEnergy yalnız o gün talep
+    // yokken true döner). Doğru bildirim "bugün zaten alındı"dır —
+    // reklam-yokluğu mesajı kullanıcıyı yanıltır (buton canlı görünüp
+    // kalp artmayınca "ölü" sanılır). Reklam dalı ödül vermez.
     if (!mounted) return;
-    _showRewardsComingSoon();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.l10n.dailyEnergyAlreadyClaimedSnack),
+      ),
+    );
   }
 
   /// K2-UI — günlük challenge ödül talebi. Kapı HER İKİ koşulu da
@@ -853,8 +889,30 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     label: l10n.playNow,
                     child: GestureDetector(
                       onTap: _playSuika,
+                      // Dalga 15 bulgu 14: basıldığı an görünür tepki —
+                      // zincir (enerji + kalp katmanı + rota) bitmeden
+                      // düğme küçülür; kullanıcı "tık yutuluyor" sanmaz.
+                      onTapDown: (_) {
+                        if (!_playPressed) {
+                          setState(() => _playPressed = true);
+                        }
+                      },
+                      onTapUp: (_) {
+                        if (_playPressed) {
+                          setState(() => _playPressed = false);
+                        }
+                      },
+                      onTapCancel: () {
+                        if (_playPressed) {
+                          setState(() => _playPressed = false);
+                        }
+                      },
                       behavior: HitTestBehavior.opaque,
-                      child: CustomPaint(
+                      child: AnimatedScale(
+                        scale: _playPressed ? LululuMotion.pressScale : 1,
+                        duration: LululuMotion.pressDuration,
+                        curve: Curves.easeOutCubic,
+                        child: CustomPaint(
                         painter: const _RealBoxShadowPainter(
                           radius: 18,
                           shadows: [
@@ -926,6 +984,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     ),
                   ),
                 ),
+                  ),
                   ),
               ],
             ),

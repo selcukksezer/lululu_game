@@ -127,10 +127,12 @@ void main() {
       expect(engine.bodies, hasLength(1));
       final body = engine.bodies.single;
       expect(body.x, closeTo(300.0, 0.001));
-      // Zemin y = 600, cone yarıçapı 23: dinlenme y ≈ 577 (spawnScale
-      // salınımı ±%6). Aralık payla geniş tutuldu.
-      expect(body.y, greaterThan(570.0));
-      expect(body.y, lessThan(580.0));
+      // Zemin y = 600, cone yarıçapı 23: dinlenme y ≈ 600 − 1.55×23
+      // ≈ 564.4 — taban keneti görsel yarı-yüksekliğe (1.55r) göre
+      // yapılır, çizimin altı zemine değer (Dalga 15/13b). spawnScale
+      // salınımı ±%6 → aralık 562–567; payla geniş tutuldu.
+      expect(body.y, greaterThan(558.0));
+      expect(body.y, lessThan(570.0));
       expect(engine.isSettled, isTrue);
     });
 

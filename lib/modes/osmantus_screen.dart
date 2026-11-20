@@ -60,8 +60,17 @@ class OsmantusPacing {
 
   @visibleForTesting
   static Color ringColorAt(double phase) {
+    // Yeşil SADECE puan penceresinin içinde görünür: pencere/genişlik
+    // oranı öğreticide 190/1100 ≈ 0.173, sonda 110/620 ≈ 0.177 —
+    // pencere faz ≈ 0.82'de açılır. Eski eşik (0.3) halkanın faz
+    // 0.65'te bile belirgin yeşil görünmesine yol açıyordu; o fazda
+    // vuruş penceresine daha ~385 ms vardı ve "yeşilde" basan oyuncu
+    // erken-basış ıskası + can kaybı alıyordu ("YEŞİLDE BAS!" yazısına
+    // rağmen kırmızıya dönüp oyun bitiyordu). 0.82 eşiğinde algılanır
+    // yeşil ton her zaman pencere içindedir (öğretici: pencere
+    // faz 0.827'de açılır; yeşil ~0.85'ten itibaren seçilir).
     final progress = Curves.easeInOut.transform(
-      ((phase - 0.3) / 0.7).clamp(0.0, 1.0),
+      ((phase - 0.82) / 0.18).clamp(0.0, 1.0),
     );
     return Color.lerp(
       const Color(0xFF5B6B86),

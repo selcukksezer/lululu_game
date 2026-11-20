@@ -1255,6 +1255,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noScoresHint =>
       'Play a game — your score will show up here once it is saved.';
 
+  @override
+  String get noRivalsYet => 'No rivals yet';
+
+  @override
+  String get noRivalsHint =>
+      'You are the only one on the board for now — no made-up rivals.';
+
   // --- Dalga 20 göçü: Hesap (auth_screen, auth_panel) ---
 
   @override

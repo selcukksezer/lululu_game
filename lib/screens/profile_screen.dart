@@ -198,8 +198,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final displayTotalScore = totalBest;
         final playProgress = pm.dailyTaskProgress['play'] ?? 0;
         final displayGamesPlayed = playProgress;
-        final comboProgress = pm.dailyTaskProgress['combo'] ?? 0;
-        final displayBestCombo = comboProgress;
+        // Dalga 15 (bulgu 12): "BEST COMBO" tüm zamanların kalıcı
+        // en iyi kombosudur (`ProgressManager.bestCombo` — finishRun
+        // settle adımında yazılır, oyun sonu ekranıyla aynı kaynak).
+        // Eskiden günlük görev sayacı (`dailyTaskProgress['combo']` —
+        // her gün sıfırlanır, kombo < 2 ise hiç yazılmaz) okunuyordu;
+        // profil x0 gösterirken oyun sonu x1 gösteriyordu.
+        final displayBestCombo = pm.bestCombo;
         final displayLevel = pm.unlockedLevel < 1 ? 1 : pm.unlockedLevel;
         final displayXpCurrent = pm.xp;
         // Seviye başına 2000 XP hedefi: şişirme değil, seviye hedefi

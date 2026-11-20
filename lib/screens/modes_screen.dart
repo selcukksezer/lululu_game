@@ -5,6 +5,7 @@ import '../l10n/app_localizations.dart';
 import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../utils/number_format.dart';
 
@@ -71,7 +72,7 @@ class _ModesScreenState extends State<ModesScreen> {
         widget.showBottomNav && !widget.embedded && !parentHasExtendBody;
 
     return ListenableBuilder(
-      listenable: pm,
+      listenable: Listenable.merge([pm, LeaderboardService.instance]),
       builder: (context, _) {
         final l10n = context.l10n;
         final rawCoins = pm.coins;
@@ -207,14 +208,17 @@ class _ModesScreenState extends State<ModesScreen> {
                       itemCount: modes.length,
                       itemBuilder: (context, i) {
                         final m = modes[i];
-                        // W13-F: liste "Best"i yalnız GERÇEK skordan
-                        // alır (`ProgressManager.getModeBestScore` →
-                        // `modeHighScores`, hiç oynanmamışta 0).
-                        // Eskiden 0 yerine katalog tohumu
-                        // (`m.defaultBestScore`: 4820/5940/…) gösteriliyordu;
-                        // taze kullanıcı oynamadığı skorları görüyordu
-                        // (playtest §4). Hiç oynanmamış modda '—'.
-                        final savedScore = pm.getModeBestScore(m.bestScoreKey);
+                        // W13-F + Dalga 15 (bulgu 12): liste "Best"i
+                        // oyun içi / oyun sonu ile AYNI okuma
+                        // noktasından alır
+                        // (`LeaderboardService.getBest` = o anki
+                        // oyuncunun tahta rekoru); hiç oynanmamışta
+                        // 0 ('—'). Eskiden yalnız PM okunuyordu;
+                        // PM cihaz düzeyinde olduğu için oyuncu
+                        // değiştirince eski oyuncunun rekorunu
+                        // gösteriyordu.
+                        final savedScore = LeaderboardService.instance
+                            .getBest(m.bestScoreKey);
                         final bestStr = savedScore > 0
                             ? _formatNumber(savedScore)
                             : '—';

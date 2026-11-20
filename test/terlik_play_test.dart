@@ -91,12 +91,12 @@ void main() {
   });
 
   test('tutorial gives slower emergence and longer target windows', () {
-    expect(TerlikTapPacing.spawnInterval(0), 1.15);
-    expect(TerlikTapPacing.spawnInterval(14.9), 1.15);
-    expect(TerlikTapPacing.targetVisibleSeconds(14.9), 1.8);
-    expect(TerlikTapPacing.spawnInterval(16), lessThan(1.15));
-    expect(TerlikTapPacing.targetVisibleSeconds(16), lessThan(1.8));
-    expect(TerlikTapPacing.spawnInterval(200), 0.58);
+    expect(TerlikTapPacing.spawnInterval(0), 1.3);
+    expect(TerlikTapPacing.spawnInterval(14.9), 1.3);
+    expect(TerlikTapPacing.targetVisibleSeconds(14.9), 2.4);
+    expect(TerlikTapPacing.spawnInterval(16), lessThan(1.3));
+    expect(TerlikTapPacing.targetVisibleSeconds(16), lessThan(2.4));
+    expect(TerlikTapPacing.spawnInterval(200), 0.65);
   });
 
   testWidgets('players can hit a mole and miss penalty is clear', (

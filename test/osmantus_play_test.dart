@@ -32,8 +32,10 @@ void main() {
   });
 
   test('ring colour eases continuously toward green', () {
-    final before = OsmantusPacing.ringColorAt(0.3);
-    final middle = OsmantusPacing.ringColorAt(0.65);
+    // Yeşil yalnız puan penceresi içinde görünür (faz ≈ 0.82'den
+    // itibaren): 0.82'de hâlâ gri, 0.91'de yeşilimsi, 1.0'da tam yeşil.
+    final before = OsmantusPacing.ringColorAt(0.82);
+    final middle = OsmantusPacing.ringColorAt(0.91);
     final after = OsmantusPacing.ringColorAt(1);
 
     expect(middle, isNot(before));

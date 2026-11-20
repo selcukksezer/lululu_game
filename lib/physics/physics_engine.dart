@@ -215,6 +215,25 @@ class CircularPhysicsEngine {
   /// Below this Verlet step length, body sleeps (stops micro-jitter).
   static const double _sleepSpeed = 0.55;
 
+  /// Below this Verlet step speed a stacked body no longer gets the
+  /// roll-off shove (see _resolveBodyCollisions): the pile is settling,
+  /// don't keep feeding it sideways energy. 1.0 px/step ≈ 120 px/s at
+  /// the 120 Hz fixed step — well above the ~0.1 px/step gravity sag
+  /// of a resting body, well below a genuinely rolling one.
+  static const double _settleRollSpeed = 1.0;
+
+  /// Contact slack for the support check (see _isSupportedAndCalm):
+  /// a body resting on its support may sit up to this far above exact
+  /// contact after discrete integration + separation (same +2.0 the
+  /// perch check already used).
+  static const double _supportSlack = 2.0;
+
+  /// Minimum upward component of a support contact's normal (cosine):
+  /// the supporter must be meaningfully below the body, not a purely
+  /// sideways neighbour. 0.35 ≈ 69° off vertical — wide enough for a
+  /// body sitting in a pocket between two lower bodies.
+  static const double _supportUpwardCos = 0.35;
+
   /// Fixed physics step: 120 Hz sub-steps keep behaviour identical across
   /// 60 Hz / 120 Hz displays (see update()).
   static const double _fixedStep = 1.0 / 120.0;
@@ -358,7 +377,9 @@ class CircularPhysicsEngine {
     final maxDy = sqrt(max(0.0, arenaRadius * arenaRadius - dx * dx));
     var land = arenaCenter.dy + maxDy - radius;
     if (squareArena) {
-      land = arenaBounds.bottom - radius - 4;
+      // Taban kenetiyle tutarlı: çizim yarı-yüksekliği 1.55r
+      // (bkz. _resolveSquareBounds) — 490 - 12*1.55 - 4 = 467.4.
+      land = arenaBounds.bottom - radius * 1.55 - 4;
     }
     for (final b in bodies) {
       if (b.isMarkedForRemoval || b.spawnScale < 0.55) continue;
@@ -580,12 +601,24 @@ class CircularPhysicsEngine {
       mergeEvents.addAll(_resolveBodyCollisions());
     }
 
-    // Sleep only when truly calm and not perched on another circle.
+    // Sleep ONLY when truly calm AND supported (floor / bowl wall /
+    // block / another body below). An unsupported body must never
+    // sleep: one Verlet gravity step adds only ~0.068 px, far below
+    // _sleepSpeed (0.55), so a mid-air body that slows down could
+    // never re-accumulate enough speed to wake — it froze in mid-air
+    // forever (Suika videosu: havada asılı tier-1'ler; birleşen gövde
+    // birleşme noktasında donuyor; desteği birleşmeyle kaybolan uyuyan
+    // gövde havada kalıyor). Destekli gövde, destekleri de sakinse
+    // uyur — tünemiş gövde desteği sakinken uyur (diğer işçinin
+    // düzeltmesi aynen korunur), destek hareketliyken yuvarlanmaya
+    // devam eder. Desteği kaybolan uyuyan gövde ayrıca uyandırılmaz:
+    // destek yoksa bu geçişte uyutulmaz, yerçekimi 2-3 adımda yeniden
+    // hız kazandırır.
     for (final b in bodies) {
       if (b.isMarkedForRemoval) continue;
       if (b.spawnScale < 0.95) continue;
       if (b.speed >= _sleepSpeed) continue;
-      if (_isPerched(b)) continue;
+      if (!_isSupportedAndCalm(b)) continue;
       b.prevX = b.x;
       b.prevY = b.y;
       b.angularVelocity = 0;
@@ -686,6 +719,11 @@ class CircularPhysicsEngine {
     final left = bounds.left;
     final right = bounds.right;
     final floorY = bounds.bottom;
+    // Görsel yarı-yükseklik: çizim fizik yarıçapının 1.55 katı
+    // (GameArenaPainter._spriteVisualScale ile aynı olmalı) — taban
+    // keneti görsel boyuta göre yapılmazsa dibe oturan böcek çizimi
+    // 0.55r kadar arena dışına taşar ve sert kırpılır (Dalga 15/13b).
+    const visualScale = 1.55;
     for (final b in bodies) {
       final r = b.radius * b.spawnScale;
       // Wall clamp applies above the rim too: a body overhanging the
@@ -697,11 +735,11 @@ class CircularPhysicsEngine {
         b.x = right - r;
         if (b.prevX > b.x) b.prevX = b.x;
       }
-      if (b.y > floorY - r) {
+      if (b.y > floorY - r * visualScale) {
         final vx = b.x - b.prevX;
         final vy = b.y - b.prevY;
         if (vy > 0) _registerImpact(b, vy);
-        b.y = floorY - r;
+        b.y = floorY - r * visualScale;
         b.prevY = b.y;
         b.prevX = b.x - vx * 0.9;
       }
@@ -765,9 +803,17 @@ class CircularPhysicsEngine {
             b1.spawnScale = 0.55;
             b1.mergeSquash = 1;
             b1.angularVelocity = 0;
+            // Merkeze doğru itki: yatay merkezleme aynen, dikey bileşen
+            // asla yukarı kaldırmasın. Arenanın merkezi yığının
+            // üstündedir; cy < 0 her birleşmede gövdeyi kütleye bağlı
+            // ~1.5-3.7 px/adım (~180-450 px/s) yukarı fırlatıyordu —
+            // videoda birleşme (+50) sonrası böceklerin "uçması" bu
+            // (yerdeki kademe-1→2 birleşmede |cy| ≈ 350 px, iy ≈ -5.6,
+            // kütle 1.5 → 3.7 px/adım yukarı). Merkez alttaysa (yığın
+            // merkezin üstünde) aşağı itki aynen durur.
             final cx = arenaCenter.dx - midX;
             final cy = arenaCenter.dy - midY;
-            b1.applyImpulse(cx * 0.012, cy * 0.016);
+            b1.applyImpulse(cx * 0.012, max(0.0, cy * 0.016));
 
             b2.isMarkedForRemoval = true;
             spawnParticles(midX, midY, next.color, count: 8 + next.tier);
@@ -822,10 +868,16 @@ class CircularPhysicsEngine {
             final dxOff = upper.x - lower.x;
             final balance = lower.radius * 0.38;
             if (dxOff.abs() < balance) {
-              final dir = dxOff.abs() < 0.6 ? _freerSide(upper) : dxOff.sign;
-              // 10B: küçük kademe daha istekli yuvarlanır, büyük daha
-              // ağır oturur — boşluklar ızgara gibi değil, organik dolar.
-              upper.prevX = upper.x - dir * 2.6 * tierRollFactor(upper.tier);
+              // Dalga 15 — yerleşmiş cisimleri itme: üstteki cisim zaten
+              // yavaşsa (dibe oturmuş yığın) yuvarlanma itkisi verme,
+              // yoksa dibe oturan böcekler sürekli yana kayar. Hızlı /
+              // yeni düşen cisimlerde organik boşluk doldurma aynen sürer.
+              if (upper.speed > _settleRollSpeed) {
+                final dir = dxOff.abs() < 0.6 ? _freerSide(upper) : dxOff.sign;
+                // 10B: küçük kademe daha istekli yuvarlanır, büyük daha
+                // ağır oturur — boşluklar ızgara gibi değil, organik dolar.
+                upper.prevX = upper.x - dir * 2.6 * tierRollFactor(upper.tier);
+              }
             } else {
               // Keep rolling off the shoulder; light friction only.
               final ux = upper.x - upper.prevX;
@@ -850,8 +902,75 @@ class CircularPhysicsEngine {
     return merges;
   }
 
-  /// True if [b] sits nearly atop another body (should keep rolling, not sleep).
-  bool _isPerched(InsectBody b) {
+  /// True if [b] rests on something that can hold it against gravity
+  /// AND every such support is calm. No support → false: the body must
+  /// keep falling, never sleep (see the sleep pass in _stepPhysics).
+  /// Static supports (floor / bowl wall / block) always count as calm;
+  /// a body support vetoes sleep while it moves ([_sleepSpeed]).
+  /// A body in a pocket between two lower bodies counts as supported
+  /// (each contact's normal has an upward component > [_supportUpwardCos]);
+  /// a purely sideways neighbour does not support.
+  bool _isSupportedAndCalm(InsectBody b) {
+    final br = b.radius * b.spawnScale;
+    if (squareArena) {
+      // Flat floor holds unconditionally (it never moves).
+      if (b.y >= arenaBounds.bottom - br - _supportSlack) return true;
+    } else {
+      // Bowl wall holds only where its normal points sufficiently
+      // upward — i.e. the body is meaningfully below arena center
+      // (screen y grows downward, so wall normal's up-component is
+      // dyc / dist). A body touching the wall up at rim height slides
+      // down instead of sleeping on the rim.
+      final dxc = b.x - arenaCenter.dx;
+      final dyc = b.y - arenaCenter.dy;
+      final distC = sqrt(dxc * dxc + dyc * dyc);
+      if (distC > 0.0001 &&
+          distC >= arenaRadius - br - _supportSlack &&
+          dyc / distC > _supportUpwardCos) {
+        return true;
+      }
+    }
+    // Static blocks: a block below holds the body.
+    for (final block in blocks) {
+      final dx = b.x - block.x;
+      final dy = b.y - block.y;
+      final reach = br + block.radius + _supportSlack;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      final dist = sqrt(dx * dx + dy * dy);
+      if (dist <= 0.0001) continue; // coincident: no defined normal
+      if (-dy / dist > _supportUpwardCos) return true;
+    }
+    // Body supports. _perchSupport keeps the Dalga-15 perch rule
+    // (nearly-atop a calm support may sleep; a moving perch blocks
+    // sleep); the loop below adds pocket support between two lower
+    // bodies, which the narrow perch check misses.
+    var supported = false;
+    final perch = _perchSupport(b);
+    if (perch != null) {
+      if (perch.speed >= _sleepSpeed) return false;
+      supported = true;
+    }
+    for (final o in bodies) {
+      if (identical(o, b) || identical(o, perch)) continue;
+      if (o.isMarkedForRemoval) continue;
+      final dx = b.x - o.x;
+      final dy = b.y - o.y;
+      final reach = br + o.radius * o.spawnScale + _supportSlack;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      final dist = sqrt(dx * dx + dy * dy);
+      if (dist <= 0.0001) continue;
+      if (-dy / dist <= _supportUpwardCos) continue;
+      if (o.speed >= _sleepSpeed) return false;
+      supported = true;
+    }
+    return supported;
+  }
+
+  /// The body [b] is nearly sitting on top of, if any (null
+  /// otherwise). A perched body must keep rolling while its support
+  /// moves, but may sleep once the support is calm too (see the
+  /// sleep pass in _stepPhysics).
+  InsectBody? _perchSupport(InsectBody b) {
     final br = b.radius * b.spawnScale;
     for (final o in bodies) {
       if (identical(o, b) || o.isMarkedForRemoval) continue;
@@ -860,9 +979,9 @@ class CircularPhysicsEngine {
       final dy = b.y - o.y;
       final reach = br + o.radius * o.spawnScale + 2.0;
       if (dx * dx + dy * dy > reach * reach) continue;
-      if (dx.abs() < o.radius * 0.65) return true;
+      if (dx.abs() < o.radius * 0.65) return o;
     }
-    return false;
+    return null;
   }
 
   /// +1 right / -1 left — side with more open space in the bowl.
