@@ -2256,7 +2256,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get osmantusDikkisChant => 'DIKKIS DIKKIS!';
 
   @override
-  String get osmantusHowToBody1 => 'When the rhythm ring turns green, tap the DUO KEY button! ';
+  String get osmantusHowToBody1 => 'When the rhythm ring turns green, tap the TAP ONCE button once! ';
 
   @override
   String get osmantusHintResume => 'Go on! Tap when the ring turns green.';
@@ -2587,7 +2587,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get stackHelpBody =>
-      'Tap to drop the swaying block onto the tower. Dead centre builds your combo; the overhanging edge gets cut. Miss the tower or shave the block too thin and the run ends!';
+      'Tap to drop the swaying block onto the tower. Dead centre builds your combo; the overhanging edge gets cut. Your first 5 misses in the first 5 floors are forgiven; after that, missing the tower or shaving the block too thin ends the run!';
 
   @override
   String get stackPerfectPrototype => 'PERFECT HIT! X3';
@@ -3068,7 +3068,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get yuvaBanner => 'NEST DEFENSE · 360°';
 
   @override
-  String get osmantusDoubleButton => 'DOUBLE BUTTON';
+  String get osmantusDoubleButton => 'TAP ONCE';
 
   @override
   String get osmanRoleSub => 'Button masher · pointer';
@@ -3078,7 +3078,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get osmantusRhythmHint =>
-      'When the rhythm ring turns green, tap the DOUBLE BUTTON! '
+      'When the rhythm ring turns green, tap the TAP ONCE button once! '
       'Build combos with well-timed taps and use special stage powers.';
 
   @override

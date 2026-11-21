@@ -175,17 +175,19 @@ class CircularPhysicsEngine {
   /// Kademe numarasını tablo aralığına kelepçeler.
   static int _tierIndex(InsectTier tier) => tier.tier.clamp(1, 11);
 
-  /// Bırakmada x sapması (± px): kademe 1'de 7.0, kademe 11'de 2.0.
+  /// Bırakmada x sapması (± px): kademe 1'de 4.0, kademe 11'de 2.0
+  /// (Dalga 17: 7.0'dan hafifletildi — bırakma jitter'ı yığını dağıtıyordu).
   static double dropJitterPx(InsectTier tier) =>
-      7.0 - (_tierIndex(tier) - 1) * 0.5;
+      4.0 - (_tierIndex(tier) - 1) * 0.2;
 
   /// Bırakmada başlangıç eğimi (± radyan): kademe 1'de 0.22, 11'de 0.06.
   static double dropTiltRad(InsectTier tier) =>
       0.22 - (_tierIndex(tier) - 1) * 0.016;
 
-  /// Bırakmada başlangıç açısal hızı (± rad/s): 1'de 1.6, 11'de 0.5.
+  /// Bırakmada başlangıç açısal hızı (± rad/s): 1'de 1.0, 11'de 0.5
+  /// (Dalga 17: 1.6'dan hafifletildi).
   static double dropSpin(InsectTier tier) =>
-      1.6 - (_tierIndex(tier) - 1) * 0.11;
+      1.0 - (_tierIndex(tier) - 1) * 0.05;
 
   /// Açısal sönüm (60 Hz kare başına çarpan; BÜYÜK = daha uzun dönüş):
   /// kademe 1'de 0.72, kademe 11'de 0.50 (eski sabit 0.62 orta nokta).
@@ -222,7 +224,12 @@ class CircularPhysicsEngine {
   /// of a resting body, well below a genuinely rolling one.
   static const double _settleRollSpeed = 1.0;
 
-  /// Contact slack for the support check (see _isSupportedAndCalm):
+  /// Dalga 17 — destek "sakin" sayılma eşiği (px/adım): destek bu hızın
+  /// altında kıpırdıyorsa üstteki gövde uyuyabilir. [_sleepSpeed] (0,55)
+  /// ile veto, tek kıpırdayan böceğin tüm yığını uyanık tutmasına yol
+  /// açıyordu; 2,0 px/adım ≈ 240 px/s, hâlâ gerçekten yuvarlanan
+  /// desteğin çok altında, dinlenen yığının mikro-kıpırtısının üstünde.
+  static const double _supportCalmSpeed = 2.0;
   /// a body resting on its support may sit up to this far above exact
   /// contact after discrete integration + separation (same +2.0 the
   /// perch check already used).
@@ -251,6 +258,12 @@ class CircularPhysicsEngine {
   /// danger line (see isOverflowing). At the 120 Hz fixed step this is
   /// 120 px/s — well below fall speeds, so fresh drops never trigger it.
   static const double _overflowStillnessPx = 1.0;
+
+  /// Birleşmeden beri geçen süre (sn): birleşme sonrası ilk 0,5 sn
+  /// yuvarlanma itkisi bastırılır (Dalga 17) — yeni doğan gövdenin
+  /// yerleşme sarsıntısı yığını yana itmesin. [_stepPhysics] her
+  /// alt-adımda ilerletir, birleşme sıfırlar.
+  double _secondsSinceMerge = 999.0;
 
   /// Leftover frame time carried into the next update() call.
   double _timeAccumulator = 0.0;
@@ -547,6 +560,7 @@ class CircularPhysicsEngine {
   /// One fixed-size Verlet step. Damping factors are dt-scaled so a
   /// 120 Hz sub-step behaves exactly like half of a 60 Hz frame.
   List<MergeEvent> _stepPhysics(double dt) {
+    _secondsSinceMerge += dt;
     // Damping is defined per 60 Hz frame; scale it to this step's dt so
     // behaviour is identical at any step rate.
     final damping = pow(0.972, dt * 60).toDouble();
@@ -803,6 +817,10 @@ class CircularPhysicsEngine {
             b1.spawnScale = 0.55;
             b1.mergeSquash = 1;
             b1.angularVelocity = 0;
+            // Dalga 17: birleşme saati sıfırlanır — ilk 0,5 sn
+            // yuvarlanma itkisi bastırılır (aşağıdaki _resolveBodyCollisions
+            // yuvarlanma dalı).
+            _secondsSinceMerge = 0.0;
             // Merkeze doğru itki: yatay merkezleme aynen, dikey bileşen
             // asla yukarı kaldırmasın. Arenanın merkezi yığının
             // üstündedir; cy < 0 her birleşmede gövdeyi kütleye bağlı
@@ -872,7 +890,11 @@ class CircularPhysicsEngine {
               // yavaşsa (dibe oturmuş yığın) yuvarlanma itkisi verme,
               // yoksa dibe oturan böcekler sürekli yana kayar. Hızlı /
               // yeni düşen cisimlerde organik boşluk doldurma aynen sürer.
-              if (upper.speed > _settleRollSpeed) {
+              // Dalga 17: birleşme sonrası ilk 0,5 sn yuvarlanma itkisi
+              // bastırılır — yeni doğan gövdenin yerleşme sarsıntısı
+              // yığını yana itmesin.
+              if (upper.speed > _settleRollSpeed &&
+                  _secondsSinceMerge > 0.5) {
                 final dir = dxOff.abs() < 0.6 ? _freerSide(upper) : dxOff.sign;
                 // 10B: küçük kademe daha istekli yuvarlanır, büyük daha
                 // ağır oturur — boşluklar ızgara gibi değil, organik dolar.
@@ -906,7 +928,9 @@ class CircularPhysicsEngine {
   /// AND every such support is calm. No support → false: the body must
   /// keep falling, never sleep (see the sleep pass in _stepPhysics).
   /// Static supports (floor / bowl wall / block) always count as calm;
-  /// a body support vetoes sleep while it moves ([_sleepSpeed]).
+  /// a body support vetoes sleep only while it moves faster than
+  /// [_supportCalmSpeed] (Dalga 17: eskiden [_sleepSpeed] eşiğiyle veto
+  /// ediliyordu — tek kıpırdayan böcek tüm yığını uyanık tutuyordu).
   /// A body in a pocket between two lower bodies counts as supported
   /// (each contact's normal has an upward component > [_supportUpwardCos]);
   /// a purely sideways neighbour does not support.
@@ -953,7 +977,7 @@ class CircularPhysicsEngine {
     var supported = false;
     final perch = _perchSupport(b);
     if (perch != null) {
-      if (perch.speed >= _sleepSpeed) return false;
+      if (perch.speed >= _supportCalmSpeed) return false;
       supported = true;
     }
     for (final o in bodies) {
@@ -966,7 +990,7 @@ class CircularPhysicsEngine {
       final dist = sqrt(dx * dx + dy * dy);
       if (dist <= 0.0001) continue;
       if (-dy / dist <= _supportUpwardCos) continue;
-      if (o.speed >= _sleepSpeed) return false;
+      if (o.speed >= _supportCalmSpeed) return false;
       supported = true;
     }
     return supported;

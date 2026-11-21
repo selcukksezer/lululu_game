@@ -1291,14 +1291,19 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
               final energyClaimed =
                   _dailyEnergyClaimed ||
                   !ProgressManager.instance.canClaimDailyFreeEnergy;
+              // Dalga 17: hak kullanılmışken bile enerji doluysa düğme
+              // dokunulabilir kalır — _claimDailyEnergy FULL dalı
+              // "dolu" bildirir (hak zaten tüketilmiş sayılır).
+              final tappable =
+                  !energyClaimed || EnergyService.instance.isFull;
               return Semantics(
                 button: true,
-                enabled: !energyClaimed,
+                enabled: tappable,
                 label: energyClaimed
                     ? l10n.claimedShort
                     : l10n.claimEnergy5,
                 child: GestureDetector(
-                  onTap: energyClaimed ? null : _claimDailyEnergy,
+                  onTap: tappable ? _claimDailyEnergy : null,
                   child: Opacity(
                     opacity: energyClaimed ? 0.55 : 1.0,
                     child: CustomPaint(

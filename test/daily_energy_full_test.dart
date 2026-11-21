@@ -182,29 +182,29 @@ void main() {
       await tearDownTree(tester);
     });
 
-    testWidgets('FULL + hak zaten kullanılmışken: düğme ALINDI görünür',
-        (tester) async {
+    testWidgets(
+        'FULL + hak zaten kullanılmışken: düğme ALINDI görünür ama '
+        'dokunulabilir — tap DOLU bildirir', (tester) async {
       await loadSeeded(energy: 30, lastFreeEnergyDay: _todayKey());
       final pm = ProgressManager.instance;
       expect(pm.canClaimDailyFreeEnergy, isFalse);
       expect(EnergyService.instance.energy, 30);
 
       await pumpHub(tester);
-      // Hak kullanılmış: düğme devre dışı (ALINDI) görünür, canlı
-      // görünmez — dokunma hiçbir şey yapmaz (hediye kutusu deseni).
+      // Hak kullanılmış: düğme ALINDI görünür (soluk) — ama enerji
+      // doluyken dokunulabilir kalır (Dalga 17), FULL dalına ulaşır.
       expect(find.text(_tr.claimEnergy5), findsNothing);
       expect(find.text(_tr.claimedShort), findsOneWidget);
 
-      await tester.tap(
-        find.text(_tr.claimedShort),
-        warnIfMissed: false,
-      );
+      await tester.tap(find.text(_tr.claimedShort));
       await settleClaim(tester);
 
       expect(EnergyService.instance.energy, 30);
       expect(find.text(_tr.dailyEnergyClaimedSnack), findsNothing);
       expect(find.text(_tr.dailyEnergyAlreadyClaimedSnack), findsNothing);
-      expect(find.text(_tr.shopEnergyFullToast), findsNothing);
+      // FULL dalı: "dolu" bildirilir, hak zaten tüketilmiş sayılır.
+      expect(find.text(_tr.shopEnergyFullToast), findsOneWidget);
+      expect(pm.canClaimDailyFreeEnergy, isFalse);
       expect(tester.takeException(), isNull);
       await tearDownTree(tester);
     });

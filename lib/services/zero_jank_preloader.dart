@@ -79,6 +79,7 @@ class ZeroJankPreloader {
     'assets/design/ui/logo_lululu.webp',
     'assets/design/backgrounds/suika_kitchen.webp',
     'assets/design/backgrounds/bg_kitchen.jpg',
+    'assets/design/backgrounds/makarayiz_stage.webp',
     'assets/images/stickers/sticker_tier1_cone.png',
     'assets/images/stickers/sticker_tier2_helmet.png',
     'assets/images/stickers/sticker_tier3_fan.png',
@@ -231,13 +232,13 @@ class ZeroJankPreloader {
   ///
   /// [ResizeImage] aynı mantıksal görsel için farklı bir önbellek anahtarı
   /// üretir: bu sağlayıcıyla precache edilen giriş, yalnızca aynı
-  /// sağlayıcıyı isteyen widget'larla eşleşir. Widget'ların tamamı düz
-  /// `AssetImage` (`Image.asset`) kullandığı için [precacheCriticalAssets]
-  /// artık bu yardımcıyı KULLANMAZ — düz `AssetImage` ile precache eder;
-  /// sized precache + düz widget isteği çift decode + çift önbellek
-  /// girişi demekti (8B). Bu yardımcı saklanır: bir widget gerçekten bu
-  /// sağlayıcıyla isterse (aynı hedef boyutla) o zaman isabet sağlar;
-  /// precache tarafında tek başına kullanılmamalıdır.
+  /// sağlayıcıyı isteyen widget'larla eşleşir. [precacheCriticalAssets]
+  /// bu yardımcıyı YALNIZ tier görselleri için kullanır (Dalga 17):
+  /// tier PNG'ler tam çözünürlükte decode edilmesin diye 768 px ile
+  /// precache edilir; widget'lar `cacheWidth: 96` ile ister — anahtarlar
+  /// farklıdır ama iki decode da boyutludur, tam çözünürlük decode
+  /// hiçbir yolda olmaz. Diğer kritik görseller düz `AssetImage` ile
+  /// precache edilir (8B: widget'larla aynı anahtar).
   static ImageProvider sizedImageProvider(String resolvedPath) {
     return ResizeImage(
       AssetImage(resolvedPath),
@@ -317,13 +318,13 @@ class ZeroJankPreloader {
   ///
   /// Düz `AssetImage` anahtarıyla yapılır (8B): widget'ların tamamı düz
   /// `AssetImage` (`Image.asset`) istediği için precache edilen girişle
-  /// aynı anahtar eşleşir ve ilk gösterim önbellekten gelir. Önceden
-  /// [sizedImageProvider] (`ResizeImage`) kullanılıyordu — o anahtarı
-  /// hiçbir widget istemediği için precache boşa gidiyor, her görsel ilk
-  /// gösterimde bir de tam çözünürlükte decode ediliyordu. Tam çözünürlük
-  /// decode'u widget'ların bugünkü davranışıdır (değişiklik yok); toplam
-  /// bellek `main.dart`'taki [ImageCache] sınırlarıyla (100 giriş / 100 MB)
-  /// bağlıdır.
+  /// aynı anahtar eşleşir ve ilk gösterim önbellekten gelir. Tek istisna
+  /// tier görselleridir (Dalga 17): tier PNG'ler 874×2333–1408×1760
+  /// tam çözünürlükte decode edilmesin diye [sizedImageProvider]
+  /// (`ResizeImage`, 768 px) ile precache edilir; widget'lar
+  /// `StickerImage` üzerinden `cacheWidth: 96` ile ister — iki giriş
+  /// farklı anahtar taşır ama ikisi de boyutludur, tam çözünürlük
+  /// decode hiçbir yolda olmaz.
   ///
   /// Tek bilinen istisna: `splash_screen.dart` splash arka planını
   /// `cacheWidth: 860, cacheHeight: 1911` ile ister — o tek site kendi
@@ -359,11 +360,16 @@ class ZeroJankPreloader {
           if (!context.mounted || isFlutterTest) return;
           var failed = false;
           try {
+            // Tier görselleri boyutlu precache (Dalga 17): tam çözünürlük
+            // decode'u engeller; diğerleri düz AssetImage (8B) ile
+            // widget'larla aynı önbellek anahtarını paylaşır.
+            final isTierAsset =
+                resolved.contains('/bugs_hd/') ||
+                resolved.contains('/bugs_new/');
             await precacheImage(
-              // Düz AssetImage (8B): widget'larla aynı önbellek anahtarı.
-              // sizedImageProvider/ResizeImage burada kullanılmaz — o
-              // anahtarı hiçbir widget istemez, precache boşa giderdi.
-              AssetImage(resolved),
+              isTierAsset
+                  ? sizedImageProvider(resolved)
+                  : AssetImage(resolved),
               context,
               onError: (_, _) {
                 failed = true;

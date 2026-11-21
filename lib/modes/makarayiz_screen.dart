@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui' show ImageFilter, lerpDouble;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -20,22 +20,6 @@ import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
 import '../widgets/mode_bonus_bar.dart';
-
-const _tcol = [
-  Color(0xFFFFE9C9),
-  Color(0xFFFFE3D6),
-  Color(0xFFE4F0FF),
-  Color(0xFFF3E4FF),
-  Color(0xFFFFE0EC),
-  Color(0xFFDFF7EA),
-  Color(0xFFFFF0D6),
-  Color(0xFFE8ECF5),
-  Color(0xFFFFE1E1),
-  Color(0xFFFFE0EC),
-  Color(0xFFEDF1F8),
-  Color(0xFFE8ECF5),
-  Color(0xFFFFDFF2),
-];
 
 class _Note {
   _Note(this.lane, this.hitMs, this.tier, this.travelMs, {this.isHisir = false});
@@ -76,7 +60,33 @@ class MakarayizScreen extends StatefulWidget {
 class MakarayizScreenState extends State<MakarayizScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const tutorialMs = 15000;
-  static const _noteSize = 45.0;
+  /// Nota çapı [InsectTier.radius]'tan türetilir: 30 + radius × 0,35,
+  /// üst sınır 60 px (radius 23 → ~38 px, radius 90 → 61,5 → 60 px).
+  /// Eskiden bütün notalar sabit 45 px'ti; PNG oran farkı (0,375–0,897)
+  /// + `BoxFit.contain` 2,4× görünür boyut farkı üretiyordu.
+  static double _noteSizeFor(InsectTier tier) =>
+      min(60.0, 30.0 + tier.radius * 0.35);
+
+  /// Geniş dalda (wideScreen) notanın üst boşluğu: eskiden yalnız
+  /// tier 1–5 için ayarlıydı, 6–13 varsayılan 5,3'e düşüyordu.
+  /// 6–13 + Hışır için de açık değer verilir (önceki varsayılan
+  /// aynen korunur — bu kademeler için ayrı ayar verisi yok).
+  static const Map<int, double> _wideTopPad = {
+    1: 7.2,
+    2: 5.9,
+    3: 3.15,
+    4: 3.15,
+    5: 5.5,
+    6: 5.3,
+    7: 5.3,
+    8: 5.3,
+    9: 5.3,
+    10: 5.3,
+    11: 5.3,
+    12: 5.3,
+    13: 5.3,
+  };
+  static const double _hisirTopPad = 5.3;
   static const _beatInset = 44.0; // beat çizgisi şerit tabanından yukarıda
 
   late final Ticker _ticker;
@@ -917,10 +927,17 @@ class MakarayizScreenState extends State<MakarayizScreen>
     final bug =
         InsectTier.values[(tier - 1).clamp(0, InsectTier.values.length - 1)];
     final assetPath = isHisir ? HisirCharacter.assetPath : bug.assetPath;
+    // Dalga 17: nota arkasındaki opak pastel daire (_tcol) kaldırıldı —
+    // PNG'ler şeffaf; pastel (özellikle tier 8/11/12'ye yakın beyaz)
+    // beyaz arka plan izlenimi veriyordu. Beyaz Hayalet (tier 11)
+    // koyu sahnede desteksiz de görünür.
+    final noteSize = _noteSizeFor(bug);
     if (wideScreen) {
-      final topPad = (tier == 3 || tier == 4)
-          ? 3.15
-          : (tier == 2 ? 5.9 : (tier == 1 ? 7.2 : (tier == 5 ? 5.5 : 5.3)));
+      // Görsel genişlik nota çapının ~0,86'sı (eskiden 38,7 / 45 px);
+      // yükseklik payı en uzun sprite'a (Hışır, oran 0,325) göre ölçeklenir.
+      final imgWidth = noteSize * 0.86;
+      final topPad =
+          isHisir ? _hisirTopPad : (_wideTopPad[tier] ?? 5.3);
       return Positioned(
         top: top,
         left: 0,
@@ -928,24 +945,20 @@ class MakarayizScreenState extends State<MakarayizScreen>
         child: Center(
           child: Opacity(
             opacity: opacity,
-            child: Container(
-              width: _noteSize,
-              height: _noteSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _tcol[(tier - 1) % _tcol.length],
-              ),
+            child: SizedBox(
+              width: noteSize,
+              height: noteSize,
               child: OverflowBox(
                 alignment: Alignment.topCenter,
-                minWidth: 38.7,
-                maxWidth: 38.7,
+                minWidth: imgWidth,
+                maxWidth: imgWidth,
                 minHeight: 0,
-                maxHeight: 120,
+                maxHeight: noteSize * 2.7,
                 child: Padding(
                   padding: EdgeInsets.only(top: topPad),
                   child: Image.asset(
                     assetPath,
-                    width: 38.7,
+                    width: imgWidth,
                     fit: BoxFit.fitWidth,
                   ),
                 ),
@@ -962,15 +975,13 @@ class MakarayizScreenState extends State<MakarayizScreen>
       child: Center(
         child: Opacity(
           opacity: opacity,
-          child: Container(
-            width: _noteSize,
-            height: _noteSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _tcol[(tier - 1) % _tcol.length],
+          child: SizedBox(
+            width: noteSize,
+            height: noteSize,
+            child: Padding(
+              padding: const EdgeInsets.all(3),
+              child: StickerImage(assetPath: assetPath, size: noteSize - 6),
             ),
-            padding: const EdgeInsets.all(3),
-            child: StickerImage(assetPath: assetPath, size: 39),
           ),
         ),
       ),
@@ -988,7 +999,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
       for (final n in _notes) {
         if (n.lane != lane) continue;
         final p = 1 - (n.hitMs - _now) / n.travelMs;
-        final top = -_noteSize + (beatY - _noteSize / 2 + _noteSize) * p;
+        final noteSize = _noteSizeFor(InsectTier.values[n.tier]);
+        final top = -noteSize + (beatY + noteSize / 2) * p;
         if (n.done) {
           children.add(
             _note(
@@ -1021,12 +1033,12 @@ class MakarayizScreenState extends State<MakarayizScreen>
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0x0FFFFFFF)),
           ),
-          child: wideScreen
-              ? Stack(clipBehavior: Clip.none, children: children)
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(11),
-                  child: Stack(children: children),
-                ),
+          // Dalga 17: geniş dal da dar dal gibi ClipRRect ile kırpılır —
+          // eskiden Clip.none + OverflowBox taşması şerit dışına çıkıyordu.
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: Stack(children: children),
+          ),
         ),
       ),
     );
@@ -1676,10 +1688,10 @@ class _MakarayizChrome extends StatelessWidget {
                         width: 2,
                       ),
                     ),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                      child: stageBuilder(),
-                    ),
+                    // Dalga 17: tam ekran BackdropFilter blur kaldırıldı
+                    // (her kare pahalı blur); önceden-blurlanmış arka
+                    // plan yok, sahne gradyanı + stage görseli aynen durur.
+                    child: stageBuilder(),
                   ),
                 ),
                 _dock(context, wideScreen: wideScreen),

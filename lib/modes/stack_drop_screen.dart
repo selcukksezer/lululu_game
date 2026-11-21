@@ -125,9 +125,9 @@ class _StackDropScreenState extends State<StackDropScreen>
   DateTime? _failedAt;
   bool _resultShown = false;
 
-  // Dalga 16 (F-S4): ısınma affı — ilk 5 katta tek ıska affedilir
-  // (dilim korunur, kombo sıfırlanır); tur başına bir kez.
-  bool _warmupForgiven = false;
+  // Dalga 16 (F-S4) / Dalga 17: ısınma affı — ilk 5 katta en fazla 5 ıska
+  // affedilir (dilim korunur, kombo sıfırlanır); kalan hak sayacıyla izlenir.
+  int _warmupMissesLeft = 5;
 
   /// Tur kimliği (F2): her `_boot` artırır. Bekleyen `_presentResult`,
   /// tur değiştiyse eski turun sonucunu göstermez (`stillValid`).
@@ -432,7 +432,7 @@ class _StackDropScreenState extends State<StackDropScreen>
     _resultShown = false;
     _phase = _Phase.ready;
     _failedAt = null;
-    _warmupForgiven = false;
+    _warmupMissesLeft = 5;
   }
 
   void _ensure(double w, double h) {
@@ -649,8 +649,8 @@ class _StackDropScreenState extends State<StackDropScreen>
   /// döner ve oyuncu aynı katı dener. true ise affedildi (çağıran
   /// `_fail`'i atlar).
   bool _forgiveWarmupMiss() {
-    if (_floors > 5 || _warmupForgiven) return false;
-    _warmupForgiven = true;
+    if (_floors > 5 || _warmupMissesLeft <= 0) return false;
+    _warmupMissesLeft--;
     _combo = 0;
     _comboMeter = 0;
     _phase = _Phase.ready;

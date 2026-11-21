@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -537,7 +538,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
     final double base;
     if (_gates.isEmpty) {
-      base = _world + _arenaW * 0.56 + (initial ? 10 : 0);
+      // Dalga 17 Düzeltme 3 (denge): ilk kapı eskiden arena
+      // genişliğinin %56'sında doğuyordu; geniş ekranda ilk skor
+      // ~10 sn bekletiyordu (72 px/sn kaydırma). Sabit ~220 px;
+      // dar ekranda arena genişliğini aşmasın diye `min` ile sınırlı
+      // (`_arenaW` en az 200 px — `_applyLayout`).
+      base = _world + min(220.0, _arenaW) + (initial ? 10 : 0);
     } else {
       base = _gates.last.base + _gateSpacing + _rng.nextDouble() * 36;
     }
@@ -813,6 +819,20 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     );
   }
 
+  /// Dalga 17 Düzeltme 3: klavye odağını oyuna geri al. Odak tek
+  /// atımlık `autofocus: true` ile kuruluyordu; mikrofon/duraklatma
+  /// düğmesine dokununca veya bir diyalog açılınca klavye kalıcı
+  /// ölüyordu. Kare sonuna ertelenir ki odak değişimi sürerken
+  /// istenmesin; yalnız oyun canlıyken ve duraklatılmamışken
+  /// uygulanır.
+  void _refocusKeyboard() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _alive && !_paused) {
+        _keyboardFocusNode.requestFocus();
+      }
+    });
+  }
+
   void _restart() {
     unawaited(AudioManager().stopAll());
     // Yeni tur kimliği: eski turun bekleyen sonuç çağrısı gösterilmez.
@@ -858,6 +878,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     // ölü kalmasın (askıda değilse no-op).
     _resumeNoiseSubscription();
     if (!_ticker.isActive) _ticker.start();
+    // Dalga 17 Düzeltme 3: yeni turda klavye odağını tazeley
+    // (eski turda düğme/diyalog odağı çalmış olabilir).
+    _refocusKeyboard();
   }
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
@@ -1134,9 +1157,22 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       ),
     ];
 
-    Widget buildStage() => GestureDetector(
+    // Dalga 17 Düzeltme 3: tek girdi yolu — ham `Listener`
+    // (Osmantus deseni). Eskiden `GestureDetector.onTapDown` vardı;
+    // statik okumada yutan katman bulunamadı ama canlıda `_scream`
+    // çağrılmıyordu; `Listener.onPointerDown` gesture arena'sını
+    // beklemez, ham pointer'ı alır. Çift yol yok: `GestureDetector`
+    // kaldırıldı, 55 ms cooldown yalnızca çoklu dokunuş spam'ine
+    // karşı ikinci savunma olarak duruyor. Yalnız birincil düğme
+    // (dokunuş / sol tık) zıplatır — sağ tık eski `onTapDown`
+    // davranışıyla aynı şekilde yoksayılır.
+    Widget buildStage() => Listener(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => _scream(),
+      onPointerDown: (event) {
+        if (event.buttons != kPrimaryButton) return;
+        _refocusKeyboard();
+        _scream();
+      },
       child: LayoutBuilder(
         builder: (context, box) {
           final playfieldHeight = max(240.0, box.maxHeight - 63);
@@ -1584,9 +1620,16 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     // burada okunur, oyun-içi atamalar aynen durur.
     // Dalga 15 Bulgu 9: klavye odağı burada — dar + geniş düzenin
     // ikisi de bu sahneyi kullanır, tek sarım yeter.
+    // Dalga 17 Düzeltme 3: `autofocus` tek atımlıktı — odak bir kez
+    // kaybolunca (düğme/diyalog) klavye kalıcı ölüyordu.
+    // `onFocusChange` odağı geri alır (yalnız oyun canlıyken ve
+    // duraklatılmamışken — `_refocusKeyboard` bekçisi).
     Widget buildLabeledStage() => Focus(
       focusNode: _keyboardFocusNode,
       autofocus: true,
+      onFocusChange: (hasFocus) {
+        if (!hasFocus) _refocusKeyboard();
+      },
       onKeyEvent: _onKeyEvent,
       child: Semantics(label: _hint, child: buildStage()),
     );

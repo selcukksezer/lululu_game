@@ -32,13 +32,19 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
   Timer? _ticker;
   bool _busy = false;
 
+  /// Dalga 17: diyalog yalnız 0 enerjiyle açıldıysa enerji > 0 olunca
+  /// kendiliğinden kapanır. 0 < enerji < 30 ile açıldıysa (üst bardan)
+  /// popup açık kalır, bekleme süresi görünür.
+  late final bool _wasEmpty;
+
   @override
   void initState() {
     super.initState();
+    _wasEmpty = _energy.current == 0;
     _energy.addListener(_onChanged);
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      if (_energy.current > 0) {
+      if (_wasEmpty && _energy.current > 0) {
         Navigator.of(context).maybePop();
         return;
       }
@@ -48,7 +54,7 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
 
   void _onChanged() {
     if (!mounted) return;
-    if (_energy.current > 0) {
+    if (_wasEmpty && _energy.current > 0) {
       Navigator.of(context).maybePop();
       return;
     }
@@ -139,6 +145,30 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
       _showToast(messenger, l10n.energyPackBoughtToast);
       if (!mounted) return;
       Navigator.of(context).maybePop();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Dalga 17: günlük ücretsiz +5 popup'tan da alınabilir (ücretsiz
+  /// yol görünürlüğü). l10n + messenger bağıştan ÖNCE alınır: bağış
+  /// enerji dinleyicisini tetikleyip diyaloğu kapatırsa bile bildirim
+  /// gösterilebilir (0 enerjiyle açılmış diyalogda _wasEmpty dalı
+  /// kapatır; kısmi enerjiyle açılmış diyalog açık kalır ve yeniden
+  /// çizilip "zaten alındı" bilgisini gösterir).
+  Future<void> _claimDailyEnergy() async {
+    if (_busy) return;
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      final granted = await _pm.claimDailyFreeEnergy(amount: 5);
+      _showToast(
+        messenger,
+        granted
+            ? l10n.dailyEnergyClaimedSnack
+            : l10n.dailyEnergyAlreadyClaimedSnack,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -292,6 +322,44 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                   ),
                 ),
                 const SizedBox(height: 14),
+                // Dalga 17 — ücretsiz yol görünürlüğü: bekleme süresi
+                // gövdede zaten görünür (MM:SS + "her 5 dakikada +1");
+                // günlük ücretsiz +5 de burada görünür ve alınabilir.
+                // Hak duruyorsa yeşil talep düğmesi, kullanılmışsa
+                // bilgi satırı çıkar. Reklam yolu SDK'sız ölüdür
+                // (IapService.rewardedAdsAvailable = false) — reklam
+                // düğmesi eklenmez.
+                if (_pm.canClaimDailyFreeEnergy)
+                  _buildActionBtn(
+                    label: context.l10n.claimEnergy5,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0.0, 0.55, 1.0],
+                      colors: [
+                        Color(0xFF37E08B),
+                        Color(0xFF12B76A),
+                        Color(0xFF0A9553),
+                      ],
+                    ),
+                    shadowColor: const Color(0xFF066C3C),
+                    hasBlurShadow: true,
+                    textColor: Colors.white,
+                    hasTextShadow: true,
+                    onTap: _busy ? null : _claimDailyEnergy,
+                  )
+                else
+                  Text(
+                    context.l10n.dailyEnergyAlreadyClaimedSnack,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.nunito(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF5B6B82),
+                      height: 1.4,
+                    ),
+                  ),
+                const SizedBox(height: 10),
                 // Ödüllü reklam SDK'sı kurulu değil (madde 4): reklam
                 // düğmesi devre dışıdır, ödül vermez. Gerçek SDK
                 // eklendiğinde bu düğme gerçek reklam akışına bağlanmalıdır.

@@ -31,6 +31,17 @@ class LululuTopBar extends StatelessWidget {
   final bool light;
 
   void _showEnergyDialog(BuildContext context) {
+    // Dalga 17: enerji doluyken popup açılmaz — popup'ın 1 sn'lik
+    // ticker'ı dolu enerjide diyaloğu hemen kapattığı için dokunuş
+    // "hiçbir şey olmuyor" gibi görünüyordu. Doluysa yalnız bildirim.
+    if (EnergyService.instance.isFull) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.shopEnergyFullToast),
+        ),
+      );
+      return;
+    }
     showEnergyEmptyPopup(context);
   }
 

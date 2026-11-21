@@ -34,8 +34,9 @@ void main() {
   });
 
   test('ring colour eases continuously toward green', () {
-    // Yeşil yalnız puan penceresi içinde görünür (faz ≈ 0.82'den
-    // itibaren): 0.82'de hâlâ gri, 0.91'de yeşilimsi, 1.0'da tam yeşil.
+    // Yeşil yalnız puan penceresi içinde görünür (faz ≈ 0.76'dan
+    // itibaren): 0.82'de hafif yeşilimsi, 0.91'de belirgin yeşil,
+    // 1.0'da tam yeşil.
     final before = OsmantusPacing.ringColorAt(0.82);
     final middle = OsmantusPacing.ringColorAt(0.91);
     final after = OsmantusPacing.ringColorAt(1);
@@ -103,6 +104,15 @@ void main() {
     expect(find.text('KOMBO BOZULDU · ERKEN BASTIN'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
+    // Kapanışta bekleyen sistem-yazıtipi çerçeve geri çağrısını
+    // temizle: ağaç sökülürken asılı kalan geçici geri çağrı
+    // zamanlayıcı istisnasına yol açıyor (HEAD'de de görülüyor).
+    // Gerçek zamanlı bekleme motorun geç gelen yazıtipi bildirimini
+    // ağaç sökülmeden önce teslim etmesini sağlar.
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    });
+    await tester.pump();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });

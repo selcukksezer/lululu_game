@@ -2254,7 +2254,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get osmantusDikkisChant => 'DIKKIŞ DIKKIŞ!';
 
   @override
-  String get osmantusHowToBody1 => 'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! ';
+  String get osmantusHowToBody1 => 'Ritim halkası yeşile döndüğünde TEK DOKUNUŞ butonuna bir kez dokun! ';
 
   @override
   String get osmantusHintResume => 'Devam! Halka yeşile dönünce dokun.';
@@ -2585,7 +2585,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get stackHelpBody =>
-      'Dokunarak sallanan bloğu kulenin üstüne bırak. Tam ortala, combo artsın; taşan kenar kesilir. Kuleyi kaçırırsan ya da dilim çok incelirse tur biter!';
+      'Dokunarak sallanan bloğu kulenin üstüne bırak. Tam ortala, combo artsın; taşan kenar kesilir. İlk 5 katta 5 ıskan affedilir; sonrasında kuleyi kaçırırsan ya da dilim çok incelirse tur biter!';
 
   @override
   String get stackPerfectPrototype => 'MÜKEMMEL İSABET! X3';
@@ -3064,7 +3064,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get yuvaBanner => 'YUVA SAVUNMASI · 360°';
 
   @override
-  String get osmantusDoubleButton => 'İKİLİ TUŞ';
+  String get osmantusDoubleButton => 'TEK DOKUNUŞ';
 
   @override
   String get osmanRoleSub => 'Tuşçu · işaretçi';
@@ -3074,7 +3074,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get osmantusRhythmHint =>
-      'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! '
+      'Ritim halkası yeşile döndüğünde TEK DOKUNUŞ butonuna bir kez dokun! '
       'Zamanında basarak kombo yap ve özel sahne güçlerini kullan.';
 
   @override

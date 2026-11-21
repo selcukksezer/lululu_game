@@ -62,12 +62,12 @@ class OsmantusPacing {
   static Color ringColorAt(double phase) {
     // Yeşil SADECE puan penceresinin içinde görünür: pencere/genişlik
     // oranı öğreticide 260/1100 ≈ 0.236, sonda 160/680 ≈ 0.235 —
-    // pencere faz ≈ 0.76'da açılır. 0.82 eşiği pencerenin içinde
-    // kalır (yeşil ~0.86'dan itibaren seçilir) ve doygunluk eğrisi
-    // (phase−0.82)/0.12 ile 0.94'te tam yeşile ulaşır; eski
-    // /0.18 eğrisi yeşili pencere sonuna kadar geciktiriyordu.
+    // pencere faz ≈ 0.76'da açılır. 0.76 eşiği pencere açılışıyla
+    // hizalanır (net yeşil ~0.82'den itibaren seçilir) ve doygunluk
+    // eğrisi (phase−0.76)/0.24 ile faz 1,0'da tam yeşile ulaşır;
+    // eski 0.82 eşiği yeşili pencere ortasına kadar geciktiriyordu.
     final progress = Curves.easeInOut.transform(
-      ((phase - 0.82) / 0.12).clamp(0.0, 1.0),
+      ((phase - 0.76) / 0.24).clamp(0.0, 1.0),
     );
     return Color.lerp(
       const Color(0xFF5B6B86),
@@ -510,7 +510,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       }
       setState(() {});
     } else if (delta < 0 && delta >= -win * 1.2) {
-      _hitThisBeat = true;
+      // Erken-basış tuzağı: ıska cezası verilir ama vuruş TÜKETİLMEZ
+      // (`_hitThisBeat` burada kurulmaz) — penceredeki 2. dokunuş
+      // skor verebilir. `_miss` `_hitThisBeat`'e dokunmaz.
       _miss(context.l10n.osmantusEarlyPress);
     } else if (delta < 0) {
       _hint = context.l10n.osmantusWaitGreen;
@@ -1133,11 +1135,15 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   Widget _statsBar() {
     return SizedBox(
-      height: 58.5,
+      height: 80.5,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        child: LayoutBuilder(
-          builder: (context, statsBox) {
+        child: Column(
+          children: [
+            SizedBox(
+              height: 50.5,
+              child: LayoutBuilder(
+                builder: (context, statsBox) {
             final row = Row(
               children: [
                 _scoreBox(context.l10n.gameScoreLabel, '$_score', width: 104),
@@ -1185,7 +1191,58 @@ class _OsmantusScreenState extends State<OsmantusScreen>
               child: SizedBox(width: 350, height: 50.5, child: row),
             );
           },
+              ),
+            ),
+            const SizedBox(height: 4),
+            _livesStrip(),
+          ],
         ),
+      ),
+    );
+  }
+
+  /// Can + bedava-ıska göstergesi: 3 kalp yuvası (kalan can kırmızı,
+  /// kaybedilen soluk) ve öğretici sonrası ilk ıskaları karşılayan
+  /// bedava hakkı rozeti (0 olunca gizlenir). SKOR/BEST/COMBO
+  /// satırına dokunulmaz; şerit onun altında ayrı satırdadır.
+  Widget _livesStrip() {
+    return SizedBox(
+      height: 18,
+      child: Row(
+        children: [
+          for (var i = 0; i < 3; i++)
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: Icon(
+                Icons.favorite,
+                size: 14,
+                color: i < _lives ? _ruby : const Color(0x59FFFFFF),
+              ),
+            ),
+          if (_freeMissesLeft > 0) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xD9080B12),
+                border: Border.all(
+                  color: const Color(0x73FFB800),
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                '$_freeMissesLeft bedava',
+                style: GoogleFonts.nunito(
+                  fontSize: 10,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFFFFB800),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1475,7 +1532,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                       top: 2,
                       left: 0,
                       right: 0,
-                      height: 25,
+                      height: 46,
                       child: _comboBand(wideScreen: wideScreen),
                     ),
                   ],
@@ -1493,18 +1550,50 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     // (-120ms)", "Bekle, halka yeşile dönsün.", ısınma/can durumu)
     // daha önce yalnız Semantics etiketindeydi — gören oyuncuya hiç
     // ulaşmıyordu; kör testte zamanlama öğrenilemedi (playtest §9).
-    // Bant boşken ipucu satırı aynı yerde görünür; isabet/ıska anonsu
-    // (bant) varken bant önceliklidir. Mekanik aynen kalır: yalnız
-    // görünür metin, pencere/can kuralına dokunulmaz. Prototip
-    // vitrininde bant dolu ('MÜKEMMEL! X5') olduğundan kare değişmez.
-    final showHint =
-        _bandText.isEmpty && _hint.isNotEmpty && !widget.prototypeVisualState;
-    final text = _bandText.isNotEmpty ? _bandText : (showHint ? _hint : '');
-    final visible = text.isNotEmpty;
+    // Bant varken ipucu ikinci satırda görünür, bant boşken yalnız
+    // ipucu satırı görünür. Mekanik aynen kalır: yalnız görünür
+    // metin, pencere/can kuralına dokunulmaz. Prototip vitrininde
+    // ipucu gizli tutulur, bant dolu ('MÜKEMMEL! X5') olduğundan
+    // kare değişmez.
+    final showHint = _hint.isNotEmpty && !widget.prototypeVisualState;
+    final hasBand = _bandText.isNotEmpty;
+    final visible = hasBand || showHint;
     final color = _bandBad
         ? const Color(0xFFE5334A)
         : (wideScreen ? const Color(0xFFFFB800) : const Color(0xFFFFD700));
     final glow = _bandBad ? const Color(0xFFFFD700) : const Color(0xFFFF6B35);
+    final hintStyle = GoogleFonts.nunito(
+      fontSize: 13,
+      height: 1.2,
+      fontWeight: FontWeight.w800,
+      color: Colors.white,
+      shadows: const [
+        Shadow(
+          color: Color(0xEB080B12),
+          offset: Offset(0, 2),
+          blurRadius: 4,
+        ),
+      ],
+    );
+    final bandStyle = GoogleFonts.bangers(
+      fontSize: _bandBad
+          ? 18
+          : (widget.prototypeVisualState && !wideScreen ? 18 : 22),
+      height: 1,
+      letterSpacing: 0.6,
+      color: color,
+      shadows: [
+        const Shadow(
+          color: Color(0xEB080B12),
+          offset: Offset(0, 3),
+        ),
+        Shadow(color: glow.withValues(alpha: 0.9), blurRadius: 14),
+        Shadow(
+          color: glow.withValues(alpha: 0.55),
+          blurRadius: 32,
+        ),
+      ],
+    );
     return Align(
       alignment: Alignment.topCenter,
       child: AnimatedOpacity(
@@ -1512,45 +1601,25 @@ class _OsmantusScreenState extends State<OsmantusScreen>
             ? (widget.prototypeVisualState && !wideScreen ? 0.55 : 1)
             : 0,
         duration: const Duration(milliseconds: 120),
-        child: Text(
-          text.isEmpty ? ' ' : text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: showHint
-              ? GoogleFonts.nunito(
-                  fontSize: 13,
-                  height: 1.2,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  shadows: const [
-                    Shadow(
-                      color: Color(0xEB080B12),
-                      offset: Offset(0, 2),
-                      blurRadius: 4,
-                    ),
-                  ],
-                )
-              : GoogleFonts.bangers(
-                  fontSize: _bandBad
-                      ? 18
-                      : (widget.prototypeVisualState && !wideScreen
-                          ? 18
-                          : 22),
-                  height: 1,
-                  letterSpacing: 0.6,
-                  color: color,
-                  shadows: [
-                    const Shadow(
-                      color: Color(0xEB080B12),
-                      offset: Offset(0, 3),
-                    ),
-                    Shadow(color: glow.withValues(alpha: 0.9), blurRadius: 14),
-                    Shadow(
-                      color: glow.withValues(alpha: 0.55),
-                      blurRadius: 32,
-                    ),
-                  ],
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasBand)
+              Text(
+                _bandText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: bandStyle,
+              ),
+            if (showHint)
+              Text(
+                _hint,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: hintStyle,
+              ),
+            if (!hasBand && !showHint) const Text(' '),
+          ],
         ),
       ),
     );

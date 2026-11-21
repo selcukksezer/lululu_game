@@ -65,13 +65,13 @@ void main() {
       );
     });
 
-    test('tablo uclari: kademe 1 sapma 7 px, kademe 10 sapma 2.5 px', () {
-      expect(CircularPhysicsEngine.dropJitterPx(InsectTier.cone), 7.0);
+    test('tablo uclari: kademe 1 sapma 4 px, kademe 10 sapma 2.2 px', () {
+      expect(CircularPhysicsEngine.dropJitterPx(InsectTier.cone), 4.0);
       expect(
         CircularPhysicsEngine.dropJitterPx(InsectTier.pinkJacket),
-        closeTo(2.5, 0.001),
+        closeTo(2.2, 0.001),
       );
-      expect(CircularPhysicsEngine.dropSpin(InsectTier.cone), 1.6);
+      expect(CircularPhysicsEngine.dropSpin(InsectTier.cone), 1.0);
       expect(
         CircularPhysicsEngine.angularDampingFor(InsectTier.cone),
         closeTo(0.72, 0.001),
