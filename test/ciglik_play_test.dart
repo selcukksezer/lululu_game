@@ -1,3 +1,6 @@
+import 'dart:ui' as ui;
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,6 +109,41 @@ void main() {
 
     // Tap girdisi ham `Listener` yolundan `_scream`'e ulaştı.
     expectFlapped();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Çığlık: Dalga 18 — buttons:0 basış ve fare tıklaması da flap yapar', (
+    tester,
+  ) async {
+    await pumpScreamScreen(tester, const Size(374, 680));
+
+    // Fare sol tık (birincil düğme) kanat çırpar.
+    final mouse = await tester.startGesture(
+      const Offset(190, 390),
+      kind: ui.PointerDeviceKind.mouse,
+      buttons: kPrimaryButton,
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(find.bySemanticsLabel(RegExp(r'spam x1')), findsOneWidget);
+    await mouse.up();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    // Dokunmatik basış `buttons: 0` bildirse bile (web'de dokunmatik /
+    // kalem / sentetik olay) kanat çırpar — Dalga 17 koruması bu
+    // basışı sessizce yutuyordu.
+    final touch = await tester.startGesture(
+      const Offset(190, 390),
+      kind: ui.PointerDeviceKind.touch,
+      buttons: 0,
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(find.bySemanticsLabel(RegExp(r'spam x2')), findsOneWidget);
+    await touch.up();
+    await tester.pump(const Duration(milliseconds: 120));
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();

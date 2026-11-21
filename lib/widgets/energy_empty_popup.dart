@@ -274,8 +274,14 @@ class _EnergyEmptyDialogState extends State<_EnergyEmptyDialog> {
                   ),
                 ),
                 const SizedBox(height: 2),
+                // Dalga 18: başlık enerjiye göre — 0 iken "ENERJİN
+                // BİTTİ!", kısmi enerjide (örn. 29/30) "ENERJİ AL".
+                // `_energy.current` 1 sn'lik ticker + dinleyiciyle
+                // tazelenir, başlık canlı güncellenir.
                 Text(
-                  context.l10n.energyEmptyTitle,
+                  _energy.current == 0
+                      ? context.l10n.energyEmptyTitle
+                      : context.l10n.energyTopUpTitle,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.baloo2(
                     fontSize: 26,

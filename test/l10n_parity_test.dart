@@ -798,6 +798,7 @@ void main() {
         'tierRowQuote12': l10n.tierRowQuote12,
         'tierRowQuote13': l10n.tierRowQuote13,
         'energyEmptyTitle': l10n.energyEmptyTitle,
+        'energyTopUpTitle': l10n.energyTopUpTitle,
         'energyEmptyBodyStart': l10n.energyEmptyBodyStart,
         'energyEmptyBodyMiddle': l10n.energyEmptyBodyMiddle,
         'energyEmptyBodyEnd': l10n.energyEmptyBodyEnd,
@@ -1694,6 +1695,7 @@ void main() {
         'tierRowQuote12': l10n.tierRowQuote12,
         'tierRowQuote13': l10n.tierRowQuote13,
         'energyEmptyTitle': l10n.energyEmptyTitle,
+        'energyTopUpTitle': l10n.energyTopUpTitle,
         'energyEmptyBodyStart': l10n.energyEmptyBodyStart,
         'energyEmptyBodyMiddle': l10n.energyEmptyBodyMiddle,
         'energyEmptyBodyEnd': l10n.energyEmptyBodyEnd,
@@ -2276,15 +2278,15 @@ void main() {
     final enMethods = enMethodStrings(AppLocalizationsEn());
     final trMethods = trMethodStrings(AppLocalizationsTr());
 
-    expect(en.length, 873);
-    expect(tr.length, 873);
+    expect(en.length, 874);
+    expect(tr.length, 874);
     expect(enMethods.length, 177);
     expect(trMethods.length, 177);
     expect(en.keys.toSet(), tr.keys.toSet());
     expect(enMethods.keys.toSet(), trMethods.keys.toSet());
     // Getter ve metot anahtarları çakışmaz; toplam soyut anahtar sayısı.
     expect(en.keys.toSet().intersection(enMethods.keys.toSet()), isEmpty);
-    expect(en.length + enMethods.length, 1050);
+    expect(en.length + enMethods.length, 1051);
     expect(allowedIdentical.difference({...en.keys, ...enMethods.keys}), isEmpty);
     expect(conditionalMethods.difference(enMethods.keys.toSet()), isEmpty);
   });

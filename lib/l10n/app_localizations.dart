@@ -1264,6 +1264,8 @@ abstract class AppLocalizations {
 
   // G17: energy_empty_popup.dart (178/229/249/269).
   String get energyEmptyTitle;
+  // Dalga 18: kısmi enerjide popup başlığı (0 değilken).
+  String get energyTopUpTitle;
   String get energyEmptyBodyStart;
   String get energyEmptyBodyMiddle;
   String get energyEmptyBodyEnd;

@@ -2862,6 +2862,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get energyEmptyTitle => 'ENERJİN BİTTİ!';
 
   @override
+  String get energyTopUpTitle => 'ENERJİ AL';
+
+  @override
   String get energyEmptyBodyStart => 'Kalbin ';
 
   @override

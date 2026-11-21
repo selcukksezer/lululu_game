@@ -279,6 +279,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           _shiftPauseDeadlines();
           _last = Duration.zero;
           if (_alive && !_ticker.isActive) _ticker.start();
+          // Dalga 18: arka plandan dönüşte odak oyuna dönsün.
+          _refocusKeyboardNow();
         }
         break;
     }
@@ -324,6 +326,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _last = Duration.zero;
       _resumeNoiseSubscription();
       if (!_ticker.isActive) _ticker.start();
+      // Dalga 18: devamda odak düğmede kalmasın — ilk tuş kaybolmasın.
+      _refocusKeyboardNow();
     } else {
       _paused = true;
       _pauseStartedAt ??= DateTime.now();
@@ -833,6 +837,18 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     });
   }
 
+  /// Dalga 18: yeniden başlatma / devam anında klavye odağını
+  /// post-frame'i beklemeden geri al — diyalog kapanışı ile ilk
+  /// tuş arasındaki boşlukta gelen girdiler kayboluyordu (TEKRAR
+  /// OYNA sonrası ilk boşluklar). Odak-değişim bildirimi içinden
+  /// çağrılmaz (orada yalnız `_refocusKeyboard` kullanılır).
+  void _refocusKeyboardNow() {
+    if (mounted && _alive && !_paused) {
+      _keyboardFocusNode.requestFocus();
+    }
+    _refocusKeyboard();
+  }
+
   void _restart() {
     unawaited(AudioManager().stopAll());
     // Yeni tur kimliği: eski turun bekleyen sonuç çağrısı gösterilmez.
@@ -880,7 +896,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (!_ticker.isActive) _ticker.start();
     // Dalga 17 Düzeltme 3: yeni turda klavye odağını tazeley
     // (eski turda düğme/diyalog odağı çalmış olabilir).
-    _refocusKeyboard();
+    // Dalga 18: eşzamanlı da al — post-frame'i bekleyen ilk tuş
+    // kayboluyordu (TEKRAR OYNA sonrası boşluklar).
+    _refocusKeyboardNow();
   }
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
@@ -1163,13 +1181,24 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     // çağrılmıyordu; `Listener.onPointerDown` gesture arena'sını
     // beklemez, ham pointer'ı alır. Çift yol yok: `GestureDetector`
     // kaldırıldı, 55 ms cooldown yalnızca çoklu dokunuş spam'ine
-    // karşı ikinci savunma olarak duruyor. Yalnız birincil düğme
-    // (dokunuş / sol tık) zıplatır — sağ tık eski `onTapDown`
-    // davranışıyla aynı şekilde yoksayılır.
+    // karşı ikinci savunma olarak duruyor.
+    // Dalga 18: `event.buttons != kPrimaryButton` koruması kaldırıldı
+    // — canlıda tıklama skora dönüşmüyordu; sahnenin üstünde olayı
+    // yutan katman yok (AppFrame yalnız boyutlandırır, ArcadeScreen
+    // kaplaması duraklatılmamışken null, main.dart Listener'ı
+    // translucent), tek süzgeç bu korumaydı. Gerçek basışlarda
+    // `buttons` bitmask'i birincil biti taşımayabilir (dokunmatik /
+    // kalem / sentetik web olayı `buttons: 0` bildirir); koruma o
+    // basışı sessizce yutuyordu. Osmantuş'un canlıda kanıtlı
+    // `Listener`'ı (:927) koruma kullanmaz. Yalnız sağ-tık
+    // (yalnız ikincil bit) yoksayılır — eski `onTapDown` davranışı.
     Widget buildStage() => Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: (event) {
-        if (event.buttons != kPrimaryButton) return;
+        if (event.buttons != 0 &&
+            (event.buttons & kPrimaryButton) == 0) {
+          return;
+        }
         _refocusKeyboard();
         _scream();
       },
@@ -1887,6 +1916,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         _last = Duration.zero;
         _resumeNoiseSubscription();
         if (_alive && !_ticker.isActive) _ticker.start();
+        // Dalga 18: diyalog sonrası odak oyuna dönsün, ilk tuş kaybolmasın.
+        _refocusKeyboardNow();
         setState(() {});
       }
     }

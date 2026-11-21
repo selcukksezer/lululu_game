@@ -2865,6 +2865,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get energyEmptyTitle => 'OUT OF ENERGY!';
 
   @override
+  String get energyTopUpTitle => 'GET ENERGY';
+
+  @override
   String get energyEmptyBodyStart => 'Your energy ';
 
   @override

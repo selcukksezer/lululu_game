@@ -252,12 +252,12 @@ void main() {
     );
   });
 
-  Future<void> pumpPopupHost(WidgetTester tester) async {
+  Future<void> pumpPopupHost(WidgetTester tester, {int energy = 0}) async {
     tester.view.physicalSize = const Size(430, 932);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    EnergyService.instance.energy = 0;
+    EnergyService.instance.energy = energy;
     await pumpWithL10n(
       tester,
       Scaffold(
@@ -276,7 +276,12 @@ void main() {
     await tester.tap(find.text('AC'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('ENERJİN BİTTİ!'), findsOneWidget);
+    // Dalga 18: başlık enerjiye göre — 0 iken "ENERJİN BİTTİ!",
+    // kısmi enerjide "ENERJİ AL".
+    expect(
+      find.text(energy == 0 ? 'ENERJİN BİTTİ!' : 'ENERJİ AL'),
+      findsOneWidget,
+    );
   }
 
   testWidgets('O3: enerji popup vazgeç → harcama yok, popup açık kalır',
@@ -334,6 +339,23 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 200));
     });
     await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pump();
+  });
+
+  testWidgets('Dalga 18: kısmi enerjide (29/30) popup başlığı ENERJİ AL',
+      (tester) async {
+    await pumpPopupHost(tester, energy: 29);
+    expect(find.text('ENERJİN BİTTİ!'), findsNothing);
+    // Not: SAYACI BEKLE ile kapanış bu harness'ta enerji 0'da da
+    // işlemiyor (önceden var, Dalga 18 dışı) — başlık iddiası bu;
+    // kapanış ayrıca doğrulanmaz, ağaç doğrudan dispose edilir.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
     await tester.pump();
     await tester.pump();
   });
