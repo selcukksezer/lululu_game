@@ -162,7 +162,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   String get _currentBugCallout =>
       _bugIsHisir ? HisirCharacter.replik : _bug.viralReplik;
   String _callout = '';
-  DateTime _lastScreamAt = DateTime.fromMillisecondsSinceEpoch(0);
+  /// `_aliveFor` at last accepted flap; `-1` = never. Cooldown uses
+  /// ticker time (follows `pump(Duration)`), not `DateTime.now()`.
+  double _lastScreamAtAliveFor = -1;
 
   /// Voice lock: no new SFX / no character swap until clip ends.
   bool _voiceBusy = false;
@@ -638,9 +640,15 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _restart();
       return;
     }
-    final now = DateTime.now();
-    if (now.difference(_lastScreamAt) < _screamCooldown) return;
-    _lastScreamAt = now;
+    // Cooldown on ticker `_aliveFor`, not DateTime.now(). Tests advance
+    // time with pump(Duration); wall-clock on a warm Mac can be ~40ms
+    // while 120ms+ was pumped, so DateTime falsely dropped the next flap.
+    final cooldownSec = _screamCooldown.inMilliseconds / 1000.0;
+    if (_lastScreamAtAliveFor >= 0 &&
+        _aliveFor - _lastScreamAtAliveFor < cooldownSec) {
+      return;
+    }
+    _lastScreamAtAliveFor = _aliveFor;
 
     // Jump / power every tap — voice + character are gated separately.
     // Enerji iadesi sayacı: zıplama anında sayılır (Suika deseni).
@@ -878,6 +886,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _maxScreamStreak = 0;
       _groundIdle = 0;
       _aliveFor = 0;
+      _lastScreamAtAliveFor = -1;
       _gates.clear();
       _bug = InsectTier.helmet;
       _bugIsHisir = false;
