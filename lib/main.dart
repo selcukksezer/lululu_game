@@ -31,6 +31,7 @@ import 'services/progress_manager.dart';
 import 'services/splash_session.dart';
 import 'services/zero_jank_preloader.dart';
 import 'theme/lululu_theme.dart';
+import 'widgets/app_frame.dart';
 
 Future<void> main() async {
   await runZonedGuarded<Future<void>>(
@@ -435,6 +436,10 @@ class _BootAppState extends State<BootApp> {
         // messenger anahtarı — `GlobalNotify.messengerKey` rota
         // çıkışlarında hayatta kalır.
         scaffoldMessengerKey: GlobalNotify.messengerKey,
+        // Masaüstü/web: oyun 834 dp'lik telefon-tablet çerçevesine
+        // oturur, dışı koyu kalır; pencere genişliğine yayılmaz.
+        builder: (context, child) =>
+            AppFrame(child: child ?? const SizedBox.shrink()),
         theme: buildLululuTheme(),
         // Madde 95 [P1]: yerelleştirme altyapısı — EN + TR. Dil
         // varsayılanı cihaz dilinden alınır (desteklenmeyen dilde TR);
