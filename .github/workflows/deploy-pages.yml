@@ -22,7 +22,14 @@ jobs:
         with:
           flutter-version: "3.50.0"
           channel: stable
-      - run: flutter build web --release --base-href /lululu_game/
+      - run: >-
+          flutter build web --release --base-href /lululu_game/
+          --dart-define=FIREBASE_API_KEY=AIzaSyBswInBRQNdoytPFzXy5ZG1s13jK9pIMsE
+          --dart-define=FIREBASE_AUTH_DOMAIN=lululu-game.firebaseapp.com
+          --dart-define=FIREBASE_PROJECT_ID=lululu-game
+          --dart-define=FIREBASE_STORAGE_BUCKET=lululu-game.firebasestorage.app
+          --dart-define=FIREBASE_MESSAGING_SENDER_ID=344069879347
+          --dart-define=FIREBASE_APP_ID=1:344069879347:web:5b95f901c5a9300338d546
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
