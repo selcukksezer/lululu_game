@@ -4,12 +4,16 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/audio_manager.dart';
 import '../services/bug_video_service.dart';
 import '../services/progress_manager.dart';
+import '../services/sticker_gif_catalog.dart';
+import '../utils/number_format.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 /// Dile duyarlı büyük-harf dönüşümü.
@@ -72,6 +76,9 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
   bool _isPlaying = false;
   int _likes = 1248;
   bool _liked = false;
+  bool _likeBusy = false;
+  bool _downloadBusy = false;
+  bool _shareBusy = false;
 
   final _videos = [
     {
@@ -135,6 +142,8 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
   }
 
   Future<void> _toggleLikeCurrent() async {
+    if (_likeBusy) return;
+    _likeBusy = true;
     final cur = _videos[_activeVideoIndex];
     final id = cur['id'] as String? ?? 'viral_watch_$_activeVideoIndex';
     setState(() {
@@ -143,17 +152,93 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       cur['likes'] = _likes;
     });
     unawaited(AudioManager().playButtonTap());
-    unawaited(BugVideoService.instance.toggleLike(id));
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
+    var persisted = false;
+    try {
+      persisted = await BugVideoService.instance.toggleLike(id) != null;
+    } catch (_) {
+      persisted = false;
+    }
+    _likeBusy = false;
+    if (!persisted) {
+      // Kalıcı kayıt başarısız olduysa iyimser güncelleme geri alınır.
+      if (mounted) {
+        setState(() {
+          _liked = !_liked;
+          _likes += _liked ? 1 : -1;
+          cur['likes'] = _likes;
+        });
+      }
+      return;
+    }
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; beğeni sonucunu etkilemez.
+    }
   }
 
+  /// Gerçek paylaşım (B6-paylaşım): paylaşım sheet'i tercih edilir
+  /// ([SharePlus] — `friend_invite_service.dart` deseni). Web'de Web
+  /// Share API'si yoksa share_plus önce mailto yedeğine düşer, o da
+  /// olmazsa fırlatır; sheet açılamazsa pano yedeği denenir.
+  /// Bildirim YALNIZCA gerçek sonuca bağlıdır: sheet başarısı, pano
+  /// başarısı ve hata ayrı bildirilir; kapatma (dismissed) sessiz
+  /// geçilir. `recordTaskProgress('video')` YALNIZCA gerçek paylaşım
+  /// veya pano başarısında kaydedilir ([_downloadCurrent] ve
+  /// [_toggleLikeCurrent] ile aynı kural: koşulsuz kayıt sahte
+  /// ilerlemedir). Kilit: [_downloadBusy] deseni.
   Future<void> _shareCurrent() async {
+    if (_shareBusy) return;
+    _shareBusy = true;
+    final cur = _videos[_activeVideoIndex];
+    final shareText =
+        "${cur['title'] as String}\n${_videoMeta(cur)} — Lülülü";
     unawaited(AudioManager().playButtonTap());
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
-    _toast(context.l10n.linkCopiedToast);
+    var shared = false;
+    var copied = false;
+    var dismissed = false;
+    try {
+      final result = await SharePlus.instance.share(
+        ShareParams(text: shareText, subject: cur['title'] as String),
+      );
+      shared = result.status == ShareResultStatus.success ||
+          result.status == ShareResultStatus.unavailable;
+      dismissed = result.status == ShareResultStatus.dismissed;
+    } catch (_) {
+      shared = false;
+    }
+    if (!shared && !dismissed) {
+      // Paylaşım açılamadı (örn. web'de Web Share + mailto yok):
+      // pano yedeği — kopyalama başarısı ayrıca bildirilir.
+      try {
+        await Clipboard.setData(ClipboardData(text: shareText));
+        copied = true;
+      } catch (_) {
+        copied = false;
+      }
+    }
+    _shareBusy = false;
+    if (!mounted) return;
+    if (shared) {
+      _toast(context.l10n.videoSharedToast);
+    } else if (copied) {
+      _toast(context.l10n.videoTextCopiedToast);
+    } else if (!dismissed) {
+      _toast(context.l10n.errorGeneric);
+      return;
+    } else {
+      return;
+    }
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; paylaşım sonucunu etkilemez.
+    }
   }
 
   Future<void> _downloadCurrent() async {
+    if (_downloadBusy) return;
+    _downloadBusy = true;
     final cur = _videos[_activeVideoIndex];
     unawaited(AudioManager().playButtonTap());
     final post = BugVideoPost(
@@ -171,8 +256,25 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
       likes: _likes,
       likedByMe: _liked,
     );
-    unawaited(BugVideoService.instance.downloadPost(post));
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
+    var succeeded = false;
+    try {
+      await BugVideoService.instance.downloadPost(post);
+      succeeded = true;
+    } catch (_) {
+      succeeded = false;
+    }
+    _downloadBusy = false;
+    if (!mounted) return;
+    if (!succeeded) {
+      _toast(context.l10n.errorGeneric);
+      return;
+    }
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; indirme sonucunu etkilemez.
+    }
+    if (!mounted) return;
     _toast(context.l10n.videoAddedToDownloadsToast);
   }
 
@@ -241,6 +343,34 @@ class _StudioWatchScreenState extends State<StudioWatchScreen> {
                                         color: Color(0xFF1B2336),
                                       );
                                     },
+                                  ),
+                                ),
+                              ),
+                              // Dürüst etiket (B6-oynatma): oynatıcı yok;
+                              // alan sabit küçük resim + görsel bayraktır,
+                              // gerçek oynatılabilir video baytı yok
+                              // (yer-tutucu baytlar, 2M kararı). Gerçek
+                              // oynatıcı kararı bekliyor (Selçuk S14).
+                              Positioned(
+                                top: 10,
+                                left: 10,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xB8000000),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    context.l10n.videoPreviewBadge,
+                                    style: GoogleFonts.nunito(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.2,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -792,6 +922,7 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
   double _trimPercent = 62.0;
   String _caption = 'LÜLÜLÜ!';
   int _selectedSticker = 1;
+  bool _saveBusy = false;
   final _textController = TextEditingController(text: 'LÜLÜLÜ!');
 
   final _stickers = [
@@ -808,18 +939,37 @@ class _StudioCreateScreenState extends State<StudioCreateScreen> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_saveBusy) return;
+    _saveBusy = true;
     unawaited(AudioManager().playButtonTap());
-    unawaited(AudioManager().playWin());
-    unawaited(
-      BugVideoService.instance.createSceneVideo(
+    var succeeded = false;
+    try {
+      await BugVideoService.instance.createSceneVideo(
         caption: _caption,
         trimPercent: _trimPercent,
         stickerIndex: _selectedSticker,
         stickerAsset: _stickers[_selectedSticker],
-      ),
-    );
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
+      );
+      succeeded = true;
+    } catch (_) {
+      succeeded = false;
+    }
+    _saveBusy = false;
+    if (!mounted) return;
+    if (!succeeded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    unawaited(AudioManager().playWin());
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; kaydetme sonucunu etkilemez.
+    }
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1749,6 +1899,31 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
   int _selectedSpeed = 1; // 1: NORMAL is active (.on) in reference spec
   late final TextEditingController _captionCtrl;
   bool _captionInitialized = false;
+  bool _generateBusy = false;
+
+  /// 12C2: kare satırının veri kaynağı [StickerGifCatalog] — karelerin
+  /// kimliği, sırası ve sayısı katalogdan gelir (`gifFrameItems`).
+  /// GIF üretimi `BugVideoService.studioGifFrames` indeksleriyle
+  /// (0..2) çalışır; katalog listesi o indekslerin karşılığıdır.
+  final List<StickerGifItem> _gifFrames = StickerGifCatalog.gifFrameItems;
+
+  /// Piksel-perfect: kare düğmelerindeki görünen etiketler prototip
+  /// metnidir; katalog başlığından farklı yazılır ('Pijamalı Dansçı'
+  /// / 'Kongo Lideri'), o yüzden etiketler burada literal kalır —
+  /// katalog yalnız kimlik/sıra/sayı kaynağıdır.
+  static const List<String> _gifFrameDisplayLabels = <String>[
+    'Pijamalı Dansçı',
+    'Hamam Diva',
+    'Kongo Lideri',
+  ];
+
+  /// Kare düğmesi küçük görselleri (önizleme `_frameAssets`ten
+  /// ayrıdır: 0. kare düğmesi img_2.png kullanır).
+  static const List<String> _gifFrameButtonAssets = <String>[
+    'assets/design/ui/studio_gif/img_2.png',
+    'assets/design/ui/studio_gif/img_3.png',
+    'assets/design/ui/studio_gif/img_4.png',
+  ];
 
   final _frameAssets = [
     'assets/design/ui/studio_gif/gifImg.png',
@@ -1773,17 +1948,42 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
     super.dispose();
   }
 
-  void _generate() {
+  Future<void> _generate() async {
+    if (_generateBusy) return;
+    _generateBusy = true;
     unawaited(AudioManager().playButtonTap());
-    unawaited(AudioManager().playWin());
-    unawaited(
-      BugVideoService.instance.createAnimatedGif(
+    var succeeded = false;
+    try {
+      // 12C2: seçim katalog aralığında doğrulanır — katalog dışı
+      // kalmış indeksler üretime girmez (katalog tek doğruluk
+      // kaynağı; boş kalırsa varsayılan {0, 1} kullanılır).
+      final validFrames = _selectedFrames
+          .where((i) => i >= 0 && i < _gifFrames.length)
+          .toSet();
+      await BugVideoService.instance.createAnimatedGif(
         caption: _captionCtrl.text,
-        selectedFrames: _selectedFrames,
+        selectedFrames: validFrames.isEmpty ? const <int>{0, 1} : validFrames,
         speedIndex: _selectedSpeed,
-      ),
-    );
-    unawaited(ProgressManager.instance.recordTaskProgress('video'));
+      );
+      succeeded = true;
+    } catch (_) {
+      succeeded = false;
+    }
+    _generateBusy = false;
+    if (!mounted) return;
+    if (!succeeded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    unawaited(AudioManager().playWin());
+    try {
+      await ProgressManager.instance.recordTaskProgress('video');
+    } catch (_) {
+      // İlerleme kaydı en iyi çabayla; GIF sonucunu etkilemez.
+    }
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.gifCreatedSnack)),
     );
@@ -1869,7 +2069,8 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                               width: _studioScaled(289.4, studioWidth),
                               height: 251.6,
                               child: _DropShadowImage(
-                                assetPath: _frameAssets[_activePreviewFrame],
+                                assetPath: _frameAssets[_activePreviewFrame
+                                    .clamp(0, _frameAssets.length - 1)],
                                 width: _studioScaled(289.4, studioWidth),
                                 height: 251.6,
                                 shadowOffset: const Offset(0, 10),
@@ -1952,23 +2153,18 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
                               height: 77,
                               child: Row(
                                 children: [
-                                  _buildFrameBtn(
-                                    0,
-                                    'Pijamalı Dansçı',
-                                    'assets/design/ui/studio_gif/img_2.png',
-                                  ),
-                                  const SizedBox(width: 9),
-                                  _buildFrameBtn(
-                                    1,
-                                    'Hamam Diva',
-                                    'assets/design/ui/studio_gif/img_3.png',
-                                  ),
-                                  const SizedBox(width: 9),
-                                  _buildFrameBtn(
-                                    2,
-                                    'Kongo Lideri',
-                                    'assets/design/ui/studio_gif/img_4.png',
-                                  ),
+                                  // 12C2: kare satırı katalogdan beslenir
+                                  // (kimlik/sıra/sayı); etiketler ve
+                                  // görseller piksel-perfect listededir.
+                                  for (var i = 0; i < _gifFrames.length; i++) ...[
+                                    if (i > 0) const SizedBox(width: 9),
+                                    _buildFrameBtn(
+                                      i,
+                                      _gifFrameDisplayLabels[i],
+                                      _gifFrameButtonAssets[i],
+                                      _gifFrames[i],
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -2159,9 +2355,18 @@ class _StudioGifScreenState extends State<StudioGifScreen> {
     );
   }
 
-  Widget _buildFrameBtn(int index, String label, String imagePath) {
+  /// Kare düğmesi: `catalogItem` düğmenin kimliğidir (12C2 — kare
+  /// satırı katalogdan beslenir); görünen etiket/görsel piksel-perfect
+  /// listedendir, katalog başlığı/asset'i ile değiştirilmez.
+  Widget _buildFrameBtn(
+    int index,
+    String label,
+    String imagePath,
+    StickerGifItem catalogItem,
+  ) {
     final on = _selectedFrames.contains(index);
     return Expanded(
+      key: ValueKey('gif_frame_${catalogItem.id}'),
       child: Semantics(
         button: true,
         label: label,
@@ -2296,26 +2501,33 @@ class StudioDownloadsScreen extends StatefulWidget {
 }
 
 class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
+  bool _deleteBusy = false;
   final _downloads = [
     {
+      'id': 'dl_default_1',
       'title': 'birlesme_rekoru.mp4',
       'size': '84,2 MB',
+      'sizeMb': 84.2,
       'whenKind': 'today',
       'whenTime': '09:12',
       'thumb': 'assets/design/ui/studio_downloads/img_1.png',
       'isBug': false,
     },
     {
+      'id': 'dl_default_2',
       'title': 'kapi7_rehberi.mp4',
       'size': '156,8 MB',
+      'sizeMb': 156.8,
       'whenKind': 'yesterday',
       'whenTime': '21:40',
       'thumb': 'assets/design/ui/studio_downloads/img_2.png',
       'isBug': false,
     },
     {
+      'id': 'dl_default_3',
       'title': 'dans_zamani.gif',
       'size': '6,4 MB',
+      'sizeMb': 6.4,
       'whenKind': 'date',
       'whenDay': 28,
       'whenMonth': 10,
@@ -2323,8 +2535,10 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
       'isBug': true,
     },
     {
+      'id': 'dl_default_4',
       'title': 'hamam_diva_klip.mp4',
       'size': '42,1 MB',
+      'sizeMb': 42.1,
       'whenKind': 'date',
       'whenDay': 25,
       'whenMonth': 10,
@@ -2346,11 +2560,73 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
     );
   }
 
-  void _delete(int index) {
-    unawaited(AudioManager().playButtonTap());
+  /// Özet satırındaki toplam boyut, listedeki dosyaların boyutlarının
+  /// toplamıdır (sabit "1,21 GB" yazısı liste toplamı ~290 MB ile
+  /// çelişiyordu, bulgu #8). Silme sonrası da güncel kalır.
+  /// 12A: ondalık ayırıcı dile duyarlıdır (TR ',', EN '.').
+  String _totalSizeText() {
+    var totalMb = 0.0;
+    for (final d in _downloads) {
+      totalMb += (d['sizeMb'] as num?)?.toDouble() ?? 0.0;
+    }
+    final languageCode = Localizations.localeOf(context).languageCode;
+    if (totalMb >= 1024) {
+      final gb = totalMb / 1024;
+      return '${formatDecimal(gb, 2, languageCode)} GB';
+    }
+    return '${formatDecimal(totalMb, 1, languageCode)} MB';
+  }
+
+  /// Kimlikle silme (2N gözlemi): yerel liste indeksiyle silme,
+  /// servis listesi ayrıştığında (örn. yeni indirme başa eklenince)
+  /// YANLIŞ kaydı siler; silme [BugDownloadEntry.id] ile yapılır,
+  /// servis-önce sıralaması korunur (servis başarısızsa öğe yerinde
+  /// kalır). Silme öncesi onay dialogu gösterilir (sohbet rapor
+  /// deseni: `AlertDialog` + iptal/onayla); tek dokunuşla silme yok.
+  Future<void> _delete(String id) async {
+    if (_deleteBusy) return;
+    final index = _downloads.indexWhere((d) => d['id'] == id);
+    if (index < 0) return;
     final item = _downloads[index];
-    setState(() => _downloads.removeAt(index));
-    unawaited(BugVideoService.instance.removeDownloadAt(index));
+    unawaited(AudioManager().playButtonTap());
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(ctx.l10n.deleteDownloadTitle),
+          content: Text(
+            ctx.l10n.deleteDownloadConfirm(item['title'] as String),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(ctx.l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(ctx.l10n.confirm),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    _deleteBusy = true;
+    var removed = false;
+    try {
+      removed = await BugVideoService.instance.removeDownload(id);
+    } catch (_) {
+      removed = false;
+    }
+    _deleteBusy = false;
+    if (!mounted) return;
+    if (!removed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    setState(() => _downloads.removeWhere((d) => d['id'] == id));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.deletedItemSnack(item['title'] as String))),
     );
@@ -2458,7 +2734,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                   ),
                                   children: [
                                     TextSpan(
-                                      text: '1,21 GB',
+                                      text: _totalSizeText(),
                                       style: GoogleFonts.nunito(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w900,
@@ -2611,7 +2887,7 @@ class _StudioDownloadsScreenState extends State<StudioDownloadsScreen> {
                                       button: true,
                                       label: context.l10n.deleteItemLabel(_downloads[i]['title'] as String),
                                       child: GestureDetector(
-                                      onTap: () => _delete(i),
+                                      onTap: () => _delete(_downloads[i]['id'] as String),
                                       child: Container(
                                         width: 48,
                                         height: 48,

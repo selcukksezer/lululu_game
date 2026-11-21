@@ -35,27 +35,27 @@ Future<void> _loadCustomFonts() async {
   final fontMap = <String, List<String>>{
     'Baloo 2': [
       'assets/fonts/Baloo2-Regular.ttf',
-      'assets/fonts/Baloo2-Bold.ttf',
-      'assets/fonts/Baloo2-ExtraBold.ttf',
-      'assets/fonts/Baloo2-SemiBold.ttf',
-      'assets/fonts/Baloo2-Medium.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
     ],
     'Bangers': [
       'assets/fonts/Bangers-Regular.ttf',
     ],
     'Nunito': [
       'assets/fonts/Nunito-Regular.ttf',
-      'assets/fonts/Nunito-Bold.ttf',
-      'assets/fonts/Nunito-ExtraBold.ttf',
-      'assets/fonts/Nunito-SemiBold.ttf',
-      'assets/fonts/Nunito-Black.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
     ],
     'Exo 2': [
       'assets/fonts/Exo2-Regular.ttf',
-      'assets/fonts/Exo2-Bold.ttf',
-      'assets/fonts/Exo2-ExtraBold.ttf',
-      'assets/fonts/Exo2-SemiBold.ttf',
-      'assets/fonts/Exo2-Black.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
     ],
   };
 
@@ -596,7 +596,10 @@ void main() {
     final beforeSpray = pm.powerCount('spraybug');
     await tester.tap(find.text('İLAÇ'));
     await tester.pump(const Duration(milliseconds: 50));
-    expect(pm.powerCount('spraybug'), beforeSpray - 1);
+    // B13: tek hedef ezildikten sonra tahta boştur — İLAÇ boş tahtada
+    // stok tüketmez (iade yolu; hedef üretmek için böcek doğurulmaz).
+    // Canlı hedefte tüketim terlik_play_test.dart'taki sprey testinde.
+    expect(pm.powerCount('spraybug'), beforeSpray);
 
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 2));
@@ -739,12 +742,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 32));
     expect(pm.powerCount('nitro'), beforeNitro - 1);
 
-    // Steer the roach toward the first gate's gapCenter and advance frames until it passes and scores
+    // Steer the roach toward the first gate's gapCenter and advance frames
+    // until it passes and scores. NOTE: in non-prototype mode gates are
+    // _PipeColumn gradients, not the 'obstacle-pipes' image (that asset is
+    // only drawn when prototypeVisualState && wideScreen), so the gate is
+    // located from the pipe widgets themselves (_PipeColumn is private to
+    // scream_roach_screen.dart, hence the runtimeType match).
     final pipeFinder = find.byWidgetPredicate(
-      (w) =>
-          w is Image &&
-          w.image is AssetImage &&
-          (w.image as AssetImage).assetName.contains('obstacle-pipes'),
+      (w) => w.runtimeType.toString() == '_PipeColumn',
     );
     final bugFinder = find.byWidgetPredicate(
       (w) =>
@@ -752,15 +757,47 @@ void main() {
           w.image is AssetImage &&
           (w.image as AssetImage).assetName.contains('assets/bugs/tier'),
     );
+    // Global Y of the first (leftmost) gate's gap center, or null when no
+    // gate is drawn yet. Each gate contributes up to two pipe columns
+    // (top: bottom edge = gapCenter - gapHalf, bottom: top edge =
+    // gapCenter + gapHalf); the gap center is their midpoint.
+    double? firstGateGapCenterY() {
+      final count = pipeFinder.evaluate().length;
+      if (count == 0) return null;
+      final rects = <Rect>[
+        for (var i = 0; i < count; i++) tester.getRect(pipeFinder.at(i)),
+      ];
+      final left = rects.map((r) => r.left).reduce(min);
+      final first = rects.where((r) => (r.left - left).abs() < 1).toList()
+        ..sort((a, b) => a.top.compareTo(b.top));
+      if (first.length >= 2) {
+        return (first.first.bottom + first[1].top) / 2;
+      }
+      // Only one side of the gap is drawn (the other is too short): aim
+      // 70 px inside the gap from the visible pipe edge.
+      final only = first.first;
+      final topEdge = rects.map((r) => r.top).reduce(min);
+      final isTopPipe = (only.top - topEdge).abs() < 1;
+      return isTopPipe ? only.bottom + 70 : only.top - 70;
+    }
 
     for (var frame = 0; frame < 360; frame++) {
-      if (frame % 4 == 0 &&
-          pipeFinder.evaluate().isNotEmpty &&
-          bugFinder.evaluate().isNotEmpty) {
-        final gateCenterY = tester.getRect(pipeFinder.first).center.dy;
-        final bugHitboxCenterY = tester.getRect(bugFinder.first).top + 43;
-        if (bugHitboxCenterY > gateCenterY - 6) {
-          await tester.tapAt(const Offset(215, 420));
+      if (frame % 2 == 0 && bugFinder.evaluate().isNotEmpty) {
+        final gateCenterY = firstGateGapCenterY();
+        if (gateCenterY != null) {
+          // Hitbox: Rect(_x, _y, 48, 48).deflate(7) -> center _y + 24;
+          // the bug image is positioned at top: _y, so the hitbox
+          // center is imageTop + 24 (NOT +43: that is near the image
+          // bottom and steers the bug ~19 px too high, into the top
+          // pipe). Tap when the bug is 34 px BELOW the gap center:
+          // one flap rises ~68 px, so the bug then oscillates
+          // symmetrically around the gap center instead of riding its
+          // top edge (tapping at the center line leaves only ~5 px
+          // clearance and clips the top pipe).
+          final bugHitboxCenterY = tester.getRect(bugFinder.first).top + 24;
+          if (bugHitboxCenterY > gateCenterY + 34) {
+            await tester.tapAt(const Offset(215, 420));
+          }
         }
       }
       await tester.pump(const Duration(milliseconds: 16));
@@ -828,4 +865,5 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 200));
   });
+
 }

@@ -8,7 +8,17 @@ class MergeEvent {
   final double x;
   final double y;
 
-  const MergeEvent({required this.tier, required this.x, required this.y});
+  /// Birleşen çiftteki gövdelerden en az biri Hışır derili miydi?
+  /// Skor/kademe [tier] üzerinden aynen hesaplanır; bu bayrak yalnız
+  /// ses + replik seçimi içindir.
+  final bool hisirInvolved;
+
+  const MergeEvent({
+    required this.tier,
+    required this.x,
+    required this.y,
+    this.hisirInvolved = false,
+  });
 }
 
 class InsectParticle {
@@ -59,6 +69,16 @@ class InsectBody {
   double spawnScale;
   double mergeSquash;
 
+  /// Hışır derisi: gövde bu kademenin böceği gibi davranır (fizik,
+  /// birleşme, skor aynen), yalnız görseli `hisir_hd.png` olur.
+  /// Birleşince doğan üst kademe gövde Hışır değildir.
+  bool isHisir;
+
+  /// Kademe-bağımlı açısal sönüm (60 Hz kare başına çarpan; küçük
+  /// kademeler daha uzun döner, büyükler daha çabuk durur). Motor
+  /// [CircularPhysicsEngine.angularDampingFor] ile doldurur.
+  double angularDamping;
+
   InsectBody({
     required this.id,
     required this.tier,
@@ -71,6 +91,8 @@ class InsectBody {
     this.isMarkedForRemoval = false,
     this.spawnScale = 0.2,
     this.mergeSquash = 0,
+    this.angularDamping = CircularPhysicsEngine.defaultAngularDamping,
+    this.isHisir = false,
   }) : prevX = prevX ?? x,
        prevY = prevY ?? y;
 
@@ -81,17 +103,22 @@ class InsectBody {
     required InsectTier nextTier,
     required double nx,
     required double ny,
+    double initialAngle = 0.0,
+    double initialAngularVelocity = 0.0,
+    bool isHisir = false,
   }) {
     tier = nextTier;
     x = nx;
     y = ny;
     prevX = nx;
     prevY = ny - 4.5;
-    angle = 0;
-    angularVelocity = 0;
+    angle = initialAngle;
+    angularVelocity = initialAngularVelocity;
+    angularDamping = CircularPhysicsEngine.angularDampingFor(nextTier);
     isMarkedForRemoval = false;
     spawnScale = 0.2;
     mergeSquash = 0;
+    this.isHisir = isHisir;
   }
 
   void applyImpulse(double ix, double iy) {
@@ -132,8 +159,87 @@ class CircularPhysicsEngine {
   static const double maxAngularVelocity = 3.5;
   static const double _angularDamping = 0.62;
 
+  /// Eski varsayılan açısal sönüm (kademe tablosu öncesi davranışın
+  /// orta noktası); [InsectBody.angularDamping] başlangıç değeri.
+  static const double defaultAngularDamping = _angularDamping;
+
+  // ------------------------------------------------------------------
+  // 10B — Suika doğal düşüş: kademe-bağımlı düşüş parametreleri.
+  //
+  // Hepsi kademe numarasından (1 = en küçük, 11+ = en büyük) doğrusal
+  // türetilir; sabit sayı sihirli değil, tablonun iki ucudur:
+  // küçük kademeler çevik (daha çok sapma / eğim / dönüş, daha az
+  // sönüm), büyük kademeler ağır/hantal (az sapma, çabuk duran dönüş).
+  // ------------------------------------------------------------------
+
+  /// Kademe numarasını tablo aralığına kelepçeler.
+  static int _tierIndex(InsectTier tier) => tier.tier.clamp(1, 11);
+
+  /// Bırakmada x sapması (± px): kademe 1'de 4.0, kademe 11'de 2.0
+  /// (Dalga 17: 7.0'dan hafifletildi — bırakma jitter'ı yığını dağıtıyordu).
+  static double dropJitterPx(InsectTier tier) =>
+      4.0 - (_tierIndex(tier) - 1) * 0.2;
+
+  /// Bırakmada başlangıç eğimi (± radyan): kademe 1'de 0.22, 11'de 0.06.
+  static double dropTiltRad(InsectTier tier) =>
+      0.22 - (_tierIndex(tier) - 1) * 0.016;
+
+  /// Bırakmada başlangıç açısal hızı (± rad/s): 1'de 1.0, 11'de 0.5
+  /// (Dalga 17: 1.6'dan hafifletildi).
+  static double dropSpin(InsectTier tier) =>
+      1.0 - (_tierIndex(tier) - 1) * 0.05;
+
+  /// Açısal sönüm (60 Hz kare başına çarpan; BÜYÜK = daha uzun dönüş):
+  /// kademe 1'de 0.72, kademe 11'de 0.50 (eski sabit 0.62 orta nokta).
+  static double angularDampingFor(InsectTier tier) =>
+      0.72 - (_tierIndex(tier) - 1) * 0.022;
+
+  /// Yığındaki üst gövdenin yana yuvarlanma isteği (eski 2.6 px
+  /// itkinin çarpanı): kademe 1'de 1.15, kademe 11'de 0.60.
+  static double tierRollFactor(InsectTier tier) =>
+      1.15 - (_tierIndex(tier) - 1) * 0.055;
+
+  /// Tohumlu bırakma rastgeleliği: oyun her tur başında
+  /// [setDropSeed] ile tohumlanır; aynı tohum + aynı bırakma sırası
+  /// aynı düşüşü verir. Çıplak `Random()` kullanılmaz.
+  int _dropSeed = 0;
+  Random _dropRng = Random(0);
+
+  /// Bırakma rastgeleliğini [seed] ile sıfırlar. Oyun her tur başında
+  /// tur damgasıyla çağırır; testler sabit tohumla determinizmi sınar.
+  void setDropSeed(int seed) {
+    _dropSeed = seed;
+    _dropRng = Random(seed);
+  }
+
+  int get dropSeed => _dropSeed;
+
   /// Below this Verlet step length, body sleeps (stops micro-jitter).
   static const double _sleepSpeed = 0.55;
+
+  /// Below this Verlet step speed a stacked body no longer gets the
+  /// roll-off shove (see _resolveBodyCollisions): the pile is settling,
+  /// don't keep feeding it sideways energy. 1.0 px/step ≈ 120 px/s at
+  /// the 120 Hz fixed step — well above the ~0.1 px/step gravity sag
+  /// of a resting body, well below a genuinely rolling one.
+  static const double _settleRollSpeed = 1.0;
+
+  /// Dalga 17 — destek "sakin" sayılma eşiği (px/adım): destek bu hızın
+  /// altında kıpırdıyorsa üstteki gövde uyuyabilir. [_sleepSpeed] (0,55)
+  /// ile veto, tek kıpırdayan böceğin tüm yığını uyanık tutmasına yol
+  /// açıyordu; 2,0 px/adım ≈ 240 px/s, hâlâ gerçekten yuvarlanan
+  /// desteğin çok altında, dinlenen yığının mikro-kıpırtısının üstünde.
+  static const double _supportCalmSpeed = 2.0;
+  /// a body resting on its support may sit up to this far above exact
+  /// contact after discrete integration + separation (same +2.0 the
+  /// perch check already used).
+  static const double _supportSlack = 2.0;
+
+  /// Minimum upward component of a support contact's normal (cosine):
+  /// the supporter must be meaningfully below the body, not a purely
+  /// sideways neighbour. 0.35 ≈ 69° off vertical — wide enough for a
+  /// body sitting in a pocket between two lower bodies.
+  static const double _supportUpwardCos = 0.35;
 
   /// Fixed physics step: 120 Hz sub-steps keep behaviour identical across
   /// 60 Hz / 120 Hz displays (see update()).
@@ -152,6 +258,12 @@ class CircularPhysicsEngine {
   /// danger line (see isOverflowing). At the 120 Hz fixed step this is
   /// 120 px/s — well below fall speeds, so fresh drops never trigger it.
   static const double _overflowStillnessPx = 1.0;
+
+  /// Birleşmeden beri geçen süre (sn): birleşme sonrası ilk 0,5 sn
+  /// yuvarlanma itkisi bastırılır (Dalga 17) — yeni doğan gövdenin
+  /// yerleşme sarsıntısı yığını yana itmesin. [_stepPhysics] her
+  /// alt-adımda ilerletir, birleşme sıfırlar.
+  double _secondsSinceMerge = 999.0;
 
   /// Leftover frame time carried into the next update() call.
   double _timeAccumulator = 0.0;
@@ -278,7 +390,9 @@ class CircularPhysicsEngine {
     final maxDy = sqrt(max(0.0, arenaRadius * arenaRadius - dx * dx));
     var land = arenaCenter.dy + maxDy - radius;
     if (squareArena) {
-      land = arenaBounds.bottom - radius - 4;
+      // Taban kenetiyle tutarlı: çizim yarı-yüksekliği 1.55r
+      // (bkz. _resolveSquareBounds) — 490 - 12*1.55 - 4 = 467.4.
+      land = arenaBounds.bottom - radius * 1.55 - 4;
     }
     for (final b in bodies) {
       if (b.isMarkedForRemoval || b.spawnScale < 0.55) continue;
@@ -317,16 +431,74 @@ class CircularPhysicsEngine {
     return worst;
   }
 
-  void addBody(InsectTier tier, double x, double y) {
+  void addBody(
+    InsectTier tier,
+    double x,
+    double y, {
+    double initialAngle = 0.0,
+    double initialAngularVelocity = 0.0,
+    bool isHisir = false,
+  }) {
     final InsectBody body;
     if (_pool.isNotEmpty) {
       body = _pool.removeLast();
-      body.respawn(nextTier: tier, nx: x, ny: y);
+      body.respawn(
+        nextTier: tier,
+        nx: x,
+        ny: y,
+        initialAngle: initialAngle,
+        initialAngularVelocity: initialAngularVelocity,
+        isHisir: isHisir,
+      );
     } else {
-      body = InsectBody(id: _nextId++, tier: tier, x: x, y: y, spawnScale: 0.2);
+      body = InsectBody(
+        id: _nextId++,
+        tier: tier,
+        x: x,
+        y: y,
+        spawnScale: 0.2,
+        angle: initialAngle,
+        angularVelocity: initialAngularVelocity,
+        angularDamping: angularDampingFor(tier),
+        isHisir: isHisir,
+      );
       body.prevY = y - 4.5;
     }
     bodies.add(body);
+  }
+
+  /// Doğal bırakma: [aimX] çevresinde tohumlu küçük x sapması +
+  /// başlangıç eğimi / dönüş (kademe tablosundan). Sapmış x, doğma
+  /// taşması payıyla (yarıçap × 1.06 + 2 px) arena sınırları içinde
+  /// kelepçelenir — bırakma asla duvar dışına taşmaz.
+  InsectBody addDropBody(
+    InsectTier tier,
+    double aimX,
+    double y, {
+    bool isHisir = false,
+  }) {
+    final jitter = dropJitterPx(tier);
+    final dx = (_dropRng.nextDouble() * 2 - 1) * jitter;
+    final tilt = (_dropRng.nextDouble() * 2 - 1) * dropTiltRad(tier);
+    final spin = (_dropRng.nextDouble() * 2 - 1) * dropSpin(tier);
+    var x = aimX + dx;
+    final margin = tier.radius * 1.06 + 2.0;
+    if (squareArena) {
+      final minX = arenaBounds.left + margin;
+      final maxX = arenaBounds.right - margin;
+      x = minX > maxX ? (minX + maxX) / 2 : x.clamp(minX, maxX);
+    } else {
+      final dxc = x - arenaCenter.dx;
+      final dyc = y - arenaCenter.dy;
+      final maxR = arenaRadius - margin;
+      final distSq = dxc * dxc + dyc * dyc;
+      if (distSq > maxR * maxR && distSq > 0.0001) {
+        final dist = sqrt(distSq);
+        x = arenaCenter.dx + dxc / dist * maxR;
+      }
+    }
+    addBody(tier, x, y, initialAngle: tilt, initialAngularVelocity: spin, isHisir: isHisir);
+    return bodies.last;
   }
 
   void spawnParticles(double x, double y, Color color, {int count = 15}) {
@@ -388,10 +560,10 @@ class CircularPhysicsEngine {
   /// One fixed-size Verlet step. Damping factors are dt-scaled so a
   /// 120 Hz sub-step behaves exactly like half of a 60 Hz frame.
   List<MergeEvent> _stepPhysics(double dt) {
+    _secondsSinceMerge += dt;
     // Damping is defined per 60 Hz frame; scale it to this step's dt so
     // behaviour is identical at any step rate.
     final damping = pow(0.972, dt * 60).toDouble();
-    final angularDamping = pow(_angularDamping, dt * 60).toDouble();
     final restDampingX = pow(0.9, dt * 60).toDouble();
     final restDampingY = pow(0.94, dt * 60).toDouble();
 
@@ -422,7 +594,8 @@ class CircularPhysicsEngine {
       b.y += vy;
 
       b.angle += b.angularVelocity * dt;
-      b.angularVelocity *= angularDamping;
+      // Kademe-bağımlı açısal sönüm (küçük kademe daha uzun döner).
+      b.angularVelocity *= pow(b.angularDamping, dt * 60).toDouble();
       if (b.angularVelocity.abs() < 0.18) {
         b.angularVelocity = 0;
       } else {
@@ -442,12 +615,24 @@ class CircularPhysicsEngine {
       mergeEvents.addAll(_resolveBodyCollisions());
     }
 
-    // Sleep only when truly calm and not perched on another circle.
+    // Sleep ONLY when truly calm AND supported (floor / bowl wall /
+    // block / another body below). An unsupported body must never
+    // sleep: one Verlet gravity step adds only ~0.068 px, far below
+    // _sleepSpeed (0.55), so a mid-air body that slows down could
+    // never re-accumulate enough speed to wake — it froze in mid-air
+    // forever (Suika videosu: havada asılı tier-1'ler; birleşen gövde
+    // birleşme noktasında donuyor; desteği birleşmeyle kaybolan uyuyan
+    // gövde havada kalıyor). Destekli gövde, destekleri de sakinse
+    // uyur — tünemiş gövde desteği sakinken uyur (diğer işçinin
+    // düzeltmesi aynen korunur), destek hareketliyken yuvarlanmaya
+    // devam eder. Desteği kaybolan uyuyan gövde ayrıca uyandırılmaz:
+    // destek yoksa bu geçişte uyutulmaz, yerçekimi 2-3 adımda yeniden
+    // hız kazandırır.
     for (final b in bodies) {
       if (b.isMarkedForRemoval) continue;
       if (b.spawnScale < 0.95) continue;
       if (b.speed >= _sleepSpeed) continue;
-      if (_isPerched(b)) continue;
+      if (!_isSupportedAndCalm(b)) continue;
       b.prevX = b.x;
       b.prevY = b.y;
       b.angularVelocity = 0;
@@ -470,6 +655,16 @@ class CircularPhysicsEngine {
       _pool.add(b);
       bodies.removeAt(i);
     }
+  }
+
+  /// 10B — yumuşak iniş: sert temas anında (iniş hızına bağlı) kısa
+  /// squash bırakır; çizici bunu mevcut `mergeSquash` deseniyle çizer
+  /// (aynı alan, yeni asset yok). [closingSpeed] adım başına px'tir
+  /// (4 px/adım ≈ 480 px/s); altı sessiz temas sayılır, squash yok.
+  void _registerImpact(InsectBody b, double closingSpeed) {
+    if (closingSpeed <= 4.0) return;
+    final s = (closingSpeed / 14.0).clamp(0.0, 0.85);
+    if (s > b.mergeSquash) b.mergeSquash = s;
   }
 
   void _resolveBlocks() {
@@ -525,6 +720,8 @@ class CircularPhysicsEngine {
         // Kill most bounce energy so bowl walls don't ping-pong the pile.
         final vx = b.x - b.prevX;
         final vy = b.y - b.prevY;
+        final vnOut = vx * nx + vy * ny;
+        if (vnOut > 0) _registerImpact(b, vnOut);
         b.prevX = b.x - vx * 0.28;
         b.prevY = b.y - vy * 0.22;
       }
@@ -536,6 +733,11 @@ class CircularPhysicsEngine {
     final left = bounds.left;
     final right = bounds.right;
     final floorY = bounds.bottom;
+    // Görsel yarı-yükseklik: çizim fizik yarıçapının 1.55 katı
+    // (GameArenaPainter._spriteVisualScale ile aynı olmalı) — taban
+    // keneti görsel boyuta göre yapılmazsa dibe oturan böcek çizimi
+    // 0.55r kadar arena dışına taşar ve sert kırpılır (Dalga 15/13b).
+    const visualScale = 1.55;
     for (final b in bodies) {
       final r = b.radius * b.spawnScale;
       // Wall clamp applies above the rim too: a body overhanging the
@@ -547,9 +749,11 @@ class CircularPhysicsEngine {
         b.x = right - r;
         if (b.prevX > b.x) b.prevX = b.x;
       }
-      if (b.y > floorY - r) {
+      if (b.y > floorY - r * visualScale) {
         final vx = b.x - b.prevX;
-        b.y = floorY - r;
+        final vy = b.y - b.prevY;
+        if (vy > 0) _registerImpact(b, vy);
+        b.y = floorY - r * visualScale;
         b.prevY = b.y;
         b.prevX = b.x - vx * 0.9;
       }
@@ -575,7 +779,7 @@ class CircularPhysicsEngine {
         final r2 = b2.radius * b2.spawnScale;
         final targetDist = r1 + r2;
 
-        final touch = targetDist + 1.5;
+        final touch = targetDist + 4;
         // S1#4: tam çakışan çiftler (distSq ≤ 0.0001, yani merkezler
         // arası ≤ 0.01 px) eskiden bütünüyle yoksayılıyordu: aynı
         // yerçekimiyle kilit-adım hareket eden çift hiç ayrılmıyor,
@@ -594,8 +798,14 @@ class CircularPhysicsEngine {
             final next = b1.tier.nextTier!;
             final midX = (b1.x + b2.x) / 2;
             final midY = (b1.y + b2.y) / 2;
+            // Hışır derisi birleşmeye katıldıysa olay bunu taşır; doğan
+            // üst kademe gövde artık Hışır değildir (deri tek kullanımlık).
+            final hisirInvolved = b1.isHisir || b2.isHisir;
 
             b1.tier = next;
+            b1.isHisir = false;
+            // Birleşen gövde yeni kademenin dönüş karakterini alır.
+            b1.angularDamping = angularDampingFor(next);
             // One merge per body per frame — lock b1 for this frame.
             // A locked pair falls through to separation below instead.
             _mergedThisFrame.add(b1);
@@ -607,14 +817,33 @@ class CircularPhysicsEngine {
             b1.spawnScale = 0.55;
             b1.mergeSquash = 1;
             b1.angularVelocity = 0;
+            // Dalga 17: birleşme saati sıfırlanır — ilk 0,5 sn
+            // yuvarlanma itkisi bastırılır (aşağıdaki _resolveBodyCollisions
+            // yuvarlanma dalı).
+            _secondsSinceMerge = 0.0;
+            // Merkeze doğru itki: yatay merkezleme aynen, dikey bileşen
+            // asla yukarı kaldırmasın. Arenanın merkezi yığının
+            // üstündedir; cy < 0 her birleşmede gövdeyi kütleye bağlı
+            // ~1.5-3.7 px/adım (~180-450 px/s) yukarı fırlatıyordu —
+            // videoda birleşme (+50) sonrası böceklerin "uçması" bu
+            // (yerdeki kademe-1→2 birleşmede |cy| ≈ 350 px, iy ≈ -5.6,
+            // kütle 1.5 → 3.7 px/adım yukarı). Merkez alttaysa (yığın
+            // merkezin üstünde) aşağı itki aynen durur.
             final cx = arenaCenter.dx - midX;
             final cy = arenaCenter.dy - midY;
-            b1.applyImpulse(cx * 0.012, cy * 0.016);
+            b1.applyImpulse(cx * 0.012, max(0.0, cy * 0.016));
 
             b2.isMarkedForRemoval = true;
             spawnParticles(midX, midY, next.color, count: 8 + next.tier);
             _nudgeNeighborsFromMerge(midX, midY, next.radius * 1.6);
-            merges.add(MergeEvent(tier: next, x: midX, y: midY));
+            merges.add(
+              MergeEvent(
+                tier: next,
+                x: midX,
+                y: midY,
+                hisirInvolved: hisirInvolved,
+              ),
+            );
             continue;
           }
 
@@ -623,6 +852,16 @@ class CircularPhysicsEngine {
           // +x yönü çifti yatayda ayırır.
           final nx = coincident ? 1.0 : dx / dist;
           final ny = coincident ? 0.0 : dy / dist;
+
+          // Yaklaşma hızı (normal bileşen): sert iniş/temas squash'ı
+          // + aşağıdaki yavaş-temas sönümü aynı değerden beslenir.
+          final rvx = (b2.x - b2.prevX) - (b1.x - b1.prevX);
+          final rvy = (b2.y - b2.prevY) - (b1.y - b1.prevY);
+          final vn = rvx * nx + rvy * ny;
+          if (vn < 0) {
+            _registerImpact(b1, -vn);
+            _registerImpact(b2, -vn);
+          }
 
           if (overlap > 0) {
             final totalMass = b1.mass + b2.mass;
@@ -647,8 +886,20 @@ class CircularPhysicsEngine {
             final dxOff = upper.x - lower.x;
             final balance = lower.radius * 0.38;
             if (dxOff.abs() < balance) {
-              final dir = dxOff.abs() < 0.6 ? _freerSide(upper) : dxOff.sign;
-              upper.prevX = upper.x - dir * 2.6;
+              // Dalga 15 — yerleşmiş cisimleri itme: üstteki cisim zaten
+              // yavaşsa (dibe oturmuş yığın) yuvarlanma itkisi verme,
+              // yoksa dibe oturan böcekler sürekli yana kayar. Hızlı /
+              // yeni düşen cisimlerde organik boşluk doldurma aynen sürer.
+              // Dalga 17: birleşme sonrası ilk 0,5 sn yuvarlanma itkisi
+              // bastırılır — yeni doğan gövdenin yerleşme sarsıntısı
+              // yığını yana itmesin.
+              if (upper.speed > _settleRollSpeed &&
+                  _secondsSinceMerge > 0.5) {
+                final dir = dxOff.abs() < 0.6 ? _freerSide(upper) : dxOff.sign;
+                // 10B: küçük kademe daha istekli yuvarlanır, büyük daha
+                // ağır oturur — boşluklar ızgara gibi değil, organik dolar.
+                upper.prevX = upper.x - dir * 2.6 * tierRollFactor(upper.tier);
+              }
             } else {
               // Keep rolling off the shoulder; light friction only.
               final ux = upper.x - upper.prevX;
@@ -658,9 +909,6 @@ class CircularPhysicsEngine {
 
           // Kill bounce (normal), keep tangential settle.
           if (b1.speed < 2.2 && b2.speed < 2.2) {
-            final rvx = (b2.x - b2.prevX) - (b1.x - b1.prevX);
-            final rvy = (b2.y - b2.prevY) - (b1.y - b1.prevY);
-            final vn = rvx * nx + rvy * ny;
             if (vn < 0) {
               b1.prevX = b1.x - ((b1.x - b1.prevX) - nx * vn * 0.55);
               b1.prevY = b1.y - ((b1.y - b1.prevY) - ny * vn * 0.55);
@@ -676,8 +924,83 @@ class CircularPhysicsEngine {
     return merges;
   }
 
-  /// True if [b] sits nearly atop another body (should keep rolling, not sleep).
-  bool _isPerched(InsectBody b) {
+  /// True if [b] rests on something that can hold it against gravity
+  /// AND every such support is calm. No support → false: the body must
+  /// keep falling, never sleep (see the sleep pass in _stepPhysics).
+  /// Static supports (floor / bowl wall / block) always count as calm;
+  /// a body support vetoes sleep only while it moves faster than
+  /// [_supportCalmSpeed] (Dalga 17: eskiden [_sleepSpeed] eşiğiyle veto
+  /// ediliyordu — tek kıpırdayan böcek tüm yığını uyanık tutuyordu).
+  /// A body in a pocket between two lower bodies counts as supported
+  /// (each contact's normal has an upward component > [_supportUpwardCos]);
+  /// a purely sideways neighbour does not support.
+  bool _isSupportedAndCalm(InsectBody b) {
+    final br = b.radius * b.spawnScale;
+    if (squareArena) {
+      // Flat floor holds unconditionally (it never moves).
+      // Dalga 16 (F-P2): taban keneti görsel yarı-yüksekliğe (1.55r)
+      // göre yapılır (bkz. _resolveSquareBounds), o yüzden destek
+      // testi de 1.55r kullanır; aksi hâlde dibe oturan gövde asla
+      // taban-destekli sayılmazdı.
+      if (b.y >= arenaBounds.bottom - br * 1.55 - _supportSlack) {
+        return true;
+      }
+    } else {
+      // Bowl wall holds only where its normal points sufficiently
+      // upward — i.e. the body is meaningfully below arena center
+      // (screen y grows downward, so wall normal's up-component is
+      // dyc / dist). A body touching the wall up at rim height slides
+      // down instead of sleeping on the rim.
+      final dxc = b.x - arenaCenter.dx;
+      final dyc = b.y - arenaCenter.dy;
+      final distC = sqrt(dxc * dxc + dyc * dyc);
+      if (distC > 0.0001 &&
+          distC >= arenaRadius - br - _supportSlack &&
+          dyc / distC > _supportUpwardCos) {
+        return true;
+      }
+    }
+    // Static blocks: a block below holds the body.
+    for (final block in blocks) {
+      final dx = b.x - block.x;
+      final dy = b.y - block.y;
+      final reach = br + block.radius + _supportSlack;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      final dist = sqrt(dx * dx + dy * dy);
+      if (dist <= 0.0001) continue; // coincident: no defined normal
+      if (-dy / dist > _supportUpwardCos) return true;
+    }
+    // Body supports. _perchSupport keeps the Dalga-15 perch rule
+    // (nearly-atop a calm support may sleep; a moving perch blocks
+    // sleep); the loop below adds pocket support between two lower
+    // bodies, which the narrow perch check misses.
+    var supported = false;
+    final perch = _perchSupport(b);
+    if (perch != null) {
+      if (perch.speed >= _supportCalmSpeed) return false;
+      supported = true;
+    }
+    for (final o in bodies) {
+      if (identical(o, b) || identical(o, perch)) continue;
+      if (o.isMarkedForRemoval) continue;
+      final dx = b.x - o.x;
+      final dy = b.y - o.y;
+      final reach = br + o.radius * o.spawnScale + _supportSlack;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      final dist = sqrt(dx * dx + dy * dy);
+      if (dist <= 0.0001) continue;
+      if (-dy / dist <= _supportUpwardCos) continue;
+      if (o.speed >= _supportCalmSpeed) return false;
+      supported = true;
+    }
+    return supported;
+  }
+
+  /// The body [b] is nearly sitting on top of, if any (null
+  /// otherwise). A perched body must keep rolling while its support
+  /// moves, but may sleep once the support is calm too (see the
+  /// sleep pass in _stepPhysics).
+  InsectBody? _perchSupport(InsectBody b) {
     final br = b.radius * b.spawnScale;
     for (final o in bodies) {
       if (identical(o, b) || o.isMarkedForRemoval) continue;
@@ -686,9 +1009,9 @@ class CircularPhysicsEngine {
       final dy = b.y - o.y;
       final reach = br + o.radius * o.spawnScale + 2.0;
       if (dx * dx + dy * dy > reach * reach) continue;
-      if (dx.abs() < o.radius * 0.65) return true;
+      if (dx.abs() < o.radius * 0.65) return o;
     }
-    return false;
+    return null;
   }
 
   /// +1 right / -1 left — side with more open space in the bowl.

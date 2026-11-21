@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/auth_service.dart';
+import '../services/campaign_progression_service.dart';
 import '../services/energy_service.dart';
 import '../services/haptic_service.dart';
 import '../services/locale_service.dart';
@@ -18,10 +19,66 @@ import 'privacy_policy_screen.dart';
 
 /// 1:1 Pixel-Perfect Settings modal & screen matching `#settingsOverlay` (`.settings-sheet`).
 class SettingsScreen extends StatefulWidget {
+  /// "İlerlemeyi Sıfırla"nın temizlediği SharedPreferences anahtarları
+  /// (ProgressManager sıfırlama kümesiyle aynı).
+  static const _progressResetKeys = <String>[
+    'lululu_unlocked_level',
+    'lululu_coins',
+    'LululuCoinBalance',
+    'lululu_spray',
+    'lululu_raid',
+    'lululu_slipper',
+    'lululu_terlik',
+    'lululu_aydinlat',
+    'lululu_f16',
+    'lululu_shop_chest_day',
+    'lululu_limited_drop_day',
+    'lululu_royal_cape',
+    'lululu_owned_cosmetics',
+    'lululu_unlocked_tiers',
+    'lululu_mode_high_scores',
+    'lululu_daily_tasks_day',
+    'lululu_daily_tasks_progress',
+    'lululu_daily_tasks_claimed',
+    'lululu_daily_streak',
+    'lululu_last_streak_claim_day',
+    'lululu_extra_powers',
+    'lululu_level_stars',
+    'lululu_level_scores',
+    'lululu_power_seed_v1',
+    'lululu_daily_free_energy_day',
+    'lululu_daily_free_energy_claims',
+    'lululu_last_free_energy_epoch_ms',
+    'lululu_state_integrity_sig',
+    // 12W: kampanya ilerlemesi (v2 anahtarlar) — yoksa sıfırlamadan
+    // sonra harita tamamlanan seviyeler üzerinden açık kalır
+    // (CampaignProgressionService.isLevelUnlocked).
+    'lululu_campaign_stars_v2',
+    'lululu_campaign_scores_v2',
+    'lululu_campaign_completed_v2',
+    'lululu_campaign_boss_cleared_v2',
+    'lululu_campaign_chests_v2',
+    // 12W: LWW alan damgaları + tohum bayrağı — yoksa sıfırlanan
+    // seviye 1 eski damgasıyla kalır ve bulut 18'i geri uygular;
+    // bayrak kalkınca load() damgaları "şimdi" ile yeniden tohumlar,
+    // sonraki senkron 1'i buluta yazar.
+    'lululu_ts_coins',
+    'lululu_ts_energy',
+    'lululu_ts_level',
+    'lululu_ts_f16',
+    'lululu_ts_raid',
+    'lululu_ts_terlik',
+    'lululu_ts_streak',
+    'lululu_ts_tiers',
+    'lululu_ts_display_name',
+    'lululu_ts_extra_powers',
+    'lululu_lww_stamps_seeded_v1',
+  ];
+
   const SettingsScreen({
     super.key,
     this.isModal = false,
-    this.showExtendedOptions = false,
+    this.showExtendedOptions = true,
   });
 
   final bool isModal;
@@ -40,6 +97,12 @@ class SettingsScreen extends StatefulWidget {
 
   /// Shows a confirmation dialog and safely resets all progress in [ProgressManager.instance].
   static Future<bool> resetAll(BuildContext context) async {
+    if (!await _confirmReset(context)) return false;
+    return _performReset();
+  }
+
+  /// Sıfırlama onay penceresini gösterir; kullanıcı onaylarsa `true` döner.
+  static Future<bool> _confirmReset(BuildContext context) async {
     AudioManager().playPop();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -179,45 +242,27 @@ class SettingsScreen extends StatefulWidget {
       ),
     );
 
-    if (confirmed != true) return false;
+    return confirmed == true;
+  }
 
-    final prefs = await SharedPreferences.getInstance();
-    const progressKeys = <String>[
-      'lululu_unlocked_level',
-      'lululu_coins',
-      'LululuCoinBalance',
-      'lululu_spray',
-      'lululu_raid',
-      'lululu_slipper',
-      'lululu_terlik',
-      'lululu_aydinlat',
-      'lululu_f16',
-      'lululu_shop_chest_day',
-      'lululu_limited_drop_day',
-      'lululu_royal_cape',
-      'lululu_owned_cosmetics',
-      'lululu_unlocked_tiers',
-      'lululu_mode_high_scores',
-      'lululu_daily_tasks_day',
-      'lululu_daily_tasks_progress',
-      'lululu_daily_tasks_claimed',
-      'lululu_daily_streak',
-      'lululu_last_streak_claim_day',
-      'lululu_extra_powers',
-      'lululu_level_stars',
-      'lululu_level_scores',
-      'lululu_power_seed_v1',
-      'lululu_daily_free_energy_day',
-      'lululu_daily_free_energy_claims',
-      'lululu_last_free_energy_epoch_ms',
-      'lululu_state_integrity_sig',
-    ];
-    for (final key in progressKeys) {
-      await prefs.remove(key);
+  /// Onaylanmış sıfırlamayı uygular; herhangi bir adım patlarsa
+  /// `false` döner (çağıran, kullanıcıya bildirir).
+  static Future<bool> _performReset() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in _progressResetKeys) {
+        await prefs.remove(key);
+      }
+      // 12W: kampanya servisinin bellek-içi tamamlanan seviyeleri de
+      // temizlenir (yalnız prefs silmek haritayı açık bırakırdı);
+      // clearLocalData aynı 5 v2 anahtarını kaldırır.
+      await CampaignProgressionService.instance.clearLocalData();
+      await ProgressManager.instance.load();
+      await EnergyService.instance.refillFull();
+      return true;
+    } catch (_) {
+      return false;
     }
-    await ProgressManager.instance.load();
-    await EnergyService.instance.refillFull();
-    return true;
   }
 
   @override
@@ -238,7 +283,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _sfxOn = _pm.sfxEnabled && !_audio.isMuted;
+    // 7C: SFX anahtarı yalnız SFX tercihini okur. Eski
+    // `_pm.sfxEnabled && !_audio.isMuted` okuması, geçici
+    // yaşam-döngüsü master mute'unu (AppLifecycleGuard pause/resume)
+    // SFX tercihi gibi gösteriyordu; `isMuted` burada artık okunmaz.
+    _sfxOn = _audio.sfxEnabled;
     _voiceOn = _audio.voiceEnabled;
     _vibOn = false;
     _localeCode = LocaleService.instance.effectiveCode();
@@ -252,21 +301,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final sfx = prefs.getBool('LululuSetSfx') ??
-        prefs.getBool('lululu_sfx_enabled') ??
-        !_audio.isMuted;
-    final voice = prefs.getBool('LululuSetVoice') ??
-        prefs.getBool('lululu_voice_enabled') ??
-        true;
-    final vib = prefs.getBool('LululuSetVib') ?? false;
+    bool sfx;
+    bool voice;
+    bool vib;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // 7C: yedek anahtar yoksa bellek-içi değer korunur; geçici
+      // `isMuted` (yaşam-döngüsü master mute) artık SFX/voice
+      // varsayılanı olarak okunmaz.
+      sfx = prefs.getBool('LululuSetSfx') ??
+          prefs.getBool('lululu_sfx_enabled') ??
+          _audio.sfxEnabled;
+      voice = prefs.getBool('LululuSetVoice') ??
+          prefs.getBool('lululu_voice_enabled') ??
+          _audio.voiceEnabled;
+      // D3 (F4): `lululu_vibration_enabled` yedek anahtarı da okunur ve
+      // varsayılan `true`'dur (ProgressManager/AudioManager varsayılanıyla
+      // tutarlı). Eski `?? false`, Ayarlar her açılışında titreşimi
+      // kalıcı olarak kapatıyordu.
+      vib = prefs.getBool('LululuSetVib') ??
+          prefs.getBool('lululu_vibration_enabled') ??
+          true;
+    } catch (_) {
+      // Tercihler okunamazsa initState varsayılanlarıyla devam et.
+      return;
+    }
 
-    _audio.setSfxEnabled(sfx);
+    // 7C: SFX/voice yalnız DEĞİŞİMDE yazılır (titreşim D3 deseniyle
+    // aynı). Setter'lar `SharedPreferences`'a kalıcı yazdığı için,
+    // okunan değeri koşulsuz geri yazmak Ayarlar ekranını açmayı
+    // ayarları ezecek bir yan etkiye dönüştürüyordu; ayrıca bir
+    // kanalın yazımı diğer kanala dokunmaz.
+    if (_audio.sfxEnabled != sfx) {
+      _audio.setSfxEnabled(sfx);
+    }
     // Ses ve sesli anahtarları bağımsızdır: her bayrak yalnız kendi
     // saklanan değerinden beslenir (SFX kapalıyken voice ezilmez).
-    _audio.setVoiceEnabled(voice);
-    _audio.setVibrationEnabled(vib);
-    unawaited(HapticService.instance.setEnabled(vib));
+    if (_audio.voiceEnabled != voice) {
+      _audio.setVoiceEnabled(voice);
+    }
+    // D3 (F4): titreşim yalnız DEĞİŞİMDE yazılır. Setter'lar
+    // `SharedPreferences`'a kalıcı yazdığı için, okunan değeri koşulsuz
+    // geri yazmak Ayarlar ekranını açmayı titreşim ayarını ezecek bir
+    // yan etkiye dönüştürüyordu; değişim yoksa hiç çağrılmaz.
+    if (_audio.vibrationEnabled != vib || _pm.vibrationEnabled != vib) {
+      _audio.setVibrationEnabled(vib);
+      unawaited(HapticService.instance.setEnabled(vib));
+    }
 
     if (!mounted) return;
     setState(() {
@@ -277,41 +358,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
-  Future<void> _savePref(String key, bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(key, value);
-  }
-
   void _onSfxChanged(bool v) {
+    // D2 (F3): SFX anahtarı yalnız SFX kanalını yazar. Eski
+    // `_audio.isMuted = !v` yazımı master mute'u çevirdiği için SFX'i
+    // kapatmak voice'u da susturuyordu (`_voiceAudible =
+    // !_isMuted && _voiceEnabled`); `isMuted` yalnız yaşam-döngüsü
+    // koruması (AppLifecycleGuard) tarafından yazılır.
+    // 7C: değişim yoksa yazım yok; tek yazım yolu `setSfxEnabled`
+    // (PM aynası + çift anahtar kalıcılığı setter'da yapılır;
+    // buradaki `pm.setSfxEnabled` + `_savePref` tekrarları kaldırıldı).
+    if (_sfxOn == v) return;
     setState(() {
       _sfxOn = v;
-      _audio.isMuted = !v;
     });
     AudioManager().setSfxEnabled(v);
     // SFX anahtarı voice bayrağına dokunmaz: voice yalnız kendi
     // anahtarından yazılır (AudioManager'daki çalma kapısı da bağımsızdır).
-    unawaited(ProgressManager.instance.setSfxEnabled(v));
     if (v) {
       AudioManager().playPop();
     }
-    unawaited(_savePref('LululuSetSfx', v));
   }
 
   void _onVoiceChanged(bool v) {
+    // 7C: değişim yoksa yazım yok; `setVoiceEnabled` çift anahtarı
+    // kalıcı yazar, buradaki `_savePref` tekrarları kaldırıldı.
+    if (_voiceOn == v) return;
     AudioManager().playPop();
     setState(() => _voiceOn = v);
     AudioManager().setVoiceEnabled(v);
-    unawaited(_savePref('LululuSetVoice', v));
-    unawaited(_savePref('lululu_voice_enabled', v));
   }
 
   void _onVibrationChanged(bool v) {
+    // 7C: değişim yoksa yazım yok; `setVibrationEnabled` PM aynası +
+    // çift anahtarı yazar, buradaki tekrarlar kaldırıldı.
+    // `HapticService.setEnabled` ayrı servistir, setter'a girmez.
+    if (_vibOn == v) return;
     AudioManager().playPop();
     setState(() => _vibOn = v);
     AudioManager().setVibrationEnabled(v);
     unawaited(HapticService.instance.setEnabled(v));
-    unawaited(ProgressManager.instance.setVibrationEnabled(v));
-    unawaited(_savePref('LululuSetVib', v));
   }
 
   void _onLanguageChanged(String code) {
@@ -322,19 +407,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<bool> resetAll([BuildContext? dialogContext]) async {
-    final reset = await SettingsScreen.resetAll(dialogContext ?? context);
-    if (reset && mounted) {
-      setState(() {});
+    final ctx = dialogContext ?? context;
+    if (!await SettingsScreen._confirmReset(ctx)) return false;
+    final reset = await SettingsScreen._performReset();
+    if (!mounted) return reset;
+    if (!reset) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.settingsResetFailed)),
+      );
+      return false;
     }
-    return reset;
+    // S4: başarı bildirimi (önce yalnız hata bildiriliyordu).
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.settingsResetDone)),
+    );
+    setState(() {});
+    return true;
   }
 
   void _openAuth() {
     AudioManager().playPop();
-    if (widget.isModal && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
+    // Navigator pop ÖNCESİ yakalanır: pop sonrası bu context'in öğesi
+    // devre dışı kalır; aynı context ile push patlar (B10).
+    final navigator = Navigator.of(context);
+    if (widget.isModal && navigator.canPop()) {
+      navigator.pop();
     }
-    AuthScreen.open(context);
+    AuthScreen.openOn(navigator);
   }
 
   void _openHowToPlay() {
@@ -371,8 +470,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     _deleteArmTimer?.cancel();
     setState(() => _deleteBusy = true);
+    AccountDeletionResult deletionResult;
     try {
-      await AuthService.instance.deleteAccount();
+      deletionResult = await AuthService.instance.deleteAccount();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -385,8 +485,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     if (!mounted) return;
+    // 2E-UI (c): silme sonucu tüketilir — kısmi temizlik hatası varsa
+    // kullanıcı görür; tam başarıda mevcut mesaj korunur.
+    final failedCount = deletionResult.failedLocalCleanups.length +
+        deletionResult.failedCloudCleanups.length;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.l10n.accountDeletedSnack)),
+      SnackBar(
+        content: Text(
+          deletionResult.hasFailures
+              ? context.l10n.accountDeletedPartialSnack(failedCount)
+              : context.l10n.accountDeletedSnack,
+        ),
+      ),
     );
     setState(() {
       _deleteArmed = false;

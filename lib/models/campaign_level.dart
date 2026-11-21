@@ -648,21 +648,31 @@ class CampaignDatabase {
             : 0;
         final bool obstacles = i >= 12 || i == 10 || (i % 7 == 0 && i > 5);
 
+        // 12Q-stars — zorlaşan eşikler (eski: skor 0.7/1.0/1.4×hedef,
+        // survival 12/18/26×süre, boss 1.0/1.3/1.7×hedef):
+        // hedefi tutturmak artık yalnız 1 yıldız verir; 2 yıldız
+        // hedefin üstünü, 3 yıldız hedefin çok üstünü ister. Bölüm
+        // ilerledikçe s2/s3 çarpanı büyür (bölüm başına +0.05/+0.10).
+        // Boss'ta geçiş hedefte kalır (1.0×): boss zaferi birleşme
+        // anında hedef tutunca tetiklendiği için s1 > hedef olsaydı
+        // hedefi kıl payı tutturan zafer 0 yıldız gösterirdi.
+        final double s2Mult = 1.2 + 0.05 * (ch.$1 - 1);
+        final double s3Mult = 1.8 + 0.1 * (ch.$1 - 1);
         final int s1 = isBoss
             ? targetScore
             : type == ObjectiveType.survivalTimer
-                ? (timeLimit * 12)
-                : (targetScore * 0.7).round();
+                ? (timeLimit * 14)
+                : (targetScore * 0.85).round();
         final int s2 = isBoss
-            ? (targetScore * 1.3).round()
+            ? (targetScore * 1.5).round()
             : type == ObjectiveType.survivalTimer
-                ? (timeLimit * 18)
-                : targetScore;
+                ? (timeLimit * 21)
+                : (targetScore * s2Mult).round();
         final int s3 = isBoss
-            ? (targetScore * 1.7).round()
+            ? (targetScore * 2.0).round()
             : type == ObjectiveType.survivalTimer
-                ? (timeLimit * 26)
-                : (targetScore * 1.4).round();
+                ? (timeLimit * (30 + 2 * (ch.$1 - 1)))
+                : (targetScore * s3Mult).round();
 
         final int rewardCoins =
             60 + (levelId * 8) + (ch.$1 * 25) + (isBoss ? 120 : 0);

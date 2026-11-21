@@ -7,12 +7,16 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/bonus_fx.dart';
 
 class _BoardSnapshot {
@@ -55,7 +59,8 @@ class Grid2048Screen extends StatefulWidget {
   State<Grid2048Screen> createState() => _Grid2048ScreenState();
 }
 
-class _Grid2048ScreenState extends State<Grid2048Screen> {
+class _Grid2048ScreenState extends State<Grid2048Screen>
+    with WidgetsBindingObserver {
   static const int size = 4;
 
   /// Üst satır ve HUD içerik genişliğinin tavanı: 430 referans genişlikten
@@ -95,7 +100,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   final List<_BoardSnapshot> _history = <_BoardSnapshot>[];
 
   int _score = 8640;
-  int _best = 12480;
+  int _best = 0;
   int _moveCount = 36;
   int _streak = 4;
   int _maxStreak = 4;
@@ -105,6 +110,20 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   bool _gameOver = false;
   bool _won = false;
   bool _paused = false;
+
+  /// Yaşam döngüsü duraklatması ayrımı (Osmantus deseni): arka plana
+  /// geçiş kaplamayı açtıysa `true` olur; elle duraklatma bu bayrağı
+  /// koymaz. Dönüşte (`resumed`) yalnız bu bayrak konmuşsa devam
+  /// edilir — elle duraklatma yapışkan kalır.
+  bool _pausedByLifecycle = false;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
   bool _showHelpModal = false;
   bool _resultShown = false;
   bool _presentingResultModal = false;
@@ -119,6 +138,14 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
 
+  /// Y3 tur başlangıç damgası: `_initBoard` her turda bir kez yazar
+  /// (milisaniye). `_presentResult` bu damgadan
+  /// `'grid2048:<damga>'` idempotency anahtarını üretir; aynı turun
+  /// BİTİR + hamle-bitiş yolları aynı anahtarı paylaşır, yeni oyun
+  /// (`_restart` → `_initBoard`) yeni anahtar alır. Bitiş anında
+  /// `DateTime.now()` kullanılmaz.
+  int _runStartedAt = 0;
+
   bool _panConsumed = false;
   Offset _panAccum = Offset.zero;
 
@@ -131,6 +158,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   Timer? _speechTimer;
   Timer? _popTimer;
 
+  /// 10D P0-2: geçersiz kaydırma sarsıntısı — tahtanın yatay ötelemesi
+  /// (±6 px, iki adımda gidip döner; Timer/setState deseni, mevcut
+  /// `_popTimer` ile aynı kalıp). Varsayılan 0 = sarsıntı yok.
+  double _invalidShakeX = 0;
+  Timer? _invalidShakeTimer;
+
   int _undoCount = 3;
   int _shuffleCount = 2;
   int _pairCount = 1;
@@ -138,35 +171,42 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _syncPowerCounts();
     _initBoard(initialPrototypeState: widget.prototypeVisualState);
     _loadBest();
   }
 
+  /// Güçlendirici stoklarını kasadan okur; eksik anahtar 0 sayılır.
+  /// Giriş-başı dolum YOKTUR (B3): tohum bir kez `ProgressManager.load`
+  /// tarafından verilir, bu ekran kasaya yazmaz.
   void _syncPowerCounts() {
     final pm = ProgressManager();
-    if ((pm.extraPowers['undo2048'] ?? 0) <= 0) {
-      pm.extraPowers['undo2048'] = 3;
-    }
-    if ((pm.extraPowers['shuffle2048'] ?? 0) <= 0) {
-      pm.extraPowers['shuffle2048'] = 2;
-    }
-    if ((pm.extraPowers['pair2048'] ?? 0) <= 0) {
-      pm.extraPowers['pair2048'] = 1;
-    }
-    _undoCount = pm.extraPowers['undo2048'] ?? 3;
-    _shuffleCount = pm.extraPowers['shuffle2048'] ?? 2;
-    _pairCount = pm.extraPowers['pair2048'] ?? 1;
+    _undoCount = pm.powerCount('undo2048');
+    _shuffleCount = pm.powerCount('shuffle2048');
+    _pairCount = pm.powerCount('pair2048');
   }
 
   void _initBoard({bool initialPrototypeState = false}) {
+    // Y3: tur başlangıç damgası — prototip dalı dahil her turda bir
+    // kez, tahta kurulmadan önce yazılır.
+    _runStartedAt = DateTime.now().millisecondsSinceEpoch;
+    // B17: kozmetik timer'lar iptal edilmeden tahta sıfırlanırsa eski
+    // zamanlayıcılar yeni turun kaplama/patlama durumunu temizler.
+    // (`_restart` bu yöntemden geçtiği için tek nokta yeterlidir.)
+    _overlayTimer?.cancel();
+    _speechTimer?.cancel();
+    _popTimer?.cancel();
+    _invalidShakeTimer?.cancel();
+    _invalidShakeX = 0;
     _history.clear();
     _mergedCells = <Point<int>>{};
     _lastSpawned = null;
     _gameOver = false;
     _won = false;
     _paused = false;
+    _pausedByLifecycle = false;
     _showHelpModal = false;
     _resultShown = false;
     _presentingResultModal = false;
@@ -209,12 +249,55 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _overlayTimer?.cancel();
     _speechTimer?.cancel();
     _popTimer?.cancel();
+    _invalidShakeTimer?.cancel();
     _focusNode.dispose();
     AudioManager().stopAll();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState || !mounted) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        // Sıra tabanlı oyun: işleyen saat ve ötelenmesi gereken
+        // duvar-saati son tarihi yok; arka plana/kısmi örtünmeye
+        // geçişte mevcut duraklatma kaplaması gösterilir (`inactive`
+        // dahil: kaplama uygulama değiştiricide ve bildirim gölgesi
+        // arkasında da görünür). Oyun bitmiş, yardım/sonuç açık veya
+        // elle zaten duraklatılmışsa sahiplenilmez (Osmantus
+        // `_pausedByLifecycle` ayrımı).
+        if (_gameOver ||
+            _showHelpModal ||
+            _resultShown ||
+            _presentingResultModal ||
+            _paused) {
+          return;
+        }
+        _pausedByLifecycle = true;
+        setState(() => _paused = true);
+      case AppLifecycleState.detached:
+        // Ayrılma sonrası dönüş beklenmez; kaplama açılmaz.
+        break;
+      case AppLifecycleState.resumed:
+        // Yalnız yaşam döngüsü duraklatmasıysa devam edilir; elle
+        // duraklatma yapışkan kalır (DEVAM düğmesiyle açılır).
+        // 2048 sıra tabanlı olduğu için kendiliğinden devamın oyun
+        // cezası yoktur.
+        if (_pausedByLifecycle) {
+          _pausedByLifecycle = false;
+          if (_paused) {
+            setState(() => _paused = false);
+          }
+        }
+        break;
+    }
   }
 
   Future<void> _loadBest() async {
@@ -231,10 +314,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   Future<void> _persistBest() async {
     if (_score <= 0) return;
     await LeaderboardService.instance.ensureLoaded();
-    await LeaderboardService.instance.submitScore(
-      'grid2048',
-      _score,
-    );
+    await LeaderboardService.instance.submitScore('grid2048', _score);
     final saved = LeaderboardService.instance.getBest(
       LeaderboardService.mode2048,
     );
@@ -249,7 +329,13 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
   void _togglePause() {
     if (_gameOver) return;
-    setState(() => _paused = !_paused);
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    AudioManager().playButtonTap();
+    setState(() {
+      _paused = !_paused;
+      if (!_paused) _pausedByLifecycle = false;
+    });
   }
 
   List<List<int>> _cloneGrid(List<List<int>> src) =>
@@ -278,13 +364,22 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
     if (empties.isEmpty) return;
     final spot = empties[_rng.nextInt(empties.length)];
-    final roll = _rng.nextDouble();
+    // 12C1: adaptif zorluk — merhamette zar küçük kademeye kayar (daha
+    // çok 2, daha az 4/8), kazanma serisinde büyük kademeye kayar.
+    final roll =
+        _rng.nextDouble() *
+        (2.0 -
+            DifficultyBinding.instance
+                .cachedProfileForMode('grid2048')
+                .spawnFavorability);
     final tier = roll < 0.72
         ? 1
         : roll < 0.94
         ? 2
         : 3;
-    _grid[spot.x][spot.y] = tier;
+    _grid[spot.x][spot.y] = widget.prototypeVisualState
+        ? tier
+        : HisirCharacter.encodeGridValue(tier, _rng);
     _lastSpawned = spot;
     if (tier > _highestTier) _highestTier = tier;
   }
@@ -292,38 +387,51 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   bool _hasMovesAvailable() {
     for (var r = 0; r < size; r++) {
       for (var c = 0; c < size; c++) {
-        final v = _grid[r][c];
+        final v = HisirCharacter.baseTier(_grid[r][c]);
         if (v == 0) return true;
         // Zirve kademe birleşmediği için iki zirvenin yan yana olması
         // hamle sayılmaz; yoksa tahta doluyken oyun bitmezdi.
         if (v < InsectTier.values.length) {
-          if (r + 1 < size && _grid[r + 1][c] == v) return true;
-          if (c + 1 < size && _grid[r][c + 1] == v) return true;
+          if (r + 1 < size && HisirCharacter.baseTier(_grid[r + 1][c]) == v) {
+            return true;
+          }
+          if (c + 1 < size && HisirCharacter.baseTier(_grid[r][c + 1]) == v) {
+            return true;
+          }
         }
       }
     }
     return false;
   }
 
-  (List<int>, int, int, List<int>) _compressLine(List<int> line) {
+  (List<int>, int, int, List<int>, bool) _compressLine(List<int> line) {
     final nonZero = line.where((v) => v != 0).toList();
     final out = <int>[];
     final mergedIndices = <int>[];
     var gained = 0;
     var topMergedTier = 0;
+    var hisirMerged = false;
     final maxTier = InsectTier.values.length;
     var i = 0;
     while (i < nonZero.length) {
       // Zirve kademe birleşmez: iki zirve yan yana kalır, üst kademe yok.
       // (_usePair da zirveyi dışlar; kayma ile güçlendirici tutarlı.)
-      if (i + 1 < nonZero.length &&
-          nonZero[i] == nonZero[i + 1] &&
-          nonZero[i] < maxTier) {
-        final next = (nonZero[i] + 1).clamp(1, maxTier);
+      // Hışır derisi kademeyi değiştirmez: iki aynı kademe (biri Hışır
+      // derili de olsa) birleşir; doğan taş düz üst kademedir.
+      final a = HisirCharacter.baseTier(nonZero[i]);
+      final b = i + 1 < nonZero.length
+          ? HisirCharacter.baseTier(nonZero[i + 1])
+          : 0;
+      if (i + 1 < nonZero.length && a == b && a < maxTier) {
+        final next = (a + 1).clamp(1, maxTier);
         out.add(next);
         mergedIndices.add(out.length - 1);
         gained += 1 << next;
         if (next > topMergedTier) topMergedTier = next;
+        if (HisirCharacter.isEncoded(nonZero[i]) ||
+            HisirCharacter.isEncoded(nonZero[i + 1])) {
+          hisirMerged = true;
+        }
         i += 2;
       } else {
         out.add(nonZero[i]);
@@ -333,7 +441,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     while (out.length < size) {
       out.add(0);
     }
-    return (out, gained, topMergedTier, mergedIndices);
+    return (out, gained, topMergedTier, mergedIndices, hisirMerged);
   }
 
   void _slide(int dr, int dc) {
@@ -344,13 +452,17 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     var totalGain = 0;
     var topMerge = 0;
     var mergesThisTurn = 0;
+    var hisirMerged = false;
     final newMerged = <Point<int>>{};
 
     if (dr == 0 && dc != 0) {
       for (var r = 0; r < size; r++) {
         final row = List<int>.from(_grid[r]);
         final input = dc < 0 ? row : row.reversed.toList();
-        final (compressed, gain, topTier, mergedIdx) = _compressLine(input);
+        final (compressed, gain, topTier, mergedIdx, lineHisir) = _compressLine(
+          input,
+        );
+        hisirMerged = hisirMerged || lineHisir;
         final result = dc < 0 ? compressed : compressed.reversed.toList();
         for (var c = 0; c < size; c++) {
           if (_grid[r][c] != result[c]) moved = true;
@@ -368,7 +480,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       for (var c = 0; c < size; c++) {
         final col = List<int>.generate(size, (r) => _grid[r][c]);
         final input = dr < 0 ? col : col.reversed.toList();
-        final (compressed, gain, topTier, mergedIdx) = _compressLine(input);
+        final (compressed, gain, topTier, mergedIdx, lineHisir) = _compressLine(
+          input,
+        );
+        hisirMerged = hisirMerged || lineHisir;
         final result = dr < 0 ? compressed : compressed.reversed.toList();
         for (var r = 0; r < size; r++) {
           if (_grid[r][c] != result[r]) moved = true;
@@ -385,7 +500,13 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
 
     if (!moved) {
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
+      // 10D P0-2: geçersiz kaydırmada ses yoktu + görsel de yoktu.
+      // playDrop (kapılı lightImpact; yukarıdaki selectionClick ile
+      // aynı tick'te 18 ms kapısına takılıp düşer — toplam 1 impuls)
+      // + mevcut Timer/setState deseninde hafif tahta sarsıntısı.
+      AudioManager().playDrop();
+      _flashInvalidShake();
       return;
     }
 
@@ -417,20 +538,25 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       _score += boostedGain;
       if (_score > _best) _best = _score;
 
-      final tierEnum =
-          InsectTier.values[(topMerge - 1).clamp(0, InsectTier.values.length - 1)];
+      final tierEnum = InsectTier
+          .values[(topMerge - 1).clamp(0, InsectTier.values.length - 1)];
 
       _showTurnOverlays(
         gain: boostedGain,
         streak: _streak,
         tier: tierEnum,
         topMerge: topMerge,
+        hisir: hisirMerged,
       );
 
       unawaited(
-        AudioManager().playMerge(tier: tierEnum, comboCount: _streak),
+        hisirMerged
+            ? AudioManager().playMergeHisir(
+                tierNumber: topMerge,
+                comboCount: _streak,
+              )
+            : AudioManager().playMerge(tier: tierEnum, comboCount: _streak),
       );
-      HapticFeedback.mediumImpact();
       unawaited(
         ProgressManager.instance.recordTaskProgress(
           'merge',
@@ -455,7 +581,6 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     } else {
       _streak = 0;
       AudioManager().playDrop();
-      HapticFeedback.lightImpact();
     }
 
     _popTimer?.cancel();
@@ -469,7 +594,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
     if (!_hasMovesAvailable()) {
       _gameOver = true;
-      AudioManager().playLose();
+      // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
       unawaited(_persistBest());
     }
 
@@ -481,10 +606,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     required int streak,
     required InsectTier tier,
     required int topMerge,
+    bool hisir = false,
   }) {
     _overlayTimer?.cancel();
-    _comboText =
-        streak >= 2 ? 'COMBO X$streak!' : context.l10n.gridSuperCombo;
+    _comboText = streak >= 2 ? 'COMBO X$streak!' : context.l10n.gridSuperCombo;
     _gainText = streak >= 2 ? '+$gain X$streak' : '+$gain';
     _overlayTimer = Timer(const Duration(milliseconds: 1100), () {
       if (!mounted) return;
@@ -496,7 +621,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
 
     if (topMerge >= 3 || streak >= 2) {
       _speechTimer?.cancel();
-      _speechBubble = topMerge >= 4
+      _speechBubble = hisir
+          ? HisirCharacter.replik
+          : topMerge >= 4
           ? context.l10n.gridSuperMergeSpeech(tier.title)
           : tier.viralReplik;
       _speechTimer = Timer(const Duration(milliseconds: 1600), () {
@@ -506,13 +633,137 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
   }
 
+  /// Geçersiz kaydırma sarsıntısı (10D P0-2): tahta +6 px, −6 px,
+  /// 0 — her adım 70 ms (toplam 140 ms). Timer/setState deseni;
+  /// yeni animasyon denetleyicisi yok.
+  void _flashInvalidShake() {
+    _invalidShakeTimer?.cancel();
+    setState(() => _invalidShakeX = 6);
+    _invalidShakeTimer = Timer(const Duration(milliseconds: 70), () {
+      if (!mounted) return;
+      setState(() => _invalidShakeX = -6);
+      _invalidShakeTimer = Timer(const Duration(milliseconds: 70), () {
+        if (!mounted) return;
+        setState(() => _invalidShakeX = 0);
+      });
+    });
+  }
+
+  /// Etkisiz güçlendirici denemesinde oyuncuya nedeni mevcut konuşma
+  /// balonu mekanizmasıyla gösterir (B12). 2048 güçlendirici
+  /// bağlamına özel `gridBoosterNoEffect` anahtarı kullanılır
+  /// (Match3'ün `match3NoMatchCancel` anahtarı yeniden kullanılmaz);
+  /// stok tüketilmez.
+  void _showNoEffectHint() {
+    _speechTimer?.cancel();
+    setState(() {
+      _speechBubble = context.l10n.gridBoosterNoEffect;
+    });
+    _speechTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (!mounted) return;
+      setState(() => _speechBubble = null);
+    });
+  }
+
+  /// Geri alma yedeğinin (`_removeLowestTile`) silebileceği taş var mı?
+  bool _hasRemovableTile() {
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        if (_grid[r][c] > 0) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Karıştırma anlamlı mı? Tek taşlı/boş tahtada karıştırma görünür
+  /// bir etki üretmez.
+  bool _hasShufflableBoard() {
+    var filled = 0;
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        if (_grid[r][c] > 0 && ++filled >= 2) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Çiftleştirme planı (B12 önkoşul denetimi): tüketimden ÖNCE,
+  /// tahtayı değiştirmeden hesaplanır. `null` dönerse etki yoktur.
+  ///
+  /// Eşleşen çift varsa en yüksek kademedeki çift birleştirilir
+  /// (`matched`); yoksa yükseltilebilir en yüksek taş bir kademe
+  /// yükseltilir (mevcut yedek davranış korunur).
+  ({Point<int> target, Point<int>? source, int next, bool matched, bool hisir})?
+  _planPairEffect() {
+    final byTier = <int, List<Point<int>>>{};
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        final v = HisirCharacter.baseTier(_grid[r][c]);
+        if (v > 0 && v < InsectTier.values.length) {
+          byTier.putIfAbsent(v, () => <Point<int>>[]).add(Point<int>(r, c));
+        }
+      }
+    }
+    final matchingTiers =
+        byTier.entries
+            .where((e) => e.value.length >= 2)
+            .map((e) => e.key)
+            .toList()
+          ..sort((a, b) => b.compareTo(a));
+    if (matchingTiers.isNotEmpty) {
+      final t = matchingTiers.first;
+      final cells = byTier[t]!;
+      return (
+        target: cells[0],
+        source: cells[1],
+        next: (t + 1).clamp(1, InsectTier.values.length),
+        matched: true,
+        hisir:
+            HisirCharacter.isEncoded(_grid[cells[0].x][cells[0].y]) ||
+            HisirCharacter.isEncoded(_grid[cells[1].x][cells[1].y]),
+      );
+    }
+    Point<int>? bestCell;
+    var maxT = 0;
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        final v = HisirCharacter.baseTier(_grid[r][c]);
+        if (v > maxT && v < InsectTier.values.length) {
+          maxT = v;
+          bestCell = Point<int>(r, c);
+        }
+      }
+    }
+    if (bestCell == null) return null;
+    return (
+      target: bestCell,
+      source: null,
+      next: maxT + 1,
+      matched: false,
+      hisir: HisirCharacter.isEncoded(_grid[bestCell.x][bestCell.y]),
+    );
+  }
+
   /// Güçlendirici 1: GERİ AL (son hamleyi geri alır veya en küçük taşı temizler)
   void _useUndo() {
     if (_paused || _showHelpModal || _undoCount <= 0) return;
+    // B12: etki uygulanabilirliğini tüketimden önce denetle — geri
+    // alınacak hamle ve silinecek taş yoksa stok yakma.
+    if (_history.isEmpty && !_hasRemovableTile()) {
+      _showNoEffectHint();
+      return;
+    }
+    // B3: tüketim kasadan (`takePower` + kalıcı kayıt); yerel sayaç
+    // yalnız kasadan okunur. `takePower` başarısızsa sayaç bayattır,
+    // kasadan tazele ve çık.
     final pm = ProgressManager();
+    if (!pm.takePower('undo2048')) {
+      setState(_syncPowerCounts);
+      return;
+    }
+    var applied = false;
     setState(() {
-      _undoCount--;
-      pm.extraPowers['undo2048'] = _undoCount;
+      _syncPowerCounts();
       if (_history.isNotEmpty) {
         final prev = _history.removeLast();
         _grid = _cloneGrid(prev.grid);
@@ -520,10 +771,17 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         _moveCount = prev.moveCount;
         _streak = prev.streak;
         _gameOver = false;
+        applied = true;
       } else {
-        _removeLowestTile();
+        applied = _removeLowestTile();
       }
     });
+    // stockBonusWithResult deseni: etki uygulanamadıysa stoğu iade et.
+    if (!applied) {
+      pm.refundPower('undo2048');
+      setState(_syncPowerCounts);
+      return;
+    }
     unawaited(
       playBonusFx(
         context,
@@ -531,15 +789,21 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         origin: MediaQuery.sizeOf(context).center(Offset.zero),
       ),
     );
-    HapticFeedback.mediumImpact();
+    // 10D P1-5: Geri Al'a ses — playButtonTap tek çağrıda ses +
+    // titreşim verir. Yanındaki kapısız triggerMediumHaptic
+    // kaldırıldı: ikisi bir arada 2 impuls olurdu (baypas kapıya
+    // takılmaz). Titreşim mediumImpact'tan selectionClick'e hafifler;
+    // tek impuls kuralı korunur.
+    AudioManager().playButtonTap();
   }
 
-  void _removeLowestTile() {
+  /// En küçük taşı temizler; silinen taş yoksa `false` döner.
+  bool _removeLowestTile() {
     Point<int>? target;
     var minTier = 999;
     for (var r = 0; r < size; r++) {
       for (var c = 0; c < size; c++) {
-        final v = _grid[r][c];
+        final v = HisirCharacter.baseTier(_grid[r][c]);
         if (v > 0 && v < minTier) {
           minTier = v;
           target = Point<int>(r, c);
@@ -548,13 +812,25 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
     if (target != null) {
       _grid[target.x][target.y] = 0;
+      return true;
     }
+    return false;
   }
 
   /// Güçlendirici 2: KARIŞTIR (tahtadaki böceklerin yerlerini karıştırır)
   void _useShuffle() {
     if (_paused || _showHelpModal || _shuffleCount <= 0) return;
+    // B12 deseni: tek taşlı/boş tahtada karıştırmanın etkisi yoktur.
+    if (!_hasShufflableBoard()) {
+      _showNoEffectHint();
+      return;
+    }
+    // B3: tüketim kasadan (`takePower` + kalıcı kayıt).
     final pm = ProgressManager();
+    if (!pm.takePower('shuffle2048')) {
+      setState(_syncPowerCounts);
+      return;
+    }
     _saveHistory();
     final flat = <int>[];
     for (var r = 0; r < size; r++) {
@@ -564,8 +840,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     }
     flat.shuffle(_rng);
     setState(() {
-      _shuffleCount--;
-      pm.extraPowers['shuffle2048'] = _shuffleCount;
+      _syncPowerCounts();
       for (var i = 0; i < flat.length; i++) {
         _grid[i ~/ size][i % size] = flat[i];
       }
@@ -579,44 +854,37 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       ),
     );
     AudioManager().playDrop();
-    HapticFeedback.mediumImpact();
   }
 
   /// Güçlendirici 3: ÇİFTLEŞTİR / 2X BİRLEŞİM (aynı tier iki böceği anında birleştirir)
   void _usePair() {
     if (_paused || _showHelpModal || _pairCount <= 0) return;
+    // B12: etki uygulanabilirliğini tüketimden ÖNCE denetle — eşleşen
+    // çift ve yükseltilebilir taş yoksa stok yakma, nedenini göster.
+    final plan = _planPairEffect();
+    if (plan == null) {
+      _showNoEffectHint();
+      return;
+    }
+    // B3: tüketim kasadan (`takePower` + kalıcı kayıt).
     final pm = ProgressManager();
+    if (!pm.takePower('pair2048')) {
+      setState(_syncPowerCounts);
+      return;
+    }
     _saveHistory();
 
-    final byTier = <int, List<Point<int>>>{};
-    for (var r = 0; r < size; r++) {
-      for (var c = 0; c < size; c++) {
-        final v = _grid[r][c];
-        if (v > 0 && v < InsectTier.values.length) {
-          byTier.putIfAbsent(v, () => <Point<int>>[]).add(Point<int>(r, c));
-        }
-      }
-    }
-
-    final matchingTiers = byTier.entries
-        .where((e) => e.value.length >= 2)
-        .map((e) => e.key)
-        .toList()
-      ..sort((a, b) => b.compareTo(a));
-
+    final target = plan.target;
+    final source = plan.source;
+    final next = plan.next;
+    var reachedWin = false;
     setState(() {
-      _pairCount--;
-      pm.extraPowers['pair2048'] = _pairCount;
+      _syncPowerCounts();
 
-      if (matchingTiers.isNotEmpty) {
-        final t = matchingTiers.first;
-        final cells = byTier[t]!;
-        final a = cells[0];
-        final b = cells[1];
-        final next = (t + 1).clamp(1, InsectTier.values.length);
-        _grid[a.x][a.y] = next;
-        _grid[b.x][b.y] = 0;
-        _mergedCells = <Point<int>>{a};
+      if (plan.matched) {
+        _grid[target.x][target.y] = next;
+        _grid[source!.x][source.y] = 0;
+        _mergedCells = <Point<int>>{target};
         final gain = (1 << next) * 2;
         _score += gain;
         if (_score > _best) _best = _score;
@@ -628,32 +896,33 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
           tier: tierEnum,
           topMerge: next,
         );
-        unawaited(AudioManager().playMerge(tier: tierEnum, comboCount: 2));
+        unawaited(
+          plan.hisir
+              ? AudioManager().playMergeHisir(tierNumber: next, comboCount: 2)
+              : AudioManager().playMerge(tier: tierEnum, comboCount: 2),
+        );
         unawaited(ProgressManager.instance.recordTaskProgress('merge'));
         unawaited(ProgressManager.instance.unlockTier(next));
       } else {
-        Point<int>? bestCell;
-        var maxT = 0;
-        for (var r = 0; r < size; r++) {
-          for (var c = 0; c < size; c++) {
-            if (_grid[r][c] > maxT && _grid[r][c] < InsectTier.values.length) {
-              maxT = _grid[r][c];
-              bestCell = Point<int>(r, c);
-            }
-          }
-        }
-        if (bestCell != null) {
-          final next = maxT + 1;
-          _grid[bestCell.x][bestCell.y] = next;
-          _mergedCells = <Point<int>>{bestCell};
-          final gain = 1 << next;
-          _score += gain;
-          if (_score > _best) _best = _score;
-        }
+        _grid[target.x][target.y] = next;
+        _mergedCells = <Point<int>>{target};
+        final gain = 1 << next;
+        _score += gain;
+        if (_score > _best) _best = _score;
+        if (next > _highestTier) _highestTier = next;
+        unawaited(ProgressManager.instance.unlockTier(next));
+      }
+      // B15: 2048'e güçlendiriciyle ulaşmak da zaferdir.
+      if (next >= 11 && !_won) {
+        _won = true;
+        reachedWin = true;
       }
       _gameOver = false;
     });
 
+    if (reachedWin) {
+      AudioManager().playWin();
+    }
     unawaited(_persistBest());
     unawaited(
       playBonusFx(
@@ -662,7 +931,11 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         origin: MediaQuery.sizeOf(context).center(Offset.zero),
       ),
     );
-    HapticFeedback.heavyImpact();
+    // P0-4: eşleşen çiftte playMerge zaten haptic tetikler; heavyImpact
+    // yalnız eşleşmesiz yükseltmede tek impuls olarak kalır.
+    if (!plan.matched) {
+      unawaited(HapticService.instance.heavyImpact());
+    }
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
@@ -688,18 +961,6 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     return KeyEventResult.ignored;
   }
 
-  String _formatDotNumber(int n) {
-    final raw = n.abs().toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < raw.length; i++) {
-      if (i > 0 && (raw.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(raw[i]);
-    }
-    return n < 0 ? '-$buf' : buf.toString();
-  }
-
   Future<void> _presentResult() async {
     if (_presentingResultModal) return;
     _presentingResultModal = true;
@@ -712,9 +973,26 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       score: _score,
       best: _best,
       bestScore: max(_score, _best),
-      bestCombo: max(1, _maxStreak),
+      // Dalga 15 (bulgu 12): kombo 0 olan tur 1'e yuvarlanmaz —
+      // finishRun `max(tur, kalıcı rekor)` ile tek kaynaktan gösterir.
+      bestCombo: _maxStreak,
       merges: _mergeTotal,
+      // B15: kademe-11 zaferi sonuç ekranına taşınır. `_score > 0`
+      // yedeği `finishRun` varsayılanını korur: 2048'e ulaşmadan
+      // skorla bitirmek eskisi gibi zafer başlığı gösterir.
+      won: _won || _score > 0,
       leaderboardMode: 'grid2048',
+      // K16: mod skoru kimliği — `LululuGameMode` kataloğundaki
+      // `bestScoreKey` ('grid_2048') ile aynı; `normalizeModeId`
+      // 'grid2048' takma adını da bu kimliğe çevirir.
+      modeScoreId: 'grid_2048',
+      // Y3: tur-başı damgadan üretilen tek anahtar; çift çağrı
+      // (BİTİR + bitiş kenarı) ikinci kez ödeme yapamaz.
+      idempotencyKey: 'grid2048:$_runStartedAt',
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+      elapsed: Duration(
+        milliseconds: DateTime.now().millisecondsSinceEpoch - _runStartedAt,
+      ),
       awaitSettle: false,
     );
     _presentingResultModal = false;
@@ -758,10 +1036,98 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     });
   }
 
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed &&
+      _moveMade &&
+      !_gameOver &&
+      !_resultShown &&
+      !_presentingResultModal;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması: sıra tabanlı oyunda girdi kapıları
+  /// (`_paused`) durur; sayaç yoktur.
+  void _pauseForExitConfirm() {
+    if (_gameOver || _paused) return;
+    _pausedForExitConfirm = true;
+    setState(() => _paused = true);
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    setState(() => _paused = false);
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
   void _handleBack() {
     final nav = Navigator.maybeOf(context);
     if (nav != null && nav.canPop()) {
-      nav.pop();
+      // Geri düğmesi sesi (pop dalı; `else` dalı `_togglePause`
+      // üzerinden zaten çalar — çift ses olmasın).
+      AudioManager().playButtonTap();
+      // N7: `pop()` yerine `maybePop()` — çıkış onayı (`PopScope`
+      // vetosu) geri düğmesinden de geçer; onay gerekmiyorsa
+      // davranış aynıdır.
+      nav.maybePop();
     } else {
       _togglePause();
     }
@@ -772,102 +1138,90 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     if (_gameOver && !_resultShown) _edgeShowResult();
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _onKeyEvent,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF080B12),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final mq = MediaQuery.of(context);
-            final topInset = mq.padding.top > 0 ? mq.padding.top : 35.375;
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _onKeyEvent,
+        child: Scaffold(
+          backgroundColor: const Color(0xFF080B12),
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final mq = MediaQuery.of(context);
+              final topInset = mq.padding.top;
 
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                // Zero-footprint test finder text for widget_test.dart ('2048 Grid')
-                const Positioned(
-                  left: 0,
-                  top: 0,
-                  width: 0,
-                  height: 0,
-                  child: Opacity(opacity: 0, child: Text('2048 Grid')),
-                ),
-
-                // .bg (`assets/design/backgrounds/2048_casino.webp`, opacity: .96)
-                Positioned.fill(
-                  child: Opacity(
-                    opacity: 0.96,
-                    child: Image.asset(
-                      'assets/design/backgrounds/2048_casino.webp',
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.medium,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const ColoredBox(color: Color(0xFF141B2A)),
-                    ),
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Zero-footprint test finder text for widget_test.dart ('2048 Grid')
+                  const Positioned(
+                    left: 0,
+                    top: 0,
+                    width: 0,
+                    height: 0,
+                    child: Opacity(opacity: 0, child: Text('2048 Grid')),
                   ),
-                ),
 
-                // .bgshade
-                const Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Color(0x4D080B12),
-                          Colors.transparent,
-                          Colors.transparent,
-                          Color(0x52080B12),
-                        ],
-                        stops: [0.0, 0.24, 0.76, 1.0],
+                  // .bg (`assets/design/backgrounds/2048_casino.webp`, opacity: .96)
+                  Positioned.fill(
+                    child: Opacity(
+                      opacity: 0.96,
+                      child: Image.asset(
+                        'assets/design/backgrounds/2048_casino.webp',
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const ColoredBox(color: Color(0xFF141B2A)),
                       ),
                     ),
                   ),
-                ),
 
-                // Main column (`statusbar` -> `mode-top` -> `game-hud` -> `mode-stage` -> `power-dock`)
-                Positioned.fill(
-                  top: topInset,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildModeTop(),
-                      _buildGameHud(),
-                      Expanded(child: _buildModeStage()),
-                      _buildPowerDock(),
-                    ],
-                  ),
-                ),
-
-                // Top statusbar (`9:41` + signal + battery) — only in headless/prototype mode
-                if (mq.padding.top <= 0 || widget.prototypeVisualState)
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 35.375,
-                    child: _PrototypeStatusBar(),
+                  // .bgshade
+                  const Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0x4D080B12),
+                            Colors.transparent,
+                            Colors.transparent,
+                            Color(0x52080B12),
+                          ],
+                          stops: [0.0, 0.24, 0.76, 1.0],
+                        ),
+                      ),
+                    ),
                   ),
 
-                if (_showHelpModal) _buildHelpOverlay(),
-                if (_paused) _buildPauseOverlay(),
-              ],
-            );
-          },
+                  // Main column (`statusbar` -> `mode-top` -> `game-hud` -> `mode-stage` -> `power-dock`)
+                  Positioned.fill(
+                    top: topInset,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildModeTop(),
+                        _buildGameHud(),
+                        Expanded(child: _buildModeStage()),
+                        _buildPowerDock(),
+                      ],
+                    ),
+                  ),
+
+                  if (_showHelpModal) _buildHelpOverlay(),
+                  if (_paused) _buildPauseOverlay(),
+                ],
+              );
+            },
+          ),
         ),
-      ),
       ),
     );
   }
 
-  /// `.mode-top` (`rect: [0, 35.4, 430, 54]`)
+  /// `.mode-top` (sahte durum cubugu kaldirildi, 12X — headless'ta y=0)
   Widget _buildModeTop() {
     final coins = ProgressManager().coins;
 
@@ -879,29 +1233,26 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
           button: true,
           label: context.l10n.goBackLabel,
           child: GestureDetector(
-          onTap: _handleBack,
-          child: Container(
-            width: 48,
-            height: 48,
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: const Color(0xD9080B12),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x73000000),
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Image.asset(
-              'assets/icons2/back.png',
-              width: 29,
-              height: 29,
-              fit: BoxFit.contain,
+            onTap: _handleBack,
+            child: Container(
+              width: 48,
+              height: 48,
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: const Color(0xD9080B12),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
+                ],
+              ),
+              child: Image.asset(
+                'assets/icons2/back.png',
+                width: 29,
+                height: 29,
+                fit: BoxFit.contain,
+              ),
             ),
           ),
-        ),
         ),
         const SizedBox(width: 10),
 
@@ -913,64 +1264,64 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 3,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0x8C080B12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                context.l10n.grid2048Title,
-                style: TextStyle(
-                  fontFamily: 'Baloo 2',
-                  fontSize: 20,
-                  height: 1.05,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  color: Colors.white,
-                  shadows: [
-                    Shadow(
-                      color: Color(0xA6000000),
-                      offset: Offset(0, 2),
-                      blurRadius: 6,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 3,
                     ),
-                    Shadow(
-                      color: Color(0xCC000000),
-                      offset: Offset(0, 1),
-                      blurRadius: 2,
+                    decoration: BoxDecoration(
+                      color: const Color(0x8C080B12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 9,
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFB800),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: const Text(
-                '2048',
-                style: TextStyle(
-                  fontFamily: 'Baloo 2',
-                  fontSize: 11,
-                  height: 1.55,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.735,
-                  color: Color(0xFF4A2E00),
-                ),
-              ),
-            ),
-              ],
+                    child: Text(
+                      context.l10n.grid2048Title,
+                      style: TextStyle(
+                        fontFamily: 'Baloo 2',
+                        fontSize: 20,
+                        height: 1.05,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Color(0xA6000000),
+                            offset: Offset(0, 2),
+                            blurRadius: 6,
+                          ),
+                          Shadow(
+                            color: Color(0xCC000000),
+                            offset: Offset(0, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFB800),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      '2048',
+                      style: TextStyle(
+                        fontFamily: 'Baloo 2',
+                        fontSize: 11,
+                        height: 1.55,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.735,
+                        color: Color(0xFF4A2E00),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -986,10 +1337,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
             color: const Color(0xD1080B12),
             borderRadius: BorderRadius.circular(999),
             boxShadow: const [
-              BoxShadow(
-                color: Color(0x59000000),
-                offset: Offset(0, 3),
-              ),
+              BoxShadow(color: Color(0x59000000), offset: Offset(0, 3)),
             ],
           ),
           child: Row(
@@ -1003,7 +1351,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               ),
               const SizedBox(width: 6),
               Text(
-                _formatDotNumber(coins),
+                formatGroupedInt(
+                  coins,
+                  Localizations.localeOf(context).languageCode,
+                ),
                 style: const TextStyle(
                   fontFamily: 'Nunito',
                   fontSize: 13.5,
@@ -1022,37 +1373,34 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
           button: true,
           label: context.l10n.helpButtonLabel,
           child: GestureDetector(
-          onTap: () => setState(() => _showHelpModal = true),
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xDB080B12),
-              border: Border.all(
-                color: const Color(0xB3FFB800),
-                width: 2,
+            onTap: () {
+              AudioManager().playButtonTap();
+              setState(() => _showHelpModal = true);
+            },
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xDB080B12),
+                border: Border.all(color: const Color(0xB3FFB800), width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+                ],
               ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x66000000),
-                  offset: Offset(0, 3),
+              alignment: Alignment.center,
+              child: const Text(
+                '?',
+                style: TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 22,
+                  height: 1.0,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFFFB800),
                 ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: const Text(
-              '?',
-              style: TextStyle(
-                fontFamily: 'Baloo 2',
-                fontSize: 22,
-                height: 1.0,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFFFFB800),
               ),
             ),
           ),
-        ),
         ),
       ],
     );
@@ -1061,8 +1409,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       builder: (context, constraints) {
         // İçerik genişliği mevcut alandan hesaplanır; 406 tavandır.
         // Dar ekranda 406'luk tasarım FittedBox ile orantılı küçültülür.
-        final contentWidth =
-            (constraints.maxWidth - 24).clamp(0.0, _maxContentWidth);
+        final contentWidth = (constraints.maxWidth - 24).clamp(
+          0.0,
+          _maxContentWidth,
+        );
         return SizedBox(
           height: 54,
           child: Padding(
@@ -1097,15 +1447,23 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
         // SKOR (`[12, 97.4, 104, 50.5]`)
         _buildScoreBox(
           label: context.l10n.gameScoreLabel,
-          value: _formatDotNumber(_score),
+          value: formatGroupedInt(
+            _score,
+            Localizations.localeOf(context).languageCode,
+          ),
           width: 104,
         ),
         const SizedBox(width: 8),
 
-        // REKOR (`[124, 97.4, 92.1, 50.5]`)
+        // REKOR (`[124, 97.4, 92.1, 50.5]`): gerçek kayıtlı rekor
+        // gösterilir; kayıt yoksa 0 — sahte 12.480 yedeği kaldırıldı
+        // (playtest bulgu #1).
         _buildScoreBox(
           label: context.l10n.gameBestLabel,
-          value: _formatDotNumber(_best > 0 ? _best : 12480),
+          value: formatGroupedInt(
+            _best,
+            Localizations.localeOf(context).languageCode,
+          ),
           width: 92.1,
         ),
 
@@ -1124,7 +1482,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
           button: true,
           label: context.l10n.finishRoundLabel,
           child: GestureDetector(
-            onTap: _presentResult,
+            onTap: () {
+              AudioManager().playButtonTap();
+              _presentResult();
+            },
             child: Container(
               width: 57.8,
               height: 48,
@@ -1133,10 +1494,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                 color: const Color(0xFFFFB800),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: const [
-                  BoxShadow(
-                    color: Color(0xFFB97A00),
-                    offset: Offset(0, 3),
-                  ),
+                  BoxShadow(color: Color(0xFFB97A00), offset: Offset(0, 3)),
                 ],
               ),
               child: Text(
@@ -1160,8 +1518,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       builder: (context, constraints) {
         // İçerik genişliği mevcut alandan hesaplanır; 406 tavandır.
         // Dar ekranda 406'luk tasarım FittedBox ile orantılı küçültülür.
-        final contentWidth =
-            (constraints.maxWidth - 24).clamp(0.0, _maxContentWidth);
+        final contentWidth = (constraints.maxWidth - 24).clamp(
+          0.0,
+          _maxContentWidth,
+        );
         return Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: Align(
@@ -1197,28 +1557,33 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
       decoration: BoxDecoration(
         color: const Color(0xD9080B12),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0x73FFB800),
-          width: 1,
-        ),
+        border: Border.all(color: const Color(0x73FFB800), width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            softWrap: false,
-            style: const TextStyle(
-              fontFamily: 'Nunito',
-              fontSize: 11,
-              height: 1.5,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.2,
-              color: Color(0xFFFFB800),
+          // Etiket kutuya sığmazsa küçülür ("HAMLE" → "HAM…" kesikliği
+          // olmasın, bulgu #5); değer satırı zaten aynı deseni kullanır.
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 11,
+                  height: 1.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  color: Color(0xFFFFB800),
+                ),
+              ),
             ),
           ),
           Flexible(
@@ -1249,7 +1614,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
     var bestTier = 1;
     for (final row in _grid) {
       for (final v in row) {
-        if (v > bestTier) bestTier = v;
+        final base = HisirCharacter.baseTier(v);
+        if (base > bestTier) bestTier = base;
       }
     }
     return 1 << bestTier;
@@ -1278,7 +1644,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               _panConsumed = false;
             },
             onPanUpdate: (details) {
-              if (_panConsumed || _paused || _gameOver || _showHelpModal) return;
+              if (_panConsumed || _paused || _gameOver || _showHelpModal)
+                return;
               _panAccum += details.delta;
               if (_panAccum.distance < 16) return;
               _panConsumed = true;
@@ -1289,7 +1656,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               }
             },
             onPanEnd: (details) {
-              if (_panConsumed || _paused || _gameOver || _showHelpModal) return;
+              if (_panConsumed || _paused || _gameOver || _showHelpModal)
+                return;
               final v = details.velocity.pixelsPerSecond;
               if (v.distance < 80) return;
               _panConsumed = true;
@@ -1310,10 +1678,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               ),
               foregroundDecoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0x24FFFFFF),
-                  width: 2,
-                ),
+                border: Border.all(color: const Color(0x24FFFFFF), width: 2),
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
@@ -1352,7 +1717,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                                 ),
                               ),
                               Text(
-                                context.l10n.gridHighestTile(_highestTileValue()),
+                                context.l10n.gridHighestTile(
+                                  _highestTileValue(),
+                                ),
                                 style: const TextStyle(
                                   fontFamily: 'Nunito',
                                   fontSize: 11,
@@ -1367,36 +1734,41 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                       ),
                     ),
                   // Ortalanmış `.g2048` (`[64, 353.5, 302, 302]`)
-                  Center(
-                    child: Container(
-                      width: boardSide,
-                      height: boardSide,
-                      decoration: widget.prototypeVisualState
-                          ? null
-                          : BoxDecoration(
-                              color: const Color(0x4D080B12),
-                              borderRadius: BorderRadius.circular(22),
-                              border: Border.all(
-                                color: const Color(0x24FFFFFF),
-                                width: 1.5,
+                  // 10D P0-2: geçersiz kaydırma sarsıntısı (_invalidShakeX).
+                  Transform.translate(
+                    offset: Offset(_invalidShakeX, 0),
+                    child: Center(
+                      child: Container(
+                        width: boardSide,
+                        height: boardSide,
+                        decoration: widget.prototypeVisualState
+                            ? null
+                            : BoxDecoration(
+                                color: const Color(0x4D080B12),
+                                borderRadius: BorderRadius.circular(22),
+                                border: Border.all(
+                                  color: const Color(0x24FFFFFF),
+                                  width: 1.5,
+                                ),
                               ),
-                            ),
-                      child: Padding(
-                        padding: EdgeInsets.all(boardPad),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List<Widget>.generate(size, (r) {
-                            return Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: List<Widget>.generate(size, (c) {
-                                return SizedBox(
-                                  width: tileSize,
-                                  height: tileSize,
-                                  child: _buildTile(r, c, tileSize),
-                                );
-                              }),
-                            );
-                          }),
+                        child: Padding(
+                          padding: EdgeInsets.all(boardPad),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: List<Widget>.generate(size, (r) {
+                              return Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: List<Widget>.generate(size, (c) {
+                                  return SizedBox(
+                                    width: tileSize,
+                                    height: tileSize,
+                                    child: _buildTile(r, c, tileSize),
+                                  );
+                                }),
+                              );
+                            }),
+                          ),
                         ),
                       ),
                     ),
@@ -1440,6 +1812,48 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                                 height: 1.1,
                                 fontWeight: FontWeight.w800,
                                 color: Color(0xFF141B2A),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // B15: kademe-11 (2048) zafer rozeti — hedefe
+                  // ulaşıldığında sahnenin üstünde görünür. Dile bağlı
+                  // metin içermez; prototip durumunda `_won` hep
+                  // `false` olduğu için referans kareler etkilenmez.
+                  if (_won)
+                    Positioned(
+                      top: 58,
+                      left: 0,
+                      right: 0,
+                      child: IgnorePointer(
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFB800),
+                              borderRadius: BorderRadius.circular(999),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x59000000),
+                                  offset: Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: const Text(
+                              '★ 2048',
+                              style: TextStyle(
+                                fontFamily: 'Baloo 2',
+                                fontSize: 13,
+                                height: 1.2,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                                color: Color(0xFF4A2E00),
                               ),
                             ),
                           ),
@@ -1549,14 +1963,8 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                                 color: Color(0xEB080B12),
                                 offset: Offset(0, 3),
                               ),
-                              Shadow(
-                                color: Color(0xE6FF6B35),
-                                blurRadius: 14,
-                              ),
-                              Shadow(
-                                color: Color(0x8CFF6B35),
-                                blurRadius: 32,
-                              ),
+                              Shadow(color: Color(0xE6FF6B35), blurRadius: 14),
+                              Shadow(color: Color(0x8CFF6B35), blurRadius: 32),
                             ],
                           ),
                         ),
@@ -1572,7 +1980,9 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   }
 
   Widget _buildTile(int r, int c, double tileSize) {
-    final tier = _grid[r][c];
+    final raw = _grid[r][c];
+    final tier = HisirCharacter.baseTier(raw);
+    final isHisir = HisirCharacter.isEncoded(raw);
     final pt = Point<int>(r, c);
     final isMerged = _mergedCells.contains(pt);
     final isSpawned = _lastSpawned == pt;
@@ -1624,7 +2034,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
               width: tileSize * 0.74,
               height: tileSize * 0.78,
               child: Image.asset(
-                insect.assetPath,
+                HisirCharacter.assetFor(isHisir: isHisir, tier: insect),
                 fit: BoxFit.contain,
                 filterQuality: FilterQuality.high,
               ),
@@ -1724,10 +2134,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                       width: 1,
                     ),
                     boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x73000000),
-                        offset: Offset(0, 3),
-                      ),
+                      BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
                       BoxShadow(
                         color: Color(0x4D000000),
                         offset: Offset(0, 6),
@@ -1795,7 +2202,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
   Widget _buildHelpOverlay() {
     return Positioned.fill(
       child: GestureDetector(
-        onTap: () => setState(() => _showHelpModal = false),
+        onTap: () {
+          AudioManager().playButtonTap();
+          setState(() => _showHelpModal = false);
+        },
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: ColoredBox(
@@ -1811,10 +2221,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                     end: Alignment.bottomCenter,
                     colors: [Color(0xFF1E2740), Color(0xFF121829)],
                   ),
-                  border: Border.all(
-                    color: const Color(0x8CFFB800),
-                    width: 2,
-                  ),
+                  border: Border.all(color: const Color(0x8CFFB800), width: 2),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1849,7 +2256,10 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                       button: true,
                       label: context.l10n.understoodButton,
                       child: GestureDetector(
-                        onTap: () => setState(() => _showHelpModal = false),
+                        onTap: () {
+                          AudioManager().playButtonTap();
+                          setState(() => _showHelpModal = false);
+                        },
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1897,10 +2307,7 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                   end: Alignment.bottomCenter,
                   colors: [Color(0xFF1E2740), Color(0xFF121829)],
                 ),
-                border: Border.all(
-                  color: const Color(0x73FFB800),
-                  width: 2,
-                ),
+                border: Border.all(color: const Color(0x73FFB800), width: 2),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1916,7 +2323,11 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    context.l10n.gridPauseStats(_moveCount, _mergeTotal, _maxStreak),
+                    context.l10n.gridPauseStats(
+                      _moveCount,
+                      _mergeTotal,
+                      _maxStreak,
+                    ),
                     style: const TextStyle(
                       fontFamily: 'Nunito',
                       fontSize: 12,
@@ -1955,7 +2366,12 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
                     button: true,
                     label: context.l10n.restart,
                     child: GestureDetector(
-                      onTap: _restart,
+                      // `_restart` içine konmaz: sonuç ekranı tekrar
+                      // düğmesi zaten ses çalar (çift ses olmasın).
+                      onTap: () {
+                        AudioManager().playButtonTap();
+                        _restart();
+                      },
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1982,52 +2398,6 @@ class _Grid2048ScreenState extends State<Grid2048Screen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PrototypeStatusBar extends StatelessWidget {
-  const _PrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return const IgnorePointer(
-      child: Stack(
-        children: [
-          Positioned(
-            top: 14,
-            left: 22,
-            right: 22,
-            height: 19.4,
-            child: Row(
-              children: [
-                Text(
-                  '09:41',
-                  style: TextStyle(
-                    fontFamily: 'Nunito',
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
-                    height: 1.55,
-                    color: Colors.white,
-                  ),
-                ),
-                Spacer(),
-                Icon(
-                  Icons.signal_cellular_alt_rounded,
-                  size: 15,
-                  color: Colors.white,
-                ),
-                SizedBox(width: 5),
-                Icon(
-                  Icons.battery_full_rounded,
-                  size: 15,
-                  color: Colors.white,
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

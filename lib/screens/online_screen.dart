@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/online_notify_service.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 
 /// 1:1 Pixel-Perfect OnlineScreen matching HTML prototype `#scr-online`
@@ -19,7 +22,13 @@ class OnlineScreen extends StatefulWidget {
 }
 
 class _OnlineScreenState extends State<OnlineScreen> {
-  bool _notified = false;
+  // B7/K19 — bellek-içi `_notified` bool'u kaldırıldı: tercih tek
+  // kaynak [OnlineNotifyService]'tedir (kalıcı, hub ile paylaşılır).
+  @override
+  void initState() {
+    super.initState();
+    unawaited(OnlineNotifyService.instance.ensureLoaded());
+  }
 
   // CSS filter: grayscale(.85) opacity(.75)
   static const List<double> _grayscale85Opacity75Matrix = <double>[
@@ -77,12 +86,33 @@ class _OnlineScreenState extends State<OnlineScreen> {
     AudioManager().playPop();
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
+      return;
+    }
+    // B16-online — yığında ekran yoksa (bağımsız/ilk açılış) hub
+    // yedeğine git; gömülü kullanımda kabuk gezinmeyi yönetir.
+    if (!widget.embedded) {
+      goTo(context, LululuRoutes.hub, replace: true);
     }
   }
 
-  void _toggleNotify() {
+  /// B16-online — dock sekmeleri gerçek gezinme yapar: her sekme kendi
+  /// rotasına gider (önceden her sekme yalnızca geri/pop yapıyordu).
+  void _handleDockSelect(LululuDockTab tab) {
     AudioManager().playPop();
-    setState(() => _notified = !_notified);
+    final route = switch (tab) {
+      LululuDockTab.home => LululuRoutes.hub,
+      LululuDockTab.modes => LululuRoutes.modes,
+      LululuDockTab.family => LululuRoutes.tiers,
+      LululuDockTab.shop => LululuRoutes.shop,
+      LululuDockTab.scores => LululuRoutes.scores,
+    };
+    goTo(context, route, replace: true);
+  }
+
+  Future<void> _toggleNotify() async {
+    AudioManager().playPop();
+    final subscribed = await OnlineNotifyService.instance.toggle();
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -91,7 +121,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF141B2A),
           content: Text(
-            _notified
+            subscribed
                 ? context.l10n.onlineNotifySignupSnack
                 : context.l10n.onlineNotifyRemovedSnack,
             style: _nunito(
@@ -106,7 +136,6 @@ class _OnlineScreenState extends State<OnlineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mqTop = MediaQuery.of(context).padding.top;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
@@ -118,7 +147,6 @@ class _OnlineScreenState extends State<OnlineScreen> {
               bottom: false,
               child: Column(
                 children: [
-                  if (mqTop == 0) const _OnlinePrototypeStatusBar(),
                   _buildPageTitle(),
                   Expanded(
                     child: SingleChildScrollView(
@@ -146,7 +174,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
               height: 84,
               child: _OnlineFloatingDock(
                 activeTab: LululuDockTab.home,
-                onSelectTab: (_) => _closeOrPop(),
+                onSelectTab: _handleDockSelect,
               ),
             ),
         ],
@@ -352,10 +380,16 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ),
               ),
               const SizedBox(height: 16.0),
-              Semantics(
-                button: true,
-                label: _notified ? context.l10n.notifyOnLabel : context.l10n.notifyMe,
-                child: GestureDetector(
+              ListenableBuilder(
+                listenable: OnlineNotifyService.instance,
+                builder: (context, _) {
+                  final notified = OnlineNotifyService.instance.isSubscribed;
+                  return Semantics(
+                    button: true,
+                    label: notified
+                        ? context.l10n.notifyOnLabel
+                        : context.l10n.notifyMe,
+                    child: GestureDetector(
                   onTap: _toggleNotify,
                   child: CustomPaint(
                     painter: const _OnlineBlurredRRectShadowPainter(
@@ -393,7 +427,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _notified ? context.l10n.notifyOnCaps : context.l10n.notifyMe,
+                            notified ? context.l10n.notifyOnCaps : context.l10n.notifyMe,
                             style: _baloo2(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
@@ -407,6 +441,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
                     ),
                   ),
                 ),
+                  );
+                },
               ),
             ],
           ),
@@ -421,6 +457,18 @@ class _OnlineScreenState extends State<OnlineScreen> {
       padding: const EdgeInsets.fromLTRB(12, 9.9, 12, 10),
       child: Column(
         children: [
+          // 12D1: görünür lobi girişi — sohbet lobisi ekranını açar.
+          _buildFeatureCard(
+            icon: Icons.chat_bubble_rounded,
+            gradientColors: const [Color(0xFFF4538B), Color(0xFF9B5DE5)],
+            title: context.l10n.chatLobbyTitle,
+            subtitle: context.l10n.chatLobbySubtitle,
+            onTap: () {
+              AudioManager().playPop();
+              goTo(context, LululuRoutes.chatLobby);
+            },
+          ),
+          const SizedBox(height: 10),
           _buildFeatureCard(
             iconAsset: 'assets/icons2/sword.png',
             gradientColors: const [Color(0xFFF4538B), Color(0xFFE01E5A)],
@@ -447,13 +495,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
   }
 
   /// `.online-feat` -> height: 68, padding: 12px 14px, gap: 12px, borderRadius: 18
+  ///
+  /// 12D1: [onTap] verilirse kart dokunulabilir olur (lobi kartı);
+  /// verilmezse eskisi gibi statik kalır. [icon] verilirse
+  /// [iconAsset] yerine Material ikonu çizilir.
   Widget _buildFeatureCard({
-    required String iconAsset,
+    String? iconAsset,
+    IconData? icon,
     required List<Color> gradientColors,
     required String title,
     required String subtitle,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    final card = Container(
       height: 68,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -482,12 +536,14 @@ class _OnlineScreenState extends State<OnlineScreen> {
               ),
             ),
             alignment: Alignment.center,
-            child: Image.asset(
-              iconAsset,
-              width: 27,
-              height: 27,
-              fit: BoxFit.contain,
-            ),
+            child: icon != null
+                ? Icon(icon, size: 27, color: Colors.white)
+                : Image.asset(
+                    iconAsset!,
+                    width: 27,
+                    height: 27,
+                    fit: BoxFit.contain,
+                  ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -533,6 +589,16 @@ class _OnlineScreenState extends State<OnlineScreen> {
             ),
           ),
         ],
+      ),
+    );
+    if (onTap == null) return card;
+    return Semantics(
+      button: true,
+      label: title,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: card,
       ),
     );
   }
@@ -1081,103 +1147,3 @@ class _OnlineDockCircleInsetPainter extends CustomPainter {
       oldDelegate.dy != dy || oldDelegate.color != color;
 }
 
-class _OnlinePrototypeStatusBar extends StatelessWidget {
-  const _OnlinePrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '09:41',
-              style: _OnlineScreenState._nunito(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: const Color(0xFF141B2A),
-                height: 1.55,
-              ),
-            ),
-            const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _OnlineSignalPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _OnlineBatteryPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OnlineSignalPainter extends CustomPainter {
-  const _OnlineSignalPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _OnlineBatteryPainter extends CustomPainter {
-  const _OnlineBatteryPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

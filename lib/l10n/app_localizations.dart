@@ -117,6 +117,12 @@ abstract class AppLocalizations {
   String get resume;
   String get restart;
   String get quit;
+
+  /// N7: hamleli + enerjili turda çıkış onayı başlığı.
+  String get exitRoundConfirmTitle;
+
+  /// N7: hamleli + enerjili turda çıkış onayı gövdesi (tur + enerji kaybı).
+  String get exitRoundConfirmBody;
   String get profile;
   String get tasks;
 
@@ -157,6 +163,10 @@ abstract class AppLocalizations {
 
   /// Görev ödül metni: 'Ödül: +150 COIN' biçimi korunur.
   String rewardCoins(int amount);
+
+  /// Boss ilk geçiş bonusu etiketi (K3b, salt-görünüm): ödeme mantığı
+  /// değil, seviye/boss bilgi etiketidir.
+  String bossFirstClearBonus(int amount);
   String rewardEnergy(int amount);
 
   String get todaysTasks;
@@ -172,6 +182,11 @@ abstract class AppLocalizations {
   String get dailyRewardClaimedSnack;
   String get rewardedAdsComingSoon;
   String get dailyEnergyClaimedSnack;
+  String get dailyEnergyAlreadyClaimedSnack;
+  String get hbEnergyTag;
+  String get chestClaimFailed;
+  String boosterOutOfStockToast(String label);
+  String taskRewardClaimedSnack(String rewardText);
   String get onlineNotifySignupSnack;
   String get seeAllArrow;
   String get studioTitle;
@@ -249,6 +264,26 @@ abstract class AppLocalizations {
   String get gamesPlayedLabel;
   String get bestComboLabel;
   String get myBadges;
+  String get profilePassRowSub;
+  String get profileInviteRowTitle;
+  String get profileInviteRowSub;
+  String get profileInviteFailed;
+
+  /// 9A — davet kodu karşılama (redeem) sheet'i.
+  String get inviteRedeemTitle;
+  String get inviteRedeemHint;
+  String get inviteRedeemButton;
+  String get inviteRedeemLocalNote;
+  // --- 12C2: davet kodu kopyalama ---
+  String get inviteCopyCodeLabel;
+  String get inviteCodeCopied;
+  String get inviteRedeemErrorInvalid;
+  String get inviteRedeemErrorOwn;
+  String get inviteRedeemErrorUsed;
+
+  /// Başarı mesajı; ödül tutarı parametrelidir.
+  String inviteRedeemSuccess(int coins);
+  String get profileRoyalCapeBadge;
 
   /// Rozet sayacı: '2/6 KAZANILDI' biçimi korunur.
   String badgesEarnedCount(int count);
@@ -362,6 +397,24 @@ abstract class AppLocalizations {
   String get registerTab;
   String get createAccountButton;
   String get signInButton;
+  String get authUsernameRequired;
+  String get authUsernameInvalid;
+  String get authPasswordRequired;
+  String get authPasswordTooShort;
+  String get authPasswordTooLong;
+  String get authPasswordInvalid;
+  String get authGenericFailed;
+  String get authWrongPassword;
+  String get authUserNotFound;
+  String get authUsernameTaken;
+  String get authTooManyAttempts;
+  String get authSignOutFailed;
+  String get authSignInSuccess;
+  String get authRegisterSuccess;
+  String get authRegisterLocalOnly;
+  String get settingsResetFailed;
+  String get settingsResetDone;
+  String get onboardingSaveFailed;
   String get orDivider;
 
   // --- Dalga 20 göçü: Oyun + sonuç ekranı (game_screen, result_screen) ---
@@ -401,12 +454,19 @@ abstract class AppLocalizations {
   String get boosterLightLabel;
   String boosterCountLabel(String label, int count);
   String shareScoreSnack(int score);
+  String scoreShareText(int score);
   String get resultSubtitle;
   String get levelCompleteTitle;
+  String get resultGameOverTitle;
+  String get resultGameOverSubtitle;
 
   /// Sonuç ekranındaki 'EN İYİ KOMBO' etiketi; profil ekranındaki
   /// [bestComboLabel] ('EN YÜKSEK KOMBO') etiketinden farklıdır.
   String get bestComboResultLabel;
+
+  /// Sonuç ekranındaki rekor rozeti (12Q-stars): yıldızdan ayrı,
+  /// yalnız mod rekoru kırıldıysa gösterilir.
+  String get newRecordBadge;
   String get mergesLabel;
   String get goldEarnedLabel;
   String get continueWithAdSoon;
@@ -414,6 +474,7 @@ abstract class AppLocalizations {
   String get playAgainButton;
   String get sharedButton;
   String get shareButton;
+  String get shareScoreFailed;
 
   // --- Dalga 20 göçü: Ayarlar (settings_screen) ---
 
@@ -425,6 +486,7 @@ abstract class AppLocalizations {
   String get cancelCaps;
   String get resetButton;
   String accountDeleteFailed(String error);
+  String accountDeletedPartialSnack(int failedCount);
   String get accountDeletedSnack;
   String signedInAs(String displayName);
 
@@ -482,7 +544,7 @@ abstract class AppLocalizations {
   String get privacySection6Title;
   String get privacySection6Body1;
 
-  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen + campaign_map_sheet) ---
+  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen) ---
   // Bölüm/boss adları model verisidir (CampaignChapterMeta.titleFor /
   // bossNameFor); burada yalnız şablonlar çevrilir.
 
@@ -508,18 +570,12 @@ abstract class AppLocalizations {
     int boosterCount,
     String boosterName,
   );
-  String get campaignSheetTitle;
-  String get campaignSheetSubtitle;
-  String chapterBannerTitle(int index, String title);
-  String bossBannerLine(int id, String bossName, int hp, String hazard);
-  String levelRangeShort(int start, int end);
   String chestStarsLabel(int stars);
 
   /// Cümle içi yazımlı 'Alındı'; büyük harfli [claimedShort]
   /// ('ALINDI') etiketinden farklıdır.
   String get claimedPlain;
   String chestRewardLine(int coins, int count);
-  String get bossShort;
 
   // --- Dalga 20 göçü: Sohbet (chat_lobby_screen, chat_screen) ---
   // Tohum (seed) mesajlar ve oyuncu adları kullanıcı içeriğidir;
@@ -529,6 +585,8 @@ abstract class AppLocalizations {
   String levelShort(int level);
   String get messageHint;
   String get messageSendFailed;
+  String get chatLobbyTitle;
+  String get chatLobbySubtitle;
   String get stickerSendFailed;
   String get quickStickerTitle;
   String get notSentLocalOnly;
@@ -569,6 +627,8 @@ abstract class AppLocalizations {
   String get leaderboardLoadingLabel;
   String get noScoresYet;
   String get noScoresHint;
+  String get noRivalsYet;
+  String get noRivalsHint;
 
   // --- Dalga 20 göçü: Hesap (auth_screen, auth_panel) ---
 
@@ -585,6 +645,9 @@ abstract class AppLocalizations {
   // verisidir; anahtar yapılmadı.
 
   String get linkCopiedToast;
+  String get videoPreviewBadge;
+  String get videoSharedToast;
+  String get videoTextCopiedToast;
   String get videoAddedToDownloadsToast;
   String videoPlayPauseLabel(bool isPlaying, String title);
   String likeLabel(String count, bool liked);
@@ -641,6 +704,8 @@ abstract class AppLocalizations {
   String playItemLabel(String title);
   String nowPlayingLabel(String title);
   String deleteItemLabel(String title);
+  String get deleteDownloadTitle;
+  String deleteDownloadConfirm(String title);
 
   // --- Dalga 33 göçü (W33-1): erişilebilirlik etiketleri ---
   // Yalnız anahtar eklendi; UI göçü sonraki dalgada (kaynak metinler
@@ -783,6 +848,14 @@ abstract class AppLocalizations {
   String get shopItemHandfulDesc;
   String get shopItemCrateTitle;
   String get shopItemCrateDesc;
+  String get shopItemCoinsMidTitle;
+  String get shopItemCoinsMidDesc;
+  String get shopItemCoinsBigTitle;
+  String get shopItemCoinsBigDesc;
+  String get shopItemRoyalCapeTitle;
+  String get shopItemRoyalCapeDesc;
+  String get shopCosmeticsTitle;
+  String get shopRoyalCapeOwnedLabel;
   String get shopItemWoodenChestTitle;
   String get shopItemWoodenChestDesc;
   String get shopItemGoldenChestTitle;
@@ -791,6 +864,22 @@ abstract class AppLocalizations {
   String get shopItemDoubleCoinDesc;
   String get shopItemLuckPotionTitle;
   String get shopItemLuckPotionDesc;
+  // 8F: katalog IAP kartları için yeni başlık/açıklama anahtarları.
+  // TR değerleri katalogdan verbatim (iap_service.dart storeCatalog /
+  // packs); coins_small `packs`'te, diğerleri `storeCatalog`'da.
+  // gold_chest IAP kartı katalog başlığını/açıklamasını kullanır
+  // (coin kartındaki 'Altın Sandık' / 'Garantili nadir ödül içerir'
+  // metninden farklıdır — ayrı anahtar gerekir).
+  String get shopItemCoinsSmallTitle;
+  String get shopItemCoinsSmallDesc;
+  String get shopItemF16PackTitle;
+  String get shopItemF16PackDesc;
+  String get shopItemRaidPackTitle;
+  String get shopItemRaidPackDesc;
+  String get shopItemTerlikPackTitle;
+  String get shopItemTerlikPackDesc;
+  String get shopItemGoldChestIapTitle;
+  String get shopItemGoldChestIapDesc;
   String get shopNotEnoughGoldToast;
   String get shopAddedCoinPackToast;
   String get shopEnergyRegenToast;
@@ -804,6 +893,25 @@ abstract class AppLocalizations {
   String get shopAddedGoldenChestToast;
   String get shopAddedDoubleCoinToast;
   String get shopAddedLuckPotionToast;
+  // 8F: yeni IAP güçlendirici kartlarının başarı toast'ları.
+  String get shopAddedF16Toast;
+  String get shopAddedRaidToast;
+  String get shopAddedTerlikToast;
+  String get energyPackBoughtToast;
+  String get energyRefundNotice;
+  String get shopPurchaseFailedRefundToast;
+  String get shopPurchaseConfirmTitle;
+  String get shopEnergyEmptyConfirmBody;
+  String get shopRestorePurchasesLabel;
+  String get shopRestoreStartedToast;
+  String get shopRestoreUnavailableToast;
+  String get shopAddedRoyalCapeToast;
+
+  /// Satın alma onay gövdesi: ürün adı + görüntülenen fiyat etiketi.
+  String shopPurchaseConfirmBody(String itemName, String priceLabel);
+
+  /// Coin fiyat etiketi: bedel + coin birimi.
+  String shopCoinPriceLabel(int cost);
 
   /// Güç satırı açıklama satırı: çevrilmiş açıklama + çevrilmiş mod adı.
   /// [desc] ve [modeName] zaten çevrilmiş değerlerdir.
@@ -910,11 +1018,17 @@ abstract class AppLocalizations {
   String get makaraWrongLane;
   String get makaraEarlyTap;
   String get makaraFreezeHint;
+
+  // 12P: BİTİR onayı + bitiş sebebi (can bitmesi / erken bitirme).
+  String get makaraFinishConfirmTitle;
+  String get makaraFinishConfirmBody;
+  String get makaraFinishedEarlyReason;
   String get makaraFreezeCallout;
   String get makaraAutoHint;
   String get makaraAutoCallout;
   String get makaraX2Hint;
   String get makaraX2Active;
+  String get makaraRules;
   String get makaraEndedTitle;
   String get makaraShareLine;
   String get makaraTaglineCaps;
@@ -955,6 +1069,8 @@ abstract class AppLocalizations {
   String osmantusStatsLine(int maxCombo, int streak);
   // --- W60-2: G6 terlik_tap (i18n göç planı) ---
   String get terlikHintIdle;
+  String get terlikHowToBody;
+  String get terlikEnergyRefundNotice;
   String get terlikBonusComboSlipper;
   String get terlikTrapPassed;
   String get terlikEscaped;
@@ -994,11 +1110,17 @@ abstract class AppLocalizations {
   String chatBadgeUnreadLabel(String badge);
   // --- W65-1: G7 scream_roach (i18n göç planı) ---
   String get screamHintIdle;
+  String get screamHowToBody;
   String get screamGatePrototype;
   String get screamIdleGround;
   String get screamShieldSaved;
   String get screamMicPermissionSettings;
   String get screamMicDeniedHint;
+  // --- 12C2: mikrofon açmadan önce bilgilendirme + eşik ayarı ---
+  String get screamMicExplainTitle;
+  String get screamMicExplainBody;
+  String get screamMicEnableAction;
+  String screamMicThreshold(int db);
   String get screamMegaJumpCallout;
   String get screamMegaJumpHint;
   String get screamShieldBalloonCallout;
@@ -1010,7 +1132,6 @@ abstract class AppLocalizations {
   String get screamMicOnLabel;
   String get screamVoicePower;
   String get screamGateStat;
-  String get screamCrushedTitle;
   String get gateTerlikDeath;
   String get gateTerlikPass;
   String get gateRaidDeath;
@@ -1026,13 +1147,12 @@ abstract class AppLocalizations {
   String screamDeathLine(String deathLine, int gates);
   String screamGateStreak(int streak);
   String screamCrushedHint(int gates, int streak);
-  String screamStatsLine(int gates, int streak, int dayStreak);
   String screamNextGate(int gate);
   String screamShoutingPercent(int percent);
-  String screamArcadeHint(String hint);
   String screamPauseScore(int score, int gates);
   // --- W65-1: G8 stack_drop (i18n göç planı) ---
   String get stackHintIdle;
+  String get stackHelpBody;
   String get stackPerfectPrototype;
   String get stackMissedFall;
   String get stackSliceThin;
@@ -1054,6 +1174,7 @@ abstract class AppLocalizations {
   String stackMilestoneFloors(int m);
   String stackStatsLine(int floors, int perfects, int nears, int combo);
   String stackTutorialHint(String hint);
+  String get stackWarmupForgiven;
   String stackFloorLabel(int floor);
   // --- W65-1: G9 yuva_defense (i18n göç planı) ---
   String get yuvaHintIdle;
@@ -1082,6 +1203,7 @@ abstract class AppLocalizations {
   String get gridHowToBody2;
   String get gridHowToBody3;
   String get gridHowToBody4;
+  String get gridBoosterNoEffect;
   String gridSuperMergeSpeech(String title);
   String gridHighestTile(int value);
   String gridMovesCount(int count);
@@ -1104,6 +1226,9 @@ abstract class AppLocalizations {
   String get welcomeStatusReadFail;
   String get welcomeSkipFail;
   String get continueToHomeAnyway;
+
+  // Ş14: main.dart boot enerji zaman aşımı uyarı bandı detayı.
+  String get energyLoadTimeout;
 
   // G12: tiers_screen.dart başlık + alt başlık (258/279).
   String get bugFamilyTitle;
@@ -1139,6 +1264,8 @@ abstract class AppLocalizations {
 
   // G17: energy_empty_popup.dart (178/229/249/269).
   String get energyEmptyTitle;
+  // Dalga 18: kısmi enerjide popup başlığı (0 değilken).
+  String get energyTopUpTitle;
   String get energyEmptyBodyStart;
   String get energyEmptyBodyMiddle;
   String get energyEmptyBodyEnd;
@@ -1163,7 +1290,6 @@ abstract class AppLocalizations {
   /// Seviye karosu erişilebilirlik etiketi: seviye no + yıldız;
   /// kilitliyse ' · Kilitli' eklenir.
   String levelTileLabel(int id, int stars, bool locked);
-  String chapterTabLabel(int index, int stars);
 
   /// Sandık erişilebilirlik etiketi. [state]: 'claimable' (alınabilir),
   /// 'claimed' (alındı) veya 'locked' (kilitli); bilinmeyen değerde
@@ -1219,6 +1345,7 @@ abstract class AppLocalizations {
   /// Balon modu: tavan etiketi, ipucu satırları, nişan etiketi.
   String get ceilingLabel;
   String get balloonHintDrift;
+  String get balloonHelpBody;
   String get balloonHintRowDropped;
   String balloonRowsInShots(int shots);
   String get holdAimRelease;
@@ -1254,7 +1381,7 @@ abstract class AppLocalizations {
   /// Yuva savunması: arena başlık bandı.
   String get yuvaBanner;
 
-  /// Osmantuş: ikili tuş, rol alt yazıları, ritim ipucu.
+  /// Osmantuş: tek dokunuş, rol alt yazıları, ritim ipucu.
   String get osmantusDoubleButton;
   String get osmanRoleSub;
   String get tusRoleSub;
@@ -1313,6 +1440,43 @@ abstract class AppLocalizations {
   String get makaraOverTitle;
   String get bonusLifePlus;
   String get gotItPlay;
+
+  /// Sohbet moderasyonu: raporla/engelle + misafir kimliği + şart onayı.
+  String get chatReportAction;
+  String get chatBlockAction;
+  String get chatUnblockAction;
+  String get chatReportTitle;
+  String get chatReportReasonSpam;
+  String get chatReportReasonInappropriate;
+  String get chatReportReasonHarassment;
+  String get chatReportReasonOther;
+  String get chatReportSent;
+  String get chatReportQueued;
+  String get chatReportAlreadySent;
+  String get chatUserBlocked;
+  String get chatUserUnblocked;
+  String get chatBlockedTitle;
+  String get chatBlockedEmpty;
+  String get chatTermsTitle;
+  String get chatTermsBody;
+  String get chatTermsAccept;
+  String get chatTermsDecline;
+  String get chatTermsRequired;
+  String get chatGuestBadge;
+  String get chatGuestNameTitle;
+  String get chatGuestNameHint;
+  String get chatGuestNameEmpty;
+  String get chatGuestNameSaved;
+  String get chatActionFailed;
+  String get chatEmptyChannel;
+  String get chatOptionsLabel;
+  String get chatChangeNameAction;
+  String get chatBlockedListAction;
+  String get chatDeleteAction;
+  String get chatDeleteTitle;
+  String get chatDeleteBody;
+  String get chatMessageDeleted;
+  String get chatDeleteLocalOnly;
   String match3StatsLine(int merge, int chain, int made, int fired);
   String match3RocketBombGain(int gained);
   String match3RocketHint(int n);
@@ -1325,6 +1489,20 @@ abstract class AppLocalizations {
   String balloonBombGain(int gained);
   String makaraComboBroken(String reason);
   String osmantusLastError(String reason);
+
+  // --- Dalga 3H: günlük challenge kartı + kampanya/davet girişleri ---
+  String get dailyChallengeTitle;
+  String get dailyChallengeHint;
+  String get campaignHubSubtitle;
+  String dailyChallengeClaimedSnack(int coins);
+
+  /// Günlük challenge kartı alt satırı: bugünün modu + hedef puan.
+  /// `modeLabel` modun kalıcı görünen adıdır (yerelleştirilmez),
+  /// yalnız şablon dile göre değişir.
+  String dailyChallengeHeadline(String modeLabel, int targetScore);
+
+  // --- S7 (koordinatör takibi): tur sonu görev-tamamlanma bildirimi ---
+  String taskCompletedSnack(String taskTitle);
 }
 
 /// [AppLocalizations.of] kısayolu: `context.l10n.play`.

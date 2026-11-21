@@ -79,6 +79,7 @@ class ZeroJankPreloader {
     'assets/design/ui/logo_lululu.webp',
     'assets/design/backgrounds/suika_kitchen.webp',
     'assets/design/backgrounds/bg_kitchen.jpg',
+    'assets/design/backgrounds/makarayiz_stage.webp',
     'assets/images/stickers/sticker_tier1_cone.png',
     'assets/images/stickers/sticker_tier2_helmet.png',
     'assets/images/stickers/sticker_tier3_fan.png',
@@ -92,15 +93,15 @@ class ZeroJankPreloader {
   /// Bundled font assets pre-warmed at startup for zero-jank first text layout.
   static const List<String> criticalFontAssets = [
     'assets/fonts/Baloo2-Regular.ttf',
-    'assets/fonts/Baloo2-Bold.ttf',
-    'assets/fonts/Baloo2-ExtraBold.ttf',
+    'assets/fonts/Baloo2-Regular.ttf',
+    'assets/fonts/Baloo2-Regular.ttf',
     'assets/fonts/Bangers-Regular.ttf',
     'assets/fonts/Nunito-Regular.ttf',
-    'assets/fonts/Nunito-Bold.ttf',
-    'assets/fonts/Nunito-ExtraBold.ttf',
-    'assets/fonts/Nunito-Black.ttf',
+    'assets/fonts/Nunito-Regular.ttf',
+    'assets/fonts/Nunito-Regular.ttf',
+    'assets/fonts/Nunito-Regular.ttf',
     'assets/fonts/Exo2-Regular.ttf',
-    'assets/fonts/Exo2-Bold.ttf',
+    'assets/fonts/Exo2-Regular.ttf',
   ];
 
   /// Critical voice & SFX assets under the canonical `assets/audio/` folder.
@@ -126,6 +127,43 @@ class ZeroJankPreloader {
 
   bool isWarming = false;
   double progress01 = 0;
+
+  /// [progress01] için dinlenebilir ayna (12R): tanıtım çubuğu gibi
+  /// arayüzler gerçek ilerlemeyi buradan okur; düz alan tek başına
+  /// hiçbir widget'ı yeniden çizmez. Her [progress01] yazımı
+  /// [_setProgress] üzerinden yapılır, ikisi asla ayrışmaz.
+  final ValueNotifier<double> progressNotifier = ValueNotifier<double>(0);
+
+  /// Tek bir işin asılı kalıp kuyruğu kilitlemesine karşı üst sınır
+  /// (12R): süre dolan iş denendi sayılır, kuyruk ilerler. Yerel
+  /// paket yüklemeleri milisaniyeler sürer; 15 sn cömert bir sınırdır.
+  /// Testler kısa değer atayabilir.
+  Duration jobTimeout = const Duration(seconds: 15);
+
+  /// [progress01] + [progressNotifier] tek kaynaktan yazılır.
+  void _setProgress(double value) {
+    progress01 = value.clamp(0.0, 1.0);
+    progressNotifier.value = progress01;
+  }
+
+  /// Bir işi [jobTimeout] sınırıyla çalıştırır (12R): asla dönmeyen
+  /// yükleme (iOS Safari'de takılan paket okuma / decode) kuyruğu ve
+  /// ilerleme çubuğunu kilitleyemez. Süre dolan iş denendi sayılır;
+  /// geç tamamlanırsa işaretleri idempotent eklenir, çift sayım olmaz.
+  Future<void> _runJobWithTimeout(FutureOr<void> Function() job) async {
+    final pending = job();
+    if (pending is! Future) return;
+    try {
+      await pending.timeout(jobTimeout);
+    } on TimeoutException {
+      if (kDebugMode) {
+        debugPrint(
+          '[ZeroJankPreloader] job zaman aşımı '
+          '(${jobTimeout.inSeconds} sn) — atlanıp devam ediliyor',
+        );
+      }
+    }
+  }
   double lastSliceMs = 0;
   double maxSliceMs = 0;
   bool get budgetRespected => maxSliceMs < 2.0;
@@ -194,11 +232,13 @@ class ZeroJankPreloader {
   ///
   /// [ResizeImage] aynı mantıksal görsel için farklı bir önbellek anahtarı
   /// üretir: bu sağlayıcıyla precache edilen giriş, yalnızca aynı
-  /// sağlayıcıyı isteyen widget'larla eşleşir. Düz `AssetImage` kullanan
-  /// widget'lar ilk gösterimde tam çözünürlükte decode eder; toplam bellek
-  /// `main.dart`'taki [ImageCache] sınırlarıyla bağlıdır. Bu yardımcı
-  /// public'tir ki sonraki dalgalar widget'larda aynı sağlayıcıyı kullanıp
-  /// önbellek isabetini sağlayabilsin.
+  /// sağlayıcıyı isteyen widget'larla eşleşir. [precacheCriticalAssets]
+  /// bu yardımcıyı YALNIZ tier görselleri için kullanır (Dalga 17):
+  /// tier PNG'ler tam çözünürlükte decode edilmesin diye 768 px ile
+  /// precache edilir; widget'lar `cacheWidth: 96` ile ister — anahtarlar
+  /// farklıdır ama iki decode da boyutludur, tam çözünürlük decode
+  /// hiçbir yolda olmaz. Diğer kritik görseller düz `AssetImage` ile
+  /// precache edilir (8B: widget'larla aynı anahtar).
   static ImageProvider sizedImageProvider(String resolvedPath) {
     return ResizeImage(
       AssetImage(resolvedPath),
@@ -275,8 +315,22 @@ class ZeroJankPreloader {
 
   /// Precaches critical sticker, banner, and background images into Flutter's
   /// [ImageCache] via [precacheImage], time-sliced across frames.
-  /// Decode hedef boyutla yapılır ([sizedImageProvider], madde 53): HD
-  /// görseller tam çözünürlükte decode edilmez.
+  ///
+  /// Düz `AssetImage` anahtarıyla yapılır (8B): widget'ların tamamı düz
+  /// `AssetImage` (`Image.asset`) istediği için precache edilen girişle
+  /// aynı anahtar eşleşir ve ilk gösterim önbellekten gelir. Tek istisna
+  /// tier görselleridir (Dalga 17): tier PNG'ler 874×2333–1408×1760
+  /// tam çözünürlükte decode edilmesin diye [sizedImageProvider]
+  /// (`ResizeImage`, 768 px) ile precache edilir; widget'lar
+  /// `StickerImage` üzerinden `cacheWidth: 96` ile ister — iki giriş
+  /// farklı anahtar taşır ama ikisi de boyutludur, tam çözünürlük
+  /// decode hiçbir yolda olmaz.
+  ///
+  /// Tek bilinen istisna: `splash_screen.dart` splash arka planını
+  /// `cacheWidth: 860, cacheHeight: 1911` ile ister — o tek site kendi
+  /// `ResizeImage` anahtarıyla decode eder (bilinçli boyut sınırı,
+  /// dokunulmadı); `bg_splash.webp` yine de onboarding'deki düz istekle
+  /// eşleşir.
   Future<void> precacheCriticalAssets(
     BuildContext context, {
     List<String>? extraImagePaths,
@@ -306,8 +360,16 @@ class ZeroJankPreloader {
           if (!context.mounted || isFlutterTest) return;
           var failed = false;
           try {
+            // Tier görselleri boyutlu precache (Dalga 17): tam çözünürlük
+            // decode'u engeller; diğerleri düz AssetImage (8B) ile
+            // widget'larla aynı önbellek anahtarını paylaşır.
+            final isTierAsset =
+                resolved.contains('/bugs_hd/') ||
+                resolved.contains('/bugs_new/');
             await precacheImage(
-              sizedImageProvider(resolved),
+              isTierAsset
+                  ? sizedImageProvider(resolved)
+                  : AssetImage(resolved),
               context,
               onError: (_, _) {
                 failed = true;
@@ -374,10 +436,10 @@ class ZeroJankPreloader {
   /// Pre-warms critical voice and SFX audio byte buffers in time-sliced jobs.
   ///
   /// Warms from the single canonical folder `assets/audio/` only, via
-  /// [GameAudio.allAssets] (which already includes the `tier*_ses.mp3` clips
-  /// listed in [criticalSoundAssets]). The byte-identical copies under
-  /// `assets/design/sounds/` are NOT warmed separately: warming both
-  /// folders loaded every `tier1..8_ses.mp3` twice.
+  /// [GameAudio.allAssets] (which includes the `tier*_ses.mp3` clips
+  /// listed in [criticalSoundAssets]). Since 12A removed the byte-identical
+  /// `voice_tierN.mp3` duplicates from [GameAudio.allAssets], each tier
+  /// clip is warmed exactly once — no clip is loaded twice.
   void enqueueAudioWarmup() {
     for (final audioFile in GameAudio.allAssets) {
       final captured = 'assets/audio/$audioFile';
@@ -390,7 +452,7 @@ class ZeroJankPreloader {
     _totalJobs++;
     isWarming = true;
     if (_totalJobs > 0 && _doneJobs == 0) {
-      progress01 = 0;
+      _setProgress(0);
     }
   }
 
@@ -455,7 +517,7 @@ class ZeroJankPreloader {
     if (_work.isEmpty) {
       if (isWarming) {
         isWarming = false;
-        progress01 = 1;
+        _setProgress(1);
         onWarmupComplete?.call();
       }
       return;
@@ -497,7 +559,7 @@ class ZeroJankPreloader {
         final job = _work.removeFirst();
         final jobWatch = Stopwatch()..start();
         try {
-          await job();
+          await _runJobWithTimeout(job);
         } catch (_) {
           // Failed job: counted as attempted below, like _drainBudget.
         } finally {
@@ -509,7 +571,7 @@ class ZeroJankPreloader {
         if (jobMs >= budget) overBudgetJobCount++;
         _doneJobs++;
         if (_totalJobs > 0) {
-          progress01 = (_doneJobs / _totalJobs).clamp(0.0, 1.0);
+          _setProgress(_doneJobs / _totalJobs);
         }
       }
     } finally {
@@ -522,7 +584,7 @@ class ZeroJankPreloader {
 
     if (_work.isEmpty) {
       isWarming = false;
-      progress01 = 1;
+      _setProgress(1);
       onWarmupComplete?.call();
     }
   }
@@ -549,7 +611,7 @@ class ZeroJankPreloader {
         // still deferred to the next frame by the check above.
         final jobWatch = Stopwatch()..start();
         try {
-          await job();
+          await _runJobWithTimeout(job);
         } catch (e, st) {
           if (!isFlutterTest && kDebugMode) {
             debugPrint('[ZeroJankPreloader] job skipped: $e\n$st');
@@ -572,7 +634,7 @@ class ZeroJankPreloader {
         }
         _doneJobs++;
         if (_totalJobs > 0) {
-          progress01 = (_doneJobs / _totalJobs).clamp(0.0, 1.0);
+          _setProgress(_doneJobs / _totalJobs);
         }
       }
     } finally {
@@ -589,7 +651,7 @@ class ZeroJankPreloader {
       _scheduleNextFrame();
     } else if (_work.isEmpty) {
       isWarming = false;
-      progress01 = 1;
+      _setProgress(1);
       onWarmupComplete?.call();
     }
   }

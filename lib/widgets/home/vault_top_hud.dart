@@ -5,6 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/auth_service.dart';
 import '../../services/progress_manager.dart';
 import '../../theme/lululu_theme.dart';
+import '../../utils/number_format.dart';
 
 /// White-hub top bar — brand + currency + profile.
 class VaultTopHud extends StatelessWidget {
@@ -23,6 +24,13 @@ class VaultTopHud extends StatelessWidget {
   Widget build(BuildContext context) {
     final stars = progress.totalStars;
     final coins = progress.coins;
+    // 14A: K kısaltmasında ondalık ayırıcı dile göre (TR '1,2 B', EN '1.2K').
+    final languageCode = Localizations.localeOf(context).languageCode;
+    String abbreviate(int n) => n >= 1000
+        ? '${formatDecimal(n / 1000, 1, languageCode)}${languageCode == 'tr' ? ' B' : 'K'}'
+        : '$n';
+    final starsText = abbreviate(stars);
+    final coinsText = abbreviate(coins);
     final level = progress.unlockedLevel.clamp(1, 80);
 
     return ListenableBuilder(
@@ -64,7 +72,7 @@ class VaultTopHud extends StatelessWidget {
                     icon: Icons.star_rounded,
                     iconColor: LululuColors.liquidGold,
                     label: 'YILDIZ',
-                    value: _fmt(stars),
+                    value: starsText,
                     border: LululuColors.liquidGold,
                   ),
                 ),
@@ -73,32 +81,32 @@ class VaultTopHud extends StatelessWidget {
                   button: true,
                   label: context.l10n.profilePillLabel(name, level),
                   child: GestureDetector(
-                  onTap: onProfileTap,
-                  behavior: HitTestBehavior.opaque,
-                  child: _Profile(
-                    name: name,
-                    level: level,
-                    signedIn: auth.isSignedIn,
+                    onTap: onProfileTap,
+                    behavior: HitTestBehavior.opaque,
+                    child: _Profile(
+                      name: name,
+                      level: level,
+                      signedIn: auth.isSignedIn,
+                    ),
                   ),
-                ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Semantics(
                     button: true,
-                    label: context.l10n.coinPillLabel(_fmt(coins)),
+                    label: context.l10n.coinPillLabel(coinsText),
                     child: GestureDetector(
-                    onTap: onShopTap,
-                    behavior: HitTestBehavior.opaque,
-                    child: _Pill(
-                      icon: Icons.diamond_rounded,
-                      iconColor: LululuColors.cyberFuchsia,
-                      label: 'COİN',
-                      value: _fmt(coins),
-                      border: LululuColors.cyberFuchsia,
-                      trailing: Icons.add_circle_rounded,
+                      onTap: onShopTap,
+                      behavior: HitTestBehavior.opaque,
+                      child: _Pill(
+                        icon: Icons.diamond_rounded,
+                        iconColor: LululuColors.cyberFuchsia,
+                        label: 'COİN',
+                        value: coinsText,
+                        border: LululuColors.cyberFuchsia,
+                        trailing: Icons.add_circle_rounded,
+                      ),
                     ),
-                  ),
                   ),
                 ),
               ],
@@ -107,11 +115,6 @@ class VaultTopHud extends StatelessWidget {
         );
       },
     );
-  }
-
-  static String _fmt(int n) {
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
   }
 }
 

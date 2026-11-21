@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +23,62 @@ import 'test_helpers.dart';
 // düzenleniyor; çekirdek öğelerin varlığı ve temel etkileşim denetlenir,
 // değişebilecek pazarlama metinleri kilitlenmez.
 
+// 12D1: 6C deseni — gerçek fontlar setUpAll'da yüklenir; yoksa ilk
+// widget testinde font yükleme bildirimi (sistem-fontu transient
+// callback) sökümde asılı kalıp scheduler hatasına yol açar. Bu
+// dosyadaki Settings/Onboarding/ChatLobby-mount testleri HEAD'de de
+// aynı hatayla düşüyordu (baz karşılaştırmasıyla doğrulandı).
+// (test/campaign_hub_flow_test.dart `_loadCustomFonts` ile aynı.)
+Future<void> _loadCustomFonts() async {
+  final fontMap = <String, List<String>>{
+    'Baloo 2': [
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+    ],
+    'Bangers': [
+      'assets/fonts/Bangers-Regular.ttf',
+    ],
+    'Nunito': [
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+    ],
+    'Exo 2': [
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+    ],
+  };
+
+  for (final entry in fontMap.entries) {
+    final loader = FontLoader(entry.key);
+    for (final path in entry.value) {
+      final file = File(path);
+      if (file.existsSync()) {
+        loader.addFont(
+          Future.value(ByteData.sublistView(file.readAsBytesSync())),
+        );
+      }
+    }
+    await loader.load();
+  }
+
+  for (final w in FontWeight.values) {
+    GoogleFonts.baloo2(fontWeight: w);
+    GoogleFonts.nunito(fontWeight: w);
+    GoogleFonts.bangers(fontWeight: w);
+    GoogleFonts.exo2(fontWeight: w);
+  }
+  await GoogleFonts.pendingFonts();
+}
+
 Future<void> _pumpScreen(WidgetTester tester, Widget screen) async {
   tester.view.physicalSize = const Size(430, 932);
   tester.view.devicePixelRatio = 1.0;
@@ -37,6 +95,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    await _loadCustomFonts();
     for (final channel in [
       'xyz.luan/audioplayers.global',
       'xyz.luan/audioplayers',
@@ -145,6 +204,14 @@ void main() {
       const message = 'merhaba test 123';
       await tester.enterText(find.byType(TextField), message);
       await tester.tap(find.byIcon(Icons.send_rounded));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // 12D1: gönderim ChatService üzerinden gider; şart onayı yoksa
+      // önce şart diyaloğu açılır — kabulde gönderim bir kez tekrar
+      // denenir ve mesaj servisten okunarak görünür.
+      expect(find.text('Sohbet kuralları'), findsOneWidget);
+      await tester.tap(find.text('Kabul ediyorum'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 

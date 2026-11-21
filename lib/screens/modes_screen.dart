@@ -5,7 +5,9 @@ import '../l10n/app_localizations.dart';
 import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
+import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 
 String _trUpper(String input, Locale locale) {
   if (locale.languageCode != 'tr') {
@@ -43,17 +45,11 @@ class ModesScreen extends StatefulWidget {
 }
 
 class _ModesScreenState extends State<ModesScreen> {
-  String _formatNumber(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
+  // 12A: dile duyarlı binlik ayırıcı (TR '.', EN ',').
+  String _formatNumber(int value) => formatGroupedInt(
+        value,
+        Localizations.localeOf(context).languageCode,
+      );
 
   void _openMode(LululuGameMode mode) {
     AudioManager().playPop();
@@ -76,7 +72,7 @@ class _ModesScreenState extends State<ModesScreen> {
         widget.showBottomNav && !widget.embedded && !parentHasExtendBody;
 
     return ListenableBuilder(
-      listenable: pm,
+      listenable: Listenable.merge([pm, LeaderboardService.instance]),
       builder: (context, _) {
         final l10n = context.l10n;
         final rawCoins = pm.coins;
@@ -84,7 +80,7 @@ class _ModesScreenState extends State<ModesScreen> {
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F6FA),
-          // Üst pay zaten mqTop / prototip durum çubuğu ile veriliyor
+          // Üst pay yalnız gerçek cihaz inset'i (mqTop) ile veriliyor
           // (top: false). Alt çentik payı yalnız bağımsız modda;
           // gömülü modda alt boşluğu HomeShell merkezi verir.
           body: SafeArea(
@@ -94,10 +90,7 @@ class _ModesScreenState extends State<ModesScreen> {
               children: [
               Column(
                 children: [
-                  if (mqTop > 0)
-                    SizedBox(height: mqTop)
-                  else
-                    const _ModesPrototypeStatusBar(),
+                  if (mqTop > 0) SizedBox(height: mqTop),
                   // .page-title { display:flex; align-items:center; gap:10px; padding:10px 14px 2px; height:60px }
                   SizedBox(
                     height: 60,
@@ -215,10 +208,20 @@ class _ModesScreenState extends State<ModesScreen> {
                       itemCount: modes.length,
                       itemBuilder: (context, i) {
                         final m = modes[i];
-                        final savedScore = pm.getModeBestScore(m.bestScoreKey);
-                        final score =
-                            savedScore > 0 ? savedScore : m.defaultBestScore;
-                        final bestStr = _formatNumber(score);
+                        // W13-F + Dalga 15 (bulgu 12): liste "Best"i
+                        // oyun içi / oyun sonu ile AYNI okuma
+                        // noktasından alır
+                        // (`LeaderboardService.getBest` = o anki
+                        // oyuncunun tahta rekoru); hiç oynanmamışta
+                        // 0 ('—'). Eskiden yalnız PM okunuyordu;
+                        // PM cihaz düzeyinde olduğu için oyuncu
+                        // değiştirince eski oyuncunun rekorunu
+                        // gösteriyordu.
+                        final savedScore = LeaderboardService.instance
+                            .getBest(m.bestScoreKey);
+                        final bestStr = savedScore > 0
+                            ? _formatNumber(savedScore)
+                            : '—';
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 9.97),
                           child: _buildModeRow(m, bestStr),
@@ -424,109 +427,6 @@ class _ModesScreenState extends State<ModesScreen> {
       ),
     ));
   }
-}
-
-class _ModesPrototypeStatusBar extends StatelessWidget {
-  const _ModesPrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text(
-              '09:41',
-              style: TextStyle(
-                fontFamily: 'Nunito',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-                color: Color(0xFF0E1320),
-                height: 1.55,
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ModesSignalIconPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ModesBatteryIconPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ModesSignalIconPainter extends CustomPainter {
-  const _ModesSignalIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF0E1320)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _ModesBatteryIconPainter extends CustomPainter {
-  const _ModesBatteryIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF0E1320)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF0E1320)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ModesDockSurfacePainter extends CustomPainter {

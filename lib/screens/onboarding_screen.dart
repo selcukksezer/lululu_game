@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/audio_manager.dart';
+import '../services/zero_jank_preloader.dart';
 import '../theme/lululu_theme.dart';
 import 'home_shell.dart';
 
@@ -25,11 +27,42 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _page = PageController();
   int _index = 0;
-  double _progress = 0.78;
+  // 12R: çubuk GERÇEK ön-yükleme ilerlemesini gösterir
+  // (`ZeroJankPreloader.progressNotifier`). Eskiden `0.78` sabitiydi:
+  // hiçbir iş ilerlemeyi güncellemiyordu, çubuk ilk kareden
+  // DOKUN VE BAŞLA dokunuşuna kadar %78'de takılı görünüyordu
+  // (canlıda 45+ sn "donuyor" izlenimi; iPhone'da da aynı).
+  double _progress = ZeroJankPreloader.instance.progress01;
+  bool _finishing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ZeroJankPreloader.instance.progressNotifier.addListener(
+      _onPreloadProgress,
+    );
+  }
+
+  void _onPreloadProgress() {
+    if (!mounted) return;
+    final p = ZeroJankPreloader.instance.progressNotifier.value;
+    if (p != _progress) setState(() => _progress = p);
+  }
 
   Future<void> _finish() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(OnboardingScreen.prefsKey, true);
+    if (_finishing) return;
+    _finishing = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(OnboardingScreen.prefsKey, true);
+    } catch (_) {
+      _finishing = false;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.onboardingSaveFailed)),
+      );
+      return;
+    }
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(builder: (_) => const HomeShell()),
@@ -37,6 +70,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _nextSlide() {
+    // S12: sayfa geçiş sesi; `_finishing` kilidine dokunulmaz
+    // (son slaytta `_finish` ayrıca ses çalmaz, çift ses yok).
+    AudioManager().playPop();
     if (_index < 2) {
       _page.animateToPage(
         _index + 1,
@@ -44,17 +80,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         curve: Curves.easeOutCubic,
       );
     } else {
-      setState(() => _index = 0);
-      _page.animateToPage(
-        0,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-      );
+      // Son slayt: başa dönme, tanıtımı bitir (B13).
+      _finish();
     }
   }
 
   @override
   void dispose() {
+    ZeroJankPreloader.instance.progressNotifier.removeListener(
+      _onPreloadProgress,
+    );
     _page.dispose();
     super.dispose();
   }
@@ -248,11 +283,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 label: context.l10n.onboardingPageLabel(i + 1),
                 excludeSemantics: true,
                 child: GestureDetector(
-                  onTap: () => _page.animateToPage(
-                  i,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOutCubic,
-                ),
+                  onTap: () {
+                    AudioManager().playPop();
+                    _page.animateToPage(
+                      i,
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeOutCubic,
+                    );
+                  },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -327,7 +365,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   label: context.l10n.onboardingSkipLabel,
                   excludeSemantics: true,
                   child: GestureDetector(
-                    onTap: _finish,
+                    onTap: () {
+                      AudioManager().playPop();
+                      _finish();
+                    },
                   child: Container(
                     height: 48,
                     constraints: const BoxConstraints(
@@ -651,7 +692,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // splash-loader (%78 progress bar)
+        // Gerçek ön-yükleme çubuğu (12R): değer
+        // `ZeroJankPreloader.progressNotifier`dan gelir, sabit değil.
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -667,7 +709,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      context.l10n.onboardingLoadingText,
+                      // Hazırlık bittiyse dürüst etiket: artık
+                      // "hazırlanıyor" değil, başlama hazır.
+                      _progress >= 1.0
+                          ? context.l10n.splashStarting
+                          : context.l10n.onboardingLoadingText,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.nunito(
                         fontSize: 11.5,
@@ -725,6 +771,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           excludeSemantics: true,
           child: GestureDetector(
             onTap: () {
+              AudioManager().playPop();
               setState(() => _progress = 1.0);
               _finish();
             },

@@ -6,6 +6,7 @@ import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/iap_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 
 String _trUpper(String input, Locale locale) {
   if (locale.languageCode != 'tr') {
@@ -80,6 +81,10 @@ class ShopScreen extends StatefulWidget {
 
 class _ShopScreenState extends State<ShopScreen> {
   final ProgressManager _pm = ProgressManager();
+
+  /// IAP + coin'li alımların ortak kilidi: çift dokunma / eşzamanlı
+  /// iki satın alma aynı anda işlemez.
+  bool _purchaseBusy = false;
 
   List<_ModePowerGroup> _powerGroups(AppLocalizations l10n) => [
     _ModePowerGroup(
@@ -276,21 +281,21 @@ class _ShopScreenState extends State<ShopScreen> {
       iconAsset: 'assets/icons2/target.png',
       powers: [
         _PowerRowItem(
-          id: 'dblslip',
+          id: 'yuva_dblslip',
           name: l10n.shopPowerDoubleSlipperName,
           iconAsset: 'assets/icons2/boot.png',
           desc: l10n.shopPowerDoubleSlipperDesc,
           cost: 300,
         ),
         _PowerRowItem(
-          id: 'goldslip',
+          id: 'yuva_goldslip',
           name: l10n.shopPowerGoldenSlipperName,
           iconAsset: 'assets/icons2/premium_token.png',
           desc: l10n.shopPowerGoldenSlipperDesc,
           cost: 450,
         ),
         _PowerRowItem(
-          id: 'shield',
+          id: 'nest_shield',
           name: l10n.shopPowerNestShieldName,
           iconAsset: 'assets/icons2/shield.png',
           desc: l10n.shopPowerNestShieldDesc,
@@ -381,18 +386,6 @@ class _ShopScreenState extends State<ShopScreen> {
     ),
   ];
 
-  String _formatNumber(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
-
   void _showToast(String msg) {
     AudioManager().playPop();
     ScaffoldMessenger.of(context)
@@ -414,13 +407,86 @@ class _ShopScreenState extends State<ShopScreen> {
       );
   }
 
+  /// 2048 güçleri yalnız `*2048` anahtarlarına yazılır: 2048 ekranı
+  /// yalnız bu anahtarları okur; `undo`/`shuffle`/`pair` anahtarlarını
+  /// okuyan lib kodu yoktur. Çift-yazım kaldırıldı.
+  static const Map<String, String> _power2048Keys = {
+    'undo': 'undo2048',
+    'shuffle': 'shuffle2048',
+    'pair': 'pair2048',
+  };
+
   Future<void> _grantPowerStock(String powerKey, [int amount = 1]) async {
-    final current = _pm.powerCount(powerKey);
-    await _pm.setPowerCount(powerKey, current + amount);
-    if (powerKey == 'undo' || powerKey == 'shuffle' || powerKey == 'pair') {
-      final legacyKey = '${powerKey}2048';
-      await _pm.setPowerCount(legacyKey, _pm.powerCount(legacyKey) + amount);
+    final targetKey = _power2048Keys[powerKey] ?? powerKey;
+    await _pm.incrementPowerCount(targetKey, amount);
+  }
+
+  /// Satın alma ön-onayı (O1/O2): ürün adı + fiyat etiketi gösterilir,
+  /// onaylanmazsa (Vazgeç / dışarı dokunma) hiçbir harcama ve yan etki
+  /// olmaz. Desen: sohbet onay dialogları (AlertDialog + Vazgeç
+  /// TextButton + Onayla FilledButton). Kilit (`_purchaseBusy`) onay
+  /// SONRASINDA, satın alma yolunda alınır.
+  Future<bool> _confirmPurchase({
+    required String itemName,
+    required String priceLabel,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.shopPurchaseConfirmTitle),
+        content: Text(ctx.l10n.shopPurchaseConfirmBody(itemName, priceLabel)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.confirm),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// IAP satın alma: ön-onay + ortak kilit + try/catch. Başlatma
+  /// başarısında EK ÖDEME YAPILMAZ — teslimat yalnız satın alma
+  /// akışından (`IapService` purchase stream) gelir; `purchase()`
+  /// dönüşü yalnız başlatmanın kabul edildiğini söyler. Bu dosya
+  /// içindeki TEK doğrudan `purchase()` çağrı noktası burasıdır.
+  Future<void> _buyIapProduct({
+    required String productId,
+    required String itemName,
+    required String priceLabel,
+    required String successToast,
+  }) async {
+    if (_purchaseBusy) return;
+    final confirmed = await _confirmPurchase(
+      itemName: itemName,
+      priceLabel: priceLabel,
+    );
+    if (!confirmed || !mounted || _purchaseBusy) return;
+    _purchaseBusy = true;
+    bool ok;
+    try {
+      ok = await IapService.instance.purchase(productId);
+    } catch (_) {
+      ok = false;
+    } finally {
+      _purchaseBusy = false;
     }
+    if (!mounted) return;
+    setState(() {});
+    widget.onStateChanged?.call();
+    // D6 (F8): yalnız BAŞARIDA zafer sesi; başarısızlıkta `_showToast`
+    // pop'u aynen korunur (playLose yok). `ok` yalnız başlatmanın
+    // kabul edildiğini söyler; teslimat satın alma akışından gelir.
+    if (ok) {
+      AudioManager().playWin();
+    }
+    _showToast(ok ? successToast : context.l10n.shopStoreUnavailableToast);
   }
 
   Future<void> _watchFreeChestAd() async {
@@ -432,65 +498,77 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Future<void> _buyCoinItem({
+    required String itemName,
     required String toastMsg,
     required int cost,
     FutureOr<void> Function()? onSuccess,
   }) async {
-    final ok = await _pm.spendCoins(cost);
-    if (ok) {
+    if (_purchaseBusy) return;
+    final confirmed = await _confirmPurchase(
+      itemName: itemName,
+      priceLabel: context.l10n.shopCoinPriceLabel(cost),
+    );
+    if (!confirmed || !mounted || _purchaseBusy) return;
+    _purchaseBusy = true;
+    var spent = false;
+    try {
+      spent = await _pm.spendCoins(cost);
+      if (!spent) {
+        if (mounted) {
+          _showToast(context.l10n.shopNotEnoughGoldToast);
+        }
+        return;
+      }
       await onSuccess?.call();
-      if (!mounted) return;
-      setState(() {});
-      widget.onStateChanged?.call();
-      _showToast(toastMsg);
-    } else {
-      if (!mounted) return;
-      _showToast(
-        context.l10n.shopNotEnoughGoldToast,
-      );
+    } catch (_) {
+      if (spent) {
+        // Ödeme-sonrası bağış hatası: coin iade edilir. PM'de ayrı
+        // refundCoins API'si yok; iade addCoins ile yapılır.
+        try {
+          await _pm.addCoins(cost);
+        } catch (_) {}
+        if (mounted) {
+          _showToast(context.l10n.shopPurchaseFailedRefundToast);
+        }
+      } else if (mounted) {
+        _showToast(context.l10n.errorGeneric);
+      }
+      return;
+    } finally {
+      _purchaseBusy = false;
     }
+    if (!mounted) return;
+    setState(() {});
+    widget.onStateChanged?.call();
+    // D6 (F8): bu noktaya yalnız başarı ulaşır (yetersiz bakiye ve
+    // hata dalları yukarıda erken döner); zafer sesi eklenir.
+    // Yetersiz-bakiye/başarısızlık toast'ları sessiz pop ile kalır.
+    AudioManager().playWin();
+    _showToast(toastMsg);
   }
 
-  Widget _buildStatusBar() {
-    return SizedBox(
-      height: 35.0,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Transform.translate(
-              offset: const Offset(-0.5, 0),
-              child: const Text(
-                '09:41',
-                style: TextStyle(
-                  fontFamily: 'Nunito',
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w900,
-                  fontVariations: [FontVariation('wght', 820)],
-                  color: Color(0xFF141B2A),
-                  height: 1.4,
-                ),
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ShopSignalPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ShopBatteryPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+  /// Satın alma geri yükleme (non-consumable ürünler, örn. Kraliyet
+  /// Pelerini): `IapService.restorePurchases` mağaza yoksa `false`
+  /// döner, fırlatmaz; geri yüklenen ürünler satın alma akışından
+  /// teslim edilir. Sonuç her durumda toast ile bildirilir.
+  Future<void> _restorePurchases() async {
+    if (_purchaseBusy) return;
+    _purchaseBusy = true;
+    bool ok;
+    try {
+      ok = await IapService.instance.restorePurchases();
+    } catch (_) {
+      ok = false;
+    } finally {
+      _purchaseBusy = false;
+    }
+    if (!mounted) return;
+    setState(() {});
+    widget.onStateChanged?.call();
+    _showToast(
+      ok
+          ? context.l10n.shopRestoreStartedToast
+          : context.l10n.shopRestoreUnavailableToast,
     );
   }
 
@@ -501,9 +579,11 @@ class _ShopScreenState extends State<ShopScreen> {
       builder: (context, _) {
         final rawCoins = _pm.coins;
         final l10n = context.l10n;
-        final coinsText = _formatNumber(rawCoins);
+        final coinsText = formatGroupedInt(
+          rawCoins,
+          Localizations.localeOf(context).languageCode,
+        );
         final mqTop = MediaQuery.of(context).padding.top;
-        final topPad = mqTop > 0 ? mqTop : 35.0;
         final parentHasExtendBody =
             Scaffold.maybeOf(context)?.widget.extendBody == true;
         final renderDock = widget.showBottomNav && !parentHasExtendBody;
@@ -515,10 +595,7 @@ class _ShopScreenState extends State<ShopScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (mqTop == 0)
-                    _buildStatusBar()
-                  else
-                    SizedBox(height: topPad),
+                  if (mqTop > 0) SizedBox(height: mqTop),
                   // .pillbar { display:flex; align-items:center; gap:8px; padding:8px 14px 4px; height:47px }
                   SizedBox(
                     height: 47,
@@ -550,80 +627,83 @@ class _ShopScreenState extends State<ShopScreen> {
                             child: GestureDetector(
                               onTap: () =>
                                   _showToast(l10n.shopAddedCoinPackToast),
-                            child: Container(
-                              height: 35,
-                              padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF33363C),
-                                borderRadius: BorderRadius.circular(999),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x59000000),
-                                    offset: Offset(0, 3),
-                                    blurRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    'assets/design/ui/res_coin.png',
-                                    width: 25,
-                                    height: 25,
-                                    fit: BoxFit.contain,
-                                    filterQuality: FilterQuality.medium,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Transform.translate(
-                                    offset: const Offset(0, -0.5),
-                                    child: Text(
-                                      coinsText,
-                                      style: const TextStyle(
-                                        fontFamily: 'Nunito',
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w900,
-                                        fontVariations: [
-                                          FontVariation('wght', 900)
-                                        ],
-                                        letterSpacing: -0.14,
-                                        color: Colors.white,
-                                        height: 1.15,
-                                      ),
+                              child: Container(
+                                height: 35,
+                                padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF33363C),
+                                  borderRadius: BorderRadius.circular(999),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x59000000),
+                                      offset: Offset(0, 3),
+                                      blurRadius: 0,
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    width: 20,
-                                    height: 20,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF00C853),
-                                      shape: BoxShape.circle,
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      'assets/design/ui/res_coin.png',
+                                      width: 25,
+                                      height: 25,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.medium,
                                     ),
-                                    child: const Center(
+                                    const SizedBox(width: 6),
+                                    Transform.translate(
+                                      offset: const Offset(0, -0.5),
                                       child: Text(
-                                        '+',
-                                        style: TextStyle(
+                                        coinsText,
+                                        style: const TextStyle(
                                           fontFamily: 'Nunito',
-                                          fontSize: 15,
+                                          fontSize: 13.5,
                                           fontWeight: FontWeight.w900,
                                           fontVariations: [
-                                            FontVariation('wght', 900)
+                                            FontVariation('wght', 900),
                                           ],
-                                          color: Color(0xFF04140A),
-                                          height: 1.0,
+                                          letterSpacing: -0.14,
+                                          color: Colors.white,
+                                          height: 1.15,
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      width: 20,
+                                      height: 20,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF00C853),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Center(
+                                        child: Text(
+                                          '+',
+                                          style: TextStyle(
+                                            fontFamily: 'Nunito',
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w900,
+                                            fontVariations: [
+                                              FontVariation('wght', 900),
+                                            ],
+                                            color: Color(0xFF04140A),
+                                            height: 1.0,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                          ),
                           const SizedBox(width: 8),
-                          // Dark star pill (86)
+                          // Dark star pill — yıldız TEK KAYNAKTAN:
+                          // ProgressManager.totalStars (üst bar /
+                          // vault_top_hud ile aynı). Eskiden burada
+                          // sabit '86' yazıyordu (bulgu 11).
                           Container(
                             height: 35,
                             padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
@@ -652,14 +732,14 @@ class _ShopScreenState extends State<ShopScreen> {
                                 const SizedBox(width: 6),
                                 Transform.translate(
                                   offset: const Offset(0, -0.5),
-                                  child: const Text(
-                                    '86',
-                                    style: TextStyle(
+                                  child: Text(
+                                    '${_pm.totalStars}',
+                                    style: const TextStyle(
                                       fontFamily: 'Nunito',
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.w900,
                                       fontVariations: [
-                                        FontVariation('wght', 900)
+                                        FontVariation('wght', 900),
                                       ],
                                       color: Colors.white,
                                       height: 1.15,
@@ -681,7 +761,7 @@ class _ShopScreenState extends State<ShopScreen> {
                       children: [
                         // .shop-banner (rect: x=12, y=92, w=406, h=119)
                         Container(
-                          constraints: const BoxConstraints(minHeight: 119),
+                          height: 119.0,
                           margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                           padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
                           decoration: BoxDecoration(
@@ -715,8 +795,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                             sigmaY: 3.0,
                                           ),
                                           child: ColorFiltered(
-                                            colorFilter:
-                                                const ColorFilter.mode(
+                                            colorFilter: const ColorFilter.mode(
                                               Color(0x4D000000),
                                               BlendMode.srcIn,
                                             ),
@@ -758,7 +837,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                           fontSize: 17,
                                           fontWeight: FontWeight.w800,
                                           fontVariations: [
-                                            FontVariation('wght', 800)
+                                            FontVariation('wght', 800),
                                           ],
                                           letterSpacing: -0.02,
                                           color: Colors.white,
@@ -780,7 +859,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w700,
                                         fontVariations: [
-                                          FontVariation('wght', 700)
+                                          FontVariation('wght', 700),
                                         ],
                                         letterSpacing: 0.0,
                                         color: Color(0xF2FFFFFF),
@@ -795,8 +874,13 @@ class _ShopScreenState extends State<ShopScreen> {
                         ),
 
                         // .free-ad-card (rect: x=12, y=221, w=406, h=185)
+                        // F-01 (6C): sabit yükseklik 360px'te açıklama
+                        // metnini kartın altından taşırıp ENERJİ başlığıyla
+                        // çakıştırıyordu. minHeight, 430 tasarım
+                        // yüksekliğini korurken dar ekranda kartın içeriğe
+                        // göre büyümesine izin verir.
                         Container(
-                          constraints: const BoxConstraints(minHeight: 185),
+                          constraints: const BoxConstraints(minHeight: 185.0),
                           margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
@@ -849,7 +933,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w800,
                                                 fontVariations: [
-                                                  FontVariation('wght', 800)
+                                                  FontVariation('wght', 800),
                                                 ],
                                                 letterSpacing: -0.02,
                                                 color: Color(0xFF141B2A),
@@ -867,7 +951,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w700,
                                         fontVariations: [
-                                          FontVariation('wght', 700)
+                                          FontVariation('wght', 700),
                                         ],
                                         letterSpacing: -0.025,
                                         color: Color(0xFF66738A),
@@ -905,7 +989,9 @@ class _ShopScreenState extends State<ShopScreen> {
                                       ),
                                       child: Container(
                                         decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                           border: Border.all(
                                             color: const Color(0xFFD5DAE4),
                                             width: 1,
@@ -926,7 +1012,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.w800,
                                                 fontVariations: [
-                                                  FontVariation('wght', 800)
+                                                  FontVariation('wght', 800),
                                                 ],
                                                 color: Color(0xFF9AA3B2),
                                                 height: 1.1,
@@ -947,9 +1033,8 @@ class _ShopScreenState extends State<ShopScreen> {
                         _buildSecHead(
                           title: l10n.shopEnergyTitle,
                           rightText: l10n.shopEnergyRefillNote,
-                          onTapRight: () => _showToast(
-                            l10n.shopEnergyRegenToast,
-                          ),
+                          onTapRight: () =>
+                              _showToast(l10n.shopEnergyRegenToast),
                         ),
                         _buildShopGridRow(
                           _ShopItemData(
@@ -960,19 +1045,12 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: l10n.shopItemEnergyPackDesc,
                             priceText: '₺29,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              // Satın alma sonucuna göre: mağaza yoksa
-                              // (sürümde) ürün verilmez, yalnızca bilgi
-                              // gösterilir. Teslimat IAP akışından gelir.
-                              final ok = await IapService.instance
-                                  .purchase('energy_pack_10');
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopEnergyAddedToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'energy_pack_10',
+                              itemName: l10n.shopItemEnergyPackTitle,
+                              priceLabel: '₺29,99',
+                              successToast: l10n.shopEnergyAddedToast,
+                            ),
                           ),
                           _ShopItemData(
                             badge: l10n.shopBadgeBest,
@@ -982,19 +1060,12 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: l10n.shopItemEnergyDepotDesc,
                             priceText: '₺59,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              final ok = await IapService.instance
-                                  .purchase('full_energy');
-                              if (ok) {
-                                await _pm.refillFullEnergy();
-                              }
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopEnergyFullToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'full_energy',
+                              itemName: l10n.shopItemEnergyDepotTitle,
+                              priceLabel: '₺59,99',
+                              successToast: l10n.shopEnergyFullToast,
+                            ),
                           ),
                         ),
 
@@ -1002,12 +1073,105 @@ class _ShopScreenState extends State<ShopScreen> {
                         _buildSecHead(
                           title: l10n.shopPowerUpsTitle,
                           rightText: l10n.shopPowerUpsNote,
-                          onTapRight: () => _showToast(
-                            l10n.shopPowerUpModeOnlyToast,
-                          ),
+                          onTapRight: () =>
+                              _showToast(l10n.shopPowerUpModeOnlyToast),
                         ),
                         for (final group in _powerGroups(l10n))
                           _buildPowGroup(group),
+
+                        // 8F: katalog IAP güçlendirici kartları — f16_x3 /
+                        // raid_x3 / terlik_x5 / double_coin / luck_potion.
+                        // Başlık + açıklama + fiyat katalogdan verbatim
+                        // (iap_service.dart storeCatalog); satın alma
+                        // mevcut _buyIapProduct + O1/O2 onay deseniyle.
+                        // double_coin / luck_potion'ın coin kartı
+                        // Sandıklar bölümünde durur; bu kartlar aynı
+                        // ürünün mağaza (₺) yoludur.
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/powerup_aydinlat.png',
+                            title: l10n.shopItemF16PackTitle,
+                            desc: l10n.shopItemF16PackDesc,
+                            priceText: '₺39,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'f16_x3',
+                              itemName: l10n.shopItemF16PackTitle,
+                              priceLabel: '₺39,99',
+                              successToast: l10n.shopAddedF16Toast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/powerup_raid_spreyi.png',
+                            title: l10n.shopItemRaidPackTitle,
+                            desc: l10n.shopItemRaidPackDesc,
+                            priceText: '₺24,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'raid_x3',
+                              itemName: l10n.shopItemRaidPackTitle,
+                              priceLabel: '₺24,99',
+                              successToast: l10n.shopAddedRaidToast,
+                            ),
+                          ),
+                          topPadding: 8,
+                        ),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/powerup_terlik.png',
+                            title: l10n.shopItemTerlikPackTitle,
+                            desc: l10n.shopItemTerlikPackDesc,
+                            priceText: '₺29,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'terlik_x5',
+                              itemName: l10n.shopItemTerlikPackTitle,
+                              priceLabel: '₺29,99',
+                              successToast: l10n.shopAddedTerlikToast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/boost_coins.png',
+                            title: l10n.shopItemDoubleCoinTitle,
+                            desc: l10n.shopItemDoubleCoinDesc,
+                            priceText: '₺39,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'double_coin',
+                              itemName: l10n.shopItemDoubleCoinTitle,
+                              priceLabel: '₺39,99',
+                              successToast: l10n.shopAddedDoubleCoinToast,
+                            ),
+                          ),
+                          topPadding: 8,
+                        ),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/potion_luck.png',
+                            title: l10n.shopItemLuckPotionTitle,
+                            desc: l10n.shopItemLuckPotionDesc,
+                            priceText: '₺19,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'luck_potion',
+                              itemName: l10n.shopItemLuckPotionTitle,
+                              priceLabel: '₺19,99',
+                              successToast: l10n.shopAddedLuckPotionToast,
+                            ),
+                          ),
+                          null,
+                          topPadding: 8,
+                        ),
 
                         // Extra shop grid after #shopPowers
                         _buildShopGridRow(
@@ -1019,19 +1183,16 @@ class _ShopScreenState extends State<ShopScreen> {
                             desc: l10n.shopItemStarPackDesc,
                             priceText: '₺149,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              final ok = await IapService.instance
-                                  .purchase('mega_starter_pack');
-                              if (ok) {
-                                await _pm.addCoins(1000);
-                              }
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopAddedStarPackToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              // 2H Bayrak 2: kart başlık/açıklama
+                              // katalog `star_pack`'i vaat ediyor
+                              // (fiyat ₺149,99 iki üründe de aynı);
+                              // düğme teslim edilen ürüne çevrildi.
+                              productId: 'star_pack',
+                              itemName: l10n.shopItemStarPackTitle,
+                              priceLabel: '₺149,99',
+                              successToast: l10n.shopAddedStarPackToast,
+                            ),
                           ),
                           _ShopItemData(
                             badge: null,
@@ -1042,9 +1203,11 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '350',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemSurpriseBoxTitle,
                               toastMsg: l10n.shopAddedSurpriseBoxToast,
                               cost: 350,
-                              onSuccess: () => _grantPowerStock('triple', 1),
+                              onSuccess: () =>
+                                  _pm.grantArcadeDrop(slipper: 1, spray: 1),
                             ),
                           ),
                         ),
@@ -1056,40 +1219,98 @@ class _ShopScreenState extends State<ShopScreen> {
                             badge: null,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/coin_stack.png',
+                            // 2H Bayrak 1: kart, düğmenin teslim
+                            // ettiği katalog ürününe uyduruldu
+                            // (`coins_mid`: Makara Paket, 1500 coin,
+                            // ₺79,99). productId değişmedi.
+                            title: l10n.shopItemCoinsMidTitle,
+                            desc: l10n.shopItemCoinsMidDesc,
+                            priceText: '₺79,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_mid',
+                              itemName: l10n.shopItemCoinsMidTitle,
+                              priceLabel: '₺79,99',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: l10n.shopBadgeBest,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/money_bag.png',
+                            // 2H Bayrak 1: kart, düğmenin teslim
+                            // ettiği katalog ürününe uyduruldu
+                            // (`coins_big`: Kongo Sandık, 5000 coin,
+                            // ₺199,99). productId değişmedi.
+                            title: l10n.shopItemCoinsBigTitle,
+                            desc: l10n.shopItemCoinsBigDesc,
+                            priceText: '₺199,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_big',
+                              itemName: l10n.shopItemCoinsBigTitle,
+                              priceLabel: '₺199,99',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
+                          ),
+                          topPadding: 8,
+                        ),
+
+                        // 8F: katalog IAP coin kartları — coins_small /
+                        // coins_handful / coins_crate. Başlık + açıklama +
+                        // fiyat katalogdan verbatim (coins_small `packs`'te
+                        // — `findCatalogItem` onu bulmaz, `purchase()` yol
+                        // alır; handful/crate `storeCatalog`'da).
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/coin.png',
+                            title: l10n.shopItemCoinsSmallTitle,
+                            desc: l10n.shopItemCoinsSmallDesc,
+                            priceText: '₺29,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_small',
+                              itemName: l10n.shopItemCoinsSmallTitle,
+                              priceLabel: '₺29,99',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/coin_stack.png',
                             title: l10n.shopItemHandfulTitle,
                             desc: l10n.shopItemHandfulDesc,
                             priceText: '₺59,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              final ok = await IapService.instance
-                                  .purchase('coins_mid');
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopAddedCoinPackToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_handful',
+                              itemName: l10n.shopItemHandfulTitle,
+                              priceLabel: '₺59,99',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
                           ),
+                          topPadding: 8,
+                        ),
+                        _buildShopGridRow(
                           _ShopItemData(
-                            badge: l10n.shopBadgeBest,
+                            badge: null,
                             badgeGold: false,
                             iconAsset: 'assets/icons2/money_bag.png',
                             title: l10n.shopItemCrateTitle,
                             desc: l10n.shopItemCrateDesc,
                             priceText: '₺249,99',
                             isCoinPrice: false,
-                            onTap: () async {
-                              final ok = await IapService.instance
-                                  .purchase('coins_big');
-                              if (!mounted) return;
-                              setState(() {});
-                              widget.onStateChanged?.call();
-                              _showToast(ok
-                                  ? l10n.shopAddedCoinPackToast
-                                  : l10n.shopStoreUnavailableToast);
-                            },
+                            onTap: () => _buyIapProduct(
+                              productId: 'coins_crate',
+                              itemName: l10n.shopItemCrateTitle,
+                              priceLabel: '₺249,99',
+                              successToast: l10n.shopAddedCoinPackToast,
+                            ),
                           ),
+                          null,
                           topPadding: 8,
                         ),
 
@@ -1105,10 +1326,11 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '200',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemWoodenChestTitle,
                               toastMsg: l10n.shopAddedWoodenChestToast,
                               cost: 200,
                               onSuccess: () =>
-                                  _pm.grantArcadeDrop(coins: 100, slipper: 1),
+                                  _pm.grantArcadeDrop(coins: 250, slipper: 1),
                             ),
                           ),
                           _ShopItemData(
@@ -1120,13 +1342,14 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '750',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemGoldenChestTitle,
                               toastMsg: l10n.shopAddedGoldenChestToast,
                               cost: 750,
                               onSuccess: () => _pm.grantArcadeDrop(
-                                coins: 250,
+                                coins: 1200,
                                 f16: 1,
-                                spray: 1,
-                                slipper: 1,
+                                spray: 2,
+                                slipper: 2,
                               ),
                             ),
                           ),
@@ -1143,9 +1366,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '400',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemDoubleCoinTitle,
                               toastMsg: l10n.shopAddedDoubleCoinToast,
                               cost: 400,
-                              onSuccess: () => _grantPowerStock('x2', 1),
+                              onSuccess: () => _grantPowerStock('x2', 2),
                             ),
                           ),
                           _ShopItemData(
@@ -1157,9 +1381,138 @@ class _ShopScreenState extends State<ShopScreen> {
                             priceText: '180',
                             isCoinPrice: true,
                             onTap: () => _buyCoinItem(
+                              itemName: l10n.shopItemLuckPotionTitle,
                               toastMsg: l10n.shopAddedLuckPotionToast,
                               cost: 180,
-                              onSuccess: () => _grantPowerStock('hunter', 1),
+                              onSuccess: () => _grantPowerStock('pair', 1),
+                            ),
+                          ),
+                        ),
+
+                        // 8F: katalog IAP sandık kartları — gold_chest /
+                        // surprise_box / wood_chest. Başlık + açıklama +
+                        // fiyat katalogdan verbatim. gold_chest IAP kartı
+                        // katalog başlığını ('Altın Sandığı') ve
+                        // açıklamasını kullanır — coin kartındaki
+                        // 'Altın Sandık' / 'Garantili nadir ödül içerir'
+                        // metninden farklıdır, ayrı l10n anahtarı
+                        // (shopItemGoldChestIapTitle/Desc) gerekir.
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/chest_gold.png',
+                            title: l10n.shopItemGoldChestIapTitle,
+                            desc: l10n.shopItemGoldChestIapDesc,
+                            priceText: '₺89,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'gold_chest',
+                              itemName: l10n.shopItemGoldChestIapTitle,
+                              priceLabel: '₺89,99',
+                              successToast: l10n.shopAddedGoldenChestToast,
+                            ),
+                          ),
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/gift_box.png',
+                            title: l10n.shopItemSurpriseBoxTitle,
+                            desc: l10n.shopItemSurpriseBoxDesc,
+                            priceText: '₺34,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'surprise_box',
+                              itemName: l10n.shopItemSurpriseBoxTitle,
+                              priceLabel: '₺34,99',
+                              successToast: l10n.shopAddedSurpriseBoxToast,
+                            ),
+                          ),
+                          topPadding: 8,
+                        ),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: null,
+                            badgeGold: false,
+                            iconAsset: 'assets/icons2/chest_wood.png',
+                            title: l10n.shopItemWoodenChestTitle,
+                            desc: l10n.shopItemWoodenChestDesc,
+                            priceText: '₺19,99',
+                            isCoinPrice: false,
+                            onTap: () => _buyIapProduct(
+                              productId: 'wood_chest',
+                              itemName: l10n.shopItemWoodenChestTitle,
+                              priceLabel: '₺19,99',
+                              successToast: l10n.shopAddedWoodenChestToast,
+                            ),
+                          ),
+                          null,
+                          topPadding: 8,
+                          bottomPadding: 12,
+                        ),
+
+                        // Section: Kozmetik (K8 — Kraliyet Pelerini:
+                        // katalog `royal_cape`, non-consumable, ₺99,99;
+                        // coin fiyatı da var (900) ama kart mağaza
+                        // (IAP) yolunu kullanır; sahiplik
+                        // `PM.hasRoyalCape` ile okunur — görünür etki
+                        // (profil rozeti) 3D'nin işi, kanca:
+                        // `hasRoyalCape` / `ownedCosmetics`.)
+                        _buildSecHead(title: l10n.shopCosmeticsTitle),
+                        _buildShopGridRow(
+                          _ShopItemData(
+                            badge: l10n.shopBadgeBest,
+                            badgeGold: true,
+                            iconAsset: 'assets/icons2/crown.png',
+                            title: l10n.shopItemRoyalCapeTitle,
+                            desc: l10n.shopItemRoyalCapeDesc,
+                            priceText: '₺99,99',
+                            isCoinPrice: false,
+                            owned: _pm.hasRoyalCape,
+                            onTap: () => _buyIapProduct(
+                              productId: 'royal_cape',
+                              itemName: l10n.shopItemRoyalCapeTitle,
+                              priceLabel: '₺99,99',
+                              successToast: l10n.shopAddedRoyalCapeToast,
+                            ),
+                          ),
+                          null,
+                          topPadding: 8,
+                          bottomPadding: 12,
+                        ),
+
+                        // Geri yükleme girişi (non-consumable ürünler
+                        // için; sonuç toast ile bildirilir).
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                          child: Semantics(
+                            button: true,
+                            label: l10n.shopRestorePurchasesLabel,
+                            child: GestureDetector(
+                              onTap: _restorePurchases,
+                              child: Container(
+                                height: 48,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: const Color(0xFFD5DAE4),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Text(
+                                  l10n.shopRestorePurchasesLabel,
+                                  style: const TextStyle(
+                                    fontFamily: 'Nunito',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.06,
+                                    color: Color(0xFFE01E5A),
+                                    height: 1.55,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1234,7 +1587,7 @@ class _ShopScreenState extends State<ShopScreen> {
 
   Widget _buildShopGridRow(
     _ShopItemData left,
-    _ShopItemData right, {
+    _ShopItemData? right, {
     double topPadding = 0,
     double bottomPadding = 8,
   }) {
@@ -1246,7 +1599,11 @@ class _ShopScreenState extends State<ShopScreen> {
           children: [
             Expanded(child: _buildShopCard(left)),
             const SizedBox(width: 12),
-            Expanded(child: _buildShopCard(right)),
+            Expanded(
+              child: right == null
+                  ? const SizedBox.shrink()
+                  : _buildShopCard(right),
+            ),
           ],
         ),
       ),
@@ -1329,87 +1686,77 @@ class _ShopScreenState extends State<ShopScreen> {
               ),
               Semantics(
                 button: true,
-                label: context.l10n.shopBuyItemLabel(item.title, item.priceText),
+                label: item.owned
+                    ? '${item.title} · ${context.l10n.shopRoyalCapeOwnedLabel}'
+                    : context.l10n.shopBuyItemLabel(item.title, item.priceText),
+                // 8F: tek kartlı satırda (sağ kart null) başlık +
+                // açıklama + düğme etiketi tek semantics düğümünde
+                // birleşiyordu ('BİR KASA\n...\nBir Kasa satın al...')
+                // — tam eşleşme bulunamıyor, dokunma düğmeye değil
+                // kart ortasına düşüyordu. `container: true` düğümü
+                // sınır yapar: etiket her satırda tek satır kalır.
+                container: true,
                 excludeSemantics: true,
                 child: GestureDetector(
-                  onTap: item.onTap,
+                  // CustomPaint katmanı üzerinden dokunma
+                  // ulaşmıyordu (canlı prob: düğme ölü); tüm düğme
+                  // yüzeyi dokunulabilir olsun (bulgu #16).
+                  behavior: HitTestBehavior.opaque,
+                  onTap: item.owned ? null : item.onTap,
                   child: CustomPaint(
-                  painter: _ShopBtnShadowPainter(
-                    solidColor: item.isCoinPrice
-                        ? const Color(0xFFB97A00)
-                        : const Color(0xFF7E0A2E),
-                  ),
-                  child: Container(
-                    width: double.infinity,
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
+                    painter: _ShopBtnShadowPainter(
+                      solidColor: item.owned
+                          ? const Color(0xFF6B7482)
+                          : item.isCoinPrice
+                          ? const Color(0xFFB97A00)
+                          : const Color(0xFF7E0A2E),
                     ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: item.isCoinPrice
-                          ? const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              stops: [0.0, 0.55, 1.0],
-                              colors: [
-                                Color(0xFFFFCF3F),
-                                Color(0xFFFFB800),
-                                Color(0xFFF59E00),
-                              ],
-                            )
-                          : const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              stops: [0.0, 0.55, 1.0],
-                              colors: [
-                                Color(0xFFF4538B),
-                                Color(0xFFE01E5A),
-                                Color(0xFFB80F42),
-                              ],
-                            ),
-                    ),
-                    child: Center(
-                      child: item.isCoinPrice
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Image.asset(
-                                  'assets/design/ui/res_coin.png',
-                                  width: 21,
-                                  height: 21,
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.medium,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  item.priceText,
-                                  style: const TextStyle(
-                                    fontFamily: 'Baloo 2',
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w900,
-                                    fontVariations: [
-                                      FontVariation('wght', 800)
-                                    ],
-                                    color: Colors.white,
-                                    letterSpacing: 0.3,
-                                    height: 1.1,
-                                    shadows: [
-                                      Shadow(
-                                        color: Color(0x59000000),
-                                        offset: Offset(0, 1),
-                                        blurRadius: 0,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Transform.translate(
-                              offset: const Offset(-0.3, 0.5),
-                              child: Text(
-                                item.priceText,
+                    child: Container(
+                      width: double.infinity,
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        gradient: item.owned
+                            ? const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                stops: [0.0, 0.55, 1.0],
+                                colors: [
+                                  Color(0xFFB8BFCB),
+                                  Color(0xFF9AA3B2),
+                                  Color(0xFF8A93A3),
+                                ],
+                              )
+                            : item.isCoinPrice
+                            ? const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                stops: [0.0, 0.55, 1.0],
+                                colors: [
+                                  Color(0xFFFFCF3F),
+                                  Color(0xFFFFB800),
+                                  Color(0xFFF59E00),
+                                ],
+                              )
+                            : const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                stops: [0.0, 0.55, 1.0],
+                                colors: [
+                                  Color(0xFFF4538B),
+                                  Color(0xFFE01E5A),
+                                  Color(0xFFB80F42),
+                                ],
+                              ),
+                      ),
+                      child: Center(
+                        child: item.owned
+                            ? Text(
+                                context.l10n.shopRoyalCapeOwnedLabel,
                                 style: const TextStyle(
                                   fontFamily: 'Baloo 2',
                                   fontSize: 15,
@@ -1426,12 +1773,70 @@ class _ShopScreenState extends State<ShopScreen> {
                                     ),
                                   ],
                                 ),
+                              )
+                            : item.isCoinPrice
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Image.asset(
+                                    'assets/design/ui/res_coin.png',
+                                    width: 21,
+                                    height: 21,
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.medium,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    item.priceText,
+                                    style: const TextStyle(
+                                      fontFamily: 'Baloo 2',
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      fontVariations: [
+                                        FontVariation('wght', 800),
+                                      ],
+                                      color: Colors.white,
+                                      letterSpacing: 0.3,
+                                      height: 1.1,
+                                      shadows: [
+                                        Shadow(
+                                          color: Color(0x59000000),
+                                          offset: Offset(0, 1),
+                                          blurRadius: 0,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Transform.translate(
+                                offset: const Offset(-0.3, 0.5),
+                                child: Text(
+                                  item.priceText,
+                                  style: const TextStyle(
+                                    fontFamily: 'Baloo 2',
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    fontVariations: [
+                                      FontVariation('wght', 750),
+                                    ],
+                                    color: Colors.white,
+                                    letterSpacing: 0.05,
+                                    height: 1.1,
+                                    shadows: [
+                                      Shadow(
+                                        color: Color(0x665A001E),
+                                        offset: Offset(0, 1),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
+                      ),
                     ),
                   ),
                 ),
-              ),
               ),
             ],
           ),
@@ -1502,10 +1907,7 @@ class _ShopScreenState extends State<ShopScreen> {
             padding: const EdgeInsets.only(bottom: 8),
             decoration: const BoxDecoration(
               border: Border(
-                bottom: BorderSide(
-                  color: Color(0xFFEDF0F6),
-                  width: 1,
-                ),
+                bottom: BorderSide(color: Color(0xFFEDF0F6), width: 1),
               ),
             ),
             child: Row(
@@ -1523,10 +1925,7 @@ class _ShopScreenState extends State<ShopScreen> {
                 ),
                 const SizedBox(width: 9),
                 Padding(
-                  padding: const EdgeInsets.only(
-                    top: 19.615,
-                    bottom: 20.615,
-                  ),
+                  padding: const EdgeInsets.only(top: 19.615, bottom: 20.615),
                   child: Text(
                     _trUpper(group.modeName, locale),
                     style: const TextStyle(
@@ -1553,7 +1952,9 @@ class _ShopScreenState extends State<ShopScreen> {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      context.l10n.shopPowerGroupBonusCount(group.powers.length),
+                      context.l10n.shopPowerGroupBonusCount(
+                        group.powers.length,
+                      ),
                       style: TextStyle(
                         fontFamily: 'Nunito',
                         fontSize: 11,
@@ -1631,7 +2032,10 @@ class _ShopScreenState extends State<ShopScreen> {
                     ),
                   ),
                   Text(
-                    context.l10n.shopPowerUpDescModeSuffix(pow.desc, group.modeName),
+                    context.l10n.shopPowerUpDescModeSuffix(
+                      pow.desc,
+                      group.modeName,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -1653,67 +2057,73 @@ class _ShopScreenState extends State<ShopScreen> {
               excludeSemantics: true,
               child: GestureDetector(
                 onTap: () => _buyCoinItem(
-                  toastMsg: context.l10n.shopPowerUpAddedToCartToast(pow.name, group.modeName),
-                cost: pow.cost,
-                onSuccess: () => _grantPowerStock(pow.id, 1),
-              ),
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 48),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(13),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0.0, 0.55, 1.0],
-                    colors: [
-                      Color(0xFFFFCF3F),
-                      Color(0xFFFFB800),
-                      Color(0xFFF59E00),
+                  itemName: pow.name,
+                  toastMsg: context.l10n.shopPowerUpAddedToCartToast(
+                    pow.name,
+                    group.modeName,
+                  ),
+                  cost: pow.cost,
+                  onSuccess: () => _grantPowerStock(pow.id, 1),
+                ),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(13),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0.0, 0.55, 1.0],
+                      colors: [
+                        Color(0xFFFFCF3F),
+                        Color(0xFFFFB800),
+                        Color(0xFFF59E00),
+                      ],
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFFB97A00),
+                        offset: Offset(0, 3),
+                        blurRadius: 0,
+                      ),
                     ],
                   ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0xFFB97A00),
-                      offset: Offset(0, 3),
-                      blurRadius: 0,
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Image.asset(
-                      'assets/design/ui/res_coin.png',
-                      width: 19,
-                      height: 19,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.medium,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '${pow.cost}',
-                      style: const TextStyle(
-                        fontFamily: 'Baloo 2',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        fontVariations: [FontVariation('wght', 800)],
-                        color: Colors.white,
-                        height: 1.15,
-                        shadows: [
-                          Shadow(
-                            color: Color(0x59784000),
-                            offset: Offset(0, 1),
-                            blurRadius: 0,
-                          ),
-                        ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/design/ui/res_coin.png',
+                        width: 19,
+                        height: 19,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.medium,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 5),
+                      Text(
+                        '${pow.cost}',
+                        style: const TextStyle(
+                          fontFamily: 'Baloo 2',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          fontVariations: [FontVariation('wght', 800)],
+                          color: Colors.white,
+                          height: 1.15,
+                          shadows: [
+                            Shadow(
+                              color: Color(0x59784000),
+                              offset: Offset(0, 1),
+                              blurRadius: 0,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
             ),
           ],
         ),
@@ -1760,6 +2170,11 @@ class _ShopItemData {
   final String desc;
   final String priceText;
   final bool isCoinPrice;
+
+  /// Sahip olunan (tek seferlik) ürün: düğme devre dışıdır, fiyat
+  /// yerine "sahip olundu" etiketi gösterir, dokunma satın alma
+  /// başlatmaz.
+  final bool owned;
   final VoidCallback onTap;
 
   const _ShopItemData({
@@ -1770,6 +2185,7 @@ class _ShopItemData {
     required this.desc,
     required this.priceText,
     required this.isCoinPrice,
+    this.owned = false,
     required this.onTap,
   });
 }
@@ -1798,64 +2214,6 @@ class _DashedBottomBorderPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DashedBottomBorderPainter oldDelegate) =>
       oldDelegate.color != color;
-}
-
-class _ShopSignalPainter extends CustomPainter {
-  const _ShopSignalPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _ShopSignalPainter oldDelegate) => false;
-}
-
-class _ShopBatteryPainter extends CustomPainter {
-  const _ShopBatteryPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _ShopBatteryPainter oldDelegate) => false;
 }
 
 class _ShopBtnShadowPainter extends CustomPainter {
@@ -2002,16 +2360,16 @@ class _ShopFloatingDock extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final usableWidth =
-                  (constraints.maxWidth - 14.0).clamp(100.0, 410.0);
+              final usableWidth = (constraints.maxWidth - 14.0).clamp(
+                100.0,
+                410.0,
+              );
               final tabW = usableWidth / _tabIcons.length;
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
                   const Positioned.fill(
-                    child: CustomPaint(
-                      painter: _ShopDockSurfacePainter(),
-                    ),
+                    child: CustomPaint(painter: _ShopDockSurfacePainter()),
                   ),
                   Positioned(
                     left: 26,
@@ -2024,10 +2382,7 @@ class _ShopFloatingDock extends StatelessWidget {
                         gradient: const LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0x33FFFFFF),
-                            Color(0x00FFFFFF),
-                          ],
+                          colors: [Color(0x33FFFFFF), Color(0x00FFFFFF)],
                         ),
                       ),
                     ),
@@ -2096,150 +2451,162 @@ class _ShopFloatingDock extends StatelessWidget {
                             label: labels[i],
                             selected: active,
                             child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => _onTapTab(context, i),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: active
-                                    ? const Color(0x1FFFB800)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: SizedBox(
-                                height: 64,
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  alignment: Alignment.topCenter,
-                                  children: [
-                                    if (active)
-                                      Positioned(
-                                        top: 1.8,
-                                        width: 42.4,
-                                        height: 42.4,
-                                        child: CustomPaint(
-                                          painter:
-                                              const _ShopDockActiveCircleShadowPainter(),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: Colors.white,
-                                              border: Border.all(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _onTapTab(context, i),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: active
+                                      ? const Color(0x1FFFB800)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: SizedBox(
+                                  height: 64,
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    alignment: Alignment.topCenter,
+                                    children: [
+                                      if (active)
+                                        Positioned(
+                                          top: 1.8,
+                                          width: 42.4,
+                                          height: 42.4,
+                                          child: CustomPaint(
+                                            painter:
+                                                const _ShopDockActiveCircleShadowPainter(),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
                                                 color: Colors.white,
-                                                width: 2,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 2,
+                                                ),
                                               ),
-                                            ),
-                                            child: ClipOval(
-                                              child: Stack(
-                                                alignment: Alignment.center,
-                                                children: [
-                                                  const Positioned.fill(
-                                                    child: CustomPaint(
-                                                      painter:
-                                                          _ShopDockCircleInsetPainter(
-                                                        dy: -4.24,
-                                                        color: Color(0x1F080B12),
+                                              child: ClipOval(
+                                                child: Stack(
+                                                  alignment: Alignment.center,
+                                                  children: [
+                                                    const Positioned.fill(
+                                                      child: CustomPaint(
+                                                        painter:
+                                                            _ShopDockCircleInsetPainter(
+                                                              dy: -4.24,
+                                                              color: Color(
+                                                                0x1F080B12,
+                                                              ),
+                                                            ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  Transform.translate(
-                                                    offset: const Offset(
-                                                        0.5, 0.5),
-                                                    child:
-                                                        _buildIconWithDropShadow(
-                                                      _tabIcons[i],
-                                                      35,
+                                                    Transform.translate(
+                                                      offset: const Offset(
+                                                        0.5,
+                                                        0.5,
+                                                      ),
+                                                      child:
+                                                          _buildIconWithDropShadow(
+                                                            _tabIcons[i],
+                                                            35,
+                                                          ),
                                                     ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        Positioned(
+                                          top: 7.0,
+                                          width: 40.0,
+                                          height: 40.0,
+                                          child: CustomPaint(
+                                            painter:
+                                                const _ShopDockInactiveCircleShadowPainter(),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: const Color(0x17FFFFFF),
+                                                border: Border.all(
+                                                  color: const Color(
+                                                    0x2EFFFFFF,
                                                   ),
-                                                ],
+                                                  width: 2,
+                                                ),
+                                              ),
+                                              child: ClipOval(
+                                                child: Stack(
+                                                  alignment: Alignment.center,
+                                                  children: [
+                                                    const Positioned.fill(
+                                                      child: CustomPaint(
+                                                        painter:
+                                                            _ShopDockCircleInsetPainter(
+                                                              dy: 2.0,
+                                                              color: Color(
+                                                                0x29FFFFFF,
+                                                              ),
+                                                            ),
+                                                      ),
+                                                    ),
+                                                    Transform.translate(
+                                                      offset: const Offset(
+                                                        0.5,
+                                                        0.5,
+                                                      ),
+                                                      child:
+                                                          _buildIconWithDropShadow(
+                                                            _tabIcons[i],
+                                                            33,
+                                                          ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      )
-                                    else
                                       Positioned(
-                                        top: 7.0,
-                                        width: 40.0,
-                                        height: 40.0,
-                                        child: CustomPaint(
-                                          painter:
-                                              const _ShopDockInactiveCircleShadowPainter(),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: const Color(0x17FFFFFF),
-                                              border: Border.all(
-                                                color: const Color(0x2EFFFFFF),
-                                                width: 2,
-                                              ),
-                                            ),
-                                            child: ClipOval(
-                                              child: Stack(
-                                                alignment: Alignment.center,
-                                                children: [
-                                                  const Positioned.fill(
-                                                    child: CustomPaint(
-                                                      painter:
-                                                          _ShopDockCircleInsetPainter(
-                                                        dy: 2.0,
-                                                        color: Color(0x29FFFFFF),
+                                        left: 0,
+                                        right: 0,
+                                        top: 46.0,
+                                        height: 16.0,
+                                        child: Center(
+                                          child: Text(
+                                            labels[i],
+                                            maxLines: 1,
+                                            style: TextStyle(
+                                              fontFamily: 'Baloo 2',
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              fontVariations: const [
+                                                FontVariation('wght', 600),
+                                              ],
+                                              height: 1.0,
+                                              letterSpacing: -0.02,
+                                              color: active
+                                                  ? Colors.white
+                                                  : const Color(0xA8FFFFFF),
+                                              shadows: active
+                                                  ? const [
+                                                      Shadow(
+                                                        color: Color(
+                                                          0x737A082E,
+                                                        ),
+                                                        offset: Offset(0, 2),
+                                                        blurRadius: 0,
                                                       ),
-                                                    ),
-                                                  ),
-                                                  Transform.translate(
-                                                    offset: const Offset(
-                                                        0.5, 0.5),
-                                                    child:
-                                                        _buildIconWithDropShadow(
-                                                      _tabIcons[i],
-                                                      33,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                                    ]
+                                                  : null,
                                             ),
                                           ),
                                         ),
                                       ),
-                                    Positioned(
-                                      left: 0,
-                                      right: 0,
-                                      top: 46.0,
-                                      height: 16.0,
-                                      child: Center(
-                                        child: Text(
-                                          labels[i],
-                                          maxLines: 1,
-                                          style: TextStyle(
-                                            fontFamily: 'Baloo 2',
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                            fontVariations: const [
-                                              FontVariation('wght', 600)
-                                            ],
-                                            height: 1.0,
-                                            letterSpacing: -0.02,
-                                            color: active
-                                                ? Colors.white
-                                                : const Color(0xA8FFFFFF),
-                                            shadows: active
-                                                ? const [
-                                                    Shadow(
-                                                      color: Color(0x737A082E),
-                                                      offset: Offset(0, 2),
-                                                      blurRadius: 0,
-                                                    ),
-                                                  ]
-                                                : null,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
                           ),
                         );
                       }),
@@ -2331,8 +2698,8 @@ class _ShopDockActiveCircleShadowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(
-          covariant _ShopDockActiveCircleShadowPainter oldDelegate) =>
-      false;
+    covariant _ShopDockActiveCircleShadowPainter oldDelegate,
+  ) => false;
 }
 
 class _ShopDockInactiveCircleShadowPainter extends CustomPainter {
@@ -2352,8 +2719,8 @@ class _ShopDockInactiveCircleShadowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(
-          covariant _ShopDockInactiveCircleShadowPainter oldDelegate) =>
-      false;
+    covariant _ShopDockInactiveCircleShadowPainter oldDelegate,
+  ) => false;
 }
 
 class _ShopDockSurfacePainter extends CustomPainter {

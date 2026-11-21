@@ -1,14 +1,21 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/lululu_game_mode.dart';
 import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
+import '../services/score_share_card.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
+import '../widgets/coin_fly.dart';
 import '../widgets/lululu_press.dart';
 
 Widget _buildExactImage(
@@ -39,7 +46,8 @@ Widget _buildExactImage(
 /// (şu an böyle bir çağırıcı yok — 12 çağrı noktasının tamamı ödemeyi
 /// kendisi yapıyor; S1#49'dan beri ödeme `finishRun()` yardımcısında
 /// tek noktada toplanır, parametre gelecekteki çağırıcılar için
-/// güvenlik ağıdır).
+/// güvenlik ağıdır). [firstClearExtras] da salt-görünümdür: bant
+/// yalnızca gösterir, ödeme yapmaz ve [coins] tutarına eklenmez.
 Future<bool> showGameResult(
   BuildContext context, {
   required int score,
@@ -49,6 +57,12 @@ Future<bool> showGameResult(
   int bestCombo = ResultScoring.defaultBestCombo,
   int merges = ResultScoring.defaultMerges,
   bool coinsAwardedByCaller = true,
+  bool won = true,
+  bool isNewRecord = false,
+  // 12P: bitiş sebebi (örn. can bitmesi / erken bitirme); verilmezse
+  // kazanma durumuna göre varsayılan alt başlık gösterilir.
+  String? resultLine,
+  FirstClearExtras firstClearExtras = const FirstClearExtras(),
 }) async {
   final replay = await Navigator.of(context).push<bool>(
     MaterialPageRoute(
@@ -60,6 +74,10 @@ Future<bool> showGameResult(
         bestCombo: bestCombo,
         merges: merges,
         coinsAwardedByCaller: coinsAwardedByCaller,
+        won: won,
+        isNewRecord: isNewRecord,
+        resultLine: resultLine,
+        firstClearExtras: firstClearExtras,
       ),
     ),
   );
@@ -77,11 +95,96 @@ abstract final class ResultScoring {
 
   static int coinsFor(int score) => max(0, score ~/ 100);
 
-  static int starsFor({required int score, required int best}) {
+  /// Arcade yıldızı — SABİT ölçek (12Q-stars).
+  ///
+  /// Eski kural (`score >= best` → 3 yıldız) tur-öncesi rekora
+  /// bakıyordu; mod ekranları `_best`'i tur içinde canlı güncellediği
+  /// (G33 deseni) için rekor kıran her tur — ilk tur dahil — otomatik
+  /// 3 yıldız alıyordu. Yeni kuralda [reference] modun sabit 3-yıldız
+  /// çıtasıdır (`LululuGameMode.threeStarScore`): 3 yıldız için çıta
+  /// aşılmalı, 2 yıldız için çıtanın %60'ı, 1 yıldız için skor > 0
+  /// yeterlidir. Rekor kırmak yıldızdan ayrıdır — bkz. [isNewRecord].
+  /// [reference] <= 0 ise (bilinmeyen mod) skor > 0 → 1 yıldız.
+  static int starsFor({required int score, required int reference}) {
     if (score <= 0) return 0;
-    if (best > 0 && score >= best) return 3;
-    if (best > 0 && score >= (best * 0.6).ceil()) return 2;
+    if (reference <= 0) return 1;
+    if (score >= reference) return 3;
+    if (score >= (reference * 0.6).ceil()) return 2;
     return 1;
+  }
+
+  /// Mod anahtarıyla (`bestScoreKey` / `modeScoreId`) sabit ölçekli
+  /// yıldız: çıta katalogdaki `threeStarScore`'dur; bilinmeyen
+  /// anahtarda çıta 0 sayılır (skor > 0 → 1 yıldız).
+  static int starsForMode({
+    required int score,
+    required String modeScoreId,
+  }) {
+    final mode = LululuGameMode.byBestScoreKey(modeScoreId);
+    return starsFor(score: score, reference: mode?.threeStarScore ?? 0);
+  }
+
+  /// Rekor kırıldı mı? (12Q-stars — yıldızdan ayrı rozet.)
+  ///
+  /// Çağırıcılar `best` olarak tur içinde canlı güncellenmiş
+  /// `max(tur-öncesi rekor, skor)` değerini geçirir; bu yüzden
+  /// `score >= best` tam olarak "skor tur-öncesi rekoru yakaladı ya
+  /// da geçti" demektir (beraberlik de rekor sayılır). Skor 0 ise
+  /// rekor yoktur.
+  static bool isNewRecord({required int score, required int best}) =>
+      score > 0 && score >= best;
+}
+
+/// Sonuç ekranında gösterilen ilk-tamamlama ekstraları (5B, salt-görünüm).
+///
+/// Yalnızca zaten ödenmiş tutarları gösterir; bu sınıf ödeme yapmaz ve
+/// tutarlar sonuç ekranındaki coin hapına (`coins`) eklenmez. Değerler
+/// seviye-tamamlama özetinden [FirstClearExtras.fromSummary] ile
+/// türetilir; ödeme hesabı burada yeniden yapılmaz.
+class FirstClearExtras {
+  const FirstClearExtras({
+    this.levelRewardCoins = 0,
+    this.bossBonusCoins = 0,
+  });
+
+  /// Seviye taban ödülü kısmı (yalnız ilk tamamlamada ödenir).
+  final int levelRewardCoins;
+
+  /// Boss ilk-geçiş bonusu kısmı (yalnız boss seviyesinde, ilk geçişte).
+  final int bossBonusCoins;
+
+  /// Gösterilecek ekstra toplamı.
+  int get total => levelRewardCoins + bossBonusCoins;
+
+  bool get isEmpty => total <= 0;
+  bool get isNotEmpty => total > 0;
+
+  /// Seviye-tamamlama özetinden ekstraları türetir.
+  ///
+  /// [coinsAwarded] yıldız ödemesi + ilk-tamamlama ekstralarının
+  /// toplamıdır (servis özeti öyle döndürür); çağıranın kayıt öncesinde
+  /// bildiği [starCoins] (yıldız artışı × 50) çıkarılarak ekstra kısmı
+  /// bulunur. Boss kısmı [bossFirstClearBonusCoins] alanından doğrudan
+  /// alınır ve ekstra toplamını aşamaz (savunmacı kısma); kalanı seviye
+  /// taban ödülüdür. Negatif girdiler 0'a kısılır; tekrar tamamlamada
+  /// özet yıldız ödemesinden fazlasını içermediği için sonuç boştur.
+  factory FirstClearExtras.fromSummary({
+    required int coinsAwarded,
+    required int bossFirstClearBonusCoins,
+    required int starCoins,
+  }) {
+    // İç içe max/min çıkarımı `num` üretebildiği için kısma açık
+    // tamsayı aritmetiğiyle yapılır (sonuç her zaman `int`).
+    final starPart = starCoins < 0 ? 0 : starCoins;
+    final rawExtras = coinsAwarded - starPart;
+    final extras = rawExtras < 0 ? 0 : rawExtras;
+    final bossPart =
+        bossFirstClearBonusCoins < 0 ? 0 : bossFirstClearBonusCoins;
+    final boss = bossPart > extras ? extras : bossPart;
+    return FirstClearExtras(
+      levelRewardCoins: extras - boss,
+      bossBonusCoins: boss,
+    );
   }
 }
 
@@ -95,6 +198,10 @@ class GameResultScreen extends StatefulWidget {
     this.bestCombo = ResultScoring.defaultBestCombo,
     this.merges = ResultScoring.defaultMerges,
     this.coinsAwardedByCaller = true,
+    this.won = true,
+    this.isNewRecord = false,
+    this.resultLine,
+    this.firstClearExtras = const FirstClearExtras(),
   });
 
   final int score;
@@ -103,6 +210,25 @@ class GameResultScreen extends StatefulWidget {
   final int bestScore;
   final int bestCombo;
   final int merges;
+
+  /// Rekor rozeti (12Q-stars): `true` ise yıldız satırının altında
+  /// "YENİ REKOR!" bandı gösterilir. Yıldızdan bağımsızdır — rekor
+  /// kıran ama çıtanın altında kalan tur 1-2 yıldız + rozet alır.
+  final bool isNewRecord;
+
+  /// İlk-tamamlama ekstraları (salt-görünüm): boş değilse skor kartının
+  /// altında ayrı bir bantta gösterilir; ödeme yapmaz, [coins] tutarına
+  /// eklenmez.
+  final FirstClearExtras firstClearExtras;
+
+  /// Bitiş sebebi satırı (12P, salt-görünüm): verilmezse kazanma
+  /// durumuna göre varsayılan alt başlık gösterilir.
+  final String? resultLine;
+
+  /// `false` ise kayıp/0-skor başlığı gösterilir ("OYUN BİTTİ!"):
+  /// canlar bitince veya skor 0'ken BİTİR'e basınca "SEVİYE TAMAM!"
+  /// denmez (playtest bulgu #2).
+  final bool won;
 
   /// `true` (varsayılan): [coins] çağırıcı tarafından ödendi, bu ekran
   /// ödemez. `false`: bu ekran [coins] kadar öder (ödemeyen çağırıcı için).
@@ -120,6 +246,22 @@ class _GameResultScreenState extends State<GameResultScreen>
   bool _initialCoinsAwarded = false;
   bool _shared = false;
 
+  /// 12N: sandık üstündeki coin hapının konumu (uçuş kalkış noktası).
+  final GlobalKey _chestPillKey = GlobalKey();
+
+  /// 12N: uçuş gecikme zamanlayıcısı + tutamacı — ekran kapanırsa
+  /// ikisi de iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok;
+  /// iptal sayıyı uçuşsuz son değere döndürür).
+  Timer? _coinFlyDelay;
+  CoinFlightHandle? _coinFlight;
+
+  @override
+  void dispose() {
+    _coinFlyDelay?.cancel();
+    _coinFlight?.cancel();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -135,10 +277,42 @@ class _GameResultScreenState extends State<GameResultScreen>
       // recordTaskProgress('play') çağırıyor (madde 35: giriş kaydı
       // kaldırıldı, tek kayıt bitirme noktasındadır).
     }
+    // 12N: kazanç sandık hapından üst bara uçar. Ödeme sonuç ekranı
+    // açılmadan ÖNCE (finishRun settle) yapıldı; uçuş yalnız görünümü
+    // erteler: üst bar sayısı varışta artar. Bu ekranda üst bar yoktur,
+    // hedef kayıtlı değilse uçuş sağ üst köşeye gider (yedek hedef);
+    // hub'a dönülünce sayı varmış hâlde görünür. Kısa gecikme: kullanıcı
+    // önce hapı görsün, sonra coinler kalksın.
+    if (widget.coins > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _coinFlyDelay = Timer(const Duration(milliseconds: 350), () {
+          if (!mounted) return;
+          final box = _chestPillKey.currentContext?.findRenderObject();
+          final from = box is RenderBox && box.hasSize
+              ? box.localToGlobal(box.size.center(Offset.zero))
+              : Offset(
+                  MediaQuery.sizeOf(context).width / 2,
+                  MediaQuery.sizeOf(context).height / 2,
+                );
+          _coinFlight = CoinFlyService.instance.fly(
+            context: context,
+            from: from,
+            amount: widget.coins,
+          );
+        });
+      });
+    }
     final isTesting =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
-    if (!isTesting) {
-      AudioManager().playWin();
+    // 12B-q19: test dikişi (`forcePlaybackForTesting`, Dalga 11 P2-1)
+    // açıkken testte de çalınır — tek-çalma kanıt testi bu yoldan
+    // sayar. Üretimde bayrak varsayılanı kapalıdır, davranış aynıdır.
+    if (!isTesting || AudioManager().forcePlaybackForTesting) {
+      if (widget.won) {
+        AudioManager().playWin();
+      } else {
+        AudioManager().playLose();
+      }
     }
   }
 
@@ -147,6 +321,9 @@ class _GameResultScreenState extends State<GameResultScreen>
   /// reklam akışına bağlanmalıdır; sahte (mock) reklamla ödül verilmez
   /// (madde 4). Düğmeye dokunmak yalnızca bilgi gösterir.
   void _showRewardsComingSoon() {
+    // 10D P1-5: reklam düğmeleri sessizdi (yalnız snackbar) —
+    // dokunuşa ses + titreşim (playButtonTap tek çağrıda).
+    AudioManager().playButtonTap();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -158,16 +335,65 @@ class _GameResultScreenState extends State<GameResultScreen>
     );
   }
 
-  void _shareResult() {
-    setState(() => _shared = true);
+  /// Gerçek skor paylaşımı (B9): skor kartı render edilip sistem
+  /// paylaşımı açılır (`arcade_chrome.dart` deseni); `_shared`
+  /// YALNIZCA paylaşım `true` dönerse set edilir. Web'de kart
+  /// paylaşımı yapılamaz ([ScoreShareCard.share] `false` döner):
+  /// skor metni panoya kopyalanır; kopyalama başarılıysa
+  /// "kopyalandı" bildirimi, değilse hata bildirimi gösterilir.
+  /// Sahte başarı bildirimi yok.
+  Future<void> _shareResult() async {
     AudioManager().playPop();
+    final l10n = context.l10n;
+    final shared = await ScoreShareCard.instance.share(
+      l10n: l10n,
+      modeTitle:
+          widget.won ? l10n.levelCompleteTitle : l10n.resultGameOverTitle,
+      score: widget.score,
+      best: widget.bestScore,
+      line:
+          widget.resultLine ??
+          (widget.won
+              ? l10n.resultSubtitle
+              : l10n.resultGameOverSubtitle),
+    );
+    if (!mounted) return;
+    if (shared) {
+      setState(() => _shared = true);
+      return;
+    }
+    if (kIsWeb) {
+      var copied = false;
+      try {
+        await Clipboard.setData(
+          ClipboardData(text: l10n.scoreShareText(widget.score)),
+        );
+        copied = true;
+      } catch (_) {
+        copied = false;
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            copied
+                ? l10n.shareScoreSnack(widget.score)
+                : l10n.shareScoreFailed,
+            style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
+          ),
+          backgroundColor:
+              copied ? LululuColors.cyberFuchsia : LululuColors.carbonVoid,
+        ),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          context.l10n.shareScoreSnack(widget.score),
+          l10n.shareScoreFailed,
           style: GoogleFonts.exo2(fontWeight: FontWeight.w800),
         ),
-        backgroundColor: LululuColors.cyberFuchsia,
+        backgroundColor: LululuColors.carbonVoid,
       ),
     );
   }
@@ -186,10 +412,12 @@ class _GameResultScreenState extends State<GameResultScreen>
             ),
           ),
 
-          // Confetti Layer
-          const Positioned.fill(
-            child: IgnorePointer(child: _ConfettiLayer()),
-          ),
+          // Confetti Layer — 10D P0-5: yalnız zaferde yağar; kayıp
+          // ekranında konfeti kutlama-yanlış-an olurdu.
+          if (widget.won)
+            const Positioned.fill(
+              child: IgnorePointer(child: _ConfettiLayer()),
+            ),
 
           // Main Scrollable Inner
           SafeArea(
@@ -206,13 +434,23 @@ class _GameResultScreenState extends State<GameResultScreen>
                         _buildStarsRow(),
                         const SizedBox(height: 6),
 
+                        // Rekor rozeti (12Q-stars): yıldızdan ayrı,
+                        // yalnız rekor kırıldıysa gösterilir.
+                        if (widget.isNewRecord) ...[
+                          _buildNewRecordBadge(),
+                          const SizedBox(height: 6),
+                        ],
+
                         // Title: SEVİYE TAMAM!
                         _buildTitleBadge(),
                         const SizedBox(height: 7),
 
                         // Subtitle (.res-sub)
                         Text(
-                          context.l10n.resultSubtitle,
+                          widget.resultLine ??
+                              (widget.won
+                                  ? context.l10n.resultSubtitle
+                                  : context.l10n.resultGameOverSubtitle),
                           textAlign: TextAlign.center,
                           style: GoogleFonts.nunito(
                             fontSize: 13.5,
@@ -227,11 +465,24 @@ class _GameResultScreenState extends State<GameResultScreen>
                             ],
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        // 6F: alt başlık ↔ skor kartı arası 12px temiz
+                        // bölge. 8px'te koyu ahşap raf kenarı + kart
+                        // üst kenarı satıra yapışıp "kartın altında
+                        // kalıyor" okunuyordu (2 satıra saran uzun alt
+                        // başlıkta da aynı); aralık içerik varyantından
+                        // bağımsız sabittir, metin kısaltılmaz.
+                        const SizedBox(height: 12),
 
                         // Score Card
                         _buildScoreCard(),
                         const SizedBox(height: 2),
+
+                        // İlk-tamamlama ekstraları bandı (5B): yalnız
+                        // özet boş değilse gösterilir.
+                        if (widget.firstClearExtras.isNotEmpty) ...[
+                          _buildFirstClearExtrasBand(),
+                          const SizedBox(height: 2),
+                        ],
 
                         // Mascot & Chest Row
                         _buildMascotAndChest(),
@@ -268,6 +519,30 @@ class _GameResultScreenState extends State<GameResultScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Rekor bandı (12Q-stars): altın hap içinde "YENİ REKOR!" yazar.
+  Widget _buildNewRecordBadge() {
+    return Center(
+      child: Container(
+        key: const Key('result_new_record_badge'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          color: const Color(0xFFFFD54A),
+          border: Border.all(color: const Color(0xFFB07534), width: 2),
+        ),
+        child: Text(
+          context.l10n.newRecordBadge,
+          style: GoogleFonts.nunito(
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.8,
+            color: const Color(0xFF4A2E00),
+          ),
+        ),
       ),
     );
   }
@@ -409,7 +684,9 @@ class _GameResultScreenState extends State<GameResultScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 7, 24, 9),
               child: Text(
-                context.l10n.levelCompleteTitle,
+                widget.won
+                    ? context.l10n.levelCompleteTitle
+                    : context.l10n.resultGameOverTitle,
                 style: GoogleFonts.bangers(
                   fontSize: 30,
                   letterSpacing: 1.2,
@@ -499,10 +776,10 @@ class _GameResultScreenState extends State<GameResultScreen>
                                 widget.score == 2346))
                         ? 2346
                         : widget.score;
-                    final formatted = effectiveScore.toString().replaceAllMapped(
-                          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                          (Match m) => '${m[1]}.',
-                        );
+                    final formatted = formatGroupedInt(
+                      effectiveScore,
+                      Localizations.localeOf(context).languageCode,
+                    );
                     if (isTesting) {
                       return Text(
                         formatted,
@@ -519,10 +796,10 @@ class _GameResultScreenState extends State<GameResultScreen>
                       tween: IntTween(begin: 0, end: widget.score),
                       duration: const Duration(milliseconds: 900),
                       builder: (context, val, _) => Text(
-                        val.toString().replaceAllMapped(
-                              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                              (Match m) => '${m[1]}.',
-                            ),
+                        formatGroupedInt(
+                          val,
+                          Localizations.localeOf(context).languageCode,
+                        ),
                         textAlign: TextAlign.center,
                         style: GoogleFonts.baloo2(
                           fontSize: 34,
@@ -567,10 +844,10 @@ class _GameResultScreenState extends State<GameResultScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      widget.bestScore.toString().replaceAllMapped(
-                            RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                            (Match m) => '${m[1]}.',
-                          ),
+                      formatGroupedInt(
+                        widget.bestScore,
+                        Localizations.localeOf(context).languageCode,
+                      ),
                       style: GoogleFonts.baloo2(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -637,6 +914,83 @@ class _GameResultScreenState extends State<GameResultScreen>
           ),
         ],
       ),
+    );
+  }
+
+  /// İlk-tamamlama ekstraları bandı (5B, salt-görünüm): skor kartının
+  /// desenine uyar; seviye taban ödülü ve boss bonusu ayrı satırlarda,
+  /// mevcut l10n etiketleriyle gösterilir. Yalnızca 0'dan büyük kısımlar
+  /// çizilir; bant ödeme yapmaz.
+  Widget _buildFirstClearExtrasBand() {
+    final extras = widget.firstClearExtras;
+    final rows = <Widget>[];
+    if (extras.levelRewardCoins > 0) {
+      rows.add(
+        _buildExtrasRow(
+          context.l10n.rewardCoins(extras.levelRewardCoins),
+        ),
+      );
+    }
+    if (extras.bossBonusCoins > 0) {
+      if (rows.isNotEmpty) rows.add(const SizedBox(height: 4));
+      rows.add(
+        _buildExtrasRow(
+          context.l10n.bossFirstClearBonus(extras.bossBonusCoins),
+        ),
+      );
+    }
+    return Container(
+      key: const Key('result_first_clear_extras'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFF9E9), Color(0xFFFFEFC4)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        border: Border.all(
+          color: const Color(0xFFB97A2E),
+          width: 2,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x8C8C5414),
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: rows,
+      ),
+    );
+  }
+
+  Widget _buildExtrasRow(String label) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildExactImage(
+          'assets/design/ui/res_coin.png',
+          width: 18,
+          height: 18,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.nunito(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              height: 18.2 / 13.0,
+              color: const Color(0xFF6E3F14),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -766,9 +1120,11 @@ class _GameResultScreenState extends State<GameResultScreen>
                 ],
               ),
               // Coin Pill Floating on top of chest
+              // 12N: uçuş kalkış noktası (GlobalKey ile konum okunur).
               Positioned(
                 top: 0,
                 child: Container(
+                  key: _chestPillKey,
                   padding: const EdgeInsets.fromLTRB(6, 4, 13, 4),
                   decoration: BoxDecoration(
                     color: const Color(0xEE2E1A00),
@@ -883,7 +1239,13 @@ class _GameResultScreenState extends State<GameResultScreen>
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        // 6F: "Ödüllü reklamlar yakında…" satırının üstünde 8px,
+        // altında 12px temiz bölge. 4px/8px'te satır iki koyu düğme
+        // arasına sıkışıp ahşap plank kenarıyla birleşiyor ve üst
+        // yarısı ikinci düğmenin altında kalmış gibi okunuyordu
+        // (2 satıra saran dil/varyantta da aynı); aralık sabittir,
+        // metin kısaltılmaz, ödül akışı değişmez.
+        const SizedBox(height: 8),
         Text(
           context.l10n.rewardedAdsComingSoon,
           textAlign: TextAlign.center,
@@ -900,7 +1262,7 @@ class _GameResultScreenState extends State<GameResultScreen>
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
 
         // REKLAMLA 2X ALTIN · YAKINDA (ödül verilmez, bilgi gösterir)
         LululuPress(
@@ -1240,9 +1602,12 @@ class _ConfettiLayer extends StatelessWidget {
     final w = MediaQuery.sizeOf(context).width;
     final rng = Random(42);
 
+    // 10F P2-2: 24 -> 40 parça, gecikme 0-1200 ms -> 0-400 ms; düşüş
+    // süresi (1700 ms) ve boyut (7-14 px) aynen — erken karede gözle
+    // görülür konfeti için az parça + geç başlama düzeltilir, hız değil.
     return Stack(
-      children: List.generate(24, (i) {
-        final delayMs = (rng.nextDouble() * 1200).round();
+      children: List.generate(40, (i) {
+        final delayMs = (rng.nextDouble() * 400).round();
         final size = 7.0 + rng.nextDouble() * 7;
         return Positioned(
           left: rng.nextDouble() * w,

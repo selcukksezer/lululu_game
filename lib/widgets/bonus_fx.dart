@@ -68,9 +68,275 @@ Future<void> playBonusFx(
   final entry = OverlayEntry(
     builder: (_) => _FxHost(origin: origin, child: fx),
   );
-  Overlay.of(context).insert(entry);
-  await Future<void>.delayed(const Duration(milliseconds: 720));
-  entry.remove();
+  var inserted = false;
+  try {
+    Overlay.of(context).insert(entry);
+    inserted = true;
+    await Future<void>.delayed(const Duration(milliseconds: 720));
+  } finally {
+    // Bekleme yarıda kesilse bile overlay kaldırılır; aksi hâlde efekt
+    // ekranda takılı kalır.
+    if (inserted) {
+      try {
+        entry.remove();
+      } catch (_) {}
+    }
+  }
+}
+
+/// Prototip v4 "F16 BOMBARDIMANI": jet ekranı boydan boya geçer
+/// (1500 ms), 3 bomba bırakır; bombalar hedefe düşünce patlar.
+/// `_BombaFx` yalnız düğme çevresindeki çarpma efektidir (bomba/alev/
+/// flaş/💥); jet yalnız bu katmandadır. Aynı anda tek uçuş olur
+/// (prototipteki `f16Busy` koruması).
+bool _f16FlyoverActive = false;
+
+Future<void> playF16Flyover(BuildContext context) async {
+  if (_f16FlyoverActive) return;
+  _f16FlyoverActive = true;
+  final entry = OverlayEntry(builder: (_) => const _F16Flyover());
+  var inserted = false;
+  try {
+    Overlay.of(context).insert(entry);
+    inserted = true;
+    await Future<void>.delayed(const Duration(milliseconds: 1900));
+  } finally {
+    _f16FlyoverActive = false;
+    if (inserted) {
+      try {
+        entry.remove();
+      } catch (_) {}
+    }
+  }
+}
+
+@visibleForTesting
+void debugResetF16FlyoverGuard() {
+  _f16FlyoverActive = false;
+}
+
+/// Tam ekran F16 uçuşu (prototip: `.f16-layer` + `.f16-jet`).
+///
+/// Jet 216 px genişliğinde, soldan (ekran dışı) sağa (ekran dışı) 1500 ms
+/// uçar; 560/670/780. ms'de 3 bomba bırakır; bombalar 540 ms'de alanın
+/// %28/%52/%76 noktalarına düşüp patlar. Dokunmayı engellemez.
+class _F16Flyover extends StatefulWidget {
+  const _F16Flyover();
+
+  @override
+  State<_F16Flyover> createState() => _F16FlyoverState();
+}
+
+class _F16FlyoverState extends State<_F16Flyover>
+    with SingleTickerProviderStateMixin {
+  static const _flightMs = 1500;
+  static const _jetWidth = 216.0;
+  static const _jetHeight = 92.0;
+  static const _bombDropAtMs = [560, 670, 780];
+  static const _bombFallMs = 540;
+  static const _targetX = [0.28, 0.52, 0.76];
+  static const _targetY = [0.54, 0.60, 0.56];
+  static const _flightCurve = Cubic(0.32, 0.08, 0.62, 1.0);
+
+  late final AnimationController _flight;
+  final List<_DroppedBomb> _bombs = [];
+  final List<Offset> _blasts = [];
+  final List<Timer> _timers = [];
+
+  double _flightX(double t, double width) {
+    if (t < 0.45) {
+      return -270 + (width * 0.42 + 270) * (t / 0.45);
+    }
+    return width * 0.42 +
+        (width + 30 - width * 0.42) * ((t - 0.45) / 0.55);
+  }
+
+  double _flightY(double t) {
+    if (t < 0.45) {
+      return -7 * (t / 0.45);
+    }
+    return -7 + 10 * ((t - 0.45) / 0.55);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _flight = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: _flightMs),
+    )..forward();
+    for (var i = 0; i < _bombDropAtMs.length; i++) {
+      _timers.add(
+        Timer(Duration(milliseconds: _bombDropAtMs[i]), () {
+          if (!mounted) return;
+          final size = context.size ?? MediaQuery.sizeOf(context);
+          final t = _flightCurve.transform(
+            _bombDropAtMs[i] / _flightMs,
+          );
+          final jetLeft = _flightX(t, size.width);
+          final jetTop = size.height * 0.14;
+          setState(() {
+            _bombs.add(
+              _DroppedBomb(
+                index: i,
+                from: Offset(
+                  jetLeft + _jetWidth * 0.52,
+                  jetTop + _jetHeight * 0.72,
+                ),
+                to: Offset(
+                  size.width * _targetX[i],
+                  size.height * _targetY[i],
+                ),
+              ),
+            );
+          });
+        }),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final timer in _timers) {
+      timer.cancel();
+    }
+    _flight.dispose();
+    super.dispose();
+  }
+
+  void _onBombLanded(_DroppedBomb bomb) {
+    if (!mounted) return;
+    setState(() {
+      _bombs.remove(bomb);
+      _blasts.add(bomb.to);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return IgnorePointer(
+      child: Material(
+        type: MaterialType.transparency,
+        child: SizedBox.expand(
+          key: const Key('f16-flyover'),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AnimatedBuilder(
+                animation: _flight,
+                builder: (context, child) {
+                  final t = _flightCurve.transform(_flight.value);
+                  return Positioned(
+                    left: _flightX(t, size.width),
+                    top: size.height * 0.14 + _flightY(t),
+                    child: child!,
+                  );
+                },
+                child: const CustomPaint(
+                  key: Key('f16-flyover-jet'),
+                  size: Size(_jetWidth, _jetHeight),
+                  painter: _F16JetPainter(),
+                ),
+              ),
+              for (final bomb in _bombs)
+                _FallingBomb(
+                  key: Key('f16-flyover-bomb-${bomb.index}'),
+                  bomb: bomb,
+                  onLanded: () => _onBombLanded(bomb),
+                ),
+              for (var i = 0; i < _blasts.length; i++)
+                Positioned(
+                  key: Key('f16-flyover-blast-$i'),
+                  left: _blasts[i].dx - 55,
+                  top: _blasts[i].dy - 55,
+                  child: Container(
+                    width: 110,
+                    height: 110,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFB800),
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                      .animate()
+                      .fadeIn(duration: 40.ms)
+                      .scaleXY(begin: 0.3, end: 1.4, duration: 220.ms)
+                      .fadeOut(delay: 180.ms, duration: 180.ms),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DroppedBomb {
+  const _DroppedBomb({
+    required this.index,
+    required this.from,
+    required this.to,
+  });
+
+  final int index;
+  final Offset from;
+  final Offset to;
+}
+
+/// Jeti bıraktığı noktadan hedefe 540 ms'de düşer (prototip:
+/// `cubic-bezier(.5,.05,.8,.6)`, 4° → 38° döner); varınca patlar.
+class _FallingBomb extends StatefulWidget {
+  const _FallingBomb({super.key, required this.bomb, required this.onLanded});
+
+  final _DroppedBomb bomb;
+  final VoidCallback onLanded;
+
+  @override
+  State<_FallingBomb> createState() => _FallingBombState();
+}
+
+class _FallingBombState extends State<_FallingBomb>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _fall;
+
+  @override
+  void initState() {
+    super.initState();
+    _fall = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: _F16FlyoverState._bombFallMs),
+    )..forward().whenComplete(() {
+        if (mounted) widget.onLanded();
+      });
+  }
+
+  @override
+  void dispose() {
+    _fall.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _fall,
+      builder: (context, child) {
+        final eased =
+            const Cubic(0.5, 0.05, 0.8, 0.6).transform(_fall.value);
+        final pos = Offset.lerp(widget.bomb.from, widget.bomb.to, eased)!;
+        final angle = 0.07 + (0.66 - 0.07) * eased;
+        return Positioned(
+          left: pos.dx - 12,
+          top: pos.dy - 17,
+          child: Transform.rotate(angle: angle, child: child!),
+        );
+      },
+      child: const CustomPaint(
+        size: Size(24, 34),
+        painter: _F16BombPainter(),
+      ),
+    );
+  }
 }
 
 /// Efekti [origin] noktasına ortalar; dokunmayı engellemez.
@@ -251,7 +517,11 @@ class _SpreyFx extends StatelessWidget {
   }
 }
 
-/// F-16 Sorti + 3 bomba + patlama flaşı + ışık hüzmesi + ekran sarsıntısı.
+/// 3 bomba + patlama flaşı + ışık hüzmesi + ekran sarsıntısı.
+///
+/// Jet bu kutuda DEĞİL — tam ekran uçuş `_F16Flyover`'dadır
+/// (`playF16Flyover`); buradaki küçük jet, flaşın altında kaybolup
+/// "jet yok" izlenimi veriyordu (12S).
 class _BombaFx extends StatelessWidget {
   const _BombaFx();
 
@@ -308,29 +578,6 @@ class _BombaFx extends StatelessWidget {
                   )
                   .fadeOut(delay: (b * 70 + 220).ms, duration: 90.ms),
             ),
-          // F-16 savaş uçağı soldan sağa sorti yapar (JET_SVG karşılığı).
-          Positioned(
-            top: 8,
-            child: CustomPaint(
-              size: const Size(136, 62),
-              painter: const _F16JetPainter(),
-            )
-                .animate()
-                .fadeIn(duration: 40.ms)
-                .moveX(
-                  begin: -180,
-                  end: 180,
-                  duration: 540.ms,
-                  curve: Curves.easeInOut,
-                )
-                .moveY(
-                  begin: 12,
-                  end: -14,
-                  duration: 540.ms,
-                  curve: Curves.easeOut,
-                )
-                .fadeOut(delay: 460.ms, duration: 120.ms),
-          ),
           // Genişleyen şok halkaları.
           for (int i = 0; i < 2; i++)
             Container(
@@ -386,89 +633,158 @@ class _BombaFx extends StatelessWidget {
   }
 }
 
+/// Prototip v4 `JET_SVG` (viewBox 0 0 260 96) + alev + pilot madalyonu.
+///
+/// Mantıksal alan 260x110'dur: SVG 14 px aşağıda çizilir, pilot
+/// madalyonu (prototip `.f16-pilot`: altın halkalı açık mavi daire)
+/// üstte kalır. Jet sağa bakar (burun sağda).
 class _F16JetPainter extends CustomPainter {
   const _F16JetPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
-    final sx = size.width / 120.0;
-    final sy = size.height / 56.0;
+    final sx = size.width / 260.0;
+    final sy = size.height / 110.0;
     canvas.save();
     canvas.scale(sx, sy);
 
-    // Afterburner alevleri
-    final flameOuter = Paint()
-      ..color = const Color(0xFFFF6B00)
-      ..style = PaintingStyle.fill;
-    final flameInner = Paint()
-      ..color = const Color(0xFFFFE566)
-      ..style = PaintingStyle.fill;
-    final f1 = Path()
-      ..moveTo(14, 24)
-      ..lineTo(0, 28)
-      ..lineTo(14, 32)
-      ..close();
-    canvas.drawPath(f1, flameOuter);
-    final f2 = Path()
-      ..moveTo(16, 26)
-      ..lineTo(5, 28)
-      ..lineTo(16, 30)
-      ..close();
-    canvas.drawPath(f2, flameInner);
+    // SVG alanı (14 px aşağı kaydırılmış).
+    canvas.save();
+    canvas.translate(0, 14);
 
-    // Ana gövde ve delta kanatlar (JET_SVG)
-    final bodyPaint = Paint()
-      ..color = const Color(0xFFD6DFEC)
-      ..style = PaintingStyle.fill;
-    final wingPaint = Paint()
-      ..color = const Color(0xFF8C9BB5)
-      ..style = PaintingStyle.fill;
-    final strokePaint = Paint()
-      ..color = const Color(0xFF232C3D)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-
-    final wings = Path()
-      ..moveTo(36, 28)
-      ..lineTo(24, 6)
-      ..lineTo(44, 6)
-      ..lineTo(68, 24)
-      ..lineTo(68, 32)
-      ..lineTo(44, 50)
-      ..lineTo(24, 50)
-      ..close();
-    canvas.drawPath(wings, wingPaint);
-    canvas.drawPath(wings, strokePaint);
-
-    final fuselage = Path()
-      ..moveTo(14, 23)
-      ..lineTo(84, 21)
-      ..lineTo(116, 28)
-      ..lineTo(84, 35)
-      ..lineTo(14, 33)
-      ..close();
-    canvas.drawPath(fuselage, bodyPaint);
-    canvas.drawPath(fuselage, strokePaint);
-
-    // Kokpit camı
-    final canopyPaint = Paint()
-      ..color = const Color(0xFF38BDF8)
-      ..style = PaintingStyle.fill;
-    canvas.drawOval(
-      Rect.fromCenter(center: const Offset(76, 28), width: 24, height: 8),
-      canopyPaint,
+    // Afterburner alevi (kuyrukta, sola uzanır; prototip `.f16-flame`).
+    canvas.drawPath(
+      Path()
+        ..moveTo(28, 48)
+        ..lineTo(0, 55)
+        ..lineTo(28, 62)
+        ..close(),
+      Paint()..color = const Color(0xFFFF6B00),
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(32, 51)
+        ..lineTo(10, 55)
+        ..lineTo(32, 59)
+        ..close(),
+      Paint()..color = const Color(0xFFFFE566),
     );
 
-    // Kırmızı-beyaz arma
-    canvas.drawCircle(
-      const Offset(42, 15),
-      3.5,
-      Paint()..color = const Color(0xFFE52E2E),
+    // Ana gövde.
+    canvas.drawPath(
+      Path()
+        ..moveTo(252, 52)
+        ..lineTo(196, 40)
+        ..quadraticBezierTo(150, 30, 108, 34)
+        ..lineTo(52, 40)
+        ..quadraticBezierTo(22, 43, 8, 50)
+        ..lineTo(10, 56)
+        ..quadraticBezierTo(24, 62, 54, 62)
+        ..lineTo(120, 64)
+        ..quadraticBezierTo(190, 66, 252, 52)
+        ..close(),
+      Paint()..color = const Color(0xFF5B6B82),
+    );
+    // Üst parlama.
+    canvas.drawPath(
+      Path()
+        ..moveTo(252, 52)
+        ..lineTo(196, 40)
+        ..quadraticBezierTo(168, 34, 140, 33)
+        ..lineTo(196, 46)
+        ..quadraticBezierTo(228, 50, 252, 52)
+        ..close(),
+      Paint()..color = const Color(0xFF7C8DA6),
+    );
+    // Kokpit camı + konturu.
+    canvas.drawPath(
+      Path()
+        ..moveTo(196, 40)
+        ..quadraticBezierTo(176, 24, 148, 26)
+        ..quadraticBezierTo(132, 28, 130, 36)
+        ..quadraticBezierTo(158, 42, 196, 40)
+        ..close(),
+      Paint()..color = const Color(0xFF9FD8EF),
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(196, 40)
+        ..quadraticBezierTo(176, 24, 148, 26),
+      Paint()
+        ..color = const Color(0xFFDFF4FF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+    // Üst kanat.
+    canvas.drawPath(
+      Path()
+        ..moveTo(62, 40)
+        ..lineTo(34, 8)
+        ..quadraticBezierTo(30, 4, 36, 5)
+        ..lineTo(84, 32)
+        ..quadraticBezierTo(92, 38, 84, 41)
+        ..close(),
+      Paint()..color = const Color(0xFF46536A),
+    );
+    // Alt kanat.
+    canvas.drawPath(
+      Path()
+        ..moveTo(120, 62)
+        ..lineTo(84, 88)
+        ..quadraticBezierTo(80, 92, 88, 92)
+        ..lineTo(168, 70)
+        ..quadraticBezierTo(178, 66, 168, 62)
+        ..close(),
+      Paint()..color = const Color(0xFF46536A),
+    );
+    // Kuyruk kanadı.
+    canvas.drawPath(
+      Path()
+        ..moveTo(52, 60)
+        ..lineTo(26, 76)
+        ..quadraticBezierTo(22, 80, 30, 80)
+        ..lineTo(66, 66)
+        ..close(),
+      Paint()..color = const Color(0xFF39465C),
+    );
+    // Motor çıkışı + altın nokta.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(196, 44, 16, 9),
+        const Radius.circular(3),
+      ),
+      Paint()..color = const Color(0xFF39465C),
     );
     canvas.drawCircle(
-      const Offset(42, 41),
-      3.5,
-      Paint()..color = const Color(0xFFE52E2E),
+      const Offset(238, 50),
+      2.6,
+      Paint()..color = const Color(0xFFFFD700),
+    );
+    canvas.restore();
+
+    // Pilot madalyonu (üstte; fotoğraf yerine açık mavi daire).
+    canvas.drawCircle(
+      const Offset(141, 24),
+      23.5,
+      Paint()..color = const Color(0xFFBFE9FA),
+    );
+    canvas.drawCircle(
+      const Offset(141, 24),
+      23.5,
+      Paint()
+        ..color = const Color(0xFFFFD700)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+    canvas.drawCircle(
+      const Offset(137, 20),
+      14,
+      Paint()..color = const Color(0xFF5FB6DC),
+    );
+    canvas.drawCircle(
+      const Offset(132, 14),
+      4,
+      Paint()..color = const Color(0xFFFFFFFF),
     );
 
     canvas.restore();

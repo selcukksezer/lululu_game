@@ -2,23 +2,29 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:noise_meter/noise_meter.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/global_notify.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/mic_scream_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
+import '../widgets/shop_dialog.dart';
 
 /// Viral “Scream” runner — spam zıplatır; skor yalnız kapı geçişinden gelir.
 class ScreamRoachScreen extends StatefulWidget {
@@ -53,12 +59,29 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   static const _gravity = 1350.0;
   static const _flapImpulse = -430.0;
   static const _tutorialSeconds = 15.0;
-  static const _voiceThresholdDb = 64.0;
 
   late final Ticker _ticker;
-  final NoiseMeter _noiseMeter = NoiseMeter();
+
+  /// Klavye odağı (Dalga 15 Bulgu 9): masaüstünde Boşluk / Yukarı-ok
+  /// (W dahil) kanat çırpar — 2048'deki `Focus` + `onKeyEvent` deseni.
+  /// Dokunmatik (`onTapDown`) ve mikrofon yollarına dokunulmaz.
+  final FocusNode _keyboardFocusNode = FocusNode();
+
+  /// Kare sayacı (10E, 8C VLB deseni): `_onTick` yalnız bu sayacı
+  /// artırır; dinamik alt-ağaç [ValueListenableBuilder] ile yenilenir.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
+
+  /// 12C2: mikrofon dinleme artık satır-içi `NoiseMeter` ile değil
+  /// [MicScreamService] üzerinden yapılır (izin akışı, eşik,
+  /// 220 ms kapı, dokunmatik yedek tek yerdedir). Eşik, yeniden
+  /// kurulum ve histerezis servistedir.
+  final MicScreamService _micService = MicScreamService.instance;
   Duration _last = Duration.zero;
-  StreamSubscription<NoiseReading>? _noiseSubscription;
+
+  /// Mikrofon aboneliği duraklatma/arka plan nedeniyle askıda mı?
+  /// `pause()`/`resume()` çağrıları bu bayrakla tekilleştirilir
+  /// (çift `pause` çift `resume` ister; sayaç kaymasın).
+  bool _noisePaused = false;
 
   double _x = 28;
   double _y = 220;
@@ -68,13 +91,26 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   int _best = 0;
   int _screamStreak = 0;
   int _maxScreamStreak = 0;
-  int _dayStreak = 0;
   int _gatesPassed = 0;
   bool _alive = true;
   // S1#48: ölüm anı — ölüm sonrası ilk 500 ms içindeki dokunuş
   // yeniden başlatmaz.
   DateTime? _diedAt;
   bool _resultShown = false;
+
+  /// Tur kimliği (Terlik deseni): her `_restart` artırır; eski turun
+  /// bekleyen `_presentResult` çağrısı kimlik tutmazsa sonuç göstermez.
+  int _runId = 0;
+
+  // Y3: tur başlangıç damgası — tur başına tek `finishRun` anahtarı
+  // ('<mod>:<damga>') bu damgadan üretilir. İlk turda State
+  // kuruluşunda, sonraki turlarda `_restart`'ta yakalanır; BİTİR +
+  // can-bitiş yolları aynı anahtarı paylaşır, bitiş-anı
+  // `DateTime.now()` kullanılmaz.
+  int _runStartStamp = DateTime.now().microsecondsSinceEpoch;
+
+  String get _runIdempotencyKey =>
+      '${LeaderboardService.modeScream}:$_runStartStamp';
 
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk zıplama
   /// (`_scream`, dokunuş veya ses) veya tur tamamlanması (`_die`)
@@ -85,12 +121,27 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
 
+  /// Çıkış-sonrası iade bildirimi (S6): `PopScope` `didPop` anında
+  /// bağlam artık ağaçta değildir; bildirim metni her `build`'de
+  /// ÖNCEDEN yakalanır ve iade gerçekten verildiğinde paylaşılan
+  /// `GlobalNotify` üzerinden çıkış yapılan ekranın üstünde
+  /// gösterilir (balon/stack deseninin paylaşılan karşılığı).
+  String? _refundNotice;
+
   // Duraklatma (madde 37): Osmantuş deseni — arka planda ticker durur,
   // elle duraklatmada da aynı ticker durdurulur; nitro gibi duvar-saati
   // süreleri duraklatma süresi kadar ötelenir.
   bool _paused = false;
   bool _pausedByLifecycle = false;
   DateTime? _pauseStartedAt;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
   bool _layoutReady = false;
   bool _layoutBootstrapping = false;
   double _groundIdle = 0;
@@ -102,15 +153,22 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   final List<_Gate> _gates = [];
   double _world = 0;
   InsectTier _bug = InsectTier.helmet;
+
+  /// Uçan böcek Hışır derili mi? Deri yalnız görsel + çığlık sesini
+  /// değiştirir; fizik, kapı ve skor aynen kalır.
+  bool _bugIsHisir = false;
+
+  /// O anki böceğin repliği (Hışır ise kendi repliği).
+  String get _currentBugCallout =>
+      _bugIsHisir ? HisirCharacter.replik : _bug.viralReplik;
   String _callout = '';
   DateTime _lastScreamAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Voice lock: no new SFX / no character swap until clip ends.
   bool _voiceBusy = false;
   bool _voiceInputEnabled = false;
-  bool _voiceArmed = true;
+  bool _voiceToggling = false;
   bool _prototypeInitialized = false;
-  DateTime _lastVoiceTrigger = DateTime.fromMillisecondsSinceEpoch(0);
   late final double _gateSpacing;
   double _floorY = 420;
   double _ceilY = 72;
@@ -149,8 +207,19 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _gateSpacing = 250 + (seed % 40).toDouble();
     AudioManager().initialize();
     unawaited(ProgressManager().load());
+    // 12T: bonus bar stoku `ProgressManager` bildirimlerine bağlıdır
+    // — yükleme bitince, mağazadan alınınca ya da stok değişince
+    // `build` yeniden çalışır. Önceden bar yalnız `setState`
+    // çağıran eylemlerde (örn. ilk çığlık dokunuşu) tazeleniyordu:
+    // yükleme bitene kadar 0 gösterip dokunuşu yutuyor, mağazadan
+    // alınan güç de sahneye dönülene kadar görünmüyordu.
+    ProgressManager().addListener(_onProgressChanged);
     _ticker = createTicker(_onTick)..start();
     _loadBest();
+  }
+
+  void _onProgressChanged() {
+    if (mounted) setState(() {});
   }
 
   @visibleForTesting
@@ -164,16 +233,20 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _best = LeaderboardService.instance.getBest(
         LeaderboardService.modeScream,
       );
-      _dayStreak = ProgressManager().dailyStreak;
     });
   }
 
   @override
   void dispose() {
+    ProgressManager().removeListener(_onProgressChanged);
     WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
-    _noiseSubscription?.cancel();
+    // 12C2: ekran kapanınca servis dinlemesi de durur (tekil servis;
+    // bir sonraki giriş yeniden başlatır).
+    unawaited(_micService.stopListening());
     _ticker.dispose();
+    _tickNotifier.dispose();
+    _keyboardFocusNode.dispose();
     super.dispose();
   }
 
@@ -185,6 +258,9 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
+        // Mikrofon arka planda dinlemesin: abonelik askıya alınır,
+        // dönüşte (elle duraklatma yoksa) kaldığı yerden devam eder.
+        _pauseNoiseSubscription();
         // Osmantuş deseni: arka planda ticker dursun; dönüşte _last
         // sıfırlanır, dt kısması da ikinci korumadır.
         if (_ticker.isActive) {
@@ -194,12 +270,17 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         }
         break;
       case AppLifecycleState.resumed:
+        // Elle duraklatılmışsa mikrofon kapalı kalsın; devam
+        // düğmesi (_togglePause) açar.
+        if (!_paused) _resumeNoiseSubscription();
         // Elle duraklatılmışsa dönüşte kendiliğinden başlamasın.
         if (_pausedByLifecycle && !_paused) {
           _pausedByLifecycle = false;
           _shiftPauseDeadlines();
           _last = Duration.zero;
           if (_alive && !_ticker.isActive) _ticker.start();
+          // Dalga 18: arka plandan dönüşte odak oyuna dönsün.
+          _refocusKeyboardNow();
         }
         break;
     }
@@ -215,18 +296,42 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (_nitroUntil != null) _nitroUntil = _nitroUntil!.add(pausedFor);
   }
 
+  /// Mikrofon aboneliğini askıya al (tekilleştirilmiş: çift `pause`
+  /// çağrısı aboneliği kalıcı askıda bırakmasın). 12C2: askı
+  /// [MicScreamService.pauseListening] ile yapılır — izin yeniden
+  /// istenmez, devam kaldığı yerden açılır.
+  void _pauseNoiseSubscription() {
+    if (_noisePaused) return;
+    _noisePaused = true;
+    _micService.pauseListening();
+  }
+
+  /// Askıdaki mikrofon aboneliğini devam ettir (tekilleştirilmiş).
+  void _resumeNoiseSubscription() {
+    if (!_noisePaused) return;
+    _noisePaused = false;
+    unawaited(_micService.resumeListening());
+  }
+
   /// Elle duraklatma / devam (madde 37): ticker durur, fizik ve kapılar donar.
   void _togglePause() {
     if (widget.prototypeVisualState || !_alive) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    unawaited(AudioManager().playButtonTap());
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
       _shiftPauseDeadlines();
       _last = Duration.zero;
+      _resumeNoiseSubscription();
       if (!_ticker.isActive) _ticker.start();
+      // Dalga 18: devamda odak düğmede kalmasın — ilk tuş kaybolmasın.
+      _refocusKeyboardNow();
     } else {
       _paused = true;
       _pauseStartedAt ??= DateTime.now();
+      _pauseNoiseSubscription();
       _ticker.stop();
     }
     setState(() {});
@@ -259,6 +364,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           _maxScreamStreak = 7;
           _power = 0.7;
           _bug = InsectTier.kongo;
+          _bugIsHisir = false;
           _callout = context.l10n.screamGatePrototype;
           _scorePopup = '+50 X7';
           _x = 24;
@@ -287,12 +393,29 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (dt > 0.033) dt = 0.033;
 
     _aliveFor += dt;
-    _power = (_power - dt * 1.15).clamp(0.0, 1.0);
+    // 12T: nitrodayken güç dolu kalır — önceden güç 1,15/sn
+    // eridiği için nitro 1 sn içinde çubukta sönüyor, 8 sn'lik
+    // etki "çalışmıyor" görünüyordu. Nitro bitince erime kaldığı
+    // yerden devam eder.
+    if (_nitro) {
+      _power = 1.0;
+    } else {
+      _power = (_power - dt * 1.15).clamp(0.0, 1.0);
+    }
 
     final tutorial = _aliveFor < _tutorialSeconds;
     final ramp = ((_aliveFor - _tutorialSeconds) / 45).clamp(0.0, 1.0);
     // Keep the opening generous; increase gate speed only after the tutorial.
-    final scroll = (tutorial ? 72 : 104 + 86 * ramp) * (_nitro ? 1.35 : 1);
+    // 12T: nitro kaydırma çarpanı 1,35'ten 1,6'ya — hız farkı artık
+    // gözle görülür, kapı başına +25 skor bonusu aynen durur.
+    // 12C1: adaptif zorluk — merhamette kaydırma yavaşlar (0.88x),
+    // kazanma serisinde hızlanır (1.35x tavan).
+    final scroll =
+        (tutorial ? 72 : 104 + 86 * ramp) *
+        (_nitro ? 1.6 : 1) *
+        DifficultyBinding.instance
+            .cachedProfileForMode('scream')
+            .speedMultiplier;
     _world += scroll * dt;
 
     // A fixed gravity and impulse make each tap predictable, like Flappy.
@@ -349,7 +472,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           _hop = false;
           continue;
         }
-        _die(context.l10n.screamDeathLine(g.kind.deathLineFor(context.l10n), _gatesPassed));
+        _die(
+          context.l10n.screamDeathLine(
+            g.kind.deathLineFor(context.l10n),
+            _gatesPassed,
+          ),
+        );
         return;
       }
       if (!g.scored && g.x + _gateW < _x) {
@@ -359,7 +487,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         _score += gain;
         _callout = context.l10n.screamGateStreak(_screamStreak);
         _scorePopup = '+$gain X$_screamStreak';
-        HapticFeedback.lightImpact();
+        unawaited(HapticService.instance.lightImpact());
+        // 10D P1-3: kapı geçişi ödül anına hafif ses — playPop.
+        // Ses çağrısı kapılı lightImpact içerir; yukarıdaki
+        // lightImpact ile aynı tick'te 18 ms kapısına takılıp düşer
+        // — toplam 1 impuls.
+        unawaited(AudioManager().playPop());
         _hint = '${g.kind.passLineFor(context.l10n)} · spam x$_screamStreak';
         unawaited(
           DailyChallengeService.instance.tryCompleteWithScore(
@@ -367,10 +500,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
             _score,
           ),
         );
+        // Kapı geçişi olayı: skor/kapı sayısı başlıkta güncellensin.
+        setState(() {});
       }
     }
 
-    if (mounted) setState(() {});
+    if (mounted) _tickNotifier.value++;
   }
 
   bool _hitGate(Rect bug, _Gate g) {
@@ -391,7 +526,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   void _spawnGate({bool initial = false}) {
     final tutorial = _aliveFor < _tutorialSeconds;
     final ramp = ((_aliveFor - _tutorialSeconds) / 45).clamp(0.0, 1.0);
-    final gapHalf = tutorial ? 96.0 : 88.0 - ramp * 18;
+    // 12C1: adaptif zorluk — merhamette kapı aralığı genişler (daha
+    // bağışlayıcı), kazanma serisinde daralır. Öğretici aralık aynen kalır.
+    final gapHalf = tutorial
+        ? 96.0
+        : (88.0 - ramp * 18) /
+              DifficultyBinding.instance
+                  .cachedProfileForMode('scream')
+                  .speedMultiplier;
     final minC = _ceilY + gapHalf + 24;
     final maxC = _floorY - _grassH - gapHalf - 18;
     final center = minC >= maxC
@@ -400,7 +542,12 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
     final double base;
     if (_gates.isEmpty) {
-      base = _world + _arenaW * 0.56 + (initial ? 10 : 0);
+      // Dalga 17 Düzeltme 3 (denge): ilk kapı eskiden arena
+      // genişliğinin %56'sında doğuyordu; geniş ekranda ilk skor
+      // ~10 sn bekletiyordu (72 px/sn kaydırma). Sabit ~220 px;
+      // dar ekranda arena genişliğini aşmasın diye `min` ile sınırlı
+      // (`_arenaW` en az 200 px — `_applyLayout`).
+      base = _world + min(220.0, _arenaW) + (initial ? 10 : 0);
     } else {
       base = _gates.last.base + _gateSpacing + _rng.nextDouble() * 36;
     }
@@ -421,7 +568,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     if (!_alive) return;
     if (_shield) {
       _shield = false;
-      _vy = -280;
+      // 12T: kurtarış -280 ile sönük bir sekmeydi, böcek hemen
+      // yeniden yere düşüyordu; -520 ile gözle görülür bir sıçrama
+      // olur ve oyuncu kurtulduğunu anlar.
+      _vy = -520;
       _hint = context.l10n.screamShieldSaved;
       setState(() {});
       return;
@@ -433,9 +583,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _moveMade = true;
     _screamStreak = 0;
     _hint =
-        reason ?? context.l10n.screamCrushedHint(_gatesPassed, _maxScreamStreak);
-    HapticFeedback.heavyImpact();
-    unawaited(AudioManager().playLose());
+        reason ??
+        context.l10n.screamCrushedHint(_gatesPassed, _maxScreamStreak);
+    unawaited(HapticService.instance.heavyImpact());
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
       LeaderboardService.instance.submitScore(
         LeaderboardService.modeScream,
@@ -461,6 +612,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     do {
       next = pool[_rng.nextInt(pool.length)];
     } while (next == _bug && pool.length > 1);
+    _bugIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
     return next;
   }
 
@@ -469,7 +622,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     setState(() {
       _voiceBusy = false;
       _bug = _nextBug();
-      _callout = _bug.viralReplik;
+      _callout = _currentBugCallout;
     });
   }
 
@@ -495,11 +648,19 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     _screamStreak++;
     if (_screamStreak > _maxScreamStreak) _maxScreamStreak = _screamStreak;
     _groundIdle = 0;
+    // D5: çığlık gücü tam dolduğu AN (kenar tetik) sfx_scream_roach ek
+    // katman olarak çalar — güç doluyken her dokunuşta tekrarlanmaz.
+    final wasFull = _power >= 1.0;
     _power = (_power + 0.28).clamp(0.0, 1.0);
+    if (!wasFull && _power >= 1.0) {
+      unawaited(
+        AudioManager().playSfx(GameAudio.sfxScreamRoach, isVoice: false),
+      );
+    }
     _vy = _flapImpulse;
-    HapticFeedback.selectionClick();
+    unawaited(HapticService.instance.selectionClick());
     _hint =
-        '${_callout.isEmpty ? _bug.viralReplik : _callout} · spam x$_screamStreak';
+        '${_callout.isEmpty ? _currentBugCallout : _callout} · spam x$_screamStreak';
 
     if (_voiceBusy || AudioManager().isExclusivePlaying) {
       setState(() {});
@@ -507,8 +668,16 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     }
 
     _voiceBusy = true;
-    _callout = _bug.viralReplik;
+    _callout = _currentBugCallout;
     _hint = '$_callout · spam x$_screamStreak';
+    if (_bugIsHisir) {
+      // Hışır çığlığı: onaylı ses tek yoldan çalar; böcek hemen
+      // değişir (ses havuzda kesilmeden tam çalar, 12K düzeni).
+      unawaited(AudioManager().playHusurAday());
+      _onVoiceComplete();
+      setState(() {});
+      return;
+    }
     final pitch = 0.88 + _rng.nextDouble() * 0.32;
     unawaited(() async {
       final started = await AudioManager().playScreamRoach(
@@ -525,62 +694,178 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     setState(() {});
   }
 
-  Future<void> _toggleVoiceInput() async {
-    if (_voiceInputEnabled) {
-      await _noiseSubscription?.cancel();
-      _noiseSubscription = null;
-      if (mounted) setState(() => _voiceInputEnabled = false);
-      return;
+  /// Klavye kanat çırpma (Dalga 15 Bulgu 9): Boşluk / Yukarı-ok / W —
+  /// dokunmatik ve mikrofonla aynı `_scream` yolu; mikrofon izni
+  /// gerekmez, mikrofonsuz masaüstünde oyun oynanabilir kalır.
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.keyW) {
+      _scream();
+      return KeyEventResult.handled;
     }
+    return KeyEventResult.ignored;
+  }
 
-    final permission = await Permission.microphone.request();
-    if (!permission.isGranted) {
-      if (mounted) {
-        setState(() {
-          _hint = permission.isPermanentlyDenied
+  /// Mikrofon aç/kapat (12C2 — [MicScreamService] üzerinden).
+  ///
+  /// Açmadan önce kullanıcıya ne olacağını anlatan kısa metin +
+  /// eşik ayarı gösterilir. İzin reddedilirse / kalıcı reddedilirse /
+  /// web'de mikrofon yoksa servis dokunmatik yedek moda düşer:
+  /// oyun oynanabilir kalır, mikrofon simgesi kapalı kalır (ses
+  /// girişi yokmuş gibi davranılmaz; ipucu servisin durum
+  /// mesajını gösterir).
+  Future<void> _toggleVoiceInput() async {
+    // Çift-dokunma yarışı: izin beklerken ikinci dokunma ikinci
+    // dinleme açmasın, ilki sızmasın.
+    if (_voiceToggling) return;
+    _voiceToggling = true;
+    try {
+      if (_voiceInputEnabled) {
+        await _micService.stopListening();
+        _noisePaused = false;
+        if (mounted) {
+          setState(() {
+            _voiceInputEnabled = false;
+            _hint = context.l10n.screamHintIdle;
+          });
+        }
+        return;
+      }
+
+      final confirmed = await _showMicExplainDialog();
+      if (confirmed != true || !mounted) return;
+
+      await _micService.startListening(
+        onScreamTriggered: (_) => _onMicScream(),
+      );
+      if (!mounted) return;
+      setState(() {
+        if (_micService.isFallbackMode) {
+          // Yedek mod (web / izinsiz / masaüstü): dokunmatik yedek
+          // sessizce devrede; mikrofon simgesi kapalı kalır.
+          _voiceInputEnabled = false;
+          _hint = _micService.statusMessage;
+        } else if (_micService.permissionGranted) {
+          _voiceInputEnabled = true;
+          _hint = _micService.statusMessage;
+        } else {
+          _voiceInputEnabled = false;
+          _hint = _micService.permissionPermanentlyDenied
               ? context.l10n.screamMicPermissionSettings
               : context.l10n.screamMicDeniedHint;
-        });
-      }
-      return;
-    }
-
-    try {
-      _noiseSubscription = _noiseMeter.noise.listen(
-        _onNoiseReading,
-        onError: (Object _) {
-          if (mounted) setState(() => _voiceInputEnabled = false);
-          _noiseSubscription?.cancel();
-          _noiseSubscription = null;
-        },
-        cancelOnError: true,
-      );
-      if (mounted) setState(() => _voiceInputEnabled = true);
-    } catch (_) {
-      if (mounted) setState(() => _voiceInputEnabled = false);
+        }
+      });
+    } finally {
+      _voiceToggling = false;
     }
   }
 
-  void _onNoiseReading(NoiseReading reading) {
-    if (!mounted || !_alive) return;
-    final level = reading.meanDecibel;
-    if (level < _voiceThresholdDb - 8) _voiceArmed = true;
-    if (level < _voiceThresholdDb || !_voiceArmed) return;
-    final now = DateTime.now();
-    if (now.difference(_lastVoiceTrigger).inMilliseconds < 220) return;
-    _lastVoiceTrigger = now;
-    _voiceArmed = false;
+  /// Servisten gelen çığlık tetiklemesi: eşik, histerezis ve 220 ms
+  /// kapı servistedir; burada yalnız oyun durumu denetlenir.
+  void _onMicScream() {
+    // Duraklatmada ve arka planda ses zıplatmasın (abonelik askısı
+    // birinci koruma; bu kontrol kuyrukta kalmış okumalar için).
+    if (!mounted || !_alive || _paused || _pausedByLifecycle) return;
     _scream();
+  }
+
+  /// İzin istenmeden önce açıklama + eşik ayarı diyaloğu.
+  /// `true` = kullanıcı mikrofonu açmayı onayladı.
+  Future<bool?> _showMicExplainDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final l10n = ctx.l10n;
+          return AlertDialog(
+            title: Text(l10n.screamMicExplainTitle),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.screamMicExplainBody),
+                const SizedBox(height: 16),
+                Text(
+                  l10n.screamMicThreshold(
+                    _micService.thresholdDb.round(),
+                  ),
+                ),
+                Slider(
+                  value: _micService.thresholdDb,
+                  min: MicScreamService.minDecibel + 10,
+                  max: 90,
+                  divisions: 24,
+                  label: '${_micService.thresholdDb.round()} dB',
+                  onChanged: (value) {
+                    _micService.thresholdDb = value;
+                    setDialogState(() {});
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(l10n.cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(l10n.screamMicEnableAction),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Dalga 17 Düzeltme 3: klavye odağını oyuna geri al. Odak tek
+  /// atımlık `autofocus: true` ile kuruluyordu; mikrofon/duraklatma
+  /// düğmesine dokununca veya bir diyalog açılınca klavye kalıcı
+  /// ölüyordu. Kare sonuna ertelenir ki odak değişimi sürerken
+  /// istenmesin; yalnız oyun canlıyken ve duraklatılmamışken
+  /// uygulanır.
+  void _refocusKeyboard() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _alive && !_paused) {
+        _keyboardFocusNode.requestFocus();
+      }
+    });
+  }
+
+  /// Dalga 18: yeniden başlatma / devam anında klavye odağını
+  /// post-frame'i beklemeden geri al — diyalog kapanışı ile ilk
+  /// tuş arasındaki boşlukta gelen girdiler kayboluyordu (TEKRAR
+  /// OYNA sonrası ilk boşluklar). Odak-değişim bildirimi içinden
+  /// çağrılmaz (orada yalnız `_refocusKeyboard` kullanılır).
+  void _refocusKeyboardNow() {
+    if (mounted && _alive && !_paused) {
+      _keyboardFocusNode.requestFocus();
+    }
+    _refocusKeyboard();
   }
 
   void _restart() {
     unawaited(AudioManager().stopAll());
+    // Yeni tur kimliği: eski turun bekleyen sonuç çağrısı gösterilmez.
+    _runId++;
+    // Y3: yeni tur, yeni idempotency anahtarı — damga tur
+    // başlangıcında bir kez yakalanır.
+    _runStartStamp = DateTime.now().microsecondsSinceEpoch;
     setState(() {
       _alive = true;
       _diedAt = null;
       _paused = false;
       _pausedByLifecycle = false;
       _pauseStartedAt = null;
+      _resultShown = false;
+      _shield = false;
+      _hop = false;
+      _nitroUntil = null;
       _layoutReady = _arenaW > 0 && _arenaH > 0;
       _score = 0;
       _gatesPassed = 0;
@@ -595,29 +880,43 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       _aliveFor = 0;
       _gates.clear();
       _bug = InsectTier.helmet;
+      _bugIsHisir = false;
       _callout = '';
       _scorePopup = '';
       _voiceBusy = false;
-      _voiceArmed = true;
       _hint = context.l10n.screamHintIdle;
       _last = Duration.zero;
       if (_layoutReady) _spawnGate(initial: true);
     });
     // Duraklatılmışken yeniden başlatılırsa ticker dursun kalmasın.
+    // BİTİR ile dondurulan mikrofon da devam etsin: _finishEarly
+    // aboneliği askıya almıştı, TEKRAR OYNA sonrası ses girişi
+    // ölü kalmasın (askıda değilse no-op).
+    _resumeNoiseSubscription();
     if (!_ticker.isActive) _ticker.start();
+    // Dalga 17 Düzeltme 3: yeni turda klavye odağını tazeley
+    // (eski turda düğme/diyalog odağı çalmış olabilir).
+    // Dalga 18: eşzamanlı da al — post-frame'i bekleyen ilk tuş
+    // kayboluyordu (TEKRAR OYNA sonrası boşluklar).
+    _refocusKeyboardNow();
   }
-
-  String _statsLine() =>
-      context.l10n.screamStatsLine(_gatesPassed, _maxScreamStreak, _dayStreak);
 
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useJump() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
-      _vy = -520;
+      // 12T: -520, normal kanat çırpışından (-430) ancak %21
+      // güçlüydü ve açılış süzülüşünde (ilk 3,5 sn) tick her karede
+      // `_vy`'yi sıfırladığı için hiç hissedilmiyordu. -680 ile
+      // yükseliş ~170 px olur (kanat ~68 px) ve seri sayacı
+      // ilerletildiği için süzülüş kırılır, zıplama anında görülür.
+      _vy = -680;
+      _groundIdle = 0;
+      _moveMade = true;
+      _screamStreak++;
+      if (_screamStreak > _maxScreamStreak) _maxScreamStreak = _screamStreak;
       _hop = true;
       _callout = context.l10n.screamMegaJumpCallout;
       _hint = context.l10n.screamMegaJumpHint;
@@ -627,8 +926,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   bool _useShield() {
     if (!_alive || _paused || _shield) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _shield = true;
       _callout = context.l10n.screamShieldBalloonCallout;
@@ -639,8 +937,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
 
   bool _useNitro() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _nitroUntil = DateTime.now().add(const Duration(seconds: 8));
       _power = 1;
@@ -650,22 +947,47 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
-    // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
-    // üzerinden (tek-ödeme korunur).
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      leaderboardMode: LeaderboardService.modeScream,
-    );
+  Future<void> _presentResult(int runId, {bool? won}) async {
+    // Tur değiştiyse (yeniden başlatma araya girdiyse) eski turun
+    // sonucunu gösterme ve yeni turun ödülüne dokunma (Terlik deseni).
+    // Yeni turun bayrağına dokunulmaz: `_restart` zaten temizledi.
+    if (runId != _runId) return;
     if (!mounted) return;
-    _resultShown = false;
-    if (!replay) {
-      if (mounted) Navigator.of(context).maybePop();
-      return;
+    // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
+    // üzerinden (tek-ödeme korunur). Doğal bitiş böceğin düşmesidir
+    // (kayıp); `won` verilmezse kayıp başlığı gösterilir.
+    try {
+      final replay = await finishRun(
+        context,
+        score: _score,
+        best: _best,
+        won: won ?? false,
+        leaderboardMode: LeaderboardService.modeScream,
+        // K16: mod skoru kimliği `bestScoreKey` ile aynıdır
+        // ('scream_roach'); Y3: anahtar tur başlangıç damgalıdır.
+        modeScoreId: LeaderboardService.modeScream,
+        idempotencyKey: _runIdempotencyKey,
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          microseconds: DateTime.now().microsecondsSinceEpoch - _runStartStamp,
+        ),
+        stillValid: () => mounted && runId == _runId,
+      );
+      if (runId != _runId) return;
+      if (!mounted) return;
+      if (!replay) {
+        // İade kontrolü bayrağı temiz görsün (önceki sıra korunur).
+        _resultShown = false;
+        Navigator.of(context).maybePop();
+        return;
+      }
+      _restart();
+    } finally {
+      // Aynı turdaysa bayrağı temizle ki hata/iptal sonrası BİTİR
+      // yeniden denensin; yeni tur başladıysa onun bayrağına dokunma
+      // (`_restart` temizledi, `_finishEarly` yeniden kurmuş olabilir).
+      if (runId == _runId) _resultShown = false;
     }
-    _restart();
   }
 
   /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
@@ -673,25 +995,150 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
   /// Yalnız giriş enerjisi tüketildiyse, tur tamamlanmadıysa ve oturum
   /// boyunca hiç hamle yapılmadıysa 1 enerji iade edilir. `dispose`
   /// içinde DEĞİL, yalnızca gerçek rota çıkışında (`didPop`) çağrılır.
+  ///
+  /// S6: iade bildirimi `GlobalNotify` üzerinden gösterilir —
+  /// metin `build`'de önceden yakalanır (`didPop` anında görünür
+  /// bağlam yoktur); iki geri düğmesi de yalnızca pop yapar, iade
+  /// çağrısı taşımaz.
   void _maybeRefundEnergy() {
     if (_energyRefunded) return;
     if (!widget.energyConsumed || _moveMade || !_alive || _resultShown) {
       return;
     }
     _energyRefunded = true;
+    // S6: bildirim yalnız iade GERÇEKTEN verildiğinde gösterilir —
+    // enerji zaten doluysa `addEnergy` kelepçelenir, değişim olmaz.
+    final before = EnergyService.instance.energy;
     EnergyService.instance.addEnergy(1);
+    if (EnergyService.instance.energy > before) {
+      GlobalNotify.showSnackBar(_refundNotice);
+    }
+  }
+
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && _alive && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım deseni: `_showHelpDialog`
+  /// ile aynı — ticker + mikrofon durur, duvar-saati süreleri
+  /// devamda kaydırılır).
+  void _pauseForExitConfirm() {
+    if (!_alive || _paused) return;
+    _pausedForExitConfirm = true;
+    _paused = true;
+    _pauseStartedAt ??= DateTime.now();
+    _pauseNoiseSubscription();
+    _ticker.stop();
+    setState(() {});
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    _paused = false;
+    // Yardım deseni: diyalog açıkken arka plana alındıysa konan
+    // bayrak da temizlenir; yoksa `_onMicScream` koruması
+    // mikrofonu kalıcı kilitler.
+    _pausedByLifecycle = false;
+    _shiftPauseDeadlines();
+    _last = Duration.zero;
+    _resumeNoiseSubscription();
+    if (_alive && !_ticker.isActive) _ticker.start();
+    setState(() {});
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    // Turu dondur: ticker durur, `_paused` girişleri (`_scream`,
+    // bonuslar, mikrofon) kilitler. TEKRAR OYNA `_restart` ile
+    // devam ettirir; hata çıkarsa duraklatma kaplamasından DEVAM
+    // ile kaldığı yerden dönülür.
+    _paused = true;
+    _pauseStartedAt ??= DateTime.now();
+    _pauseNoiseSubscription();
+    _ticker.stop();
+    if (mounted) setState(() {});
+    await _presentResult(_runId, won: _score > 0);
   }
 
   void _edgeShowResult() {
     if (_resultShown) return;
     _resultShown = true;
+    final runId = _runId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _presentResult();
+      if (mounted) _presentResult(runId);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    // S6: iade bildirimi metni çıkıştan ÖNCE yakalanır
+    // (`didPop` anında bağlam ağaçta değildir).
+    _refundNotice = context.l10n.energyRefundNotice;
     if (!_alive && !_resultShown) _edgeShowResult();
     final wideScreen = MediaQuery.sizeOf(context).width >= 400;
     final hasShellStatusBar = MediaQuery.paddingOf(context).top > 0;
@@ -728,9 +1175,33 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       ),
     ];
 
-    final stageChild = GestureDetector(
+    // Dalga 17 Düzeltme 3: tek girdi yolu — ham `Listener`
+    // (Osmantus deseni). Eskiden `GestureDetector.onTapDown` vardı;
+    // statik okumada yutan katman bulunamadı ama canlıda `_scream`
+    // çağrılmıyordu; `Listener.onPointerDown` gesture arena'sını
+    // beklemez, ham pointer'ı alır. Çift yol yok: `GestureDetector`
+    // kaldırıldı, 55 ms cooldown yalnızca çoklu dokunuş spam'ine
+    // karşı ikinci savunma olarak duruyor.
+    // Dalga 18: `event.buttons != kPrimaryButton` koruması kaldırıldı
+    // — canlıda tıklama skora dönüşmüyordu; sahnenin üstünde olayı
+    // yutan katman yok (AppFrame yalnız boyutlandırır, ArcadeScreen
+    // kaplaması duraklatılmamışken null, main.dart Listener'ı
+    // translucent), tek süzgeç bu korumaydı. Gerçek basışlarda
+    // `buttons` bitmask'i birincil biti taşımayabilir (dokunmatik /
+    // kalem / sentetik web olayı `buttons: 0` bildirir); koruma o
+    // basışı sessizce yutuyordu. Osmantuş'un canlıda kanıtlı
+    // `Listener`'ı (:927) koruma kullanmaz. Yalnız sağ-tık
+    // (yalnız ikincil bit) yoksayılır — eski `onTapDown` davranışı.
+    Widget buildStage() => Listener(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => _scream(),
+      onPointerDown: (event) {
+        if (event.buttons != 0 &&
+            (event.buttons & kPrimaryButton) == 0) {
+          return;
+        }
+        _refocusKeyboard();
+        _scream();
+      },
       child: LayoutBuilder(
         builder: (context, box) {
           final playfieldHeight = max(240.0, box.maxHeight - 63);
@@ -915,9 +1386,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                           ),
                         if (_scorePopup.isNotEmpty)
                           Positioned(
-                            left: wideScreen
-                                ? 126
-                                : playfield.maxWidth * 0.37,
+                            left: wideScreen ? 126 : playfield.maxWidth * 0.37,
                             top: wideScreen
                                 ? playfield.maxHeight * 0.58
                                 : playfield.maxHeight * 0.57,
@@ -957,19 +1426,19 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                             alignment: Alignment.center,
                             child: Text(
                               context.l10n.screamNextGate(_gatesPassed + 1),
-                              style: (wideScreen
+                              style:
+                                  (wideScreen
                                   ? GoogleFonts.nunito
                                   : GoogleFonts.exo2)(
-                                fontSize: 12,
-                                height: 1,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                              ),
+                                    fontSize: 12,
+                                    height: 1,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                  ),
                             ),
                           ),
                         ),
-                        if (!widget.prototypeVisualState &&
-                            (_shield || _nitro))
+                        if (!widget.prototypeVisualState && (_shield || _nitro))
                           Positioned(
                             left: _x - 6,
                             top: bugTop - 6,
@@ -1008,8 +1477,10 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 90),
                               child: Image.asset(
-                                key: ValueKey(_bug),
-                                'assets/bugs/tier${_bug.tier}_hd${_bug.tier == 5 ? '.webp' : '.png'}',
+                                key: ValueKey('${_bug.tier}-$_bugIsHisir'),
+                                _bugIsHisir
+                                    ? HisirCharacter.assetPath
+                                    : 'assets/bugs/tier${_bug.tier}_hd${_bug.tier == 5 ? '.webp' : '.png'}',
                                 width: widget.prototypeVisualState ? 98 : 50,
                                 height: widget.prototypeVisualState ? null : 54,
                                 fit: BoxFit.contain,
@@ -1067,7 +1538,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ),
                 ),
               ),
-              Container(
+              // 12C2: güç çubuğu mikrofon açıkken servisin
+              // `powerNotifier` değerini (canlı çığlık gücü), kapalıyken
+              // oyun gücünü (`_power`) gösterir.
+              ValueListenableBuilder<double>(
+                valueListenable: _micService.powerNotifier,
+                builder: (context, micPower, _) {
+                  final displayPower = _voiceInputEnabled ? micPower : _power;
+                  return Container(
                 height: 63,
                 padding: const EdgeInsets.fromLTRB(14, 11, 14, 13),
                 decoration: const BoxDecoration(
@@ -1079,9 +1557,15 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                       height: wideScreen ? 17 : 13,
                       child: Row(
                         children: [
-                          Expanded(
+                          // Sol etiket içerik genişliğinde kalır; sağdaki
+                          // yüzde/ipucu metni kalan genişliği alır, yoksa
+                          // "İLK 15 SN YAVAŞ" kesiliyordu (bulgu #6).
+                          Flexible(
+                            flex: 0,
                             child: Text(
                               context.l10n.screamVoicePower,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.nunito(
                                 fontSize: 11,
                                 height: 1,
@@ -1091,11 +1575,14 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                               ),
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              _voiceInputEnabled || _power >= 0.7
-                                  ? context.l10n.screamShoutingPercent((_power * 100).round())
-                                  : '${context.l10n.screamTapPercent((_power * 100).round())}${isTutorialActive ? context.l10n.screamSlowStart : ''}',
+                              _voiceInputEnabled || displayPower >= 0.7
+                                  ? context.l10n.screamShoutingPercent(
+                                      (displayPower * 100).round(),
+                                    )
+                                  : '${context.l10n.screamTapPercent((displayPower * 100).round())}${isTutorialActive ? context.l10n.screamSlowStart : ''}',
                               maxLines: 1,
                               textAlign: TextAlign.right,
                               overflow: TextOverflow.ellipsis,
@@ -1126,7 +1613,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                               child: FractionallySizedBox(
                                 widthFactor: widget.prototypeVisualState
                                     ? 0.7
-                                    : _power,
+                                    : displayPower,
                                 heightFactor: 1,
                                 child: const DecoratedBox(
                                   decoration: BoxDecoration(
@@ -1148,6 +1635,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                     ),
                   ],
                 ),
+                  );
+                },
               ),
             ],
           );
@@ -1155,155 +1644,155 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       ),
     );
 
+    // Canlı _hint'in erişilebilirlik etiketi (Terlik deseni): F4'ten
+    // beri yardım sayfası kural metnini gösteriyor; _hint artık
+    // burada okunur, oyun-içi atamalar aynen durur.
+    // Dalga 15 Bulgu 9: klavye odağı burada — dar + geniş düzenin
+    // ikisi de bu sahneyi kullanır, tek sarım yeter.
+    // Dalga 17 Düzeltme 3: `autofocus` tek atımlıktı — odak bir kez
+    // kaybolunca (düğme/diyalog) klavye kalıcı ölüyordu.
+    // `onFocusChange` odağı geri alır (yalnız oyun canlıyken ve
+    // duraklatılmamışken — `_refocusKeyboard` bekçisi).
+    Widget buildLabeledStage() => Focus(
+      focusNode: _keyboardFocusNode,
+      autofocus: true,
+      onFocusChange: (hasFocus) {
+        if (!hasFocus) _refocusKeyboard();
+      },
+      onKeyEvent: _onKeyEvent,
+      child: Semantics(label: _hint, child: buildStage()),
+    );
+
     if (!wideScreen) {
       return PopScope(
-        canPop: true,
-        onPopInvokedWithResult: (didPop, _) {
-          if (didPop) _maybeRefundEnergy();
-        },
+        canPop: _exitConfirmed || !_needsExitConfirm,
+        onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
         child: ArcadeScreen(
-        backgroundAsset: 'assets/scream_sky.webp',
-        title: context.l10n.screamBugTitle,
-        score: _score,
-        best: _best,
-        hint: context.l10n.screamArcadeHint(_hint),
-        statLabel: context.l10n.screamGateStat,
-        statValue: '$_gatesPassed',
-        tag: context.l10n.viralBadge,
-        tagColor: const Color(0xFF00C853),
-        tagTextColor: const Color(0xFF04140A),
-        prototypeChrome: true,
-        showStatusBar: true,
-        prototypeModeChrome: true,
-        prototypeTagLayout: true,
-        onRestart: _restart,
-        overlay: (!_alive && !_resultShown)
-            ? ArcadeResultOverlay(
-                title: context.l10n.screamCrushedTitle,
-                message: _statsLine(),
-                score: _score,
-                best: _best,
-                won: false,
-                modeTitle: context.l10n.shopModeScreamBug,
-                shareLine: _statsLine(),
-                retryLabel: context.l10n.tryAgainCaps,
-                onRetry: _restart,
-              )
-            : (_paused
-                ? _pauseOverlay()
-                : null),
-        footer: Center(
-          child: SizedBox(
-            width: 285,
-            child: ModeBonusBar(items: bonuses),
+          backgroundAsset: 'assets/scream_sky.webp',
+          title: context.l10n.screamBugTitle,
+          score: _score,
+          best: _best,
+          // F4: dar düzende '?' sayfası bu `hint` metnini gösterir
+          // (ArcadeScreen'in ayrı kural-gövdesi parametresi yok;
+          // `hintLabel` verilmediği için şerit çizilmez, oyun-içi
+          // canlı _hint gösterimi etkilenmez). Kural metni verilir.
+          hint: context.l10n.screamHowToBody,
+          statLabel: context.l10n.screamGateStat,
+          statValue: '$_gatesPassed',
+          tag: context.l10n.viralBadge,
+          tagColor: const Color(0xFF00C853),
+          tagTextColor: const Color(0xFF04140A),
+          prototypeChrome: true,
+          prototypeModeChrome: true,
+          prototypeTagLayout: true,
+          onRestart: _finishEarly,
+          // Ölü sonuç kaplaması kaldırıldı: build başındaki
+          // _edgeShowResult `_resultShown`u hep `true` yaptığı için bu
+          // koşul hiç sağlanmıyordu; tek sonuç yolu finishRun diyaloğu.
+          overlay: _paused ? _pauseOverlay() : null,
+          footer: Center(
+            child: SizedBox(width: 285, child: ModeBonusBar(items: bonuses)),
           ),
-        ),
-        child: stageChild,
+          child: ValueListenableBuilder<int>(
+            valueListenable: _tickNotifier,
+            builder: (context, _, _) => buildLabeledStage(),
+          ),
         ),
       );
     }
 
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: MediaQuery.removePadding(
-      context: context,
-      removeTop: true,
-      removeBottom: true,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF080B12),
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.96,
-                child: Image.asset(
-                  'assets/scream_sky.webp',
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0, 0.24, 0.76, 1],
-                    colors: [
-                      Color(0x4D080B12),
-                      Color(0x00080B12),
-                      Color(0x00080B12),
-                      Color(0x52080B12),
-                    ],
+        context: context,
+        removeTop: true,
+        removeBottom: true,
+        child: Scaffold(
+          backgroundColor: const Color(0xFF080B12),
+          body: ValueListenableBuilder<int>(
+            valueListenable: _tickNotifier,
+            // Statik arka plan: kare bildiriminde yeniden kurulmaz --
+            // [ValueListenableBuilder] `child` olarak bir kez kurulur.
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0.96,
+                    child: Image.asset(
+                      'assets/scream_sky.webp',
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
-              ),
-            ),
-            Column(
-              children: [
-                if (hasShellStatusBar)
-                  SizedBox(
-                    height: widget.prototypeVisualState
-                        ? 35.4
-                        : MediaQuery.paddingOf(context).top,
-                  )
-                else
-                  _prototypeStatusBar(),
-                _prototypeHeader(context),
-                _prototypeHud(),
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                    clipBehavior: Clip.antiAlias,
+                const Positioned.fill(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      gradient: const LinearGradient(
+                      gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Color(0x660E1422), Color(0x800E1422)],
+                        stops: [0, 0.24, 0.76, 1],
+                        colors: [
+                          Color(0x4D080B12),
+                          Color(0x00080B12),
+                          Color(0x00080B12),
+                          Color(0x52080B12),
+                        ],
                       ),
-                      border: Border.all(
-                        color: const Color(0x24FFFFFF),
-                        width: 2,
-                      ),
-                    ),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                      child: stageChild,
                     ),
                   ),
                 ),
-                _prototypeDock(bonuses),
               ],
             ),
-            if (!_alive && !_resultShown)
-              Positioned.fill(
-                child: ArcadeResultOverlay(
-                  title: context.l10n.screamCrushedTitle,
-                  message: _statsLine(),
-                  score: _score,
-                  best: _best,
-                  won: false,
-                  modeTitle: context.l10n.shopModeScreamBug,
-                  shareLine: _statsLine(),
-                  retryLabel: context.l10n.tryAgainCaps,
-                  onRetry: _restart,
+            builder: (context, _, backgroundChild) => Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(child: backgroundChild!),
+                Column(
+                  children: [
+                    if (hasShellStatusBar)
+                      SizedBox(height: MediaQuery.paddingOf(context).top),
+                    _prototypeHeader(context),
+                    _prototypeHud(),
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x660E1422), Color(0x800E1422)],
+                          ),
+                          border: Border.all(
+                            color: const Color(0x24FFFFFF),
+                            width: 2,
+                          ),
+                        ),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                          child: buildLabeledStage(),
+                        ),
+                      ),
+                    ),
+                    _prototypeDock(bonuses),
+                  ],
                 ),
-              ),
-            if (_paused && _alive && !widget.prototypeVisualState)
-              _pauseOverlay(),
-          ],
+                // Ölü sonuç kaplaması kaldırıldı (dar ekranla aynı gerekçe);
+                // tek sonuç yolu finishRun diyaloğu.
+                if (_paused && _alive && !widget.prototypeVisualState)
+                  _pauseOverlay(),
+              ],
+            ),
+          ),
         ),
-      ),
       ),
     );
   }
 
-  /// Küçük duraklatma düğmesi (madde 37, geniş ekran): başlık satırında
+  /// Duraklatma düğmesi (madde 37, geniş ekran): başlık satırında
   /// '?' düğmesinin yanında, HUD düzenini kaydırmadan durur.
   Widget _pauseButton() {
     return Semantics(
@@ -1312,8 +1801,8 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xDB080B12),
@@ -1325,7 +1814,7 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
           ),
           child: const Icon(
             Icons.pause_rounded,
-            size: 20,
+            size: 22,
             color: Color(0xFFFFB800),
           ),
         ),
@@ -1364,7 +1853,19 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+                ArcadeButton(
+                  label: context.l10n.continueAction,
+                  onPressed: _togglePause,
+                ),
+                const SizedBox(height: 12),
+                // N6: duraklatmadan çıkış — mevcut geri yolu
+                // (`maybePop`); iade kuralları PopScope handler'da
+                // aynen korunur, yeni iade mantığı yok.
+                ArcadeButton(
+                  label: context.l10n.quit,
+                  primary: false,
+                  onPressed: () => Navigator.maybePop(context),
+                ),
               ],
             ),
           ),
@@ -1373,32 +1874,53 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     );
   }
 
-  Widget _prototypeStatusBar() {
-    return SizedBox(
-      height: 35.4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '09:41',
-              style: GoogleFonts.nunito(
-                fontSize: 12.5,
-                height: 1,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(
-              width: 38,
-              height: 16,
-              child: CustomPaint(painter: _ScreamStatusIndicatorsPainter()),
+  /// Yardım diyaloğu: açıkken oyun durur, kapanınca kaldığı yerden
+  /// devam eder. Zaten duraklatılmışsa veya tur bitmişse duraklatma
+  /// durumuna dokunulmaz (diyalog kapanınca eski hâl korunur).
+  Future<void> _showHelpDialog() async {
+    final wasAlive = _alive;
+    final wasPaused = _paused;
+    final frozeHere = wasAlive && !wasPaused;
+    if (frozeHere) {
+      _paused = true;
+      _pauseStartedAt ??= DateTime.now();
+      _pauseNoiseSubscription();
+      _ticker.stop();
+      setState(() {});
+    }
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(context.l10n.screamBugTitle),
+          // Kural metni (F4): yardım diyaloğu canlı _hint'i
+          // (spam/kombo mesajları) değil oyun kurallarını gösterir;
+          // oyun-içi _hint atamaları aynen durur (bulgu #9).
+          content: Text(context.l10n.screamHowToBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.understoodButton),
             ),
           ],
         ),
-      ),
-    );
+      );
+    } finally {
+      if (frozeHere && mounted) {
+        _paused = false;
+        // Diyalog açıkken arka plana alındıysa konan bayrak da
+        // temizlenir; yoksa `_onMicScream` koruması mikrofonu
+        // kalıcı kilitler (koordinatör incelemesinde bulundu).
+        _pausedByLifecycle = false;
+        _shiftPauseDeadlines();
+        _last = Duration.zero;
+        _resumeNoiseSubscription();
+        if (_alive && !_ticker.isActive) _ticker.start();
+        // Dalga 18: diyalog sonrası odak oyuna dönsün, ilk tuş kaybolmasın.
+        _refocusKeyboardNow();
+        setState(() {});
+      }
+    }
   }
 
   Widget _prototypeHeader(BuildContext context) {
@@ -1412,30 +1934,30 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               button: true,
               label: context.l10n.goBackLabel,
               child: GestureDetector(
-              onTap: () => Navigator.maybePop(context),
-              child: Container(
-                width: 45.9,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xD9080B12),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
-                  ],
-                ),
-                child: Image.asset(
-                  'assets/icons2/back-prototype.png',
-                  width: 29,
-                  height: 29,
-                  errorBuilder: (_, _, _) => const Icon(
-                    Icons.arrow_back_rounded,
-                    color: Color(0xFF4A9DDB),
-                    size: 20,
+                onTap: () => Navigator.maybePop(context),
+                child: Container(
+                  width: 45.9,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xD9080B12),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
+                    ],
+                  ),
+                  child: Image.asset(
+                    'assets/icons2/back-prototype.png',
+                    width: 29,
+                    height: 29,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.arrow_back_rounded,
+                      color: Color(0xFF4A9DDB),
+                      size: 20,
+                    ),
                   ),
                 ),
               ),
-            ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1453,25 +1975,36 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
                       color: const Color(0x8C080B12),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(
-                      context.l10n.screamBugTitle,
-                      style: GoogleFonts.baloo2(
-                        fontSize: 20,
-                        height: 1.05,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        shadows: const [
-                          Shadow(
-                            color: Color(0xD9000000),
-                            offset: Offset(0, 2),
-                            blurRadius: 6,
-                          ),
-                          Shadow(
-                            color: Color(0xCC000000),
-                            offset: Offset(0, 1),
-                            blurRadius: 2,
-                          ),
-                        ],
+                    child: FittedBox(
+                      // F-11: sabit 27 px yükseklik + varsayılan
+                      // softWrap/clip, geniş ekranda ikinci kelimeyi
+                      // üç nokta olmadan düşürüyordu ("ÇIĞLIK").
+                      // FittedBox (scaleDown) tam başlığı sığdırır.
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        context.l10n.screamBugTitle,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.clip,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 20,
+                          height: 1.05,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          shadows: const [
+                            Shadow(
+                              color: Color(0xD9000000),
+                              offset: Offset(0, 2),
+                              blurRadius: 6,
+                            ),
+                            Shadow(
+                              color: Color(0xCC000000),
+                              offset: Offset(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1515,18 +2048,15 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.asset(
-                    'assets/icons2/coin.png',
-                    width: 25,
-                    height: 25,
-                  ),
+                  Image.asset('assets/icons2/coin.png', width: 25, height: 25),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      _fmtInt(
+                      formatGroupedInt(
                         widget.prototypeVisualState
                             ? 12450
                             : ProgressManager().coins,
+                        Localizations.localeOf(context).languageCode,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.clip,
@@ -1551,41 +2081,32 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               button: true,
               label: context.l10n.helpButtonLabel,
               child: GestureDetector(
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text(context.l10n.screamBugTitle),
-                  content: Text(context.l10n.screamArcadeHint(_hint)),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(context.l10n.understoodButton),
+                onTap: _showHelpDialog,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xDB080B12),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xB3FFB800),
+                      width: 2,
                     ),
-                  ],
-                ),
-              ),
-              child: Container(
-                width: 48,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xDB080B12),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xB3FFB800), width: 2),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
-                  ],
-                ),
-                child: Text(
-                  '?',
-                  style: GoogleFonts.baloo2(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFFFFB800),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+                    ],
+                  ),
+                  child: Text(
+                    '?',
+                    style: GoogleFonts.baloo2(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFFFB800),
+                    ),
                   ),
                 ),
               ),
-            ),
             ),
           ],
         ),
@@ -1600,9 +2121,23 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
         child: Row(
           children: [
-            _prototypeStat(context.l10n.gameScoreLabel, _fmtInt(_score), 104),
+            _prototypeStat(
+              context.l10n.gameScoreLabel,
+              formatGroupedInt(
+                _score,
+                Localizations.localeOf(context).languageCode,
+              ),
+              104,
+            ),
             const SizedBox(width: 8),
-            _prototypeStat(context.l10n.gameBestLabel, _fmtInt(_best), 84),
+            _prototypeStat(
+              context.l10n.gameBestLabel,
+              formatGroupedInt(
+                _best,
+                Localizations.localeOf(context).languageCode,
+              ),
+              84,
+            ),
             const Spacer(),
             _prototypeStat(context.l10n.screamGateStat, '$_gatesPassed', 74),
             const SizedBox(width: 8),
@@ -1610,28 +2145,28 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
               button: true,
               label: context.l10n.finishRoundLabel,
               child: GestureDetector(
-              onTap: _restart,
-              child: Container(
-                width: 57.8,
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFB800),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0xFFB97A00), offset: Offset(0, 3)),
-                  ],
-                ),
-                child: Text(
-                  context.l10n.finishCaps,
-                  style: GoogleFonts.baloo2(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF4A2E00),
+                onTap: _finishEarly,
+                child: Container(
+                  width: 57.8,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFB800),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0xFFB97A00), offset: Offset(0, 3)),
+                    ],
+                  ),
+                  child: Text(
+                    context.l10n.finishCaps,
+                    style: GoogleFonts.baloo2(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF4A2E00),
+                    ),
                   ),
                 ),
               ),
-            ),
             ),
           ],
         ),
@@ -1715,114 +2250,139 @@ class _ScreamRoachScreenState extends State<ScreamRoachScreen>
     );
   }
 
+  /// Boş-stok bildirimi + mağaza eylemi (dar düzendeki
+  /// `ModeBonusBar` ile aynı metin/eylem; 12T: geniş düzende stok 0
+  /// iken düğme sessizce hiçbir şey yapmıyordu — kullanıcı
+  /// "bonus çalışmıyor" sanıyordu).
+  void _showBonusOutOfStock(String label) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.boosterOutOfStockToast(label)),
+          action: SnackBarAction(
+            label: context.l10n.navShop,
+            onPressed: () {
+              if (mounted) ShopDialog.show(context);
+            },
+          ),
+        ),
+      );
+  }
+
   Widget _prototypeBonusButton(ModeBonus item, int count) {
     return Semantics(
       button: true,
       enabled: count > 0,
       label: context.l10n.boosterCountLabel(item.label, count),
       child: GestureDetector(
-        onTap: count > 0 ? item.onTap : null,
+        // 12T: stok 0 iken de dokunuş karşılık bulsun (bildirim +
+        // mağaza); önceden `onTap: null` idi, düğme ölü görünüyordu.
+        onTap: count > 0
+            ? item.onTap
+            : () => _showBonusOutOfStock(item.label),
         behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 66,
-        height: 62.9,
-        child: Column(
-          children: [
-            const SizedBox(height: 2),
-            SizedBox(
-              height: 48,
-              width: 66,
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFF333F58), Color(0xFF1B2336)],
-                      ),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0x47FFFFFF),
-                        width: 1.5,
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x73000000),
-                          offset: Offset(0, 3),
+        child: Opacity(
+          opacity: count > 0 ? 1 : 0.55,
+          child: SizedBox(
+            width: 66,
+            height: 62.9,
+            child: Column(
+            children: [
+              const SizedBox(height: 2),
+              SizedBox(
+                height: 48,
+                width: 66,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xFF333F58), Color(0xFF1B2336)],
                         ),
-                        BoxShadow(
-                          color: Color(0x4D000000),
-                          offset: Offset(0, 6),
-                          blurRadius: 12,
-                        ),
-                      ],
-                    ),
-                    child: Image.asset(item.asset, fit: BoxFit.contain),
-                  ),
-                  Positioned(
-                    top: -4,
-                    right: 3,
-                    child: Container(
-                      width: 22,
-                      height: 22,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE01E5A),
                         shape: BoxShape.circle,
-                        border: Border.fromBorderSide(
-                          BorderSide(color: Color(0xFF141B2A), width: 2),
+                        border: Border.all(
+                          color: const Color(0x47FFFFFF),
+                          width: 1.5,
                         ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x73000000),
+                            offset: Offset(0, 3),
+                          ),
+                          BoxShadow(
+                            color: Color(0x4D000000),
+                            offset: Offset(0, 6),
+                            blurRadius: 12,
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        '$count',
-                        style: GoogleFonts.nunito(
-                          fontSize: 11,
-                          height: 1,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
+                      child: Image.asset(item.asset, fit: BoxFit.contain),
+                    ),
+                    Positioned(
+                      top: -4,
+                      right: 3,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE01E5A),
+                          shape: BoxShape.circle,
+                          border: Border.fromBorderSide(
+                            BorderSide(color: Color(0xFF141B2A), width: 2),
+                          ),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: GoogleFonts.nunito(
+                            fontSize: 11,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 3),
-            SizedBox(
-              height: 9.9,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  item.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.nunito(
-                    fontSize: 9,
-                    height: 1.1,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.18,
-                    color: const Color(0xFFD8E0EE),
+              const SizedBox(height: 3),
+              SizedBox(
+                height: 9.9,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.nunito(
+                      fontSize: 9,
+                      height: 1.1,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.18,
+                      color: const Color(0xFFD8E0EE),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+        ),
       ),
     );
   }
-
-  static String _fmtInt(int value) => value.toString().replaceAllMapped(
-    RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => '.',
-  );
 
   List<Widget> _buildGate(_Gate g) {
     final topHeight = max(0.0, g.gapCenter - g.gapHalf);
@@ -1982,43 +2542,3 @@ class _Gate {
   bool scored = false;
 }
 
-class _ScreamStatusIndicatorsPainter extends CustomPainter {
-  const _ScreamStatusIndicatorsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    for (var i = 0; i < 4; i++) {
-      final height = 4.0 + i * 3.0;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(1 + i * 4.5, size.height - height, 2.4, height),
-          const Radius.circular(0.7),
-        ),
-        paint,
-      );
-    }
-    final battery = RRect.fromRectAndRadius(
-      Rect.fromLTWH(22, 3, 14, 9),
-      const Radius.circular(2),
-    );
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawRRect(battery, paint);
-    paint.style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(24, 5, 9, 5),
-        const Radius.circular(1),
-      ),
-      paint,
-    );
-    canvas.drawRect(const Rect.fromLTWH(36.5, 5.5, 1.5, 4), paint);
-  }
-
-  @override
-  bool shouldRepaint(_ScreamStatusIndicatorsPainter oldDelegate) => false;
-}

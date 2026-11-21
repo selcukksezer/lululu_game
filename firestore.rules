@@ -29,6 +29,14 @@ rules_version = '2';
 //      - streak: int (optional, 0..3650)
 //      - unlockedTiers: list<int> (optional, max 16 items)
 //      - modeHighScores: map<string, int> (optional, max 16 keys)
+//      - coinsUpdatedAtMs / energyUpdatedAtMs / unlockedLevelUpdatedAtMs /
+//        f16UpdatedAtMs / raidUpdatedAtMs / terlikUpdatedAtMs /
+//        streakUpdatedAtMs / unlockedTiersUpdatedAtMs /
+//        displayNameUpdatedAtMs: int (optional, 0..9999999999999, client-ms
+//        LWW stamps — Y6, Faz 4 8E; request.time ile eşitlenmez, yalnız
+//        tür/aralık denetlenir)
+//      - extraPowersUpdatedAtMs: map<string, int> (optional, max 40 keys,
+//        per-key LWW stamps, same range as above)
 //      - integrityHash: string (optional, 64..64 chars HMAC-SHA256 hex digest)
 //      - role: string (optional, must be 'player' on create, immutable on update)
 //      - isBanned: bool (optional, must be false on create, immutable on update)
@@ -129,6 +137,16 @@ service cloud.firestore {
               request.resource.data[field] <= maxVal);
     }
 
+    // Dalga 3: gün anahtarı (`yyyy-M-d`, sıfır dolgusuz da olabilir) —
+    // boş metin "hiç alınmadı" sayılır. Sözlüksel aralık denetimi
+    // yetmez (sıfır dolgusuz gün), bu yüzden RE2 deseni kullanılır.
+    function isValidOptionalDayKey(field) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              (request.resource.data[field] == '' ||
+               request.resource.data[field].matches('^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$')));
+    }
+
     function isValidModeId(modeId) {
       return modeId is string && modeId in [
         'suika',
@@ -173,6 +191,40 @@ service cloud.firestore {
         'streak',
         'unlockedTiers',
         'modeHighScores',
+        // Dalga 2: sezon XP'si / başarımlar / en iyi kombo (bulut
+        // senkronuna eklendi; allowlist'e girmezse flush reddedilir).
+        'seasonXp',
+        'unlockedAchievements',
+        'bestCombo',
+        // Dalga 3: günlük ödül hak günü / görev ilerlemesi /
+        // ücretsiz enerji hakları (bulut senkronuna eklendi;
+        // allowlist'e girmezse flush reddedilir).
+        'lastStreakClaimDay',
+        'dailyTasksDay',
+        'dailyTasksProgress',
+        'dailyTasksClaimed',
+        'dailyFreeEnergyDay',
+        'dailyFreeEnergyClaims',
+        // Y6/LWW alan damgaları (Faz 4, 8E): istemci-ms, yalnız
+        // tür/aralık denetlenir — `updatedAt == request.time` kuralı
+        // yalnız belge `updatedAt`'ine uygulanır.
+        'coinsUpdatedAtMs',
+        'energyUpdatedAtMs',
+        'unlockedLevelUpdatedAtMs',
+        'f16UpdatedAtMs',
+        'raidUpdatedAtMs',
+        'terlikUpdatedAtMs',
+        'streakUpdatedAtMs',
+        'unlockedTiersUpdatedAtMs',
+        'displayNameUpdatedAtMs',
+        'extraPowersUpdatedAtMs',
+        // Dalga 2 LWW damgaları.
+        'seasonXpUpdatedAtMs',
+        'unlockedAchievementsUpdatedAtMs',
+        // Dalga 3 LWW damgaları.
+        'lastStreakClaimDayUpdatedAtMs',
+        'dailyTasksUpdatedAtMs',
+        'dailyFreeEnergyUpdatedAtMs',
         'integrityHash',
         'role',
         'isBanned',
@@ -193,12 +245,52 @@ service cloud.firestore {
              isValidOptionalInt('totalStars', 0, 240) &&
              isValidOptionalInt('total11ModesScore', 0, 5500000) &&
              isValidOptionalInt('bestOverallScore', 0, 500000) &&
+             // Dalga 2: sezon XP'si / en iyi kombo (istemci kelepçesiyle birebir).
+             isValidOptionalInt('seasonXp', 0, 9999999) &&
+             isValidOptionalInt('bestCombo', 0, 999999) &&
+             // Dalga 3: günlük ödül hak günü / görev günü / ücretsiz
+             // enerji günü (boş = hiç alınmadı) ve hak sayısı
+             // (günlük üst sınır 3, istemci kelepçesiyle birebir).
+             isValidOptionalDayKey('lastStreakClaimDay') &&
+             isValidOptionalDayKey('dailyTasksDay') &&
+             isValidOptionalDayKey('dailyFreeEnergyDay') &&
+             isValidOptionalInt('dailyFreeEnergyClaims', 0, 3) &&
              isValidOptionalInt('f16Count', 0, 9999) &&
              isValidOptionalInt('raidCount', 0, 9999) &&
              isValidOptionalInt('terlikCount', 0, 9999) &&
              (!('extraPowers' in data) || (data.extraPowers is map && data.extraPowers.size() <= 40)) &&
              isValidOptionalInt('streak', 0, 3650) &&
+             // Y6/LWW damgaları: istemci-ms, 0..9999999999999; zorunlu
+             // değil (eski istemci uyumu). Harita damgasının tek tek
+             // değerleri kural dilinde yinelenemez — harita + boyut
+             // denetlenir, değer aralığı istemci ön-denetimindedir.
+             isValidOptionalInt('coinsUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('energyUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('unlockedLevelUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('f16UpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('raidUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('terlikUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('streakUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('unlockedTiersUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('displayNameUpdatedAtMs', 0, 9999999999999) &&
+             // Dalga 2 LWW damgaları.
+             isValidOptionalInt('seasonXpUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('unlockedAchievementsUpdatedAtMs', 0, 9999999999999) &&
+             // Dalga 3 LWW damgaları.
+             isValidOptionalInt('lastStreakClaimDayUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('dailyTasksUpdatedAtMs', 0, 9999999999999) &&
+             isValidOptionalInt('dailyFreeEnergyUpdatedAtMs', 0, 9999999999999) &&
+             (!('extraPowersUpdatedAtMs' in data) || (data.extraPowersUpdatedAtMs is map && data.extraPowersUpdatedAtMs.size() <= 40)) &&
              (!('unlockedTiers' in data) || (data.unlockedTiers is list && data.unlockedTiers.size() <= 16)) &&
+             // Dalga 2: kazanılan başarım kimlikleri, en fazla 30.
+             (!('unlockedAchievements' in data) || (data.unlockedAchievements is list && data.unlockedAchievements.size() <= 30)) &&
+             // Dalga 3: günlük görev ilerlemesi (harita, en fazla 4
+             // görev) ve ödül alımları (liste, en fazla 4). Harita
+             // değerleri kural dilinde yinelenemez — harita + boyut
+             // denetlenir, değer aralığı istemci ön-denetimindedir
+             // (`extraPowersUpdatedAtMs` deseni).
+             (!('dailyTasksProgress' in data) || (data.dailyTasksProgress is map && data.dailyTasksProgress.size() <= 4)) &&
+             (!('dailyTasksClaimed' in data) || (data.dailyTasksClaimed is list && data.dailyTasksClaimed.size() <= 4)) &&
              (!('modeHighScores' in data) || (data.modeHighScores is map && data.modeHighScores.size() <= 16)) &&
              isValidOptionalString('integrityHash', 64, 64) &&
              (!('role' in data) || data.role == 'player') &&
@@ -262,6 +354,7 @@ service cloud.firestore {
         'id',
         'senderId',
         'authorId',
+        'authorKind',
         'senderName',
         'authorName',
         'text',
@@ -276,12 +369,33 @@ service cloud.firestore {
         'challengeTargetScore',
         'createdAt'
       ];
+      // authorKind zorunlu: 'user' veya 'guest'. Kullanıcıda yazar
+      // kimliği Firebase UID'si ile eşleşmeli; misafirde kalıcı
+      // misafir UUID deseni + yapısal sınırlar aranır. ARTIK RİSK:
+      // kural, misafir UUID'sinin sahipliğini doğrulayamaz — anonim
+      // oturumlu herhangi bir istemci başkasının misafir UUID'siyle
+      // yazabilir. Hafifletme: anonim oturum şartı + istemcide
+      // hız/küfür filtresi + raporlama/engelleme akışı.
+      let isUserKind = ('authorKind' in data) && data.authorKind == 'user';
+      let isGuestKind =
+          ('authorKind' in data) && data.authorKind == 'guest';
+      let hasValidKind = isUserKind || isGuestKind;
       let hasValidSender =
-        (('senderId' in data) && data.senderId == request.auth.uid) ||
-        (('authorId' in data) && data.authorId == request.auth.uid);
+        (isUserKind &&
+          ((('senderId' in data) && data.senderId == request.auth.uid) ||
+           (('authorId' in data) && data.authorId == request.auth.uid))) ||
+        (isGuestKind &&
+          ('authorId' in data) &&
+          data.authorId.matches('^guest_[0-9a-f]{8,64}$'));
       let senderConsistent =
-        (!('senderId' in data) || data.senderId == request.auth.uid) &&
-        (!('authorId' in data) || data.authorId == request.auth.uid);
+        (isUserKind &&
+          (!('senderId' in data) || data.senderId == request.auth.uid) &&
+          (!('authorId' in data) || data.authorId == request.auth.uid)) ||
+        (isGuestKind &&
+          (!('senderId' in data) ||
+            data.senderId.matches('^guest_[0-9a-f]{8,64}$')) &&
+          (!('authorId' in data) ||
+            data.authorId.matches('^guest_[0-9a-f]{8,64}$')));
       let hasValidText =
         (('text' in data) && isValidString(data.text, 1, 240)) ||
         (('body' in data) && isValidString(data.body, 1, 240));
@@ -290,6 +404,7 @@ service cloud.firestore {
         isValidOptionalString('body', 1, 240);
 
       return hasOnlyAllowedFields(allowedKeys) &&
+             hasValidKind &&
              hasValidSender &&
              senderConsistent &&
              hasValidText &&
@@ -309,11 +424,70 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt == request.time);
     }
 
+    // Misafir->hesap göç eşlemesi: `guest_identity_links/{guestId}`
+    // belgesi göçte yazılır (yalnız ilk yazım kazanır). Hesap silmede,
+    // eski misafir kimliğiyle yazılmış mesajların silinmesine izin
+    // verir (gizlilik metniyle tutarlılık). `get()` öncesi `exists()`
+    // şarttır (olmayan belge okunursa kural hata verir).
+    function isLinkedGuest(authorId) {
+      return authorId is string &&
+             authorId.matches('^guest_[0-9a-f]{8,64}$') &&
+             exists(/databases/$(database)/documents/guest_identity_links/$(authorId)) &&
+             get(/databases/$(database)/documents/guest_identity_links/$(authorId)).data.uid == request.auth.uid;
+    }
+
     function isMessageSender(resData) {
       return isAuthenticated() && (
         (('senderId' in resData) && resData.senderId == request.auth.uid) ||
-        (('authorId' in resData) && resData.authorId == request.auth.uid)
+        (('authorId' in resData) && resData.authorId == request.auth.uid) ||
+        (('authorId' in resData) && isLinkedGuest(resData.authorId)) ||
+        (('senderId' in resData) && isLinkedGuest(resData.senderId))
       );
+    }
+
+    // UGC raporları (chat_reports): istemci yalnız oluşturabilir;
+    // okuma/güncelleme/silme kapalıdır (moderasyon admin tarafında).
+    // Raporlayan: kullanıcıda reporterId == uid, misafirde kalıcı
+    // misafir UUID deseni (sahiplik doğrulanamaz — artık risk, bkz.
+    // isValidChatMessage notu).
+    function isValidChatReport() {
+      let data = request.resource.data;
+      let allowedKeys = [
+        'messageId',
+        'channelId',
+        'reportedAuthorId',
+        'reportedAuthorKind',
+        'reportedAuthorName',
+        'messageBody',
+        'reason',
+        'reporterId',
+        'reporterKind',
+        'createdAtMs'
+      ];
+      let hasValidReporter =
+        (('reporterKind' in data) && data.reporterKind == 'user' &&
+         ('reporterId' in data) && data.reporterId == request.auth.uid) ||
+        (('reporterKind' in data) && data.reporterKind == 'guest' &&
+         ('reporterId' in data) &&
+         data.reporterId.matches('^guest_[0-9a-f]{8,64}$'));
+      return hasOnlyAllowedFields(allowedKeys) &&
+             hasRequiredFields(allowedKeys) &&
+             hasValidReporter &&
+             ('messageId' in data) &&
+             isValidString(data.messageId, 1, 64) &&
+             ('channelId' in data) &&
+             (data.channelId in ['lobby', 'clan', 'vsChallenge', 'vs']) &&
+             ('reportedAuthorId' in data) &&
+             isValidString(data.reportedAuthorId, 1, 64) &&
+             ('reportedAuthorKind' in data) &&
+             (data.reportedAuthorKind in ['user', 'guest']) &&
+             ('reportedAuthorName' in data) &&
+             isValidString(data.reportedAuthorName, 1, 32) &&
+             ('messageBody' in data) &&
+             isValidString(data.messageBody, 1, 240) &&
+             ('reason' in data) &&
+             (data.reason in ['spam', 'inappropriate', 'harassment', 'other']) &&
+             isValidOptionalInt('createdAtMs', 0, 9999999999999);
     }
 
     // 4. Bug Studio Video & GIF Post Validator
@@ -392,14 +566,16 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUserCreate(userId);
       allow update: if isOwner(userId) && isValidUserUpdate(userId);
-      allow delete: if false;
+      // Hesap silme (Play Kullanıcı Verisi politikası): sahip kendi
+      // belgesini silebilir; başkasının belgesi silinemez.
+      allow delete: if isOwner(userId);
     }
 
     match /players/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUserCreate(userId);
       allow update: if isOwner(userId) && isValidUserUpdate(userId);
-      allow delete: if false;
+      allow delete: if isOwner(userId);
     }
 
     // 2. Anti-Cheat Leaderboards
@@ -407,7 +583,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidScoreDoc(userId, modeId);
       allow update: if isOwner(userId) && isValidScoreUpdate(userId, modeId);
-      allow delete: if false;
+      allow delete: if isOwner(userId);
     }
 
     match /leaderboard_entries/{entryId} {
@@ -421,7 +597,11 @@ service cloud.firestore {
                       (('playerId' in resource.data) && resource.data.playerId == request.auth.uid)
                     ) &&
                     isValidScoreUpdate(request.auth.uid, '');
-      allow delete: if false;
+      allow delete: if isAuthenticated() &&
+                    (
+                      (('uid' in resource.data) && resource.data.uid == request.auth.uid) ||
+                      (('playerId' in resource.data) && resource.data.playerId == request.auth.uid)
+                    );
     }
 
     // Support for CloudSyncService collectionGroup('modes') & per-user score subcollection
@@ -429,7 +609,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidScoreDoc(userId, modeId);
       allow update: if isOwner(userId) && isValidScoreUpdate(userId, modeId);
-      allow delete: if false;
+      allow delete: if isOwner(userId);
     }
 
     match /{path=**}/modes/{modeId} {
@@ -461,6 +641,35 @@ service cloud.firestore {
                     isValidChatMessage();
       allow update: if false;
       allow delete: if isMessageSender(resource.data);
+    }
+
+    // 3b. UGC Raporları (chat_reports): yalnız oluşturma; okuma/
+    // güncelleme/silme istemciye kapalı (moderasyon admin tarafında).
+    match /chat_reports/{reportId} {
+      allow read: if false;
+      allow create: if isAuthenticated() && isValidChatReport();
+      allow update, delete: if false;
+    }
+
+    // 3c. Misafir->hesap göç eşlemeleri (guest_identity_links):
+    // belge kimliği misafir UUID'si, içerik {uid, createdAt}.
+    // Oluşturma: yalnız ilk yazım kazanır, uid == oturum UID'si.
+    // Okuma/silme: yalnız eşlemenin sahibi hesap. Güncelleme kapalı.
+    // Hesap silmede eski misafir mesajlarının silinmesini sağlar
+    // (isLinkedGuest); silinen hesapla birlikte eşleme de silinir.
+    match /guest_identity_links/{guestId} {
+      allow read: if isAuthenticated() &&
+          guestId.matches('^guest_[0-9a-f]{8,64}$') &&
+          resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() &&
+          guestId.matches('^guest_[0-9a-f]{8,64}$') &&
+          !exists(/databases/$(database)/documents/guest_identity_links/$(guestId)) &&
+          hasOnlyAllowedFields(['uid', 'createdAt']) &&
+          hasRequiredFields(['uid', 'createdAt']) &&
+          request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if isAuthenticated() &&
+          resource.data.uid == request.auth.uid;
     }
 
     // 4. Bug Studio Videos & GIFs

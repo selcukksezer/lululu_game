@@ -61,6 +61,12 @@ class MicScreamService extends ChangeNotifier {
   final StreamController<ScreamReading> _readingController =
       StreamController<ScreamReading>.broadcast();
 
+  /// 12C2: duraklatma/devam (`pauseListening`/`resumeListening`)
+  /// için saklanan tetik geri çağrısı ve yedek-dalga bayrağı.
+  void Function(ScreamReading reading)? _onScreamTriggered;
+  bool _periodicFallbackWave = false;
+  bool _paused = false;
+
   final ValueNotifier<double> decibelNotifier =
       ValueNotifier<double>(minDecibel);
   final ValueNotifier<double> powerNotifier = ValueNotifier<double>(0.0);
@@ -98,6 +104,12 @@ class MicScreamService extends ChangeNotifier {
 
   bool get isListening => _isListening;
   bool get isFallbackMode => _isFallbackMode;
+
+  /// Dinleme duraklatıldı mı (`pauseListening` kondu, `resumeListening`
+  /// henüz çağrılmadı)? Duraklatmada abonelik kapalıdır ama
+  /// `_isListening` true kalır; devam, izni yeniden istemeden
+  /// kaldığı yerden açılır.
+  bool get isPaused => _paused;
   bool get permissionGranted => _permissionGranted;
   bool get permissionPermanentlyDenied => _permissionPermanentlyDenied;
   String get statusMessage => _statusMessage;
@@ -172,6 +184,10 @@ class MicScreamService extends ChangeNotifier {
     bool enablePeriodicFallbackWave = false,
   }) async {
     await stopListening();
+    // 12C2: duraklatma/devam için saklanır (yeniden abonelikte
+    // aynı geri çağrı + yedek-dalga ayarı kullanılır).
+    _onScreamTriggered = onScreamTriggered;
+    _periodicFallbackWave = enablePeriodicFallbackWave;
 
     if (_isTestOrDesktopEnvironment) {
       _activateFallback(
@@ -208,6 +224,28 @@ class MicScreamService extends ChangeNotifier {
       return false;
     }
 
+    if (!_startNoiseSubscription(onScreamTriggered)) {
+      _activateFallback(
+        reason: 'Mikrofon başlatılamadı · dokunmatik çığlık aktif.',
+        enablePeriodicWave: enablePeriodicFallbackWave && !_isAutomatedTest,
+        onScreamTriggered: onScreamTriggered,
+      );
+      return false;
+    }
+    _isListening = true;
+    _isFallbackMode = false;
+    _voiceArmed = true;
+    _statusMessage = 'Mikrofon aktif · bağırarak zıpla!';
+    notifyListeners();
+    return true;
+  }
+
+  /// `NoiseMeter` akışını açar; açılmazsa `false` döner (çağrıcı
+  /// yedek moda düşer). Abonelik hem `startListening` hem de
+  /// `resumeListening` tarafından kullanılır.
+  bool _startNoiseSubscription(
+    void Function(ScreamReading reading)? onScreamTriggered,
+  ) {
     try {
       _noiseMeter ??= NoiseMeter();
       _noiseSubscription = _noiseMeter!.noise.listen(
@@ -228,19 +266,52 @@ class MicScreamService extends ChangeNotifier {
         },
         cancelOnError: false,
       );
-      _isListening = true;
-      _isFallbackMode = false;
-      _voiceArmed = true;
-      _statusMessage = 'Mikrofon aktif · bağırarak zıpla!';
-      notifyListeners();
       return true;
     } catch (_) {
-      _activateFallback(
-        reason: 'Mikrofon başlatılamadı · dokunmatik çığlık aktif.',
-        enablePeriodicWave: enablePeriodicFallbackWave && !_isAutomatedTest,
-        onScreamTriggered: onScreamTriggered,
-      );
       return false;
+    }
+  }
+
+  /// Dinlemeyi askıya alır (arka plan / duraklatma / diyalog):
+  /// abonelik + yedek-dalga zamanlayıcısı kapanır, `_isListening`
+  /// true kalır; izin yeniden istenmez.
+  void pauseListening() {
+    if (!_isListening || _paused) return;
+    _paused = true;
+    _fallbackWaveTimer?.cancel();
+    _fallbackWaveTimer = null;
+    unawaited(_noiseSubscription?.cancel() ?? Future<void>.value());
+    _noiseSubscription = null;
+    notifyListeners();
+  }
+
+  /// Askıdaki dinlemeyi kaldığı yerden devam ettirir: gerçek
+  /// mikrofonda yeniden abone olur, yedek modda yedek-dalga
+  /// zamanlayıcısını yeniden kurar. Yeniden abonelik olmazsa
+  /// yedek moda düşer.
+  Future<void> resumeListening() async {
+    if (!_isListening || !_paused) return;
+    _paused = false;
+    if (_isFallbackMode) {
+      if (_periodicFallbackWave && !_isAutomatedTest) {
+        _fallbackWaveTimer = Timer.periodic(
+          const Duration(milliseconds: 80),
+          (_) {
+            stepSimulation(0.08, onScreamTriggered: _onScreamTriggered);
+          },
+        );
+      }
+      notifyListeners();
+      return;
+    }
+    if (!_startNoiseSubscription(_onScreamTriggered)) {
+      _activateFallback(
+        reason: 'Mikrofon akışı kesildi · dokunmatik çığlık aktif.',
+        enablePeriodicWave: false,
+        onScreamTriggered: _onScreamTriggered,
+      );
+    } else {
+      notifyListeners();
     }
   }
 
@@ -376,6 +447,9 @@ class MicScreamService extends ChangeNotifier {
   Future<void> stopListening() async {
     _fallbackWaveTimer?.cancel();
     _fallbackWaveTimer = null;
+    _paused = false;
+    _onScreamTriggered = null;
+    _periodicFallbackWave = false;
 
     final sub = _noiseSubscription;
     _noiseSubscription = null;

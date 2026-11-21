@@ -20,6 +20,8 @@ void main() {
     FirebaseBootstrap.resetForTest();
     final chat = ChatService.instance;
     await chat.load();
+    // Gönderim önkoşulu: sohbet şart onayı (kalıcı, test başında verilir).
+    await chat.acceptChatTerms();
     if (chat.currentChannel != ChatChannel.lobby) {
       chat.switchChannel(ChatChannel.lobby);
     }

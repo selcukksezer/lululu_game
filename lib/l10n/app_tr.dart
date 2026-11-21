@@ -95,6 +95,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get quit => 'Çık';
 
   @override
+  String get exitRoundConfirmTitle => 'Turdan çıkılsın mı?';
+
+  @override
+  String get exitRoundConfirmBody =>
+      'Çıkarsan bu tur ve harcanan enerji kaybolur.';
+
+  @override
   String get profile => 'Profil';
 
   @override
@@ -160,6 +167,10 @@ class AppLocalizationsTr extends AppLocalizations {
   String rewardCoins(int amount) => 'Ödül: +$amount COIN';
 
   @override
+  String bossFirstClearBonus(int amount) =>
+      'Boss ilk geçiş bonusu: +$amount COIN';
+
+  @override
   String rewardEnergy(int amount) => 'Ödül: +$amount ENERJİ';
 
   @override
@@ -195,8 +206,25 @@ class AppLocalizationsTr extends AppLocalizations {
       'Günlük enerji alındı: +5 enerji eklendi!';
 
   @override
+  String get dailyEnergyAlreadyClaimedSnack =>
+      'Günlük enerji bugün zaten alındı.';
+
+  @override
+  String get hbEnergyTag => '-1 ENERJİ';
+
+  @override
+  String get chestClaimFailed => 'Sandık açılamadı. Tekrar dene.';
+
+  @override
+  String boosterOutOfStockToast(String label) =>
+      '$label kalmadı! Mağazadan alabilirsin.';
+
+  @override
+  String taskRewardClaimedSnack(String rewardText) => '$rewardText alındı!';
+
+  @override
   String get onlineNotifySignupSnack =>
-      'Kaydın alındı! Online mod açılır açılmaz sana haber vereceğiz.';
+      'Tercihin kaydedildi! Online mod açılır açılmaz burada görünecek.';
 
   @override
   String get seeAllArrow => 'Tümü →';
@@ -398,6 +426,54 @@ class AppLocalizationsTr extends AppLocalizations {
   String get myBadges => 'ROZETLERİM';
 
   @override
+  String get profilePassRowSub => 'Başarımlarını ve sezon biletini görüntüle';
+
+  @override
+  String get profileInviteRowTitle => 'Arkadaşını Davet Et';
+
+  @override
+  String get profileInviteRowSub => 'Davet kodunu paylaş, rakibini çağır';
+
+  @override
+  String get profileInviteFailed => 'Davet paylaşılamadı. Tekrar dene.';
+
+  @override
+  String get inviteRedeemTitle => 'Davet Kodunu Kullan';
+
+  @override
+  String get inviteRedeemHint => 'Arkadaşının davet kodunu gir';
+
+  @override
+  String get inviteRedeemButton => 'Kodu Kullan';
+
+  @override
+  String get inviteRedeemLocalNote =>
+      'Kodlar yalnızca bu cihazda denetlenir; sunucu doğrulaması yoktur.';
+
+  // --- 12C2: davet kodu kopyalama ---
+  @override
+  String get inviteCopyCodeLabel => 'Kodu kopyala';
+
+  @override
+  String get inviteCodeCopied => 'Davet kodu kopyalandı';
+
+  @override
+  String get inviteRedeemErrorInvalid =>
+      'Kod biçimi hatalı. Örnek: LULU-AB12345';
+
+  @override
+  String get inviteRedeemErrorOwn => 'Kendi kodunu kullanamazsın.';
+
+  @override
+  String get inviteRedeemErrorUsed => 'Bu kod zaten kullanıldı.';
+
+  @override
+  String inviteRedeemSuccess(int coins) => 'Harika! +$coins coin kazandın.';
+
+  @override
+  String get profileRoyalCapeBadge => 'Kral Pelerini';
+
+  @override
   String badgesEarnedCount(int count) => '$count/6 KAZANILDI';
 
   @override
@@ -488,7 +564,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get onboardingVersionLine =>
-      'v3.0 · Mobil & Masaüstü Dokunmatik Uyumlu';
+      'v1.0 · Mobil & Masaüstü Dokunmatik Uyumlu';
 
   // --- Dalga 15 göçü: Açılış ekranı (splash_screen) ---
 
@@ -511,7 +587,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get splashContinueButton => 'DEVAM ›';
 
   @override
-  String get splashVersionLabel => 'v1.0 · Tasarım Prototipi';
+  String get splashVersionLabel => 'v1.0';
 
   @override
   String get splashKicker1 => 'YENİ MACERA';
@@ -635,6 +711,63 @@ class AppLocalizationsTr extends AppLocalizations {
   String get signInButton => 'GİRİŞ YAP';
 
   @override
+  String get authUsernameRequired => 'Kullanıcı adı gir.';
+
+  @override
+  String get authUsernameInvalid =>
+      'Kullanıcı adı 3–20 karakter olmalı; yalnızca küçük harf, rakam ve alt çizgi kullan.';
+
+  @override
+  String get authPasswordRequired => 'Şifre gir.';
+
+  @override
+  String get authPasswordTooShort => 'Şifre en az 6 karakter olmalı.';
+
+  @override
+  String get authPasswordTooLong => 'Şifre en fazla 128 karakter olabilir.';
+
+  @override
+  String get authPasswordInvalid => 'Şifre geçersiz karakter içeriyor.';
+
+  @override
+  String get authGenericFailed => 'İşlem tamamlanamadı. Tekrar dene.';
+
+  @override
+  String get authWrongPassword => 'Şifre yanlış.';
+
+  @override
+  String get authUserNotFound => 'Kullanıcı bulunamadı — önce kayıt ol.';
+
+  @override
+  String get authUsernameTaken => 'Bu kullanıcı adı zaten kayıtlı — giriş yap.';
+
+  @override
+  String get authTooManyAttempts =>
+      'Çok fazla başarısız deneme. Biraz bekleyip tekrar dene.';
+
+  @override
+  String get authSignOutFailed => 'Oturum kapatılamadı. Tekrar dene.';
+
+  @override
+  String get authSignInSuccess => 'Giriş yapıldı.';
+
+  @override
+  String get authRegisterSuccess => 'Hesabın oluşturuldu, giriş yapıldı.';
+
+  @override
+  String get authRegisterLocalOnly =>
+      'Hesabın bu cihazda oluşturuldu; bulut kaydı bir sonraki girişte tamamlanacak.';
+
+  @override
+  String get settingsResetFailed => 'İlerleme sıfırlanamadı. Tekrar dene.';
+
+  @override
+  String get settingsResetDone => 'İlerleme sıfırlandı.';
+
+  @override
+  String get onboardingSaveFailed => 'Kaydedilemedi. Tekrar dene.';
+
+  @override
   String get orDivider => 'VEYA';
 
   // --- Dalga 20 göçü: Oyun + sonuç ekranı (game_screen, result_screen) ---
@@ -731,6 +864,10 @@ class AppLocalizationsTr extends AppLocalizations {
       'Skorun panoya kopyalandı: $score Puan! #LululuGame';
 
   @override
+  String scoreShareText(int score) =>
+      'Lülülü skorum: $score puan! #LululuGame';
+
+  @override
   String get resultSubtitle =>
       "Zirveye, Pembe Bornozlu'ya bir adım daha yaklaştın!";
 
@@ -738,7 +875,17 @@ class AppLocalizationsTr extends AppLocalizations {
   String get levelCompleteTitle => 'SEVİYE TAMAM!';
 
   @override
+  String get resultGameOverTitle => 'OYUN BİTTİ!';
+
+  @override
+  String get resultGameOverSubtitle =>
+      'Bir daha dene — bir sonraki tur senin!';
+
+  @override
   String get bestComboResultLabel => 'EN İYİ KOMBO';
+
+  @override
+  String get newRecordBadge => 'YENİ REKOR!';
 
   @override
   String get mergesLabel => 'BİRLEŞTİRME';
@@ -761,6 +908,9 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get shareButton => 'PAYLAŞ';
 
+  @override
+  String get shareScoreFailed => 'Skor kartı paylaşılamadı.';
+
   // --- Dalga 20 göçü: Ayarlar (settings_screen) ---
 
   @override
@@ -775,6 +925,10 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get resetButton => 'SIFIRLA';
+
+  @override
+  String accountDeletedPartialSnack(int failedCount) =>
+      'Hesabın silindi, ancak $failedCount temizlik adımı tamamlanamadı.';
 
   @override
   String accountDeleteFailed(String error) => 'Hesap silinemedi: $error';
@@ -930,7 +1084,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get privacySection5Body3 =>
-      'Hesabını aşağıdaki düğmeyle silebilirsin: cihazındaki hesap kaydı silinir ve oturumun kapatılır. Oyun ilerlemen ve bulutta saklanan kopyalar ayrıca silinmez.';
+      'Hesabını aşağıdaki düğmeyle silebilirsin: cihazındaki hesap kaydı ve oyun ilerlemen silinir, oturumun kapatılır; giriş yaptıysan bulutta saklanan profil, skor ve sohbet mesajı kopyaların da silinir ve hesap kaydın kapatılır.';
 
   @override
   String get privacySection6Title => '6. Değişiklikler';
@@ -939,7 +1093,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get privacySection6Body1 =>
       'Bu metin değişirse güncellenmiş hâli oyun içinde yayınlanır.';
 
-  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen + campaign_map_sheet) ---
+  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen) ---
 
   @override
   String get campaignSuikaHeader => '🪳 SUIKA ARENASI (80 BÖLÜM)';
@@ -981,24 +1135,6 @@ class AppLocalizationsTr extends AppLocalizations {
       '🎁 $stars⭐ Sandığı Açıldı: +$coins Altın & +$boosterCount $boosterName!';
 
   @override
-  String get campaignSheetTitle => '80 SEVİYE KAMPANYA HARİTASI';
-
-  @override
-  String get campaignSheetSubtitle =>
-      '8 Bölüm · 8 Boss Savaşı · 24 Yıldız Sandığı';
-
-  @override
-  String chapterBannerTitle(int index, String title) =>
-      'BÖLÜM $index: $title';
-
-  @override
-  String bossBannerLine(int id, String bossName, int hp, String hazard) =>
-      '👑 Boss #$id: $bossName ($hp HP) · Tehlike: $hazard';
-
-  @override
-  String levelRangeShort(int start, int end) => 'Sv $start-$end';
-
-  @override
   String chestStarsLabel(int stars) => '$stars⭐ Sandık';
 
   @override
@@ -1006,9 +1142,6 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String chestRewardLine(int coins, int count) => '+$coins🪙 +$count⚡';
-
-  @override
-  String get bossShort => 'BOSS';
 
   // --- Dalga 20 göçü: Sohbet (chat_lobby_screen, chat_screen) ---
 
@@ -1023,6 +1156,12 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get messageSendFailed => 'Mesaj gönderilemedi. Tekrar dene.';
+
+  @override
+  String get chatLobbyTitle => 'Sohbet Lobisi';
+
+  @override
+  String get chatLobbySubtitle => 'Canlı lobi sohbetine katıl';
 
   @override
   String get stickerSendFailed => 'Çıkartma gönderilemedi. Tekrar dene.';
@@ -1116,6 +1255,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get noScoresHint =>
       'Bir oyun oyna — skorun kaydedilince burada görünecek.';
 
+  @override
+  String get noRivalsYet => 'Henüz rakip yok';
+
+  @override
+  String get noRivalsHint =>
+      'Skor tablosunda şimdilik yalnız sen varsın — uydurma rakip yok.';
+
   // --- Dalga 20 göçü: Hesap (auth_screen, auth_panel) ---
 
   @override
@@ -1143,6 +1289,15 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get linkCopiedToast => 'Bağlantı kopyalandı — paylaşmaya hazır';
+
+  @override
+  String get videoPreviewBadge => 'ÖNİZLEME';
+
+  @override
+  String get videoSharedToast => 'Video paylaşıldı';
+
+  @override
+  String get videoTextCopiedToast => 'Video bilgisi panoya kopyalandı';
 
   @override
   String get videoAddedToDownloadsToast => "Video İndirilenler'e eklendi";
@@ -1292,6 +1447,13 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String deleteItemLabel(String title) => 'Sil: $title';
+
+  @override
+  String get deleteDownloadTitle => 'İndirilen dosyayı sil?';
+
+  @override
+  String deleteDownloadConfirm(String title) =>
+      '"$title" indirilenlerden silinecek. Emin misin?';
 
   // --- Dalga 33 göçü (W33-1): erişilebilirlik etiketleri ---
   // Yalnız anahtar eklendi; UI göçü sonraki dalgada (kaynak metinler
@@ -1613,7 +1775,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemEnergyPackDesc => '+10 enerji · anında dolar, bekleme yok';
 
   @override
-  String get shopItemEnergyDepotTitle => 'Enerji Deposu';
+  String get shopItemEnergyDepotTitle => 'Tam Enerji';
 
   @override
   String get shopItemEnergyDepotDesc => 'Kalbi 30/30 fulle · tek seferde tam enerji';
@@ -1622,13 +1784,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemStarPackTitle => 'Yıldız Paketi';
 
   @override
-  String get shopItemStarPackDesc => '25 yıldız + 1.000 coin';
+  String get shopItemStarPackDesc => '1.000 coin + F16 x1';
 
   @override
   String get shopItemSurpriseBoxTitle => 'Sürpriz Kutu';
 
   @override
-  String get shopItemSurpriseBoxDesc => 'Rastgele moddan 1 güçlendirici';
+  String get shopItemSurpriseBoxDesc => 'Anne Terliği x1 + Raid x1';
 
   @override
   String get shopItemHandfulTitle => 'Bir Avuç';
@@ -1643,10 +1805,34 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemCrateDesc => '7.500 coin · +%50 bonus';
 
   @override
+  String get shopItemCoinsMidTitle => 'Makara Paket';
+
+  @override
+  String get shopItemCoinsMidDesc => '1.500 coin';
+
+  @override
+  String get shopItemCoinsBigTitle => 'Kongo Sandık';
+
+  @override
+  String get shopItemCoinsBigDesc => '5.000 coin';
+
+  @override
+  String get shopItemRoyalCapeTitle => 'Kraliyet Pelerini';
+
+  @override
+  String get shopItemRoyalCapeDesc => 'Efsanevi Kraliyet Pelerini kozmetik görünümü';
+
+  @override
+  String get shopCosmeticsTitle => 'Kozmetik';
+
+  @override
+  String get shopRoyalCapeOwnedLabel => 'Sahip Olundu';
+
+  @override
   String get shopItemWoodenChestTitle => 'Ahşap Sandık';
 
   @override
-  String get shopItemWoodenChestDesc => 'Rastgele güçlendirici + coin';
+  String get shopItemWoodenChestDesc => 'Anne Terliği x1 + 250 coin';
 
   @override
   String get shopItemGoldenChestTitle => 'Altın Sandık';
@@ -1658,13 +1844,45 @@ class AppLocalizationsTr extends AppLocalizations {
   String get shopItemDoubleCoinTitle => 'Çifte Coin';
 
   @override
-  String get shopItemDoubleCoinDesc => '30 dakika boyunca 2× coin';
+  String get shopItemDoubleCoinDesc => 'Makarayız Puan Çarpanı x2';
 
   @override
   String get shopItemLuckPotionTitle => 'Şans İksiri';
 
   @override
-  String get shopItemLuckPotionDesc => 'Birleşmede kritik şansı artar';
+  String get shopItemLuckPotionDesc => '2048 Çiftleştir x1';
+
+  // 8F: TR değerleri katalogdan verbatim (iap_service.dart).
+  @override
+  String get shopItemCoinsSmallTitle => 'Küçük Torba';
+
+  @override
+  String get shopItemCoinsSmallDesc => '500 coin';
+
+  @override
+  String get shopItemF16PackTitle => 'F16 x3';
+
+  @override
+  String get shopItemF16PackDesc => '3 adet F16 Hava Desteği güçlendiricisi';
+
+  @override
+  String get shopItemRaidPackTitle => 'Raid x3';
+
+  @override
+  String get shopItemRaidPackDesc => '3 adet Raid Sprey güçlendiricisi';
+
+  @override
+  String get shopItemTerlikPackTitle => 'Anne Terliği x5';
+
+  @override
+  String get shopItemTerlikPackDesc => '5 adet Anne Terliği güçlendiricisi';
+
+  @override
+  String get shopItemGoldChestIapTitle => 'Altın Sandığı';
+
+  @override
+  String get shopItemGoldChestIapDesc =>
+      '+1.200 Altın + F16 x1 + Raid x2 + Anne Terliği x2';
 
   @override
   String get shopNotEnoughGoldToast => 'Yetersiz altın! Oyun oynayarak altın kazanabilirsin.';
@@ -1704,6 +1922,50 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get shopAddedLuckPotionToast => 'Şans İksiri sepete eklendi';
+
+  // 8F: yeni IAP güçlendirici kartlarının başarı toast'ları.
+  @override
+  String get shopAddedF16Toast => 'F16 x3 sepete eklendi';
+
+  @override
+  String get shopAddedRaidToast => 'Raid x3 sepete eklendi';
+
+  @override
+  String get shopAddedTerlikToast => 'Anne Terliği x5 sepete eklendi';
+
+  @override
+  String get energyPackBoughtToast => '+5 enerji eklendi!';
+
+  @override
+  String get energyRefundNotice => 'Hiç hamle yapılmadı — 1 enerji iade edildi.';
+
+  @override
+  String get shopPurchaseFailedRefundToast => 'Satın alma başarısız oldu, altınların iade edildi.';
+
+  @override
+  String get shopPurchaseConfirmTitle => 'Satın almayı onayla';
+
+  @override
+  String get shopEnergyEmptyConfirmBody => '+5 enerji için 100 coin harcamak istiyor musun?';
+
+  @override
+  String get shopRestorePurchasesLabel => 'Satın alımları geri yükle';
+
+  @override
+  String get shopRestoreStartedToast => 'Geri yükleme başlatıldı — satın alımların geri yüklenecek.';
+
+  @override
+  String get shopRestoreUnavailableToast => 'Geri yükleme kullanılamıyor — mağaza yok.';
+
+  @override
+  String get shopAddedRoyalCapeToast => 'Kraliyet Pelerini sepete eklendi';
+
+  @override
+  String shopPurchaseConfirmBody(String itemName, String priceLabel) =>
+      '"$itemName" ürününü $priceLabel karşılığında almak istiyor musun?';
+
+  @override
+  String shopCoinPriceLabel(int cost) => '$cost coin';
 
   @override
   String shopPowerUpDescModeSuffix(String desc, String modeName) => '$desc · yalnızca $modeName modunda';
@@ -1928,6 +2190,16 @@ class AppLocalizationsTr extends AppLocalizations {
   String get makaraFreezeHint => 'BEAT DONDUR · 8 sn notalar dondu!';
 
   @override
+  String get makaraFinishConfirmTitle => 'Turu bitirilsin mi?';
+
+  @override
+  String get makaraFinishConfirmBody =>
+      'Skorun kaydedilir ve sonuç ekranı açılır. Erken bitirilen tur seviye tamam sayılmaz.';
+
+  @override
+  String get makaraFinishedEarlyReason => 'Turu erken bitirdin.';
+
+  @override
   String get makaraFreezeCallout => 'BEAT DONDUR!';
 
   @override
@@ -1941,6 +2213,15 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get makaraX2Active => 'PUAN X2 AKTİF!';
+
+  @override
+  String get makaraRules =>
+      'Notlar beat çizgisine gelince doğru şeride dokun ya da kaydır. '
+      'Zamanında vuruş kombo yapar; kombo büyüdükçe puan artar, tam isabet ekstra puan verir. '
+      'Her vuruş makarayı doldurur; makara dolunca +250 puan alırsın ve eksik canın varsa 1 can dolar. '
+      'Kaçan veya yanlış şeride vurulan nota kombo bozar ve can azaltır; 3 can bitince tur biter. '
+      'Güçler: BEAT DONDUR notaları 8 sn durdurur, OTO MAKARA 6 sn otomatik vurur, PUAN X2 12 sn puanı ikiye katlar. '
+      'Güçlerin kendisi kombo bozmaz ve can götürmez.';
 
   @override
   String get makaraEndedTitle => 'MAKARA BİTTİ';
@@ -1965,13 +2246,15 @@ class AppLocalizationsTr extends AppLocalizations {
 
   // --- W60-2: G5 osmantus (i18n göç planı) ---
   @override
-  String get osmantusHintIdle => 'Halka yeşile dönünce dokun!';
+  // W13-F: "İKİLİ TUŞ" adı çift dokunuş sanılıyordu (playtest §9);
+  // mekanik tek dokunuştur — ipucu bunu açıkça söyler.
+  String get osmantusHintIdle => 'Halka yeşilken BİR KEZ dokun!';
 
   @override
   String get osmantusDikkisChant => 'DIKKIŞ DIKKIŞ!';
 
   @override
-  String get osmantusHowToBody1 => 'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! ';
+  String get osmantusHowToBody1 => 'Ritim halkası yeşile döndüğünde TEK DOKUNUŞ butonuna bir kez dokun! ';
 
   @override
   String get osmantusHintResume => 'Devam! Halka yeşile dönünce dokun.';
@@ -2057,6 +2340,14 @@ class AppLocalizationsTr extends AppLocalizations {
   // --- W60-2: G6 terlik_tap (i18n göç planı) ---
   @override
   String get terlikHintIdle => 'Uçan böceği terlikle ez!';
+
+  @override
+  String get terlikHowToBody =>
+      'Deliklerden çıkan böceklere dokunarak ez. Her vuruş puan verir; kombo büyüdükçe her vuruş daha çok puan getirir. Kaçan böcek komboyu kırar, her 3 ıskada 1 can gider; 3 can bitince tur biter. Boş deliğe dokunmak yalnız komboyu kırar, can almaz. Skor 220’yi geçince tuzaklar belirir: tuzağa dokunmak ıska sayılır, süresinin dolmasını beklersen ceza yoktur. Güçler: Çift Terlik bir sonraki vuruşta fazladan bir böcek daha ezer, Altın Terlik 20 saniye boyunca puanları ikiye katlar, İlaç ekrandaki tüm hedefleri temizler. BİTİR düğmesiyle turu erken bitirebilirsin.';
+
+  @override
+  String get terlikEnergyRefundNotice =>
+      'Hiç vuruş yapmadan çıktığın için 1 enerjin iade edildi.';
 
   @override
   String get terlikBonusComboSlipper => 'COMBO x8 TERLİK +1';
@@ -2167,7 +2458,11 @@ class AppLocalizationsTr extends AppLocalizations {
 
   // --- W65-1: G7 scream_roach (i18n göç planı) ---
   @override
-  String get screamHintIdle => 'Spam dokun = zıpla. Terlik · sprey · tava arasından geç!';
+  String get screamHintIdle => 'Dokun veya Boşluk = zıpla. Terlik · sprey · tava arasından geç!';
+
+  @override
+  String get screamHowToBody =>
+      'Dokunarak böceği zıplat; dokunmadığın sürece yer çekimiyle düşer. Puan yalnız kapıların arasından geçerek kazanılır; ne kadar çok zıplarsan kapı başına o kadar çok puan alırsın. İlk 15 saniye oyun daha yavaş ve kapı aralıkları daha geniştir. Kapıya çarparsan veya yerde çok beklersen tur biter. Mikrofon isteğe bağlıdır: mikrofon düğmesiyle açarsan bağırarak da zıplatabilirsin; izin verilmezse dokunarak oynamaya devam edersin. Güçler: Zıplama güçlü bir sıçrama yapar ve bir kapı çarpmasını affeder, Kalkan bir ölümü affeder, Nitro 8 saniye boyunca hızlandırır ve kapı başına +25 puan verir. BİTİR düğmesiyle turu erken bitirebilirsin. Klavyede Boşluk / Yukarı-ok / W ile de zıplatabilirsin.';
 
   @override
   String get screamGatePrototype => 'KAPI X7!';
@@ -2182,7 +2477,21 @@ class AppLocalizationsTr extends AppLocalizations {
   String get screamMicPermissionSettings => 'Ses kontrolü için Ayarlar’dan mikrofon izni ver.';
 
   @override
-  String get screamMicDeniedHint => 'Ses izni verilmedi · dokunarak zıplayabilirsin.';
+  String get screamMicDeniedHint => 'Ses izni verilmedi · dokunarak veya Boşluk ile zıplayabilirsin.';
+
+  // --- 12C2: mikrofon açmadan önce bilgilendirme + eşik ayarı ---
+  @override
+  String get screamMicExplainTitle => 'Bağırarak zıpla?';
+
+  @override
+  String get screamMicExplainBody =>
+      'Mikrofonu açarsan bağırdığında böcek zıplar. Sesin cihazdan çıkmaz, kayıt yapılmaz. İzin vermezsen dokunarak oynamaya devam edersin.';
+
+  @override
+  String get screamMicEnableAction => 'Mikrofonu aç';
+
+  @override
+  String screamMicThreshold(int db) => 'Çığlık eşiği: $db dB';
 
   @override
   String get screamMegaJumpCallout => 'MEGA ZIPLAMA!';
@@ -2216,9 +2525,6 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get screamGateStat => 'KAPI';
-
-  @override
-  String get screamCrushedTitle => 'EZİLDİN';
 
   @override
   String get gateTerlikDeath => 'Terlik şılapp!';
@@ -2266,22 +2572,20 @@ class AppLocalizationsTr extends AppLocalizations {
   String screamCrushedHint(int gates, int streak) => 'Ezildin! Kapı $gates · max spam x$streak';
 
   @override
-  String screamStatsLine(int gates, int streak, int dayStreak) => 'Kapı $gates · Max spam x$streak · Streak $dayStreak';
-
-  @override
   String screamNextGate(int gate) => 'SONRAKİ: KAPI $gate';
 
   @override
   String screamShoutingPercent(int percent) => '%$percent · BAĞIRIYOR';
 
   @override
-  String screamArcadeHint(String hint) => 'Dokun veya mikrofonu açıp bağırarak zıpla. $hint';
-
-  @override
   String screamPauseScore(int score, int gates) => 'Skor $score · Kapı $gates';
   // --- W65-1: G8 stack_drop (i18n göç planı) ---
   @override
   String get stackHintIdle => 'Dokun. Tam ortala = combo. Kenar kesilir.';
+
+  @override
+  String get stackHelpBody =>
+      'Dokunarak sallanan bloğu kulenin üstüne bırak. Tam ortala, combo artsın; taşan kenar kesilir. İlk 5 katta 5 ıskan affedilir; sonrasında kuleyi kaçırırsan ya da dilim çok incelirse tur biter!';
 
   @override
   String get stackPerfectPrototype => 'MÜKEMMEL İSABET! X3';
@@ -2344,7 +2648,10 @@ class AppLocalizationsTr extends AppLocalizations {
   String stackStatsLine(int floors, int perfects, int nears, int combo) => 'Kat $floors · Perfect $perfects · Near $nears · Max combo x$combo';
 
   @override
-  String stackTutorialHint(String hint) => 'İlk 15 saniye öğretici tempoda. $hint';
+  String stackTutorialHint(String hint) => 'İlk 20 saniye öğretici tempoda. $hint';
+
+  @override
+  String get stackWarmupForgiven => 'Isınma katı — ıska affedildi, dilim korundu!';
 
   @override
   String stackFloorLabel(int floor) => 'KAT $floor';
@@ -2425,6 +2732,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get gridHowToBody4 => '• ÇİFTLEŞTİR: En yüksek eşleşen iki böceği anında birleştirir.';
 
   @override
+  String get gridBoosterNoEffect => 'Bu tahtada güçlendiricinin etkisi yok.';
+
+  @override
   String gridSuperMergeSpeech(String title) => 'LÜLÜLÜ! SÜPER BİRLEŞİM! ($title)';
 
   @override
@@ -2458,6 +2768,10 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get continueToHomeAnyway => 'Yine de ana ekrana devam et';
+
+  @override
+  String get energyLoadTimeout =>
+      'Enerji durumu okunamadı. Varsayılan enerjiyle devam ediliyor.';
 
   @override
   String get bugFamilyTitle => 'BÖCEK AİLESİ';
@@ -2548,6 +2862,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get energyEmptyTitle => 'ENERJİN BİTTİ!';
 
   @override
+  String get energyTopUpTitle => 'ENERJİ AL';
+
+  @override
   String get energyEmptyBodyStart => 'Kalbin ';
 
   @override
@@ -2590,10 +2907,6 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String levelTileLabel(int id, int stars, bool locked) =>
       '$id. seviye, $stars yıldız${locked ? ' · Kilitli' : ''}';
-
-  @override
-  String chapterTabLabel(int index, int stars) =>
-      'Bölüm $index, $stars/30 yıldız';
 
   @override
   String chestClaimLabel(int stars, String state) => state == 'claimed'
@@ -2677,6 +2990,10 @@ class AppLocalizationsTr extends AppLocalizations {
   String get balloonHintDrift => 'balonlar süzülüyor · 3 aynı balon patlar';
 
   @override
+  String get balloonHelpBody =>
+      'Sürükleyerek nişan al, bırakarak ateş et. 3 aynı balonu birleştirerek patlat; balonlar atıcıya ulaşmadan tahtayı temizle!';
+
+  @override
   String get balloonHintRowDropped =>
       'balonlar süzülüyor · bir sıra daha indi';
 
@@ -2750,7 +3067,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get yuvaBanner => 'YUVA SAVUNMASI · 360°';
 
   @override
-  String get osmantusDoubleButton => 'İKİLİ TUŞ';
+  String get osmantusDoubleButton => 'TEK DOKUNUŞ';
 
   @override
   String get osmanRoleSub => 'Tuşçu · işaretçi';
@@ -2760,7 +3077,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get osmantusRhythmHint =>
-      'Ritim halkası yeşile döndüğünde İKİLİ TUŞ butonuna dokun! '
+      'Ritim halkası yeşile döndüğünde TEK DOKUNUŞ butonuna bir kez dokun! '
       'Zamanında basarak kombo yap ve özel sahne güçlerini kullan.';
 
   @override
@@ -2871,6 +3188,43 @@ class AppLocalizationsTr extends AppLocalizations {
   String get makaraOverTitle => 'MAKARA BİTTİ';
   String get bonusLifePlus => 'CAN +1';
   String get gotItPlay => 'ANLADIM, OYNA!';
+  String get chatReportAction => 'Raporla';
+  String get chatBlockAction => 'Engelle';
+  String get chatUnblockAction => 'Engeli kaldır';
+  String get chatReportTitle => 'Mesajı raporla';
+  String get chatReportReasonSpam => 'Spam';
+  String get chatReportReasonInappropriate => 'Uygunsuz içerik';
+  String get chatReportReasonHarassment => 'Taciz';
+  String get chatReportReasonOther => 'Diğer';
+  String get chatReportSent => 'Raporun gönderildi. Teşekkürler.';
+  String get chatReportQueued => 'Raporun kaydedildi, bağlantı gelince gönderilecek.';
+  String get chatReportAlreadySent => 'Bu mesajı zaten raporladın.';
+  String get chatUserBlocked => 'Kullanıcı engellendi.';
+  String get chatUserUnblocked => 'Engel kaldırıldı.';
+  String get chatBlockedTitle => 'Engellenenler';
+  String get chatBlockedEmpty => 'Engellediğin kimse yok.';
+  String get chatTermsTitle => 'Sohbet kuralları';
+  String get chatTermsBody => 'Sohbette saygılı ol: hakaret, taciz ve spam yasaktır. Kurallara uymayan mesajlar raporlanabilir ve kaldırılabilir.';
+  String get chatTermsAccept => 'Kabul ediyorum';
+  String get chatTermsDecline => 'Kabul etmiyorum';
+  String get chatTermsRequired => 'Mesaj göndermek için önce sohbet kurallarını kabul et.';
+  String get chatGuestBadge => 'MİSAFİR';
+  String get chatGuestNameTitle => 'Görünen adını değiştir';
+  String get chatGuestNameHint => 'Görünen ad';
+  String get chatGuestNameEmpty => 'Ad boş olamaz.';
+  String get chatGuestNameSaved => 'Adın kaydedildi.';
+  String get chatActionFailed => 'İşlem tamamlanamadı. Tekrar dene.';
+  String get chatEmptyChannel => 'Bu kanalda henüz mesaj yok.';
+  String get chatOptionsLabel => 'Sohbet seçenekleri';
+  String get chatChangeNameAction => 'Adını değiştir';
+  String get chatBlockedListAction => 'Engellenenleri gör';
+  String get chatDeleteAction => 'Sil';
+  String get chatDeleteTitle => 'Mesajı sil?';
+  String get chatDeleteBody =>
+      'Bu mesaj silinecek. Bu işlem geri alınamaz.';
+  String get chatMessageDeleted => 'Mesaj silindi.';
+  String get chatDeleteLocalOnly =>
+      'Mesaj bu cihazdan silindi; bulut kopyası kalmış olabilir.';
   String match3StatsLine(int merge, int chain, int made, int fired) => 'Birleşim $merge · Max zincir x$chain · Bomba $made/$fired';
   String match3RocketBombGain(int gained) => '+$gained ROKET BOMBA!';
   String match3RocketHint(int n) => 'Satır Roketi & 3x3 Bomba $n taşı uçurdu!';
@@ -2883,4 +3237,23 @@ class AppLocalizationsTr extends AppLocalizations {
   String balloonBombGain(int gained) => '+$gained BOMBA!';
   String makaraComboBroken(String reason) => 'KOMBO KIRILDI · $reason';
   String osmantusLastError(String reason) => 'Son hata: $reason';
+
+  // --- Dalga 3H: günlük challenge kartı + kampanya/davet girişleri ---
+  @override
+  String get dailyChallengeTitle => 'GÜNLÜK CHALLENGE';
+  @override
+  String get dailyChallengeHint => 'Ödülü almak için hedefe ulaş.';
+  @override
+  String get campaignHubSubtitle => 'Bölümleri geç, bossları yen';
+  @override
+  String dailyChallengeClaimedSnack(int coins) =>
+      'Günlük challenge ödülü alındı: +$coins coin!';
+  @override
+  String dailyChallengeHeadline(String modeLabel, int targetScore) =>
+      'Bugün $modeLabel · $targetScore puan';
+
+  // --- S7 (koordinatör takibi): tur sonu görev-tamamlanma bildirimi ---
+  @override
+  String taskCompletedSnack(String taskTitle) =>
+      'Görev tamamlandı: $taskTitle — ödülünü Görevler ekranından al!';
 }

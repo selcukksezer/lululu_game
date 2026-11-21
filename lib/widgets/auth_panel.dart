@@ -244,6 +244,14 @@ class _AuthPanelState extends State<AuthPanel> {
       if (!mounted) return;
       setState(() => _busy = false);
       widget.onSuccess?.call();
+    } on AuthSignInCancelledException {
+      // 2E-(a): Apple/Google iptali sessizce yutulur — hata bandı
+      // yok, form açık kalır; yalnız `_busy` sıfırlanır.
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = null;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {

@@ -1,26 +1,36 @@
 /// Kalp kırılma katmanı (`#hbOverlay`).
 ///
 /// Enerji harcandığında üst katmanda kısa süreli kalp kırılma animasyonu
-/// oynatır (`-1 ENERJİ` etiketiyle). W55-2'de `daily_reward_dialog.dart`
-/// dosyasından çıkarıldı.
+/// oynatır ([AppLocalizations.hbEnergyTag] etiketiyle). W55-2'de
+/// `daily_reward_dialog.dart` dosyasından çıkarıldı.
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// `#hbOverlay` — Kalp Kırılma Animasyonu (`-1 ENERJİ`).
+import '../l10n/app_localizations.dart';
+
+/// `#hbOverlay` — Kalp Kırılma Animasyonu ([AppLocalizations.hbEnergyTag]).
 class HbOverlay extends StatelessWidget {
+  /// Varsayılan etiket gözcüsü: kurucu varsayılanı olarak kalır
+  /// (const kurucu + mevcut test kilidi); build, bu değer geldiğinde
+  /// etiketi locale'den çözer, özel metin aynen çizilir.
+  static const _defaultTagText = '-1 ENERJİ';
+
   const HbOverlay({
     super.key,
     this.visible = false,
-    this.tagText = '-1 ENERJİ',
+    this.tagText = _defaultTagText,
   });
 
   final bool visible;
   final String tagText;
 
   /// Kısa süreli (`#hbOverlay`) kalp kırılma animasyonunu üst katmanda oynatır.
+  ///
+  /// [tagText] verilmezse etiket locale'den çözülür
+  /// ([AppLocalizations.hbEnergyTag]).
   static Future<void> play(
     BuildContext context, {
-    String tagText = '-1 ENERJİ',
+    String? tagText,
     Duration duration = const Duration(milliseconds: 520),
   }) async {
     final isTesting =
@@ -28,8 +38,9 @@ class HbOverlay extends StatelessWidget {
     if (isTesting) return;
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
+    final resolvedTag = tagText ?? context.l10n.hbEnergyTag;
     final entry = OverlayEntry(
-      builder: (_) => HbOverlay(visible: true, tagText: tagText),
+      builder: (_) => HbOverlay(visible: true, tagText: resolvedTag),
     );
     overlay.insert(entry);
     try {
@@ -42,6 +53,10 @@ class HbOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!visible) return const SizedBox.shrink();
+    // Varsayılan etiket locale'den çözülür (TR: '-1 ENERJİ',
+    // EN: '-1 ENERGY'); çağırıcının özel metni aynen çizilir.
+    final effectiveTag =
+        tagText == _defaultTagText ? context.l10n.hbEnergyTag : tagText;
     return IgnorePointer(
       child: Container(
         color: const Color(0x597A082E),
@@ -101,7 +116,7 @@ class HbOverlay extends StatelessWidget {
             const SizedBox(height: 10),
             ExcludeSemantics(
               child: Text(
-                tagText,
+                effectiveTag,
                 style: GoogleFonts.baloo2(
                   fontSize: 32,
                   fontWeight: FontWeight.w800,

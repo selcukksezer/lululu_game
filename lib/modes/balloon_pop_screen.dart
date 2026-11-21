@@ -4,17 +4,20 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
 
@@ -57,7 +60,7 @@ enum _BalloonHint {
 }
 
 class _BalloonPopScreenState extends State<BalloonPopScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const int cols = 7;
   static const int rows = 9;
   static const int kinds = 4;
@@ -72,10 +75,62 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   int _shots = 0;
   int _current = 1;
   int _next = 2;
+
+  /// Atış sırasındaki / sıradaki balon Hışır derili mi? Deri yalnız
+  /// görsel + patlama sesini değiştirir; kademe/skor aynen kalır.
+  bool _currentIsHisir = false;
+  bool _nextIsHisir = false;
+
+  /// Son patlamada Hışır derili balon var mıydı? [_popFrom] biriktirir,
+  /// [_stick] ses seçiminde okur.
+  bool _lastPopHadHisir = false;
+
+  /// Hışır derisi (kademe + 100) çözümü: eşleşme/renk hep taban
+  /// kademeden okunur; skor/denge değişmez.
+  int _base(int v) => HisirCharacter.baseTier(v);
+
+  /// Yeni balon/hücre %5 Hışır derili doğar (prototip görselde asla).
+  int _maybeHisir(int tier) => widget.prototypeVisualState
+      ? tier
+      : HisirCharacter.encodeGridValue(tier, _rng);
+
+  int _rollCell() => _maybeHisir(1 + _rng.nextInt(kinds));
+
+  /// Atışı ilerlet: sıradaki balon atışa geçer, yeni sıradaki zarla gelir.
+  void _advanceShot() {
+    _current = _next;
+    _currentIsHisir = _nextIsHisir;
+    _next = _rollColor();
+    _nextIsHisir = !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+  }
+
   bool _flying = false;
   bool _over = false;
   bool _resultShown = false;
+
+  /// Tur başlangıç damgası (Y3): her `_boot`'ta bir kez yakalanır; aynı
+  /// turun tüm `finishRun` bitiş yolları aynı `idempotencyKey`'i
+  /// (`'balloon_pop:<damga>'`) paylaşır, yeni tur yeni damga alır.
+  /// Bitiş anında `DateTime.now()` alınmaz.
+  int _runStartedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
+
   bool _paused = false;
+
+  /// Yaşam döngüsü duraklatması (L1, Osmantuş deseni): arka plana
+  /// alınca konur, dönüşte yalnız bu bayrak varsa devam edilir.
+  bool _pausedByLifecycle = false;
+
+  /// Yardım diyaloğu duraklatması (F9): diyalog için duraklatıldıysa
+  /// kapanınca devam edilir; önceden duraklatılmış oyun sürdürülmez.
+  bool _pausedForHelp = false;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
 
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk atış (`_fire`)
   /// veya tur tamamlanması (`_lose`) ile `true` olur; TEKRAR/yeniden
@@ -85,6 +140,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
+
+  /// Çıkış-sonrası iade bildirimi (S6): `PopScope` `didPop` anında
+  /// bağlam artık ağaçta değildir; bu yüzden `ScaffoldMessenger` +
+  /// bildirim metni her `build`'de ÖNCEDEN yakalanır
+  /// (`energy_empty_popup` deseni) ve iade gerçekten verildiğinde
+  /// çıkış yapılan ekranın üstünde gösterilir.
+  ScaffoldMessengerState? _refundMessenger;
+  String? _refundNotice;
 
   bool _shotArmed = false;
   _BalloonHint _hintKind = _BalloonHint.drift;
@@ -100,21 +163,21 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   String _hintString(AppLocalizations l10n) => switch (_hintKind) {
-        _BalloonHint.drift => l10n.balloonHintDrift,
-        _BalloonHint.rowDropped => l10n.balloonHintRowDropped,
-        _BalloonHint.ceilingDropped => l10n.balloonCeilingDropped,
-        _BalloonHint.missedAim => l10n.balloonMissedAim,
-        _BalloonHint.noStick => l10n.balloonNoStickAim,
-        _BalloonHint.stuck => l10n.balloonStuckNeed3,
-        _BalloonHint.popped => '$_hintText +$_hintB · x$_hintA',
-        _BalloonHint.poppedPlain => l10n.balloonPoppedStreak(_hintA, _hintB),
-        _BalloonHint.piercing => l10n.balloonPiercingShot(_hintA, _hintB),
-        _BalloonHint.reachedShooter => l10n.balloonLoseReached,
-        _BalloonHint.ceilingFull => l10n.balloonLoseCeiling,
-        _BalloonHint.tripleActive => l10n.balloonTripleActive,
-        _BalloonHint.fireball => l10n.balloonFireballShot(_hintA),
-        _BalloonHint.waveActive => l10n.balloonWaveActive,
-      };
+    _BalloonHint.drift => l10n.balloonHintDrift,
+    _BalloonHint.rowDropped => l10n.balloonHintRowDropped,
+    _BalloonHint.ceilingDropped => l10n.balloonCeilingDropped,
+    _BalloonHint.missedAim => l10n.balloonMissedAim,
+    _BalloonHint.noStick => l10n.balloonNoStickAim,
+    _BalloonHint.stuck => l10n.balloonStuckNeed3,
+    _BalloonHint.popped => '$_hintText +$_hintB · x$_hintA',
+    _BalloonHint.poppedPlain => l10n.balloonPoppedStreak(_hintA, _hintB),
+    _BalloonHint.piercing => l10n.balloonPiercingShot(_hintA, _hintB),
+    _BalloonHint.reachedShooter => l10n.balloonLoseReached,
+    _BalloonHint.ceilingFull => l10n.balloonLoseCeiling,
+    _BalloonHint.tripleActive => l10n.balloonTripleActive,
+    _BalloonHint.fireball => l10n.balloonFireballShot(_hintA),
+    _BalloonHint.waveActive => l10n.balloonWaveActive,
+  };
   Offset? _fly;
   Offset _vel = Offset.zero;
   Offset _aim = const Offset(0, -1);
@@ -142,11 +205,21 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   double _powerFxLife = 0;
 
   Ticker? _ticker;
+
+  /// Kare sayacı (10E, 8C VLB deseni): `_tick` yalnız bu sayacı
+  /// artırır; dinamik alt-ağaç `_buildBalloonPrototypeChrome`
+  /// içindeki [ValueListenableBuilder] ile yenilenir, tam `setState` yok.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
+
   Duration _last = Duration.zero;
   _Hex? _hex;
 
   bool _pierce = false;
-  DateTime? _slowUntil;
+
+  /// Yavaşlatma bitişi, OYUN saatinde (`_elapsed` saniyesi; makara
+  /// `_now` deseni). Duvar saati değil: duraklatmada `_elapsed`
+  /// ilerlemediği için etki duraklatmada erimez, kaydırma gerekmez.
+  double _slowUntilElapsed = 0;
 
   static const List<Color> _pastelColors = [
     Color(0xFFFFE9C9),
@@ -162,6 +235,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AudioManager().initialize();
     _boot();
     if (widget.prototypeVisualState) {
@@ -197,8 +271,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AudioManager().stopAll();
     _ticker?.dispose();
+    _tickNotifier.dispose();
     _milestoneTimer?.cancel();
     _comboTimer?.cancel();
     _missTimer?.cancel();
@@ -206,14 +282,51 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.prototypeVisualState) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Arka planda oyun saati donar: `_tick` `_paused`
+        // korumasına sahiptir, dt kelepçesi dönüş sıçramasını
+        // ayrıca yutar (bulgu #14). Yalnız canlı oyun lifecycle
+        // ile duraklatılır; kullanıcı zaten duraklatmışsa bayrak
+        // konmaz, devam kararı kullanıcıda kalır.
+        if (!_over && !_paused) {
+          _pausedByLifecycle = true;
+          setState(() => _paused = true);
+        }
+        break;
+      case AppLifecycleState.resumed:
+        // Yalnız lifecycle duraklatmasıysa devam et; elle
+        // duraklatma veya yardım diyaloğu duraklatması kullanıcıda
+        // kalır (yardım için `_pausedByLifecycle` zaten konmaz,
+        // çünkü diyalog açılırken oyun duraklatılmış olur).
+        if (_pausedByLifecycle && _paused) {
+          _pausedByLifecycle = false;
+          setState(() => _paused = false);
+        } else {
+          _pausedByLifecycle = false;
+        }
+        break;
+    }
+  }
+
   Future<void> _loadBest() async {
-    await LeaderboardService.instance.ensureLoaded();
-    if (!mounted) return;
-    setState(() {
-      _best = LeaderboardService.instance.getBest(
-        LeaderboardService.modeBalloon,
-      );
-    });
+    // Ateşle-unut yükleme: liderlik deposu fırlatırsa oyun
+    // açılışta takılmasın, rekor 0 kalsın (F4).
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+      if (!mounted) return;
+      setState(() {
+        _best = LeaderboardService.instance.getBest(
+          LeaderboardService.modeBalloon,
+        );
+      });
+    } catch (_) {}
   }
 
   Future<void> _persist() async {
@@ -226,12 +339,26 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   void _boot() {
+    // Y3: tur başlangıç damgası — aynı turun bitiş yolları bu damgayı
+    // paylaşır, yeni tur yeni damga alır.
+    _runStartedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
+    // Yeniden başlatma bekleyen geçici UI zamanlayıcılarını iptal
+    // eder (F11): yoksa önceki turun zamanlayıcısı yeni turun
+    // kombo/milestone/ıska yazısını erken siler.
+    _comboTimer?.cancel();
+    _comboTimer = null;
+    _milestoneTimer?.cancel();
+    _milestoneTimer = null;
+    _missTimer?.cancel();
+    _missTimer = null;
     _grid = List.generate(rows, (_) => List.filled(cols, 0));
     _score = 0;
     _shots = 0;
     _flying = false;
     _over = false;
     _paused = false;
+    _pausedByLifecycle = false;
+    _pausedForHelp = false;
     _shotArmed = false;
     _setHint(_BalloonHint.drift);
     _fly = null;
@@ -252,16 +379,22 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _powerFxLife = 0;
     _missFlash = false;
     _dangerPulse = 0;
+    // Güçlendirme etkileri yeni tura sızmaz: delici atış ve
+    // yavaşlatma BİTİR/yeniden başlatmada sıfırlanır (bulgu #12).
+    _pierce = false;
+    _slowUntilElapsed = 0;
     for (var attempt = 0; attempt < 16; attempt++) {
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < cols; c++) {
-          _grid[r][c] = r < fillRows ? 1 + _rng.nextInt(kinds) : 0;
+          _grid[r][c] = r < fillRows ? _rollCell() : 0;
         }
       }
       if (_firstGroup() == null) break;
     }
     _current = _rollColor();
+    _currentIsHisir = !widget.prototypeVisualState && HisirCharacter.roll(_rng);
     _next = _rollColor();
+    _nextIsHisir = !widget.prototypeVisualState && HisirCharacter.roll(_rng);
   }
 
   /// Bias toward colors still on the board (classic Puzzle Bobble feel).
@@ -270,14 +403,21 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     var any = 0;
     for (final row in _grid) {
       for (final v in row) {
-        if (v > 0 && v <= kinds) {
-          counts[v]++;
+        if (v != 0) {
+          counts[_base(v)]++;
           any++;
         }
       }
     }
     if (any == 0) return 1 + _rng.nextInt(kinds);
-    if (_rng.nextDouble() < 0.35) return 1 + _rng.nextInt(kinds);
+    // 12C1: adaptif zorluk — merhamette tahtada kalan renklere
+    // yönelim artar (daha çok eşleşebilir taş), kazanma serisinde
+    // rastgele pay artar (daha az eşleşebilir taş).
+    final favorability = DifficultyBinding.instance
+        .cachedProfileForMode('balloon')
+        .spawnFavorability;
+    final uniformShare = (0.35 / favorability).clamp(0.05, 0.9);
+    if (_rng.nextDouble() < uniformShare) return 1 + _rng.nextInt(kinds);
     final bag = <int>[];
     for (var k = 1; k <= kinds; k++) {
       final n = max(1, counts[k]);
@@ -295,7 +435,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     }
     var dt = (elapsed - _last).inMicroseconds / 1e6;
     _last = elapsed;
-    if (dt <= 0 || dt > 0.05) return;
+    // Yavaş karede saati tamamen durdurmak yerine dt kelepçelenir
+    // (Stack deseni): 50 ms'yi aşan kareler 50 ms sayılır, oyun saati
+    // ve balon hareketi ilerlemeye devam eder (bulgu #14).
+    if (dt <= 0) return;
+    if (dt > 0.05) dt = 0.05;
 
     var dirty = false;
     if (!_paused && !_over) {
@@ -325,7 +469,12 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       }
     }
     if (_paused || !_flying || _over || _fly == null || _hex == null) {
-      if (dirty) setState(() {});
+      // Canlı oyunda boşta da her kare yenilenir: yoksa saat 0:00'da
+      // takılı kalır ve balon sürüklenmesi donar (bulgu #14 — dt
+      // kelepçesi tek başına yetmedi; `dirty` kapısı ekranı
+      // yenilemiyordu). Duraklatma/bitti durumunda yalnız kirliyse
+      // yenilenir.
+      if (dirty || (!_paused && !_over)) _tickNotifier.value++;
       return;
     }
     _step(dt);
@@ -350,13 +499,52 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _vel = _aim * shotSpeed;
     _flying = true;
     AudioManager().playDrop();
-    AudioManager().triggerHaptic();
     setState(() {});
   }
 
   void _togglePause() {
     if (_over) return;
-    setState(() => _paused = !_paused);
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    AudioManager().playButtonTap();
+    setState(() {
+      _paused = !_paused;
+      if (!_paused) {
+        // Kullanıcı devam etti: lifecycle/yardım ayrımı sıfırlanır,
+        // dönüşte oyun kendiliğinden başlatılmaz.
+        _pausedByLifecycle = false;
+        _pausedForHelp = false;
+      }
+    });
+  }
+
+  /// Yardım diyaloğu (F9): içerik aynen korunur, diyalog açıkken
+  /// oyun durur. Önceden duraklatılmamış canlı oyun duraklatılır,
+  /// diyalog kapanınca yalnız o durumda devam ettirilir.
+  Future<void> _showHelp() async {
+    final shouldPause = !_over && !_paused;
+    if (shouldPause) {
+      _pausedForHelp = true;
+      setState(() => _paused = true);
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.balloonPopTitle),
+        content: Text(ctx.l10n.balloonHelpBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(ctx.l10n.understoodButton),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (_pausedForHelp && _paused) {
+      _pausedForHelp = false;
+      setState(() => _paused = false);
+    }
   }
 
   void _showMilestone(String text) {
@@ -372,13 +560,18 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       if (_score >= m && !_milestonesHit.contains(m)) {
         _milestonesHit.add(m);
         _showMilestone(context.l10n.scoreMilestone(m));
+        // 10D P1-1: kilometre taşı bandına hafif ses (yalnız eşik
+        // ilk aşıldığında). _showMilestone'un kendisine eklenmedi:
+        // aynı fonksiyon KOMBO KIRILDI gibi olumsuz bantlarda da
+        // kullanılır (balon :621) — orada pop sesi yanlış olurdu.
+        AudioManager().playPop();
         break;
       }
     }
   }
 
   void _step(double dt) {
-    final slowed = _slowUntil != null && DateTime.now().isBefore(_slowUntil!);
+    final slowed = _elapsed < _slowUntilElapsed;
     if (slowed) dt *= 0.45;
     final hex = _hex!;
     var pos = _fly!;
@@ -437,20 +630,34 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _comboMeter = max(0, _comboMeter - 0.3);
       _setHint(_BalloonHint.noStick);
       _flashMiss();
+      // Yapışmayan atış da atış sayılır (F12): aynı renkle
+      // cezasız sonsuz tekrar yok; renk ilerler, sıra sayacı
+      // artar ve 8 atışta bir inme aynen işler.
+      _advanceShot();
+      _shots++;
+      if (_shots % descendEvery == 0) _descend();
       setState(() {});
       return;
     }
     final (r, c) = spot;
     final shotTier = _current;
-    _grid[r][c] = shotTier;
+    final shotIsHisir = _currentIsHisir;
+    _grid[r][c] = shotIsHisir
+        ? shotTier + HisirCharacter.gridValueOffset
+        : shotTier;
+    _lastPopHadHisir = false;
     // Delici atış (r, c)'yi de siler; _popFrom(r, c) bu yüzden 0 döner.
     // Komşu gruplar ayrıca denetlenir, seri korunur (bkz. _popNeighborGroups).
     var pierced = 0;
+    var piercedHisir = false;
     if (_pierce) {
       _pierce = false;
       for (final cell in <(int, int)>[(r, c), ..._neighbors(r, c)]) {
         if (pierced >= 3) break;
         if (_grid[cell.$1][cell.$2] == 0) continue;
+        if (HisirCharacter.isEncoded(_grid[cell.$1][cell.$2])) {
+          piercedHisir = true;
+        }
         _grid[cell.$1][cell.$2] = 0;
         pierced++;
       }
@@ -488,12 +695,12 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _score += gained;
       if (_score > _best) _best = _score;
       _checkScoreMilestones();
-      if (popped >= 6) {
-        HapticFeedback.heavyImpact();
+      final hisirPopped = shotIsHisir || _lastPopHadHisir || piercedHisir;
+      if (hisirPopped) {
+        AudioManager().playMergeHisir(tierNumber: shotTier);
       } else {
-        HapticFeedback.mediumImpact();
+        AudioManager().playMerge(tierNumber: shotTier);
       }
-      AudioManager().playMerge(tierNumber: shotTier);
       final insect = InsectTier.values[(shotTier - 1).clamp(0, 7)];
       _comboTimer?.cancel();
       _comboText = _streak >= 2 ? 'COMBO X$_streak!' : null;
@@ -507,19 +714,25 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         }
       });
       if (fallen > 0) {
-        _setHint(_BalloonHint.popped, _streak, gained, insect.viralReplik);
+        _setHint(
+          _BalloonHint.popped,
+          _streak,
+          gained,
+          (shotIsHisir || _lastPopHadHisir || piercedHisir)
+              ? HisirCharacter.replik
+              : insect.viralReplik,
+        );
       } else {
         _setHint(_BalloonHint.poppedPlain, _streak, gained);
       }
     } else if (pierced > 0) {
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
       _setHint(_BalloonHint.piercing, pierced, _streak);
     } else {
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
       _setHint(_BalloonHint.stuck);
     }
-    _current = _next;
-    _next = _rollColor();
+    _advanceShot();
     _shots++;
     if (_reachedDanger()) {
       _lose(_BalloonHint.reachedShooter);
@@ -558,7 +771,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   void _flashMiss() {
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
+    // 10D P0-2: ıska sesi — playDrop. Ses çağrısı kapılı lightImpact
+    // içerir; yukarıdaki heavyImpact ile aynı tick'te 18 ms kapısına
+    // takılıp düşer — toplam 1 impuls (ağır olan korunur).
+    AudioManager().playDrop();
     _missTimer?.cancel();
     _missFlash = true;
     _missTimer = Timer(const Duration(milliseconds: 220), () {
@@ -567,10 +784,16 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   int _popFrom(int r, int c) {
-    final tier = _grid[r][c];
-    if (tier == 0) return 0;
+    final rawTier = _grid[r][c];
+    if (rawTier == 0) return 0;
+    final tier = _base(rawTier);
     final group = _flood(r, c, tier);
     if (group.length < minPop) return 0;
+    if (group.any(
+      (cell) => HisirCharacter.isEncoded(_grid[cell.$1][cell.$2]),
+    )) {
+      _lastPopHadHisir = true;
+    }
     final hex = _hex;
     for (final (gr, gc) in group) {
       if (hex != null) {
@@ -647,16 +870,17 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   List<(int, int)> _flood(int r, int c, int tier) {
+    final baseTier = _base(tier);
     final out = <(int, int)>[];
     final seen = <(int, int)>{};
     final queue = <(int, int)>[(r, c)];
     while (queue.isNotEmpty) {
       final (cr, cc) = queue.removeLast();
       if (!seen.add((cr, cc))) continue;
-      if (_grid[cr][cc] != tier) continue;
+      if (_base(_grid[cr][cc]) != baseTier) continue;
       out.add((cr, cc));
       for (final (nr, nc) in _neighbors(cr, cc)) {
-        if (_grid[nr][nc] == tier) queue.add((nr, nc));
+        if (_base(_grid[nr][nc]) == baseTier) queue.add((nr, nc));
       }
     }
     return out;
@@ -694,10 +918,13 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     for (var r = rows - 1; r > 0; r--) {
       _grid[r] = List<int>.from(_grid[r - 1]);
     }
-    _grid[0] = List.generate(cols, (_) => _rollColor());
+    _grid[0] = List.generate(cols, (_) => _rollCell());
     final group = _firstGroup();
     if (group != null) {
-      final tier = _grid[group.first.$1][group.first.$2];
+      final tier = _base(_grid[group.first.$1][group.first.$2]);
+      final hisirInGroup = group.any(
+        (cell) => HisirCharacter.isEncoded(_grid[cell.$1][cell.$2]),
+      );
       for (final (r, c) in group) {
         _grid[r][c] = 0;
       }
@@ -707,7 +934,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _popTotal += group.length;
       _fallTotal += fallen;
       if (_score > _best) _best = _score;
-      AudioManager().playMerge(tierNumber: _current);
+      if (hisirInGroup) {
+        AudioManager().playMergeHisir(tierNumber: _current);
+      } else {
+        AudioManager().playMerge(tierNumber: _current);
+      }
       _checkScoreMilestones();
     }
     _setHint(_BalloonHint.ceilingDropped);
@@ -723,18 +954,18 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     _fly = null;
     _paused = false;
     _setHint(why);
-    HapticFeedback.heavyImpact();
-    AudioManager().playLose();
+    unawaited(HapticService.instance.heavyImpact());
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(_persist());
     setState(() {});
   }
 
   String _statsLine() => context.l10n.balloonStatsLine(
-        _popTotal,
-        _fallTotal,
-        _maxStreak,
-        _biggestPop,
-      );
+    _popTotal,
+    _fallTotal,
+    _maxStreak,
+    _biggestPop,
+  );
 
   List<Offset> _aimDots(_Hex hex) {
     var p = hex.shooter;
@@ -764,8 +995,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" aynı turu başlatır,
   /// "ANA SAYFA"da eski TAŞTI akışı devam eder (bozulmadı).
   bool _useTriple() {
-    if (_over) return false;
-    HapticFeedback.mediumImpact();
+    // Duraklatmada veya atış uçuşurken güç reddedilir (F7):
+    // `false` stoğu iade eder, güç harcanmaz.
+    if (_over || _paused || _flying) return false;
     AudioManager().playMerge(tierNumber: _current);
     setState(() {
       _pierce = true;
@@ -773,12 +1005,16 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       _powerFxLife = 1.0;
       _setHint(_BalloonHint.tripleActive);
     });
-    _showMilestone('${context.l10n.powerTripleArrowCaps} · ${context.l10n.laserAimActive}!');
+    _showMilestone(
+      '${context.l10n.powerTripleArrowCaps} · ${context.l10n.laserAimActive}!',
+    );
     return true;
   }
 
   bool _useBomb() {
-    if (_over) return false;
+    // Duraklatmada veya atış uçuşurken güç reddedilir (F7):
+    // `false` stoğu iade eder, güç harcanmaz.
+    if (_over || _paused || _flying) return false;
     final spots = <(int, int)>[];
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
@@ -788,8 +1024,14 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     if (spots.isEmpty) return false;
     spots.shuffle(_rng);
     final hex = _hex;
-    HapticFeedback.heavyImpact();
-    AudioManager().playMerge(tierNumber: min(8, _current + 1));
+    final bombHisir = spots
+        .take(8)
+        .any((cell) => HisirCharacter.isEncoded(_grid[cell.$1][cell.$2]));
+    if (bombHisir) {
+      AudioManager().playMergeHisir(tierNumber: min(8, _current + 1));
+    } else {
+      AudioManager().playMerge(tierNumber: min(8, _current + 1));
+    }
     setState(() {
       final take = min(8, spots.length);
       for (var i = 0; i < take; i++) {
@@ -817,16 +1059,17 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
   }
 
   bool _useSlow() {
-    if (_over) return false;
+    // Duraklatmada veya atış uçuşurken güç reddedilir (F7):
+    // `false` stoğu iade eder, güç harcanmaz.
+    if (_over || _paused || _flying) return false;
     final hex = _hex;
-    HapticFeedback.mediumImpact();
     AudioManager().playMerge(tierNumber: _current);
     setState(() {
-      _slowUntil = DateTime.now().add(const Duration(seconds: 10));
+      _slowUntilElapsed = _elapsed + 10;
       var cleared = 0;
       for (var r = rows - 1; r >= 0 && cleared < 4; r--) {
         for (var c = 0; c < cols && cleared < 4; c++) {
-          if (_grid[r][c] == _current) {
+          if (_base(_grid[r][c]) == _current) {
             if (hex != null) {
               _popFx.add(
                 _PopFx(center: hex.center(r, c), tier: _current, life: 1.0),
@@ -854,16 +1097,13 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
+  Future<void> _presentResult({bool? won}) async {
     // S1#49: ödeme + mod skoru + liderlik + görev kaydı + sonuç ekranı
-    // finishRun() üzerinden (tek-ödeme korunur).
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      leaderboardMode: LeaderboardService.modeBalloon,
-      modeScoreId: 'balloon_pop',
-    );
+    // finishRun() üzerinden (tek-ödeme korunur). Doğal bitiş
+    // balonların atıcıya ulaşmasıdır (kayıp); `won` verilmezse kayıp
+    // başlığı gösterilir.
+    final replay = await _presentResultGuarded(won);
+    if (replay == null) return;
     if (!mounted) return;
     if (!replay) {
       Navigator.of(context).maybePop();
@@ -871,6 +1111,34 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     }
     _resultShown = false;
     setState(_boot);
+  }
+
+  /// `finishRun` korumalı çağrı (F4): sonuç ekranı fırlatırsa tur
+  /// sonuçsuz takılmaz — `_resultShown` düşer, BİTİR ile yeniden
+  /// denenebilir. Başarısızlıkta `null` döner.
+  Future<bool?> _presentResultGuarded(bool? won) async {
+    try {
+      return await finishRun(
+        context,
+        score: _score,
+        best: _best,
+        bestCombo: _maxStreak,
+        won: won ?? false,
+        leaderboardMode: LeaderboardService.modeBalloon,
+        modeScoreId: 'balloon_pop',
+        // Y3: tur-başlangıç damgalı anahtar — aynı turun çift bitiş
+        // yolu (BİTİR + bitiş kenarı) ikinci kez ödemez/göstermez.
+        idempotencyKey: 'balloon_pop:$_runStartedAtEpochMs',
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          milliseconds:
+              DateTime.now().millisecondsSinceEpoch - _runStartedAtEpochMs,
+        ),
+      );
+    } catch (_) {
+      _resultShown = false;
+      return null;
+    }
   }
 
   /// Hamlesiz-çıkış enerji iadesi (tek çıkış noktası: `PopScope`).
@@ -884,7 +1152,122 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
       return;
     }
     _energyRefunded = true;
+    // S6: bildirim yalnız iade GERÇEKTEN verildiğinde gösterilir —
+    // enerji zaten doluysa `addEnergy` kelepçelenir, değişim olmaz.
+    final before = EnergyService.instance.energy;
     EnergyService.instance.addEnergy(1);
+    if (EnergyService.instance.energy > before) _showRefundNotice();
+  }
+
+  /// S6 iade bildirimi: `build`'de yakalanan messenger üzerinden
+  /// çıkış sonrası ekranda görünür; messenger/metni yoksa sessiz
+  /// geçilir (iade yine de yapılmış olur).
+  void _showRefundNotice() {
+    final messenger = _refundMessenger;
+    final notice = _refundNotice;
+    if (messenger == null || notice == null) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          notice,
+          style: const TextStyle(
+            fontFamily: 'Nunito',
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+        duration: const Duration(milliseconds: 1600),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF141B2A),
+      ),
+    );
+  }
+
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade `didPop` yolunda
+  /// aynen çalışır (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && !_over && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım deseni): diyalog açıkken oyun
+  /// saati donar (`_tick` `_paused` kapısına takılır).
+  void _pauseForExitConfirm() {
+    if (_over || _paused) return;
+    _pausedForExitConfirm = true;
+    setState(() => _paused = true);
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm || !_paused) return;
+    _pausedForExitConfirm = false;
+    setState(() => _paused = false);
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    await _presentResult(won: _score > 0);
   }
 
   void _edgeShowResult() {
@@ -897,6 +1280,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   @override
   Widget build(BuildContext context) {
+    // S6: iade bildirimi için messenger + metin çıkıştan ÖNCE yakalanır
+    // (`didPop` anında bağlam ağaçta değildir).
+    _refundMessenger = ScaffoldMessenger.maybeOf(context);
+    _refundNotice = context.l10n.energyRefundNotice;
     final until = descendEvery - (_shots % descendEvery);
     if (_over && !_resultShown) _edgeShowResult();
     final bonusItems = [
@@ -931,7 +1318,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
         },
       ),
     ];
-    final stageChild = widget.prototypeVisualState
+    Widget buildStage() => widget.prototypeVisualState
         ? const _PrototypeBalloonField()
         : LayoutBuilder(
             builder: (context, constraints) {
@@ -991,19 +1378,28 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                                 ),
                                 const SizedBox(width: 8),
                                 Flexible(
-                                  child: Text(
-                                    _paused
-                                        ? context.l10n.pausedStatusCaps
-                                        : '${_hintString(context.l10n)} · ${context.l10n.balloonRowsInShots(until)}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.right,
-                                    style: GoogleFonts.nunito(
-                                      fontSize: 11,
-                                      height: 1.55,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 0.88,
-                                      color: const Color(0xFFFFB3B3),
+                                  // F-05: şerit statik ellipsis ile
+                                  // kesiliyordu (kayan yazı değil) —
+                                  // FittedBox (scaleDown) ipucunun
+                                  // tamamını dar ekranda da gösterir.
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      _paused
+                                          ? context.l10n.pausedStatusCaps
+                                          : '${_hintString(context.l10n)} · ${context.l10n.balloonRowsInShots(until)}',
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.clip,
+                                      textAlign: TextAlign.right,
+                                      style: GoogleFonts.nunito(
+                                        fontSize: 11,
+                                        height: 1.55,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.88,
+                                        color: const Color(0xFFFFB3B3),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1019,10 +1415,11 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         top: hex.center(rows - 2, 0).dy - hex.cell * 0.42,
                         child: IgnorePointer(
                           child: Opacity(
-                            opacity: (0.28 +
-                                    0.2 * sin(_dangerPulse) +
-                                    (_fillDepth() * 0.35))
-                                .clamp(0.18, 0.85),
+                            opacity:
+                                (0.28 +
+                                        0.2 * sin(_dangerPulse) +
+                                        (_fillDepth() * 0.35))
+                                    .clamp(0.18, 0.85),
                             child: const ColoredBox(
                               color: Color(0x66E52E2E),
                               child: SizedBox(height: 1.5),
@@ -1058,9 +1455,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                               hex.center(r, c),
                               hex.cell,
                               _grid[r][c],
-                              angle: sin(
-                                    _dangerPulse * 0.35 + r * 1.3 + c * 0.9,
-                                  ) *
+                              angle:
+                                  sin(_dangerPulse * 0.35 + r * 1.3 + c * 0.9) *
                                   0.026,
                             ),
                       // 5. Falling detached balloons
@@ -1076,10 +1472,10 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                       // 6. Pop burst FX (uses prototype boom.png)
                       for (final fx in _popFx)
                         Positioned(
-                          left: fx.center.dx -
-                              hex.cell * (0.95 - 0.35 * fx.life),
-                          top: fx.center.dy -
-                              hex.cell * (0.95 - 0.35 * fx.life),
+                          left:
+                              fx.center.dx - hex.cell * (0.95 - 0.35 * fx.life),
+                          top:
+                              fx.center.dy - hex.cell * (0.95 - 0.35 * fx.life),
                           width: hex.cell * (1.9 - 0.7 * fx.life),
                           height: hex.cell * (1.9 - 0.7 * fx.life),
                           child: Opacity(
@@ -1141,14 +1537,23 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                         ),
                       ),
                       // 10. Flying shot balloon
-                      if (_fly != null) _bubble(_fly!, hex.cell, _current),
+                      if (_fly != null)
+                        _bubble(
+                          _fly!,
+                          hex.cell,
+                          _currentIsHisir
+                              ? _current + HisirCharacter.gridValueOffset
+                              : _current,
+                        ),
                       // 11. Shooter balloon (46x54 prototype oval)
                       Positioned(
                         left: hex.shooter.dx - 23,
                         top: hex.shooter.dy - 27,
                         child: _bubbleFace(
                           54,
-                          _current,
+                          _currentIsHisir
+                              ? _current + HisirCharacter.gridValueOffset
+                              : _current,
                           aimed: true,
                           miss: _missFlash,
                         ),
@@ -1234,79 +1639,18 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
             },
           );
 
-    final overlayWidget = (_over && !_resultShown)
-        ? ArcadeResultOverlay(
-            title: context.l10n.balloonOverflowTitle,
-            message: _statsLine(),
-            score: _score,
-            best: _best,
-            won: false,
-            modeTitle: context.l10n.shopModeBalloonPop,
-            shareLine: _statsLine(),
-            retryLabel: context.l10n.retryShort,
-            onRetry: () => setState(_boot),
-          )
-        : _paused
-        ? Positioned.fill(
-            child: ColoredBox(
-              color: LululuColors.carbonVoid.withValues(alpha: 0.7),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'DURAKLATILDI',
-                      style: GoogleFonts.exo2(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        color: LululuColors.liquidGold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _statsLine(),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: LululuColors.mutedTitanium,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
-                  ],
-                ),
-              ),
-            ),
-          )
-        : null;
-
-    final timeStr =
-        '${_elapsed ~/ 60}:${(_elapsed.floor() % 60).toString().padLeft(2, '0')}';
-
+    // Ölü sonuç overlay'i kaldırıldı (F6): `_edgeShowResult`
+    // `_resultShown`'u senkron set ettiği için bu dal hiç
+    // çizilmiyordu; tek sonuç yolu `finishRun` diyaloğudur.
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: _buildBalloonPrototypeChrome(
         context: context,
-        timeStr: timeStr,
-        stageChild: stageChild,
-        overlayWidget: overlayWidget,
+        stageBuilder: buildStage,
         bonusItems: bonusItems,
-        until: until,
       ),
     );
-  }
-
-  static String _fmtDot(int v) {
-    final s = v.abs().toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-    }
-    return v < 0 ? '-$buf' : buf.toString();
   }
 
   Widget _scaleBand(double screenW, double height, Widget child) {
@@ -1325,412 +1669,482 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
 
   Widget _buildBalloonPrototypeChrome({
     required BuildContext context,
-    required String timeStr,
-    required Widget stageChild,
-    required Widget? overlayWidget,
+    required Widget Function() stageBuilder,
     required List<ModeBonus> bonusItems,
-    required int until,
   }) {
     final screenW = MediaQuery.sizeOf(context).width;
     final topPad = MediaQuery.paddingOf(context).top;
     final useHostTopInset = !widget.prototypeVisualState && topPad > 0;
     final coinsText = widget.prototypeVisualState
         ? '12.450'
-        : _fmtDot(ProgressManager().coins);
+        : formatGroupedInt(
+            ProgressManager().coins,
+            Localizations.localeOf(context).languageCode,
+          );
+    // Statik arka plan: kare bildiriminde yeniden kurulmaz --
+    // [ValueListenableBuilder] `child` olarak bir kez kurulur.
+    final background = Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: Opacity(
+            opacity: 0.96,
+            child: Image.asset(
+              'assets/design/backgrounds/balloon_fair.webp',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+            ),
+          ),
+        ),
+        const Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0.0, 0.24, 0.76, 1.0],
+                colors: [
+                  Color(0x4D080B12),
+                  Color(0x00080B12),
+                  Color(0x00080B12),
+                  Color(0x52080B12),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
     return Scaffold(
       backgroundColor: const Color(0xFF0A0D14),
       body: MediaQuery.withNoTextScaling(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.96,
-                child: Image.asset(
-                  'assets/design/backgrounds/balloon_fair.webp',
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                ),
-              ),
-            ),
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0.0, 0.24, 0.76, 1.0],
-                    colors: [
-                      Color(0x4D080B12),
-                      Color(0x00080B12),
-                      Color(0x00080B12),
-                      Color(0x52080B12),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 1. statusbar (height: 35.4 in prototype/headless, topPad on real device)
-                if (useHostTopInset)
-                  SizedBox(height: topPad)
-                else
-                  _scaleBand(
-                    screenW,
-                    35.4,
-                    Stack(
-                      children: [
-                        Positioned(
-                          left: 21,
-                          top: 16.0,
-                          child: Text(
-                            '09:41',
-                            style: GoogleFonts.nunito(
-                              fontSize: 12.5,
-                              height: 1.2,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.25,
-                              color: Colors.white,
+        child: ValueListenableBuilder<int>(
+          valueListenable: _tickNotifier,
+          child: background,
+          builder: (context, _, backgroundChild) {
+            // Kare başına değişen değerler burada, VLB içinde okunur
+            // (dış `build` yalnız olay `setState`'lerinde çalışır).
+            final timeStr =
+                '${_elapsed ~/ 60}:${(_elapsed.floor() % 60).toString().padLeft(2, '0')}';
+            final overlayWidget = _paused
+                ? Positioned.fill(
+                    child: ColoredBox(
+                      color: LululuColors.carbonVoid.withValues(alpha: 0.7),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'DURAKLATILDI',
+                              style: GoogleFonts.exo2(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                                color: LululuColors.liquidGold,
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _statsLine(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: LululuColors.mutedTitanium,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            ArcadeButton(
+                              label: context.l10n.continueAction,
+                              onPressed: _togglePause,
+                            ),
+                          ],
                         ),
-                        const Positioned(
-                          left: 373,
-                          top: 16.2,
-                          child: CustomPaint(
-                            size: Size(35, 15),
-                            painter: _BalloonStatusIconsPainter(),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                // 2. mode-top (height: 56.3)
-                _scaleBand(
-                  screenW,
-                  56.3,
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: 12,
-                        top: 7.1,
-                        width: 44.4,
-                        height: 48,
-                        child: Semantics(
-                          button: true,
-                          label: context.l10n.goBackLabel,
-                          child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => Navigator.of(context).maybePop(),
-                          child: CustomPaint(
-                            painter: const _CssBoxPainter(
-                              fillColor: Color(0xD9080B12),
-                              radius: 14,
-                              shadowColor: Color(0x73000000),
-                              shadowOffset: Offset(0, 3),
-                            ),
-                            child: Center(
-                              child: Image.asset(
-                                'assets/icons2/back-prototype.png',
-                                width: 29,
-                                height: 29,
-                                fit: BoxFit.contain,
-                                filterQuality: FilterQuality.medium,
+                  )
+                : null;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(child: backgroundChild!),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (useHostTopInset) SizedBox(height: topPad),
+                    // 2. mode-top (height: 56.3)
+                    _scaleBand(
+                      screenW,
+                      56.3,
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 12,
+                            top: 7.1,
+                            width: 44.4,
+                            height: 48,
+                            child: Semantics(
+                              button: true,
+                              label: context.l10n.goBackLabel,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => Navigator.of(context).maybePop(),
+                                child: CustomPaint(
+                                  painter: const _CssBoxPainter(
+                                    fillColor: Color(0xD9080B12),
+                                    radius: 14,
+                                    shadowColor: Color(0x73000000),
+                                    shadowOffset: Offset(0, 3),
+                                  ),
+                                  child: Center(
+                                    child: Image.asset(
+                                      'assets/icons2/back-prototype.png',
+                                      width: 29,
+                                      height: 29,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.medium,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 66.4,
-                        top: 6.0,
-                        width: 153.6,
-                        height: 27,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: const Color(0x8C080B12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 2,
-                            ),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                context.l10n.balloonPopTitle,
-                                maxLines: 1,
-                                softWrap: false,
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 20,
-                                  height: 1.15,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.0,
-                                  color: Colors.white,
-                                  shadows: const [
-                                    Shadow(
-                                      color: Color(0xA6000000),
-                                      offset: Offset(0, 2),
-                                      blurRadius: 6,
+                          Positioned(
+                            left: 66.4,
+                            top: 6.0,
+                            width: 153.6,
+                            height: 27,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0x8C080B12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 2,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    context.l10n.balloonPopTitle,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    style: GoogleFonts.baloo2(
+                                      fontSize: 20,
+                                      height: 1.15,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.0,
+                                      color: Colors.white,
+                                      shadows: const [
+                                        Shadow(
+                                          color: Color(0xA6000000),
+                                          offset: Offset(0, 2),
+                                          blurRadius: 6,
+                                        ),
+                                        Shadow(
+                                          color: Color(0xCC000000),
+                                          offset: Offset(0, 1),
+                                          blurRadius: 2,
+                                        ),
+                                      ],
                                     ),
-                                    Shadow(
-                                      color: Color(0xCC000000),
-                                      offset: Offset(0, 1),
-                                      blurRadius: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 66.4,
+                            top: 36.0,
+                            width: 55.5,
+                            height: 20.3,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF6B35),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Center(
+                                child: Transform.translate(
+                                  offset: const Offset(0, -1),
+                                  child: Text(
+                                    'BONUS',
+                                    style: GoogleFonts.baloo2(
+                                      fontSize: 10.5,
+                                      height: 1.0,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.735,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 274.4,
+                            top: 13.6,
+                            width: 85.6,
+                            height: 35,
+                            child: CustomPaint(
+                              painter: const _CssBoxPainter(
+                                fillColor: Color(0xD1080B12),
+                                radius: 17.5,
+                                shadowColor: Color(0x59000000),
+                                shadowOffset: Offset(0, 3),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(6, 5, 10, 5),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Image.asset(
+                                      'assets/icons2/coin.png',
+                                      width: 25,
+                                      height: 25,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.medium,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Transform.translate(
+                                        offset: const Offset(0, -1.5),
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            coinsText,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.nunito(
+                                              fontSize: 13.5,
+                                              height: 1.2,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 66.4,
-                        top: 36.0,
-                        width: 55.5,
-                        height: 20.3,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF6B35),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Center(
-                            child: Transform.translate(
-                              offset: const Offset(0, -1),
-                              child: Text(
-                                'BONUS',
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 10.5,
-                                  height: 1.0,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.735,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 274.4,
-                        top: 13.6,
-                        width: 85.6,
-                        height: 35,
-                        child: CustomPaint(
-                          painter: const _CssBoxPainter(
-                            fillColor: Color(0xD1080B12),
-                            radius: 17.5,
-                            shadowColor: Color(0x59000000),
-                            shadowOffset: Offset(0, 3),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(6, 5, 10, 5),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Image.asset(
-                                  'assets/icons2/coin.png',
-                                  width: 25,
-                                  height: 25,
-                                  fit: BoxFit.contain,
-                                  filterQuality: FilterQuality.medium,
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Transform.translate(
-                                    offset: const Offset(0, -1.5),
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        coinsText,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.nunito(
-                                          fontSize: 13.5,
-                                          height: 1.2,
-                                          fontWeight: FontWeight.w900,
-                                          color: Colors.white,
-                                        ),
+                          // Başlık duraklatma düğmesi (F3): başlık ile coin
+                          // rozeti arasındaki boşlukta, düzeni kaydırmadan
+                          // durur; prototip vitrininde gizlidir (makara
+                          // deseni: `l10n.pause` etiketi, `_togglePause`).
+                          if (!widget.prototypeVisualState)
+                            Positioned(
+                              left: 224,
+                              top: 7.1,
+                              width: 44,
+                              height: 48,
+                              child: Semantics(
+                                button: true,
+                                label: context.l10n.pause,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _togglePause,
+                                  child: CustomPaint(
+                                    painter: const _CssBoxPainter(
+                                      fillColor: Color(0xDB080B12),
+                                      radius: 22,
+                                      borderColor: Color(0xB3FFB800),
+                                      borderWidth: 2,
+                                      shadowColor: Color(0x66000000),
+                                      shadowOffset: Offset(0, 3),
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.pause_rounded,
+                                        size: 22,
+                                        color: Color(0xFFFFB800),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 370,
-                        top: 7.1,
-                        width: 48,
-                        height: 48,
-                        child: CustomPaint(
-                          painter: const _CssBoxPainter(
-                            fillColor: Color(0xDB080B12),
-                            radius: 24,
-                            borderColor: Color(0xB3FFB800),
-                            borderWidth: 2,
-                            shadowColor: Color(0x66000000),
-                            shadowOffset: Offset(0, 3),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '?',
-                              style: GoogleFonts.baloo2(
-                                fontSize: 22,
-                                height: 1.0,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFFFFB800),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // 3. game-hud (height: 54.0)
-                _scaleBand(
-                  screenW,
-                  54.0,
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: 10,
-                        top: 9.3,
-                        width: 64.6,
-                        height: 41.0,
-                        child: _buildHudStatBox(
-                          label: context.l10n.gameScoreLabel,
-                          value: _fmtDot(_score),
-                        ),
-                      ),
-                      Positioned(
-                        left: 80.6,
-                        top: 9.3,
-                        width: 84,
-                        height: 41.0,
-                        child: _buildHudStatBox(
-                          label: context.l10n.gameBestLabel,
-                          value: _fmtDot(_best),
-                        ),
-                      ),
-                      Positioned(
-                        left: 282.2,
-                        top: 9.3,
-                        width: 74,
-                        height: 41.0,
-                        child: _buildHudStatBox(
-                          label: context.l10n.timeLabel,
-                          value: timeStr,
-                        ),
-                      ),
-                      Positioned(
-                        left: 362.2,
-                        top: 5.9,
-                        width: 57.8,
-                        height: 48,
-                        child: Semantics(
-                          button: true,
-                          label: context.l10n.finishRoundLabel,
-                          child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => setState(_boot),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFB800),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0xFFB97A00),
-                                  offset: Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Text(
-                                context.l10n.finishCaps,
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 12.5,
-                                  height: 1.0,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.375,
-                                  color: const Color(0xFF4A2E00),
+                          Positioned(
+                            left: 370,
+                            top: 7.1,
+                            width: 48,
+                            height: 48,
+                            child: Semantics(
+                              button: true,
+                              label: context.l10n.helpButtonLabel,
+                              child: GestureDetector(
+                                onTap: _showHelp,
+                                child: CustomPaint(
+                                  painter: const _CssBoxPainter(
+                                    fillColor: Color(0xDB080B12),
+                                    radius: 24,
+                                    borderColor: Color(0xB3FFB800),
+                                    borderWidth: 2,
+                                    shadowColor: Color(0x66000000),
+                                    shadowOffset: Offset(0, 3),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '?',
+                                      style: GoogleFonts.baloo2(
+                                        fontSize: 22,
+                                        height: 1.0,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFFFFB800),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // 4. mode-stage (margin top: 8, height: 697.5)
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0x660E1422), Color(0x800E1422)],
-                      ),
-                      border: Border.symmetric(
-                        horizontal: BorderSide(
-                          color: Color(0x24FFFFFF),
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    child: ClipRect(
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: const Color(0x59000000),
-                              width: 1,
-                            ),
-                          ),
-                          child: stageChild,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // 5. power-dock (height: 80.9)
-                SizedBox(
-                  height: 80.9,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < bonusItems.length; i++) ...[
-                          if (i > 0) const SizedBox(width: 20),
-                          _buildPowerButton(
-                            item: bonusItems[i],
-                            prototypeCount: const [3, 2, 1][i],
                           ),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
+                    // 3. game-hud (height: 54.0)
+                    _scaleBand(
+                      screenW,
+                      54.0,
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 10,
+                            top: 9.3,
+                            width: 64.6,
+                            height: 41.0,
+                            child: _buildHudStatBox(
+                              label: context.l10n.gameScoreLabel,
+                              value: formatGroupedInt(
+                                _score,
+                                Localizations.localeOf(context).languageCode,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 80.6,
+                            top: 9.3,
+                            width: 84,
+                            height: 41.0,
+                            child: _buildHudStatBox(
+                              label: context.l10n.gameBestLabel,
+                              value: formatGroupedInt(
+                                _best,
+                                Localizations.localeOf(context).languageCode,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 282.2,
+                            top: 9.3,
+                            width: 74,
+                            height: 41.0,
+                            child: _buildHudStatBox(
+                              label: context.l10n.timeLabel,
+                              value: timeStr,
+                            ),
+                          ),
+                          Positioned(
+                            left: 362.2,
+                            top: 5.9,
+                            width: 57.8,
+                            height: 48,
+                            child: Semantics(
+                              button: true,
+                              label: context.l10n.finishRoundLabel,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _finishEarly,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFB800),
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0xFFB97A00),
+                                        offset: Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      context.l10n.finishCaps,
+                                      style: GoogleFonts.baloo2(
+                                        fontSize: 12.5,
+                                        height: 1.0,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.375,
+                                        color: const Color(0xFF4A2E00),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 4. mode-stage (margin top: 8, height: 697.5)
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x660E1422), Color(0x800E1422)],
+                          ),
+                          border: Border.symmetric(
+                            horizontal: BorderSide(
+                              color: Color(0x24FFFFFF),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        child: ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: const Color(0x59000000),
+                                  width: 1,
+                                ),
+                              ),
+                              child: stageBuilder(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // 5. power-dock (height: 80.9)
+                    SizedBox(
+                      height: 80.9,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            for (var i = 0; i < bonusItems.length; i++) ...[
+                              if (i > 0) const SizedBox(width: 20),
+                              _buildPowerButton(
+                                item: bonusItems[i],
+                                prototypeCount: const [3, 2, 1][i],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                ?overlayWidget,
               ],
-            ),
-            ?overlayWidget,
-          ],
+            );
+          },
         ),
       ),
     );
@@ -1835,10 +2249,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
                       width: 1,
                     ),
                     boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x73000000),
-                        offset: Offset(0, 3),
-                      ),
+                      BoxShadow(color: Color(0x73000000), offset: Offset(0, 3)),
                       BoxShadow(
                         color: Color(0x4D000000),
                         offset: Offset(0, 6),
@@ -1923,10 +2334,7 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     return Positioned(
       left: center.dx - w / 2,
       top: center.dy - h / 2,
-      child: Transform.rotate(
-        angle: angle,
-        child: _bubbleFace(h, tier),
-      ),
+      child: Transform.rotate(angle: angle, child: _bubbleFace(h, tier)),
     );
   }
 
@@ -1946,7 +2354,8 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
     bool aimed = false,
     bool miss = false,
   }) {
-    final idx = (tier - 1).clamp(0, 7);
+    final isHisir = HisirCharacter.isEncoded(tier);
+    final idx = (_base(tier) - 1).clamp(0, 7);
     final pastel = _pastelColors[idx];
     final h = size;
     final w = aimed ? (size * (46.0 / 54.0)) : (size * 0.865);
@@ -1971,7 +2380,9 @@ class _BalloonPopScreenState extends State<BalloonPopScreen>
             width: 0.72 * w,
             height: 0.72 * rowH,
             child: Image.asset(
-              'assets/bugs/tier${idx + 1}_hd${(idx + 1) == 5 ? '.webp' : '.png'}',
+              isHisir
+                  ? HisirCharacter.assetPath
+                  : 'assets/bugs/tier${idx + 1}_hd${(idx + 1) == 5 ? '.webp' : '.png'}',
               fit: BoxFit.contain,
               filterQuality: FilterQuality.medium,
             ),
@@ -2042,18 +2453,20 @@ class _PrototypeBalloonField extends StatelessWidget {
 
   // (left, top, w, h, imgLeft, imgTop, imgW, imgH, tier, deg)
   static const _specs =
-      <(
-        double,
-        double,
-        double,
-        double,
-        double,
-        double,
-        double,
-        double,
-        int,
-        double,
-      )>[
+      <
+        (
+          double,
+          double,
+          double,
+          double,
+          double,
+          double,
+          double,
+          double,
+          int,
+          double,
+        )
+      >[
         (12.85, 204.45, 54.0, 62.0, 20.41, 213.08, 38.88, 44.64, 3, -0.292),
         (86.00, 196.90, 48.0, 56.0, 93.12, 209.79, 34.56, 66.42, 1, -1.444),
         (163.40, 213.90, 56.0, 64.0, 171.19, 222.81, 40.32, 46.08, 4, 0.000),
@@ -2173,9 +2586,7 @@ class _PrototypeBalloonField extends StatelessWidget {
               child: Transform.rotate(
                 angle: _specs[i].$10 * pi / 180,
                 child: CustomPaint(
-                  painter: _BalloonShapePainter(
-                    tint: _tints[_specs[i].$9 - 1],
-                  ),
+                  painter: _BalloonShapePainter(tint: _tints[_specs[i].$9 - 1]),
                 ),
               ),
             ),
@@ -2239,9 +2650,7 @@ class _PrototypeBalloonField extends StatelessWidget {
           top: 769.0 - _stageTopY,
           width: 46,
           height: 54,
-          child: CustomPaint(
-            painter: _BalloonShapePainter(tint: _tints[0]),
-          ),
+          child: CustomPaint(painter: _BalloonShapePainter(tint: _tints[0])),
         ),
         // 8. shooter bug image (rect: 198.4, 781.0, 33.1, 63.6)
         Positioned(
@@ -2353,70 +2762,6 @@ class _DashPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter old) => false;
-}
-
-class _BalloonStatusIconsPainter extends CustomPainter {
-  const _BalloonStatusIconsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final strokePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round;
-
-    const sx = 15 / 24.0;
-    const sy = 15 / 24.0;
-
-    final outerArc = Path()
-      ..moveTo(2 * sx, 8.5 * sy)
-      ..quadraticBezierTo(12 * sx, 1.5 * sy, 22 * sx, 8.5 * sy);
-    canvas.drawPath(outerArc, strokePaint);
-
-    final midArc = Path()
-      ..moveTo(5 * sx, 12 * sy)
-      ..quadraticBezierTo(12 * sx, 7.2 * sy, 19 * sx, 12 * sy);
-    canvas.drawPath(midArc, strokePaint);
-
-    final innerArc = Path()
-      ..moveTo(8.5 * sx, 15.5 * sy)
-      ..quadraticBezierTo(12 * sx, 13 * sy, 15.5 * sx, 15.5 * sy);
-    canvas.drawPath(innerArc, strokePaint);
-
-    canvas.drawCircle(
-      const Offset(12 * sx, 19 * sy),
-      1.5 * sx,
-      Paint()..color = Colors.white,
-    );
-
-    const bx = 20.0;
-    final bodyRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(bx + 2 * sx, 7 * sy, 17 * sx, 10 * sy),
-      const Radius.circular(2 * sx),
-    );
-    canvas.drawRRect(
-      bodyRect,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2 * sx,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(bx + 4 * sx, 9 * sy, 11 * sx, 6 * sy),
-        const Radius.circular(1 * sx),
-      ),
-      Paint()..color = Colors.white,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(bx + 20 * sx, 10 * sy, 2 * sx, 4 * sy),
-      Paint()..color = Colors.white,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _CssBoxPainter extends CustomPainter {

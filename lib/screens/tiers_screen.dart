@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../models/insect_tier.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 
@@ -19,47 +20,39 @@ String _trUpper(String input, Locale locale) {
       .toUpperCase();
 }
 
-/// Nadirlik etiketlerinin EN karşılıkları (TR metin aynen korunur;
-/// bu ekranın kendi veri listesindeki yazımlarla birebir eşleşir).
-const _kRarityEn = <String, String>{
-  'Sıradan': 'Common',
-  'Seyrek': 'Uncommon',
-  'Nadir': 'Rare',
-  'Destansı': 'Epic',
-  'Efsanevi': 'Legendary',
-  'Mitik': 'Mythic',
-  'Gizli': 'Secret',
-  'Evrim Kristali': 'Evolution Crystal',
-  'EFSANEVİ': 'LEGENDARY',
-  'DESTANSI': 'EPIC',
-  'MİTİK': 'MYTHIC',
-  'KOZMİK': 'COSMIC',
-  'ZİRVE': 'SUMMIT',
-};
-
-String _rarityLabel(BuildContext context, String rarity) {
-  if (Localizations.localeOf(context).languageCode == 'en') {
-    return _kRarityEn[rarity] ?? rarity;
+/// Nadirlik tek kaynaktan okunur: [InsectTier.rarityFor] (TR model metni,
+/// EN karşılığı). Bu ekran nadirlik metninin kendi kopyasını tutmaz.
+/// Puan da modelden okunur: [InsectTier.scoreValue], dile duyarlı binlik
+/// ayırıcı ile gösterilir (TR `.`, EN `,`).
+String _formatPoints(int value, Locale locale) {
+  final separator = locale.languageCode == 'en' ? ',' : '.';
+  final s = value.toString();
+  final buf = StringBuffer();
+  for (int i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) {
+      buf.write(separator);
+    }
+    buf.write(s[i]);
   }
-  return rarity;
+  return buf.toString();
 }
 
 class _BugTierInfo {
   final int tier;
   final String name;
-  final String rarity;
-  final String points;
   final String asset;
   final String quote;
 
   const _BugTierInfo({
     required this.tier,
     required this.name,
-    required this.rarity,
-    required this.points,
     required this.asset,
     required this.quote,
   });
+
+  /// Kanonik tier kaydı: nadirlik ([InsectTier.rarityFor]) ve puan
+  /// ([InsectTier.scoreValue]) buradan okunur.
+  InsectTier get model => InsectTier.fromTier(tier);
 }
 
 /// BÖCEK AİLESİ (`#scr-tiers`) — Pixel-perfect 1:1 implementation
@@ -85,111 +78,89 @@ class _TiersScreenState extends State<TiersScreen> {
     _BugTierInfo(
       tier: 1,
       name: l10n.tierRowName1,
-      rarity: 'Sıradan',
-      points: '10',
       asset: 'assets/bugs/tier1_hd.png',
       quote: l10n.tierRowQuote1,
     ),
     _BugTierInfo(
       tier: 2,
       name: l10n.tierRowName2,
-      rarity: 'Seyrek',
-      points: '25',
       asset: 'assets/bugs/tier2_hd.png',
       quote: l10n.tierRowQuote2,
     ),
     _BugTierInfo(
       tier: 3,
       name: l10n.tierRowName3,
-      rarity: 'Nadir',
-      points: '50',
       asset: 'assets/bugs/tier3_hd.png',
       quote: l10n.tierRowQuote3,
     ),
     _BugTierInfo(
       tier: 4,
       name: l10n.tierRowName4,
-      rarity: 'Destansı',
-      points: '100',
       asset: 'assets/bugs/tier4_hd.png',
       quote: l10n.tierRowQuote4,
     ),
     _BugTierInfo(
       tier: 5,
       name: l10n.tierRowName5,
-      rarity: 'Efsanevi',
-      points: '200',
       asset: 'assets/bugs/tier5_hd.webp',
       quote: l10n.tierRowQuote5,
     ),
     _BugTierInfo(
       tier: 6,
       name: l10n.tierRowName6,
-      rarity: 'Mitik',
-      points: '400',
       asset: 'assets/bugs/tier6_hd.png',
       quote: l10n.tierRowQuote6,
     ),
     _BugTierInfo(
       tier: 7,
       name: l10n.tierRowName7,
-      rarity: 'Gizli',
-      points: '800',
       asset: 'assets/bugs/tier7_hd.png',
       quote: l10n.tierRowQuote7,
     ),
     _BugTierInfo(
       tier: 8,
       name: l10n.tierRowName8,
-      rarity: 'Evrim Kristali',
-      points: '1.600',
       asset: 'assets/bugs/tier8_hd.png',
       quote: l10n.tierRowQuote8,
     ),
     _BugTierInfo(
       tier: 9,
       name: l10n.tierRowName9,
-      rarity: 'EFSANEVİ',
-      points: '3.200',
       asset: 'assets/bugs/tier9_hd.png',
       quote: l10n.tierRowQuote9,
     ),
     _BugTierInfo(
       tier: 10,
       name: l10n.tierRowName10,
-      rarity: 'DESTANSI',
-      points: '6.400',
       asset: 'assets/bugs/tier10_hd.png',
       quote: l10n.tierRowQuote10,
     ),
     _BugTierInfo(
       tier: 11,
       name: l10n.tierRowName11,
-      rarity: 'MİTİK',
-      points: '12.800',
       asset: 'assets/bugs/tier11_hd.png',
       quote: l10n.tierRowQuote11,
     ),
     _BugTierInfo(
       tier: 12,
       name: l10n.tierRowName12,
-      rarity: 'KOZMİK',
-      points: '25.600',
       asset: 'assets/bugs/tier12_hd.png',
       quote: l10n.tierRowQuote12,
     ),
     _BugTierInfo(
       tier: 13,
       name: l10n.tierRowName13,
-      rarity: 'ZİRVE',
-      points: '51.200',
       asset: 'assets/bugs/tier13_hd.png',
       quote: l10n.tierRowQuote13,
     ),
   ];
 
   void _onTapTier(_BugTierInfo info) {
-    if (info.tier >= 1 && info.tier <= 8) {
+    // B21: tek ses yolu AudioManager.playTierVoice'tır; tier sesi
+    // `tierN_ses.mp3` tekil setinden çalınır (12A: bayt-birebir kopya
+    // `voice_tierN.mp3` seti silindi). Eski 1..8 sınırı 9..13. tierleri
+    // sessiz bırakıyordu — 13 tierın tamamı seslendirilir.
+    if (info.tier >= 1 && info.tier <= 13) {
       AudioManager().playTierVoice(info.tier);
     }
     ScaffoldMessenger.of(context)
@@ -227,10 +198,7 @@ class _TiersScreenState extends State<TiersScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (mqTop > 0)
-                SizedBox(height: mqTop)
-              else
-                const _TiersPrototypeStatusBar(),
+              if (mqTop > 0) SizedBox(height: mqTop),
               // .page-title { display:flex; align-items:center; gap:10px; padding:10px 14px 2px; height:60px }
               SizedBox(
                 height: 60,
@@ -349,7 +317,7 @@ class _TiersScreenState extends State<TiersScreen> {
   Widget _buildEvoRow(_BugTierInfo t) {
     return Semantics(
       button: true,
-      label: '${context.l10n.tierLabel(t.tier)}, ${_trUpper(t.name, Localizations.localeOf(context))}, ${_rarityLabel(context, t.rarity)}',
+      label: '${context.l10n.tierLabel(t.tier)}, ${_trUpper(t.name, Localizations.localeOf(context))}, ${t.model.rarityFor(Localizations.localeOf(context))}',
       child: GestureDetector(
         onTap: () => _onTapTier(t),
         child: Container(
@@ -424,7 +392,7 @@ class _TiersScreenState extends State<TiersScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        _rarityLabel(context, t.rarity),
+                        t.model.rarityFor(Localizations.localeOf(context)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -457,7 +425,7 @@ class _TiersScreenState extends State<TiersScreen> {
                     Transform.translate(
                       offset: const Offset(0, -1.0),
                       child: Text(
-                        '+${t.points}',
+                        '+${_formatPoints(t.model.scoreValue, Localizations.localeOf(context))}',
                         style: const TextStyle(
                           fontFamily: 'Baloo 2',
                           fontSize: 16,
@@ -489,109 +457,6 @@ class _TiersScreenState extends State<TiersScreen> {
       ),
     );
   }
-}
-
-class _TiersPrototypeStatusBar extends StatelessWidget {
-  const _TiersPrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.4,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text(
-              '09:41',
-              style: TextStyle(
-                fontFamily: 'Nunito',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-                color: Color(0xFF0E1320),
-                height: 1.55,
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _TiersSignalIconPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _TiersBatteryIconPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TiersSignalIconPainter extends CustomPainter {
-  const _TiersSignalIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF0E1320)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _TiersBatteryIconPainter extends CustomPainter {
-  const _TiersBatteryIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF0E1320)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF0E1320)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _EvoArrowPainter extends CustomPainter {

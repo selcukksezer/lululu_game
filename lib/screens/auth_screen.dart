@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -28,7 +29,13 @@ class AuthScreen extends StatefulWidget {
   final ValueChanged<int>? onSelectNavIndex;
 
   static Future<bool?> open(BuildContext context) {
-    return Navigator.of(context).push<bool>(
+    return openOn(Navigator.of(context));
+  }
+
+  /// [open] ile aynı akış; ancak navigator çağrı öncesi yakalanmış
+  /// olabilir (ör. ayar sayfası pop sonrası aynı context'i kullanamaz).
+  static Future<bool?> openOn(NavigatorState navigator) {
+    return navigator.push<bool>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (ctx) => AuthScreen(
@@ -46,6 +53,8 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController _userCtl = TextEditingController();
   final TextEditingController _passCtl = TextEditingController();
+  final FocusNode _userFocus = FocusNode();
+  final FocusNode _passFocus = FocusNode();
   bool _isRegister = false;
   bool _obscurePassword = true;
   bool _busy = false;
@@ -99,17 +108,32 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void initState() {
     super.initState();
-    CloudSyncService.instance.ensureLoaded();
+    // Best-effort: bulut kuyruğu yüklenemezse ekran çevrimdışı çalışır;
+    // hata yutulur, işlenmemiş async hata bırakılmaz (B29).
+    unawaited(_ensureCloudLoaded());
+  }
+
+  Future<void> _ensureCloudLoaded() async {
+    try {
+      await CloudSyncService.instance.ensureLoaded();
+    } catch (e) {
+      debugPrint('[lululu] AuthScreen ensureLoaded failed: $e');
+    }
   }
 
   @override
   void dispose() {
     _userCtl.dispose();
     _passCtl.dispose();
+    _userFocus.dispose();
+    _passFocus.dispose();
     super.dispose();
   }
 
-  Future<void> _run(Future<void> Function() op) async {
+  Future<void> _run(
+    Future<void> Function() op, {
+    String Function()? successMessage,
+  }) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -122,16 +146,22 @@ class _AuthScreenState extends State<AuthScreen> {
       setState(() {
         _signedOutExplicitly = false;
       });
+      // S5: başarı bildirimi kapanma ÖNCESİ gösterilir; ScaffoldMessenger
+      // rota üstünde yaşadığı için bildirim dönen ekranda da görünür.
+      final message = successMessage?.call();
+      if (message != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
       widget.onSuccess?.call();
-    } on StateError catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.message);
-    } on ArgumentError catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.message?.toString() ?? e.toString());
+    } on AuthSignInCancelledException {
+      // 2E-UI (a): Apple/Google iptali sessizce yutulur — hata bandı
+      // yok, form açık kalır. `_busy` finally'de sıfırlanır.
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      final message = _authErrorMessage(e, context.l10n);
+      setState(() => _error = message);
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -139,17 +169,127 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// Servis hatalarını çevrilmiş kullanıcı mesajlarına çevirir (B12).
+  /// Ham `e.toString()` / servis Türkçe metni kullanıcıya gösterilmez.
+  /// Eşleme, [AuthService] hata metinlerinin kararlı alt dizelerine dayanır.
+  String _authErrorMessage(Object e, AppLocalizations l10n) {
+    final message = e is StateError
+        ? e.message
+        : e is ArgumentError
+            ? (e.message?.toString() ?? '')
+            : e.toString();
+    if (message.contains('zaten kayıtlı')) return l10n.authUsernameTaken;
+    if (message.contains('Çok fazla başarısız')) {
+      return l10n.authTooManyAttempts;
+    }
+    if (message.contains('Kullanıcı bulunamadı')) return l10n.authUserNotFound;
+    if (message.contains('Şifre yanlış')) return l10n.authWrongPassword;
+    if (message.contains('Kullanıcı adı')) return l10n.authUsernameInvalid;
+    if (message.contains('Şifre')) {
+      if (message.contains('en az')) return l10n.authPasswordTooShort;
+      if (message.contains('en fazla')) return l10n.authPasswordTooLong;
+      return l10n.authPasswordInvalid;
+    }
+    return l10n.authGenericFailed;
+  }
+
   Future<void> _submitLocal() async {
+    if (_busy) return;
     AudioManager().playPop();
-    final u = _userCtl.text;
+    // Kullanıcı adı kırpılır (servis de kırpar); şifre kırpılmaz —
+    // servis ham şifreyi hash'ler, kırpmak kimlik bilgisini değiştirir.
+    final u = _userCtl.text.trim();
     final p = _passCtl.text;
-    await _run(() async {
-      if (_isRegister) {
-        await AuthService.instance.register(username: u, password: p);
-      } else {
-        await AuthService.instance.login(username: u, password: p);
-      }
-      _passCtl.clear();
+    final validationError = _validateLocalInput(u, p);
+    if (validationError != null) {
+      setState(() => _error = validationError);
+      return;
+    }
+    // 2E-UI (b): kayıt bilgisi, servisin söylediği kadardır — doğrulama
+    // e-postası vb. iddia edilmez; yerel-öncelikli kayıt bayrağı
+    // servisin `lastRegistrationWasLocalOnly` sözleşmesinden okunur.
+    final wasRegister = _isRegister;
+    final l10n = context.l10n;
+    await _run(
+      () async {
+        if (_isRegister) {
+          await AuthService.instance.register(username: u, password: p);
+        } else {
+          await AuthService.instance.login(username: u, password: p);
+        }
+        _passCtl.clear();
+      },
+      successMessage: () {
+        if (!wasRegister) return l10n.authSignInSuccess;
+        if (AuthService.instance.lastRegistrationWasLocalOnly) {
+          return l10n.authRegisterLocalOnly;
+        }
+        return l10n.authRegisterSuccess;
+      },
+    );
+  }
+
+  /// İstemci doğrulaması (B12): servis kurallarının aynası.
+  /// Kullanıcı adı, servisin normalizasyonundan geçirilip doğrulanır
+  /// (küçük harf, boşluk→`_`, e-posta girdisinde yerel kısım); böylece
+  /// servisin kabul edeceği girdi istemcide reddedilmez.
+  /// Geçerliyse `null`, değilse çevrilmiş hata mesajı döner.
+  String? _validateLocalInput(String username, String password) {
+    final l10n = context.l10n;
+    if (username.isEmpty) return l10n.authUsernameRequired;
+    final normalized = _normalizeUsernameForValidation(username);
+    if (normalized.length < 3 ||
+        normalized.length > 20 ||
+        !RegExp(r'^[a-z0-9_]+$').hasMatch(normalized)) {
+      return l10n.authUsernameInvalid;
+    }
+    if (password.isEmpty) return l10n.authPasswordRequired;
+    if (_controlChars.hasMatch(password)) return l10n.authPasswordInvalid;
+    if (password.length < 6 || password.trim().length < 6) {
+      return l10n.authPasswordTooShort;
+    }
+    if (password.length > 128) return l10n.authPasswordTooLong;
+    return null;
+  }
+
+  /// [AuthService._normalizeUsername] aynası (yalnız doğrulama için).
+  static String _normalizeUsernameForValidation(String raw) {
+    final cleaned = raw.replaceAll(_controlChars, '').trim().toLowerCase();
+    if (cleaned.contains('@')) {
+      final localPart = cleaned.split('@').first;
+      return localPart
+          .replaceAll(RegExp(r'[^a-z0-9_]'), '_')
+          .replaceAll(RegExp(r'_+'), '_');
+    }
+    return cleaned.replaceAll(RegExp(r'\s+'), '_');
+  }
+
+  static final RegExp _controlChars = RegExp(r'[\x00-\x1F\x7F]');
+
+  /// Oturum kapatma (B29): kilit + try/catch + hata bildirimi.
+  /// Tek çıkış noktasıdır (oturum kartındaki düğme).
+  Future<void> _signOut() async {
+    if (_busy) return;
+    AudioManager().playPop();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await AuthService.instance.signOut();
+      await LeaderboardService.instance.onAuthChanged();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = context.l10n.authSignOutFailed;
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _signedOutExplicitly = true;
     });
   }
 
@@ -164,7 +304,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mqTop = MediaQuery.of(context).padding.top;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
@@ -185,7 +324,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
                   return Column(
                     children: [
-                      if (mqTop == 0) const _AccountPrototypeStatusBar(),
                       _buildPageTitle(),
                       Expanded(
                         child: SingleChildScrollView(
@@ -383,12 +521,18 @@ class _AuthScreenState extends State<AuthScreen> {
                       controller: _userCtl,
                       hintText: context.l10n.usernameHint,
                       obscureText: false,
+                      focusNode: _userFocus,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _passFocus.requestFocus(),
                     ),
                     const SizedBox(height: 10),
                     _buildInputField(
                       controller: _passCtl,
                       hintText: context.l10n.passwordHint,
                       obscureText: _obscurePassword,
+                      focusNode: _passFocus,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _submitLocal(),
                       suffix: Semantics(
                         button: true,
                         label: _obscurePassword
@@ -450,6 +594,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               AudioManager().playPop();
                               _run(
                                 () => AuthService.instance.signInAsGuest(),
+                                successMessage: () =>
+                                    context.l10n.authSignInSuccess,
                               );
                             },
                     ),
@@ -464,7 +610,11 @@ class _AuthScreenState extends State<AuthScreen> {
                           ? null
                           : () {
                               AudioManager().playPop();
-                              _run(() => AuthService.instance.signInWithApple());
+                              _run(
+                                () => AuthService.instance.signInWithApple(),
+                                successMessage: () =>
+                                    context.l10n.authSignInSuccess,
+                              );
                             },
                     ),
                     const SizedBox(height: 9),
@@ -480,6 +630,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               AudioManager().playPop();
                               _run(
                                 () => AuthService.instance.signInWithGoogle(),
+                                successMessage: () =>
+                                    context.l10n.authSignInSuccess,
                               );
                             },
                     ),
@@ -683,17 +835,7 @@ class _AuthScreenState extends State<AuthScreen> {
             button: true,
             label: context.l10n.signOutButton,
             child: GestureDetector(
-              onTap: _busy
-                  ? null
-                  : () async {
-                      AudioManager().playPop();
-                      await AuthService.instance.signOut();
-                      await LeaderboardService.instance.onAuthChanged();
-                      if (!mounted) return;
-                      setState(() {
-                        _signedOutExplicitly = true;
-                      });
-                    },
+              onTap: _busy ? null : _signOut,
               child: Container(
                 height: 48,
                 padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
@@ -869,6 +1011,9 @@ class _AuthScreenState extends State<AuthScreen> {
     required String hintText,
     required bool obscureText,
     Widget? suffix,
+    FocusNode? focusNode,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onSubmitted,
   }) {
     return Container(
       height: 56,
@@ -887,6 +1032,9 @@ class _AuthScreenState extends State<AuthScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 54, 0),
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
+              textInputAction: textInputAction,
+              onSubmitted: onSubmitted,
               obscureText: obscureText,
               style: _nunito(
                 fontSize: 15.5,
@@ -1828,103 +1976,3 @@ class _AccountDockCircleInsetPainter extends CustomPainter {
       oldDelegate.dy != dy || oldDelegate.color != color;
 }
 
-class _AccountPrototypeStatusBar extends StatelessWidget {
-  const _AccountPrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.0,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '09:41',
-              style: _AuthScreenState._nunito(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: const Color(0xFF141B2A),
-                height: 1.55,
-              ),
-            ),
-            const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _AccountSignalPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _AccountBatteryPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AccountSignalPainter extends CustomPainter {
-  const _AccountSignalPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _AccountBatteryPainter extends CustomPainter {
-  const _AccountBatteryPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

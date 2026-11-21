@@ -4,9 +4,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'anti_cheat_service.dart';
 import 'auth_service.dart';
 import 'cloud_sync_service.dart';
 import 'daily_challenge_service.dart';
+import 'game_telemetry_service.dart';
 import 'progress_manager.dart';
 
 enum LeaderboardCategory {
@@ -23,6 +25,12 @@ class LeaderboardService extends ChangeNotifier {
 
   static const String prefsKey = 'LululuLeaderboardV3';
   static const String legacyPrefsKey = 'LululuLeaderboardV2';
+
+  /// Bütünüyle ayrıştırılamayan tahta JSON'unun yedeklendiği prefs
+  /// anahtarı (O6): ham metin buraya yazılır, tahta varsayılanla (boş)
+  /// devam eder. Kayıt bazlı hatalarda yalnız bozuk kayıt atlanır,
+  /// sağlam kayıtlar korunur; yedek gerekmez.
+  static const String corruptBackupPrefsKey = 'LululuLeaderboardV3_corrupt';
   static const int maxTop = 100;
 
   static const String modeSuika = 'suika';
@@ -173,25 +181,29 @@ class LeaderboardService extends ChangeNotifier {
     if (json == null || json.isEmpty) {
       final legacy = prefs.getString(legacyPrefsKey);
       if (legacy != null && legacy.isNotEmpty) {
-        try {
-          _data = LeaderboardData.fromJson(
-            jsonDecode(legacy) as Map<String, dynamic>,
-          );
+        final parsed = _parseBoardJson(legacy);
+        if (parsed != null) {
+          _data = parsed;
           _stripFakeSeededRivals();
           await _save();
           await prefs.remove(legacyPrefsKey);
-        } catch (_) {
+        } else {
+          // Eski anahtar da bütünüyle bozuk: yedekle, anahtarı kaldır
+          // (her yüklemede tekrar ayrıştırma denemesi olmasın) ve
+          // varsayılanla devam et.
+          await _backupCorruptPrefs(prefs, legacy);
+          await prefs.remove(legacyPrefsKey);
           _data = LeaderboardData(modes: []);
         }
       } else {
         _data = LeaderboardData(modes: []);
       }
     } else {
-      try {
-        _data = LeaderboardData.fromJson(
-          jsonDecode(json) as Map<String, dynamic>,
-        );
-      } catch (_) {
+      final parsed = _parseBoardJson(json);
+      if (parsed != null) {
+        _data = parsed;
+      } else {
+        await _backupCorruptPrefs(prefs, json);
         _data = LeaderboardData(modes: []);
       }
     }
@@ -200,15 +212,47 @@ class LeaderboardService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tahta JSON'unu ayrıştırır. Kayıt bazlı hatalarda sağlam kayıtlar
+  /// korunur ([LeaderboardData.fromJson] bozuk tahta/kayıtları
+  /// atlar). Üst düzey JSON veya şekil bozuksa `null` döner.
+  LeaderboardData? _parseBoardJson(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      return LeaderboardData.fromJson(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Bozuk tahta ham metnini yedek anahtara yazar (O6). Yedek
+  /// yazılamazsa da yükleme varsayılanla devam eder; hata görünür
+  /// kılınır.
+  Future<void> _backupCorruptPrefs(
+    SharedPreferences prefs,
+    String raw,
+  ) async {
+    try {
+      await prefs.setString(corruptBackupPrefsKey, raw);
+      debugPrint(
+        '[lululu] Leaderboard: bozuk tahta yedeklenip varsayılanla '
+        'devam ediliyor.',
+      );
+    } catch (error) {
+      debugPrint('[lululu] Leaderboard: bozuk tahta yedeklenemedi: $error');
+    }
+  }
+
   /// Hesap silme için yerel liderlik önbelleğini temizler (hesap-silme,
   /// yerel-temizlik): tahtalar + bulut çekme zamanları bellekten
-  /// silinir, kalıcı anahtarlar (güncel + eski) kaldırılır. Bulut
-  /// skorları silinmez (sunucu tarafı silme işi AuthService.deleteAccount
-  /// dokümantasyonundadır).
+  /// silinir, kalıcı anahtarlar (güncel + eski + bozuk-tahta yedeği)
+  /// kaldırılır. Bulut skorları silinmez (sunucu tarafı silme işi
+  /// AuthService.deleteAccount dokümantasyonundadır).
   Future<void> clearLocalData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(prefsKey);
     await prefs.remove(legacyPrefsKey);
+    await prefs.remove(corruptBackupPrefsKey);
     _data = LeaderboardData(modes: []);
     _lastCloudFetchAt.clear();
     notifyListeners();
@@ -246,10 +290,19 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   /// Recompute each mode's bestScore for the signed-in player.
+  ///
+  /// Birleştirme (max) semantiği (K2): [ProgressManager.modeHighScores]
+  /// asla temizlenmez. Tahtada olmayan modların, tahtada kaydı
+  /// bulunmayan oyuncunun ve tahta skorundan yüksek PM skorlarının
+  /// değerleri korunur; tahta skoru PM skorundan yüksekse PM güncellenir.
+  /// Böylece boş/bozuk tahta yüklemesi PM skorlarını kalıcı olarak
+  /// silmez (tahta boşken eski `clear()` + geri-yazma PM haritasını
+  /// sıfırlıyor ve sonraki `recordModeScore` kalıcılığı da bu boş
+  /// hâli diske yazıyordu).
   void _rebindCurrentUserBests() {
     final uid = AuthService.instance.playerId;
     final name = AuthService.instance.displayName;
-    ProgressManager.instance.modeHighScores.clear();
+    final pmScores = ProgressManager.instance.modeHighScores;
     for (final board in _data.modes) {
       board.top.removeWhere(
         (e) => !isScoreValidForMode(board.modeId, e.score),
@@ -268,8 +321,11 @@ class LeaderboardService extends ChangeNotifier {
       }
       board.bestScore = best;
       if (best > 0) {
-        ProgressManager.instance.modeHighScores[normalizeModeId(board.modeId)] =
-            best;
+        final key = normalizeModeId(board.modeId);
+        final previous = pmScores[key] ?? 0;
+        if (best > previous) {
+          pmScores[key] = best;
+        }
       }
     }
   }
@@ -386,6 +442,15 @@ class LeaderboardService extends ChangeNotifier {
     required int score,
     String country = 'TR',
   }) {
+    // Dalga 3: buluttan gelen skor da AntiCheat kapısından geçer
+    // (bilinmeyen mod, negatif, mod tavanı). Tavanlar PM tavanlarıyla
+    // birebir hizalıdır (anticheat_binding_12c1_test: tavan hizalama),
+    // bu yüzden meşru uzak skorlar bu kapıdan etkilenmez.
+    final remoteCheck = AntiCheatService.instance.validateGameScore(
+      board.modeId,
+      score,
+    );
+    if (!remoteCheck.isValid) return false;
     if (!isScoreValidForMode(board.modeId, score)) return false;
     final uid = AuthService.instance.playerId;
     final id = playerId.isEmpty
@@ -424,12 +489,50 @@ class LeaderboardService extends ChangeNotifier {
     return true;
   }
 
+  /// Skor gönderir (12C1 AntiCheat kapılı — her iki yolda da).
+  ///
+  /// Yerel oyun akışından gelen skorlar ÖNCE
+  /// [AntiCheatService.validateGameScore] ile denetlenir: geçersiz skor
+  /// sessizce reddedilir (`false` döner, tahtaya yazılmaz, hata
+  /// fırlatılmaz) ve ret telemetriye yazılır. Uzak birleştirme / göç yolu
+  /// (`fromRemoteSync: true`) ARTIK AYNI kapıdan geçer (Dalga 3: kapı
+  /// deliği kapatıldı) — bilinmeyen mod, negatif/NaN ve mod tavanı üstü
+  /// skorlar uzaktan gelse de tahtaya girmez. Süre bilgisi uzaktan
+  /// gelmediğinden kapı burada yalnız mod + işaret + tavan denetler
+  /// (hız denetimi süre gerektirir); mutlak + mod tavanı denetimi
+  /// [isScoreValidForMode] ile aynen kalır.
   Future<bool> submitScore(
     String modeId,
     int score, {
     String? playerName,
+    bool fromRemoteSync = false,
   }) async {
     final canonicalMode = normalizeModeId(modeId);
+    // Dalga 3: kapı her iki yolda da çalışır — uzak birleştirme / göç
+    // (`fromRemoteSync: true`) artık AntiCheat'i atlamaz. Uzak skor
+    // süresiz geldiğinden kapı burada mod + işaret + tavan denetler.
+    final check = AntiCheatService.instance.validateGameScore(
+      canonicalMode,
+      score,
+    );
+    if (!check.isValid) {
+      debugPrint(
+        '[lululu] AntiCheat: submitScore reddedildi '
+        '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
+      );
+      GameTelemetryService.instance.recordError(
+        'score_rejected',
+        category: 'anticheat',
+        action: 'score_rejected',
+        meta: <String, Object?>{
+          'mode': check.mode,
+          'reason': check.reason,
+          'score': score,
+          'source': 'leaderboard_submit',
+        },
+      );
+      return false;
+    }
     if (!isScoreValidForMode(canonicalMode, score)) return false;
     await ensureLoaded();
     await AuthService.instance.ensureLoaded();
@@ -487,13 +590,22 @@ class LeaderboardService extends ChangeNotifier {
       board.bestScore = personal;
     }
 
-    await ProgressManager.instance.recordModeScore(canonicalMode, score);
+    if (!changed) return false;
+
+    // Yan etkiler yalnız tahta gerçekten değiştiyse çalışır (O7):
+    // iyileştirmeyen gönderim PM skorunu, günlük görevi ve bulut
+    // itme kuyruğunu tetiklemez. (Yüklemedeki max-birleştirme — K2 —
+    // sayesinde PM zaten tahta rekorunu bildiği için değişmeyen
+    // gönderimde `recordModeScore` atlamak skor kaybına yol açmaz.)
+    await ProgressManager.instance.recordModeScore(
+      canonicalMode,
+      score,
+      fromRemoteSync: fromRemoteSync,
+    );
     unawaited(
       DailyChallengeService.instance.tryCompleteWithScore(canonicalMode, score),
     );
     unawaited(CloudSyncService.instance.enqueueLeaderboardPush());
-
-    if (!changed) return false;
 
     board.top.sort((a, b) {
       final byScore = b.score.compareTo(a.score);
@@ -512,10 +624,20 @@ class LeaderboardService extends ChangeNotifier {
     return true;
   }
 
+  /// Mod rekorunun TEK OKUMA NOKTASI (Dalga 15, bulgu 12): o anki
+  /// oyuncunun tahta rekoru (`ModeBoard.bestScore`, `onAuthChanged`
+  /// / yüklemede o anki `playerId`'ye yeniden bağlanır). YALNIZ
+  /// tahta okunur — [ProgressManager.modeHighScores] cihaz düzeyinde
+  /// bir yedektir ve oyuncu değişince eski oyuncunun rekorunu
+  /// taşır; `max(tahta, PM)` birleştirmesi oyuncu değiştirince
+  /// rekoru sızdırır (auth_leaderboard: player_b'de 500 yerine
+  /// 2000 gösterirdi). Kimlik eşleşmesi kaçırılırsa tahta 0 döner;
+  /// oyun içi HUD bu durumu PM hızlı yoluyla ayrıca kapatır
+  /// (game_screen `_loadBest` / `_refreshBestFromServices`).
   int getBest(String modeId) {
     final canonical = normalizeModeId(modeId);
     final b = _find(canonical);
-    return b?.bestScore ?? ProgressManager().getModeHighScore(canonical);
+    return b?.bestScore ?? 0;
   }
 
   List<LeaderboardEntry> getTop(String modeId, {int n = maxTop}) {
@@ -580,26 +702,27 @@ class LeaderboardService extends ChangeNotifier {
     final int myDynamicScore;
     if (category == LeaderboardCategory.total11Modes) {
       final sum = total11ModesScore;
-      myDynamicScore = sum > 0 ? sum : 7915;
+      // 12A: gerçek değer — 7915 yedeği kaldırıldı; 0 ise 0.
+      myDynamicScore = sum;
     } else if (modeId != null && modeId.isNotEmpty) {
       final mScore = getBest(modeId);
-      myDynamicScore = mScore > 0 ? mScore : 7915;
+      // 12A: gerçek değer — 7915 yedeği kaldırıldı; 0 ise 0.
+      myDynamicScore = mScore;
     } else {
       final best = myBestOverall;
       final sum = total11ModesScore;
       final candidate = sum > best ? sum : best;
-      myDynamicScore = candidate > 0 ? candidate : 7915;
+      // 12A: gerçek değer — 7915 yedeği kaldırıldı; 0 ise 0.
+      myDynamicScore = candidate;
     }
 
     final map = <String, LeaderboardEntry>{};
 
-    // 1. Base ladder entries for Turkey Top 100 / Global / 11-Mode Total
-    final seeds = _ladderAnchorsFor(category);
-    for (final s in seeds) {
-      map[s.playerId] = s;
-    }
+    // Dalga 3: sahte çapa YOK — merdiven yalnız gerçek bulut/yerel
+    // veriden kurulur. Gerçek kayıt yoksa merdiven boş döner; uydurma
+    // rakip/satır yazılmaz.
 
-    // 2. Real local/cloud entries from _data.modes
+    // 1. Real local/cloud entries from _data.modes
     if (category == LeaderboardCategory.total11Modes) {
       final totalsByPlayer = <String, int>{};
       final namesByPlayer = <String, String>{};
@@ -646,16 +769,21 @@ class LeaderboardService extends ChangeNotifier {
       }
     }
 
-    // 3. Upsert current player's live score
-    map[uid] = LeaderboardEntry(
-      modeId: modeId != null ? normalizeModeId(modeId) : 'overall',
-      playerId: uid,
-      playerName: myName,
-      score: myDynamicScore,
-      utcTicks: DateTime.now().toUtc().millisecondsSinceEpoch,
-      isLocalPlayer: true,
-      country: 'TR',
-    );
+    // 2. Upsert current player's live score — yalnız gerçek skoru
+    // varsa veya gerçek rakip varsa. Boş merdiven boş döner: skoru
+    // olmayan oyuncunun 0'lık SEN satırı tek başına merdiven sayılmaz
+    // (SCORES ekranındaki boş-bant kuralıyla aynı dürüstlük).
+    if (myDynamicScore > 0 || map.isNotEmpty) {
+      map[uid] = LeaderboardEntry(
+        modeId: modeId != null ? normalizeModeId(modeId) : 'overall',
+        playerId: uid,
+        playerName: myName,
+        score: myDynamicScore,
+        utcTicks: DateTime.now().toUtc().millisecondsSinceEpoch,
+        isLocalPlayer: true,
+        country: 'TR',
+      );
+    }
 
     final list = map.values.toList()
       ..sort((a, b) {
@@ -668,108 +796,6 @@ class LeaderboardService extends ChangeNotifier {
       });
 
     return list.take(limit).toList();
-  }
-
-  List<LeaderboardEntry> _ladderAnchorsFor(LeaderboardCategory category) {
-    const trNames = <(String, String, int, int)>[
-      ('tr_1', 'KongoKralı', 11204, 7),
-      ('tr_2', 'HamamCan_34', 9310, 6),
-      ('tr_3', 'DivaNur', 8977, 5),
-      ('tr_4', 'TerlikUstası', 8540, 4),
-      ('tr_5', 'MakaraMehmet', 7402, 3),
-      ('tr_6', 'HuniKafa', 6988, 1),
-      ('tr_7', 'BilgeDede', 6511, 8),
-      ('tr_8', 'PijamaDans_06', 6240, 4),
-      ('tr_9', 'TencereÇırak', 5980, 2),
-      ('tr_10', 'F16Pilotu_35', 5720, 7),
-      ('tr_11', 'AnneTerliği_16', 5490, 5),
-      ('tr_12', 'RaidAvcısı', 5210, 6),
-      ('tr_13', 'BornozluEfsane', 4980, 8),
-      ('tr_14', 'SuikaPrensi', 4750, 3),
-      ('tr_15', 'OsmantuşBeyi', 4520, 4),
-    ];
-
-    const globalNames = <(String, String, int, String)>[
-      ('gl_1', 'TokyoSuika_JP', 14850, 'JP'),
-      ('gl_2', 'KongoKralı', 11204, 'TR'),
-      ('gl_3', 'RoachMaster_KR', 10890, 'KR'),
-      ('gl_4', 'BerlinMerger_DE', 9840, 'DE'),
-      ('gl_5', 'HamamCan_34', 9310, 'TR'),
-      ('gl_6', 'DivaNur', 8977, 'TR'),
-      ('gl_7', 'NeonBug_US', 8720, 'US'),
-      ('gl_8', 'TerlikUstası', 8540, 'TR'),
-      ('gl_9', 'SambaRoach_BR', 7650, 'BR'),
-      ('gl_10', 'MakaraMehmet', 7402, 'TR'),
-      ('gl_11', 'HuniKafa', 6988, 'TR'),
-      ('gl_12', 'BilgeDede', 6511, 'TR'),
-    ];
-
-    final scale = category == LeaderboardCategory.total11Modes ? 3 : 1;
-    final out = <LeaderboardEntry>[];
-
-    if (category == LeaderboardCategory.global) {
-      for (var i = 0; i < 99; i++) {
-        if (i < globalNames.length) {
-          final g = globalNames[i];
-          out.add(
-            LeaderboardEntry(
-              modeId: 'global',
-              playerId: g.$1,
-              playerName: g.$2,
-              score: g.$3,
-              utcTicks: i + 1,
-              country: g.$4,
-            ),
-          );
-        } else {
-          final score = (6400 - (i - globalNames.length) * 55).clamp(400, 6400);
-          out.add(
-            LeaderboardEntry(
-              modeId: 'global',
-              playerId: 'gl_${i + 1}',
-              playerName: 'GlobalOyuncu_${i + 1}',
-              score: score,
-              utcTicks: i + 1,
-              country: i.isEven ? 'GLOBAL' : 'TR',
-            ),
-          );
-        }
-      }
-      return out;
-    }
-
-    for (var i = 0; i < 99; i++) {
-      if (i < trNames.length) {
-        final t = trNames[i];
-        out.add(
-          LeaderboardEntry(
-            modeId: category == LeaderboardCategory.total11Modes
-                ? 'total_11'
-                : 'tr_top100',
-            playerId: t.$1,
-            playerName: t.$2,
-            score: t.$3 * scale,
-            utcTicks: i + 1,
-            country: 'TR',
-          ),
-        );
-      } else {
-        final baseScore = (4400 - (i - trNames.length) * 42).clamp(350, 4400);
-        out.add(
-          LeaderboardEntry(
-            modeId: category == LeaderboardCategory.total11Modes
-                ? 'total_11'
-                : 'tr_top100',
-            playerId: 'tr_${i + 1}',
-            playerName: 'LülüAvcısı_${i + 1}',
-            score: baseScore * scale,
-            utcTicks: i + 1,
-            country: 'TR',
-          ),
-        );
-      }
-    }
-    return out;
   }
 
   List<LeaderboardEntry> getOverallTop({int n = 50}) {
@@ -803,15 +829,13 @@ class LeaderboardService extends ChangeNotifier {
   }
 
   int get myBestOverall {
-    final uid = AuthService.instance.playerId;
+    // Dalga 15, bulgu 12: tek kaynak [getBest] (o anki oyuncunun
+    // tahta rekoru) okunur; PM cihaz düzeyi yedek olduğu için
+    // burada birleştirilmez.
     var best = 0;
-    for (final m in _data.modes) {
-      if (m.bestScore > best) best = m.bestScore;
-      for (final e in m.top) {
-        if ((e.playerId == uid || e.isLocalPlayer) && e.score > best) {
-          best = e.score;
-        }
-      }
+    for (final id in allModeIds) {
+      final modeBest = getBest(id);
+      if (modeBest > best) best = modeBest;
     }
     return best;
   }
@@ -927,12 +951,19 @@ class ModeBoard {
 
   factory ModeBoard.fromJson(Map<String, dynamic> json) {
     final rawTop = json['top'] as List<dynamic>? ?? [];
+    final entries = <LeaderboardEntry>[];
+    for (final raw in rawTop) {
+      if (raw is! Map<String, dynamic>) continue;
+      try {
+        entries.add(LeaderboardEntry.fromJson(raw));
+      } catch (_) {
+        // Bozuk tek kayıt atlanır; tahtanın sağlam kayıtları korunur (O6).
+      }
+    }
     return ModeBoard(
       modeId: json['modeId'] as String? ?? '',
       bestScore: (json['bestScore'] as num?)?.toInt() ?? 0,
-      top: rawTop
-          .map((e) => LeaderboardEntry.fromJson(e as Map<String, dynamic>))
-          .toList(),
+      top: entries,
     );
   }
 
@@ -950,11 +981,16 @@ class LeaderboardData {
 
   factory LeaderboardData.fromJson(Map<String, dynamic> json) {
     final raw = json['modes'] as List<dynamic>? ?? [];
-    return LeaderboardData(
-      modes: raw
-          .map((e) => ModeBoard.fromJson(e as Map<String, dynamic>))
-          .toList(),
-    );
+    final boards = <ModeBoard>[];
+    for (final rawBoard in raw) {
+      if (rawBoard is! Map<String, dynamic>) continue;
+      try {
+        boards.add(ModeBoard.fromJson(rawBoard));
+      } catch (_) {
+        // Bozuk tek tahta atlanır; diğer modların tahtaları korunur (O6).
+      }
+    }
+    return LeaderboardData(modes: boards);
   }
 
   Map<String, dynamic> toJson() => {

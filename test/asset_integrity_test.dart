@@ -112,7 +112,7 @@ void main() {
     );
   });
 
-  group('2. Audio Integrity: tier1..13, voice_tier1..13 & SFX (canonical assets/audio/ only)', () {
+  group('2. Audio Integrity: tier1..13 & SFX (canonical assets/audio/ only)', () {
     test('tier1_ses.mp3 .. tier13_ses.mp3 exist in assets/audio (> 0 bytes)', () {
       for (int tier = 1; tier <= 13; tier++) {
         final sesName = GameAudio.designSoundForTier(tier);
@@ -124,19 +124,8 @@ void main() {
       }
     });
 
-    test('voice_tier1.mp3 .. voice_tier13.mp3 exist in assets/audio (> 0 bytes)', () {
-      for (int tier = 1; tier <= 13; tier++) {
-        final voiceName = GameAudio.voiceForTier(tier);
-        expect(voiceName, 'voice_tier$tier.mp3');
-        expectValidAsset(
-          'assets/audio/$voiceName',
-          context: 'Tier $tier audio/voice_tier$tier.mp3',
-        );
-      }
-    });
-
     test('all SFX and voice clips in GameAudio.allAssets exist in assets/audio and are > 0 bytes', () {
-      expect(GameAudio.allAssets.length, greaterThanOrEqualTo(43));
+      expect(GameAudio.allAssets.length, greaterThanOrEqualTo(30));
       for (final fileName in GameAudio.allAssets) {
         expectValidAsset(
           'assets/audio/$fileName',
@@ -167,7 +156,7 @@ void main() {
           'lululu_nakarat.mp3',
           'duktur.mp3',
           'kanka.mp3',
-          'husur_aday.mp3',
+          'hisir_zopa.mp3',
         },
       );
       expect(GameAudio.viralOneShots.length, 7);
@@ -193,8 +182,8 @@ void main() {
           context: 'WebP bug sticker tier ${insect.tier}',
         );
         expectValidAsset(
-          'assets/audio/${insect.voiceFile}',
-          context: 'InsectTier.${insect.name}.voiceFile',
+          'assets/audio/${insect.soundFile}',
+          context: 'InsectTier.${insect.name}.soundFile',
         );
       }
     });

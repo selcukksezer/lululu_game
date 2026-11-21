@@ -1,11 +1,18 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/auth_service.dart';
+import '../services/audio_manager.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/home/lululu_dock_bar.dart';
+import '../widgets/shop_dialog.dart';
+import '../widgets/top_bar.dart';
+import 'profile_screen.dart';
+import 'settings_screen.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   final bool embedded;
@@ -47,19 +54,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
-  static String _formatScore(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) {
-        buf.write('.');
-      }
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
-
   void _handleBack() {
+    // S11: geri düğmesi sesi (sekme/satır dokunuşu bu ekranda yok —
+    // grep ile doğrulandı, yalnız geri + dock dokunuşları var).
+    AudioManager().playPop();
     if (widget.onClose != null) {
       widget.onClose!();
       return;
@@ -72,12 +70,33 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     goTo(context, LululuRoutes.hub, replace: true);
   }
 
+  // Dalga 15 (bulgu 10): üst durum çubuğu işlemleri — ana sayfadaki
+  // GameSelectorScreen ile aynı hedefler (profil / ayarlar / mağaza).
+  void _openProfile() {
+    AudioManager().playPop();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
+    );
+  }
+
+  void _openSettings() {
+    AudioManager().playPop();
+    SettingsScreen.show(context);
+  }
+
+  void _openShop() {
+    AudioManager().playPop();
+    showShopDialog(context);
+  }
+
   void _handleDockSelect(BuildContext context, LululuDockTab tab) {
     if (widget.onSelectDockTab != null) {
+      AudioManager().playPop();
       widget.onSelectDockTab!(tab);
       return;
     }
     if (tab == LululuDockTab.scores) return;
+    AudioManager().playPop();
     final route = switch (tab) {
       LululuDockTab.home => LululuRoutes.hub,
       LululuDockTab.modes => LululuRoutes.modes,
@@ -97,76 +116,83 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         LeaderboardService.instance,
       ]),
       builder: (context, _) {
-        final int myScoreVal = 7915 + ProgressManager.instance.total11ModesScore;
-        final myScoreText = _formatScore(myScoreVal);
+        // 12A: gerçek değerler — 7915 tabanı kaldırıldı; 0 ilerlemede
+        // SEN satırı 0 puan gösterir.
+        final int myScoreVal = ProgressManager.instance.total11ModesScore;
+        final myScoreText =
+            formatGroupedInt(myScoreVal, Localizations.localeOf(context).languageCode);
 
-        // SEN satırı (W101-2): seviye top_bar.dart:54 +
-        // profile_screen.dart:165'teki formülle aynı
-        // (unlockedLevel > 1 ? 17 + unlockedLevel : 18); ad
+        // SEN satırı (W101-2): seviye top_bar.dart + profile_screen.dart
+        // ile aynı (gerçek seviye: unlockedLevel, 0/1 ise 1); ad
         // AuthService.displayName, giriş yoksa 'LülüSever' yedeği
         // (leaderboard_service.dart:577-578 ile aynı).
-        final int myLevel = ProgressManager.instance.unlockedLevel > 1
-            ? (17 + ProgressManager.instance.unlockedLevel)
-            : 18;
+        final int myLevel = ProgressManager.instance.unlockedLevel < 1
+            ? 1
+            : ProgressManager.instance.unlockedLevel;
         final String myDisplayName = AuthService.instance.isSignedIn
             ? AuthService.instance.displayName
             : 'LülüSever';
 
-        // Gerçek kayıtlar (yalnızca gerçek oyuncular): boşsa boş durum bandı
-        // gösterilir. Yükleme bitmeden bu dala düşülmez — _loading iskelet çizer.
-        final isBoardEmpty =
-            LeaderboardService.instance.getOverallTop().isEmpty;
-
-        final scoreItems = <_ScoreRowData>[
-          _ScoreRowData(
-            rank: 4,
-            name: 'TerlikUstası',
-            level: context.l10n.levelWithValue(24),
-            score: '8.540',
-            avatar: 'assets/design/bugs_hd/tier4_hd.png',
-            imgTop: 2.4,
-            imgHeight: 35.2,
-          ),
-          _ScoreRowData(
-            rank: 5,
-            name: context.l10n.youAsName(myDisplayName),
-            level: context.l10n.levelWithValue(myLevel),
-            score: myScoreText,
-            avatar: 'assets/design/bugs_hd/tier5_hd.png',
-            imgTop: 4.3,
-            imgHeight: 62.3,
-            isMe: true,
-          ),
-          _ScoreRowData(
-            rank: 6,
-            name: 'MakaraMehmet',
-            level: context.l10n.levelWithValue(21),
-            score: '7.402',
-            avatar: 'assets/design/bugs_hd/tier3_hd.png',
-            imgTop: 2.4,
-            imgHeight: 35.2,
-          ),
-          _ScoreRowData(
-            rank: 7,
-            name: 'HuniKafa',
-            level: context.l10n.levelWithValue(15),
-            score: '6.988',
-            avatar: 'assets/design/bugs_hd/tier1_hd.png',
-            imgTop: 5.6,
-            imgHeight: 82.6,
-          ),
-          _ScoreRowData(
-            rank: 8,
-            name: 'BilgeDede',
-            level: context.l10n.levelWithValue(27),
-            score: '6.511',
-            avatar: 'assets/design/bugs_hd/tier8_hd.png',
-            imgTop: 3.2,
-            imgHeight: 46.0,
-          ),
+        // B11/K4 — gerçek kayıtlar: tek veri yolu getOverallTop()
+        // (ham tahtalardaki gerçek/lokal satırlar; sabit podyum ve
+        // sabit satırlar kaldırıldı). Yükleme bitmeden bu dala
+        // düşülmez — _loading iskelet çizer.
+        final entries = LeaderboardService.instance.getOverallTop();
+        final isBoardEmpty = entries.isEmpty;
+        final uid = AuthService.instance.playerId;
+        final others = entries
+            .where((e) => !e.isLocalPlayer && e.playerId != uid)
+            .toList();
+        // Dalga 15 (bulgu 10): tahtada yalnız SEN satırı varsa rakip
+        // yoktur — liste "neredeyse boş"ken bunu dürüstçe söyleyen
+        // bant gösterilir; uydurma rakip/satır yazılmaz.
+        final hasRivals = others.isNotEmpty;
+        // SEN satırı: gerçek toplam skor gösterilir; sıralamadaki yeri
+        // gerçek rakip skorlarına göre hesaplanır.
+        // Tahta boşken SEN satırı da gösterilmez, yalnız boş bant görünür.
+        final combined = <({int score, bool isMe, LeaderboardEntry? entry})>[
+          for (final e in others) (score: e.score, isMe: false, entry: e),
+          if (!isBoardEmpty) (score: myScoreVal, isMe: true, entry: null),
+        ]..sort((a, b) {
+            final byScore = b.score.compareTo(a.score);
+            if (byScore != 0) return byScore;
+            if (a.isMe != b.isMe) return a.isMe ? 1 : -1;
+            return 0;
+          });
+        final boardItems = <_ScoreRowData>[
+          for (var i = 0; i < combined.length; i++)
+            if (combined[i].isMe)
+              _ScoreRowData(
+                rank: i + 1,
+                name: context.l10n.youAsName(myDisplayName),
+                level: context.l10n.levelWithValue(myLevel),
+                score: myScoreText,
+                avatar: 'assets/design/bugs_hd/tier5_hd.png',
+                imgTop: 4.3,
+                imgHeight: 62.3,
+                isMe: true,
+              )
+            else
+              _ScoreRowData(
+                rank: i + 1,
+                name: combined[i].entry!.playerName,
+                level: _modeSubtitle(context, combined[i].entry!.modeId),
+                score: formatGroupedInt(
+                  combined[i].entry!.score,
+                  Localizations.localeOf(context).languageCode,
+                ),
+                avatar: _avatarFor(combined[i].entry!.playerName),
+                imgTop: 2.4,
+                imgHeight: 35.2,
+              ),
         ];
+        final podiumItems = boardItems.length > 3
+            ? boardItems.sublist(0, 3)
+            : boardItems;
+        final scoreItems = boardItems.length > 3
+            ? boardItems.sublist(3)
+            : const <_ScoreRowData>[];
 
-        final mqTop = MediaQuery.of(context).padding.top;
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F6FA),
@@ -177,7 +203,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 bottom: false,
                 child: Column(
                   children: [
-                    if (mqTop == 0) const _ScoresPrototypeStatusBar(),
+                    // Dalga 15 (bulgu 10): üst durum çubuğu
+                    // (coin/yıldız/kalp/ayarlar) — ana sayfadaki
+                    // LululuTopBar ile aynı kaynaklar; bu ekranda
+                    // hiç görünmüyordu.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      child: LululuTopBar(
+                        light: true,
+                        onProfileTap: _openProfile,
+                        onSettingsTap: _openSettings,
+                        onShopTap: _openShop,
+                      ),
+                    ),
                     // .page-title (y=35.4, h=47, padding: 10px 14px 2px 14px)
                     Container(
                       height: 47,
@@ -301,92 +339,28 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         padding: const EdgeInsets.only(bottom: 120),
                         children: [
                           if (isBoardEmpty) _buildEmptyStateBanner(),
-                          // .podium (y=82, h=190, padding: 14px 16px 4px 16px)
-                          Container(
-                            height: 190,
-                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                _buildPodiumCol(
-                                  rank: 2,
-                                  name: 'HamamCan_34',
-                                  score: '9.310',
-                                  avatar: 'assets/design/bugs_hd/tier6_hd.png',
-                                  faceSize: 64,
-                                  imgLeft: 3.5,
-                                  imgTop: 6.3,
-                                  imgWidth: 51.0,
-                                  imgHeight: 93.2,
-                                  borderColor: const Color(0xFF8E9CAE),
-                                  baseHeight: 32,
-                                  baseFontSize: 17,
-                                  baseDecoration: const BoxDecoration(
-                                    color: Color(0xFFA9B6C8),
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(10),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                _buildPodiumCol(
-                                  rank: 1,
-                                  name: 'KongoKralı',
-                                  score: '11.204',
-                                  avatar: 'assets/design/bugs_hd/tier7_hd.png',
-                                  faceSize: 78,
-                                  imgLeft: 4.3,
-                                  imgTop: 7.1,
-                                  imgWidth: 63.4,
-                                  imgHeight: 90.4,
-                                  borderColor: const Color(0xFFFFB800),
-                                  baseHeight: 44,
-                                  baseFontSize: 20,
-                                  baseDecoration: const BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Color(0xFFFFB800),
-                                        Color(0xFFE09E00),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(10),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                _buildPodiumCol(
-                                  rank: 3,
-                                  name: 'DivaNur',
-                                  score: '8.977',
-                                  avatar: 'assets/design/bugs_hd/tier5_hd.png',
-                                  faceSize: 64,
-                                  imgLeft: 3.5,
-                                  imgTop: 7.1,
-                                  imgWidth: 51.0,
-                                  imgHeight: 90.3,
-                                  borderColor: const Color(0xFF8E9CAE),
-                                  baseHeight: 26,
-                                  baseFontSize: 15,
-                                  baseDecoration: const BoxDecoration(
-                                    color: Color(0xFFD08A4E),
-                                    borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(10),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                          if (!isBoardEmpty && !hasRivals)
+                            _buildNoRivalsBanner(),
+                          if (!isBoardEmpty) ...[
+                            // .podium (y=82, h=190, padding: 14px 16px 4px 16px)
+                            Container(
+                              height: 190,
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: _buildPodiumCols(podiumItems),
+                              ),
                             ),
-                          ),
 
-                          const SizedBox(height: 12),
+                            const SizedBox(height: 12),
 
-                          for (final item in scoreItems) _buildScoreRow(item),
+                            for (final item in scoreItems)
+                              _buildScoreRow(item),
 
-                          const SizedBox(height: 8),
+                            const SizedBox(height: 8),
+                          ],
                         ],
                       ),
                     ),
@@ -491,7 +465,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   /// Boş durum bandı: gerçek kayıtlarda hiç skor yokken gösterilir.
-  Widget _buildEmptyStateBanner() {
+  /// [title]/[hint] verilmezse "henüz skor yok" metinleri kullanılır.
+  Widget _buildEmptyStateBanner({String? title, String? hint}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       child: Container(
@@ -515,7 +490,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    context.l10n.noScoresYet,
+                    title ?? context.l10n.noScoresYet,
                     style: TextStyle(
                       fontFamily: 'Baloo 2',
                       fontSize: 15,
@@ -526,7 +501,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   ),
                   SizedBox(height: 2),
                   Text(
-                    context.l10n.noScoresHint,
+                    hint ?? context.l10n.noScoresHint,
                     style: TextStyle(
                       fontFamily: 'Nunito',
                       fontSize: 12,
@@ -541,6 +516,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// "Yalnız SEN" bandı (Dalga 15, bulgu 10): tahtada skor var ama
+  /// rakip yokken gösterilir — uydurma rakip yazılmaz.
+  Widget _buildNoRivalsBanner() {
+    return _buildEmptyStateBanner(
+      title: context.l10n.noRivalsYet,
+      hint: context.l10n.noRivalsHint,
     );
   }
 
@@ -682,6 +666,134 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         ],
       ),
     );
+  }
+
+  /// Podyum sütunları: gösterim sırası 2-1-3 (ortada lider); 3'ten az
+  /// kayıt varsa yalnız var olan sütunlar ortalanarak çizilir.
+  List<Widget> _buildPodiumCols(List<_ScoreRowData> podiumItems) {
+    final byRank = <int, _ScoreRowData>{
+      for (final item in podiumItems) item.rank: item,
+    };
+    final cols = <Widget>[];
+    for (final rank in const [2, 1, 3]) {
+      final item = byRank[rank];
+      if (item == null) continue;
+      if (cols.isNotEmpty) cols.add(const SizedBox(width: 10));
+      cols.add(_buildPodiumColForRank(rank, item));
+    }
+    return cols;
+  }
+
+  /// Sıra konumunun (1/2/3) sabit geometrisi + gerçek satır verisi.
+  Widget _buildPodiumColForRank(int rank, _ScoreRowData item) {
+    switch (rank) {
+      case 1:
+        return _buildPodiumCol(
+          rank: 1,
+          name: item.name,
+          score: item.score,
+          avatar: item.avatar,
+          faceSize: 78,
+          imgLeft: 4.3,
+          imgTop: 7.1,
+          imgWidth: 63.4,
+          imgHeight: 90.4,
+          borderColor: const Color(0xFFFFB800),
+          baseHeight: 44,
+          baseFontSize: 20,
+          baseDecoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFFFFB800),
+                Color(0xFFE09E00),
+              ],
+            ),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(10),
+            ),
+          ),
+        );
+      case 2:
+        return _buildPodiumCol(
+          rank: 2,
+          name: item.name,
+          score: item.score,
+          avatar: item.avatar,
+          faceSize: 64,
+          imgLeft: 3.5,
+          imgTop: 6.3,
+          imgWidth: 51.0,
+          imgHeight: 93.2,
+          borderColor: const Color(0xFF8E9CAE),
+          baseHeight: 32,
+          baseFontSize: 17,
+          baseDecoration: const BoxDecoration(
+            color: Color(0xFFA9B6C8),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(10),
+            ),
+          ),
+        );
+      default:
+        return _buildPodiumCol(
+          rank: 3,
+          name: item.name,
+          score: item.score,
+          avatar: item.avatar,
+          faceSize: 64,
+          imgLeft: 3.5,
+          imgTop: 7.1,
+          imgWidth: 51.0,
+          imgHeight: 90.3,
+          borderColor: const Color(0xFF8E9CAE),
+          baseHeight: 26,
+          baseFontSize: 15,
+          baseDecoration: const BoxDecoration(
+            color: Color(0xFFD08A4E),
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(10),
+            ),
+          ),
+        );
+    }
+  }
+
+  /// Rakip satırının alt başlığı: en iyi skorun alındığı modun
+  /// yerelleşmiş adı (kayıtlarda seviye alanı yok; seviye uydurulmaz).
+  static String _modeSubtitle(BuildContext context, String modeId) {
+    final id = switch (LeaderboardService.normalizeModeId(modeId)) {
+      LeaderboardService.modeSuika => LululuGameModeId.suikaArena,
+      LeaderboardService.mode2048 => LululuGameModeId.grid2048,
+      LeaderboardService.modeBalloon => LululuGameModeId.bubblePop,
+      LeaderboardService.modeMatch3 => LululuGameModeId.match3,
+      LeaderboardService.modeConnect => LululuGameModeId.connectBlast,
+      LeaderboardService.modeStack => LululuGameModeId.stackDrop,
+      LeaderboardService.modeTerlik => LululuGameModeId.terlikTap,
+      LeaderboardService.modeYuva => LululuGameModeId.yuvaDefense,
+      LeaderboardService.modeOsmantus => LululuGameModeId.osmantus,
+      LeaderboardService.modeScream => LululuGameModeId.screamBug,
+      LeaderboardService.modeMakarayiz => LululuGameModeId.makarayiz,
+      _ => null,
+    };
+    if (id == null) return '';
+    final locale = Localizations.localeOf(context);
+    for (final mode in LululuGameMode.catalog) {
+      if (mode.id == id) return mode.titleFor(locale);
+    }
+    return '';
+  }
+
+  /// Rakip avatarı: oyuncu adına göre deterministik kademe görseli
+  /// (yalnız sunum eşlemesi; kayıt verisini değiştirmez, her açılışta
+  /// aynı oyuncu aynı görseli alır).
+  static String _avatarFor(String playerName) {
+    var hash = 0;
+    for (final unit in playerName.codeUnits) {
+      hash = (hash * 31 + unit) % 997;
+    }
+    return 'assets/design/bugs_hd/tier${(hash % 10) + 1}_hd.png';
   }
 
   Widget _buildScoreRow(_ScoreRowData item) {
@@ -1414,108 +1526,4 @@ class _DockCircleInsetPainter extends CustomPainter {
   bool shouldRepaint(covariant _DockCircleInsetPainter oldDelegate) =>
       oldDelegate.dy != dy || oldDelegate.color != color;
 }
-
-class _ScoresPrototypeStatusBar extends StatelessWidget {
-  const _ScoresPrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 35.0,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 1.6),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text(
-              '09:41',
-              style: TextStyle(
-                fontFamily: 'Nunito',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF141B2A),
-                height: 1.55,
-              ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ScoresSignalPainter(),
-                ),
-                SizedBox(width: 5),
-                CustomPaint(
-                  size: Size(15, 15),
-                  painter: _ScoresBatteryPainter(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ScoresSignalPainter extends CustomPainter {
-  const _ScoresSignalPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final paint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(const Rect.fromLTWH(2, 17, 3, 4), paint);
-    canvas.drawRect(const Rect.fromLTWH(7.5, 13, 3, 8), paint);
-    canvas.drawRect(const Rect.fromLTWH(13, 9, 3, 12), paint);
-    canvas.drawRect(const Rect.fromLTWH(18.5, 5, 3, 16), paint);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _ScoresBatteryPainter extends CustomPainter {
-  const _ScoresBatteryPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = size.width / 24.0;
-    canvas.save();
-    canvas.scale(scale, scale);
-    final strokePaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5, 8, 17, 9),
-        const Radius.circular(2.5),
-      ),
-      strokePaint,
-    );
-    final fillPaint = Paint()
-      ..color = const Color(0xFF141B2A)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5, 10, 10, 5),
-        const Radius.circular(1),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-
 

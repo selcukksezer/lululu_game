@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:vibration/vibration.dart';
+
 import '../l10n/app_localizations.dart';
 import '../models/campaign_level.dart';
 import '../models/hisir_character.dart';
@@ -13,11 +14,16 @@ import '../models/insect_tier.dart';
 import '../physics/physics_engine.dart';
 import '../services/adaptive_quality_scaler.dart';
 import '../services/audio_manager.dart';
+import '../services/auth_service.dart';
+import '../services/campaign_progression_service.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import '../widgets/bonus_fx.dart';
 import '../widgets/game_arena_painter.dart';
 import 'result_screen.dart';
@@ -63,10 +69,16 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   CircularPhysicsEngine? _engine;
   late Ticker _ticker;
   Duration _lastElapsed = Duration.zero;
+
+  /// Kare bildirimi: [_onTick] tam `setState` yerine bunu artırır —
+  /// yalnız `build` içindeki [ValueListenableBuilder] alt-ağacı
+  /// (HUD + arena + güç çubuğu + toast bandı) yenilenir; Scaffold,
+  /// arka plan ve [PopScope] kare başına kurulmaz.
+  final ValueNotifier<int> _frameTick = ValueNotifier<int>(0);
 
   late CampaignLevel _currentLevel;
   final progress = ProgressManager();
@@ -86,6 +98,12 @@ class _GameScreenState extends State<GameScreen>
   bool _dropHadMerge = false;
   InsectTier _currentDropperTier = InsectTier.cone;
   InsectTier _nextDropperTier = InsectTier.helmet;
+
+  /// Düşürücüdeki / sıradaki böcek Hışır derili mi? Deri yalnız
+  /// görsel + birleşme sesini değiştirir; kademe/skor aynen kalır.
+  /// Prototip görsel durumunda hep `false` tutulur.
+  bool _currentDropperIsHisir = false;
+  bool _nextDropperIsHisir = false;
   InsectTier _highestTierUnlocked = InsectTier.cone;
 
   double _dropperX = 200.0;
@@ -94,6 +112,10 @@ class _GameScreenState extends State<GameScreen>
 
   String _activeSpeechBubble = '';
   Timer? _speechTimer;
+
+  /// Sıralı replik bandı temizlik zamanlayıcısı: kuyruk boşalınca son
+  /// replik 700 ms daha görünür, sonra bant temizlenir.
+  Timer? _queuedSpeechClearTimer;
   Timer? _aydinlatTimer;
   bool _isAydinlatActive = false;
 
@@ -147,6 +169,24 @@ class _GameScreenState extends State<GameScreen>
 
   // Mechanics / features
   bool _paused = false;
+
+  /// Yaşam döngüsü (arka plan) duraklatması bayrağı (Osmantus deseni):
+  /// yardım diyaloğu açıkken arka plana alınmış oyun, diyalog kapanınca
+  /// kendiliğinden başlamaz — DEVAM beklenir (B9). Yalnız açık devam
+  /// yolları ([_togglePause] ile devam, [_restartLevel]) temizler.
+  bool _pausedByLifecycle = false;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
+
+  /// Hamle-sonu değerlendirmesi duraklatma yüzünden ertelendiyse bekleyen
+  /// turun kimliği ([_dropGen]); devamda [_flushPendingMovesEnd] okur.
+  int? _pendingMovesEndGen;
   bool _waitingSettle = false;
   double _settleHold = 0;
 
@@ -158,6 +198,19 @@ class _GameScreenState extends State<GameScreen>
   /// Bu oturumda yapılan düşürme sayısı. Yeniden başlatmada SIFIRLANMAZ:
   /// enerji iadesi, oturum boyunca hiç hamle yapılmamasına bakar.
   int _dropsMade = 0;
+
+  /// Tur başlangıç damgası (Y3): [finishRun] idempotency anahtarının
+  /// tur bileşeni. `initState`'te bir kez yakalanır, her yeniden
+  /// başlatmada / yeni seviyede tazelenir ([_restartLevel]); bitiş
+  /// anında `DateTime.now()` okunmaz. Aynı turun zafer + yenilgi
+  /// yolları aynı anahtarı paylaşır (ikisi birden ödeme yapamaz).
+  int _runStartStamp = 0;
+
+  /// Y3 anahtarı: `'suika:<turBaşlangıçDamgası>'`. Mod kimliği
+  /// liderlik gönderim yoluyla aynıdır ([LeaderboardService.modeSuika]
+  /// / [_submitSuikaScore]'daki `'suika'`).
+  String get _runIdempotencyKey =>
+      '${LeaderboardService.modeSuika}:$_runStartStamp';
 
   static const ColorFilter _aydinlatBwFilter = ColorFilter.matrix(<double>[
     0.2126,
@@ -204,14 +257,32 @@ class _GameScreenState extends State<GameScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentLevel = widget.level;
+    // Y3 damgası: tur başlangıcında bir kez yakalanır (kampanya
+    // seviyesi + arcade turu her biri kendi damgasını alır).
+    _runStartStamp = DateTime.now().microsecondsSinceEpoch;
     _survivalTimeRemaining = _currentLevel.timeLimitSeconds.toDouble();
     _remainingMoves = widget.arcade ? -1 : _currentLevel.allowedMoves;
     AudioManager().initialize();
-    _preloadImages();
+    // Suika replik kuyruğu: son ses bitince bant temizlenir.
+    AudioManager().onSuikaVoiceQueueDrained = _onSuikaVoiceQueueDrained;
+    // 13 tier decode'u ilk kare sonrasına ertelenir: resolve
+    // çağrıları ilk kareyle yarışmaz, kare başına 3 tier dilimlenir
+    // ([_preloadImages]); decode zaten asenkrondu, görsel sonuç aynı.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _preloadImages();
+    });
     _loadBest();
+    // 12I: liderlik değişimleri (auth yeniden bağlama / bulut tazeleme)
+    // rekoru geç güncelleyebilir; ekran dinleyiciyle tazeler.
+    LeaderboardService.instance.addListener(_onLeaderboardChanged);
     _currentDropperTier = _rollDropTier();
     _nextDropperTier = _rollDropTier();
+    _currentDropperIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+    _nextDropperIsHisir =
+        !widget.prototypeVisualState && HisirCharacter.roll(_rng);
     if (widget.prototypeVisualState) {
       _currentDropperTier = InsectTier.cone;
       _nextDropperTier = InsectTier.helmet;
@@ -226,25 +297,65 @@ class _GameScreenState extends State<GameScreen>
     _scheduleHisir(const Duration(seconds: 15));
   }
 
+  /// Rekor yükleme (12I): tahta `bestScore`'u kimlik eşleşmesi kaçırırsa
+  /// 0 dönebilir — liderlik servisinin yeniden bağlama adımı yalnız o
+  /// anki `playerId` ile eşleşen kayıtları sayar ve tahta varsa `getBest`
+  /// PM yedeğini okumaz. O yüzden önce PM haritasındaki kalıcı rekor
+  /// hızlı yoldan gösterilir, sonra yüklemeler beklenip iki kaynaktaki
+  /// büyük değerle tazelenir. Tek başına `ensureLoaded` sonrası tekrar
+  /// okuma yetmez: geç yüklenen kimlik tahtayı yeniden bağlamaz.
   Future<void> _loadBest() async {
+    final fastBest = ProgressManager.instance.getModeHighScore(
+      LeaderboardService.modeSuika,
+    );
+    if (mounted && fastBest > _bestScore) {
+      setState(() => _bestScore = fastBest);
+    }
+    await ProgressManager.instance.ensureLoaded();
     await LeaderboardService.instance.ensureLoaded();
+    await AuthService.instance.ensureLoaded();
     if (!mounted) return;
-    setState(() {
-      _bestScore = LeaderboardService.instance.getBest(
-        LeaderboardService.modeSuika,
-      );
-    });
+    _refreshBestFromServices();
   }
+
+  /// Liderlik + PM kaynaklarındaki büyük rekoru HUD'a yazar. Değer
+  /// yalnız büyür (kalıcı rekor tek yönlüdür); kalıcı yazım oyun
+  /// sonundaki [_submitSuikaScore] yolunda aynen kalır.
+  void _refreshBestFromServices() {
+    final saved = max(
+      LeaderboardService.instance.getBest(LeaderboardService.modeSuika),
+      ProgressManager.instance.getModeHighScore(LeaderboardService.modeSuika),
+    );
+    if (mounted && saved > _bestScore) {
+      setState(() => _bestScore = saved);
+    }
+  }
+
+  /// Liderlik değişim dinleyicisi (12I): auth yeniden bağlama / bulut
+  /// tazeleme / gönderim sonrası rekoru tazeler.
+  void _onLeaderboardChanged() => _refreshBestFromServices();
 
   /// Weighted bag like classic Suika — mostly tier 1–3.
   InsectTier _rollDropTier() {
-    var r = _rng.nextDouble();
+    // 12C1: adaptif zorluk — merhamette zar küçük kademeye kayar (daha
+    // çok küçük böcek), kazanma serisinde büyük kademeye kayar.
+    final favorability = DifficultyBinding.instance
+        .cachedProfileForMode('suika')
+        .spawnFavorability;
+    var r = _rng.nextDouble() * (2.0 - favorability);
     if (widget.arcade) {
+      // Dalga 16 (F-G1): ilk 6 bırakışta yalnız T1/T2 düşsün
+      // (T1 %55 / T2 %45) — ilk birleşme ~3. bırakışa iner.
+      if (_arcadeDropCount < 6) {
+        return _rng.nextDouble() < 0.55
+            ? InsectTier.cone
+            : InsectTier.helmet;
+      }
       final ramp = min(0.24, _arcadeDropCount * 0.003 + _score / 12000);
       if (r < ramp) {
         // Düşürücü tavanı Dansçı (tier 4): Diva (tier 5) doğrudan
         // düşürülmez, yalnızca birleşmeyle doğar.
-        if (_arcadeDropCount >= 18 || _score >= 2400) {
+        if (_arcadeDropCount >= 10 || _score >= 2400) {
           return InsectTier.dancer;
         }
         return InsectTier.fan;
@@ -265,8 +376,39 @@ class _GameScreenState extends State<GameScreen>
     return InsectTier.dancer;
   }
 
+  /// 13 tier görselini zaman-dilimli çözer: kare başına en fazla 3
+  /// tier `resolve` edilir, kalanı sonraki kareye bırakılır — ilk
+  /// kareler decode işiyle tıkanmaz. İlk kare sonrasında başlar
+  /// (bkz. `initState`); her dinleyici zaten `mounted` korur.
   void _preloadImages() {
-    for (final tier in InsectTier.values) {
+    _preloadImagesBatched(0);
+    _preloadHisirImage();
+  }
+
+  /// Hışır derisi görseli (`hisir_hd.png`) tier görselleriyle aynı
+  /// haritaya çözülür — painter `body.isHisir` ise bu girdiyi okur.
+  void _preloadHisirImage() {
+    final imgStream = const AssetImage(
+      HisirCharacter.assetPath,
+    ).resolve(ImageConfiguration.empty);
+    final listener = ImageStreamListener((ImageInfo info, bool _) {
+      if (mounted) {
+        setState(() {
+          _insectImages[HisirCharacter.assetPath] = info;
+        });
+      }
+    });
+    _insectImageListeners[imgStream] = listener;
+    imgStream.addListener(listener);
+  }
+
+  void _preloadImagesBatched(int start) {
+    if (!mounted) return;
+    const batch = 3;
+    final tiers = InsectTier.values;
+    final end = min(start + batch, tiers.length);
+    for (var i = start; i < end; i++) {
+      final tier = tiers[i];
       final imgStream = AssetImage(
         tier.assetPath,
       ).resolve(ImageConfiguration.empty);
@@ -279,6 +421,11 @@ class _GameScreenState extends State<GameScreen>
       });
       _insectImageListeners[imgStream] = listener;
       imgStream.addListener(listener);
+    }
+    if (end < tiers.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _preloadImagesBatched(end);
+      });
     }
   }
 
@@ -322,6 +469,7 @@ class _GameScreenState extends State<GameScreen>
       _engine!.layoutBlocks(
         !widget.arcade && _currentLevel.hasObstacles ? 3 : 0,
       );
+      _engine!.setDropSeed(_runStartStamp);
       _dropperX = center.dx;
     } else {
       _engine!.remountLayout(
@@ -354,6 +502,11 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _restartLevel(CampaignLevel level) {
+    // Yeni tur, yeni Y3 anahtarı: eski turun anahtarı tüketilmiş kalır.
+    _runStartStamp = DateTime.now().microsecondsSinceEpoch;
+    // 10B: bırakma rastgeleliği bu tur damgasıyla tohumlanır — aynı
+    // tohum aynı düşüş dizisini verir, turlar arası tekrar yoktur.
+    _engine?.setDropSeed(_runStartStamp);
     _dropTimer?.cancel();
     _movesEndTimer?.cancel();
     _bonusPulseTimer?.cancel();
@@ -363,6 +516,10 @@ class _GameScreenState extends State<GameScreen>
     _comboBreakTimer?.cancel();
     _hisirTimer?.cancel();
     _hisirHideTimer?.cancel();
+    // Yeni tur: eski turun replik kuyruğu silinir (eski sesler yeni
+    // tura sarkmaz); bant zaten aşağıdaki setState ile temizlenir.
+    AudioManager().clearSuikaVoiceQueue();
+    _queuedSpeechClearTimer?.cancel();
     for (final timer in _juiceTimers) {
       timer.cancel();
     }
@@ -388,6 +545,8 @@ class _GameScreenState extends State<GameScreen>
       _overflowAccum = 0;
       _dangerProximity = 0;
       _paused = false;
+      _pausedByLifecycle = false;
+      _pendingMovesEndGen = null;
       _waitingSettle = false;
       _settleHold = 0;
       _mergeTotal = 0;
@@ -403,6 +562,10 @@ class _GameScreenState extends State<GameScreen>
       _bonusPulse.clear();
       _currentDropperTier = _rollDropTier();
       _nextDropperTier = _rollDropTier();
+      _currentDropperIsHisir =
+          !widget.prototypeVisualState && HisirCharacter.roll(_rng);
+      _nextDropperIsHisir =
+          !widget.prototypeVisualState && HisirCharacter.roll(_rng);
       _aimDropperAt(_dropperX);
       _engine?.squareArena = widget.arcade || level.squareArena;
       _engine?.layoutBlocks(!widget.arcade && level.hasObstacles ? 3 : 0);
@@ -413,11 +576,18 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    LeaderboardService.instance.removeListener(_onLeaderboardChanged);
     // Madde 35: giriş enerjisi tüketildiyse ve oyun bitmeden (zafer/yenilgi
     // olmadan) hiç hamle yapılmadan çıkıldıysa 1 enerjiyi iade et.
     // Kampanya ve doğrudan rota girişlerinde energyConsumed false'tur.
     if (widget.energyConsumed && !_isFinished && _dropsMade == 0) {
       EnergyService.instance.addEnergy(1);
+    }
+    _queuedSpeechClearTimer?.cancel();
+    if (AudioManager().onSuikaVoiceQueueDrained ==
+        _onSuikaVoiceQueueDrained) {
+      AudioManager().onSuikaVoiceQueueDrained = null;
     }
     AudioManager().stopAll();
     for (final entry in _insectImageListeners.entries) {
@@ -438,7 +608,39 @@ class _GameScreenState extends State<GameScreen>
     _juiceTimers.clear();
     _hisirTimer?.cancel();
     _hisirHideTimer?.cancel();
+    _frameTick.dispose();
     super.dispose();
+  }
+
+  /// Arka plan / ön plan geçişleri (B9, Osmantus deseni): arka planda
+  /// oyun duraklatılır ve kaplama gösterilir; dönüşte kendiliğinden
+  /// başlamaz, DEVAM beklenir ([_pausedByLifecycle] bayrağı, yardım
+  /// diyaloğu kapanışının bile tek başına başlatmasını engeller).
+  /// Duvar-saati kaydırma gerekmez: hayatta
+  /// kalma / taşma / kombo saatleri dt ile işler ve [_paused] kapısına
+  /// takılır; tek duvar-saati oyun kararı [_movesEndTimer] ise
+  /// duraklatmada ertelenir ([_pendingMovesEndGen]).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted || widget.prototypeVisualState || _isFinished) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Bayrak, oyun zaten duraklatılmış olsa da (örn. yardım diyaloğu
+        // açıkken arka plana alınma) kurulur: dönüşte diyalog kapanışı
+        // tek başına başlatmasın, DEVAM beklensin.
+        _pausedByLifecycle = true;
+        if (!_paused) {
+          setState(() => _paused = true);
+        }
+        break;
+      case AppLifecycleState.resumed:
+        // Bilerek boş: yaşam döngüsü duraklatması yalnız DEVAM ile
+        // açılır; elle duraklatılmış oyun da kendiliğinden başlamaz.
+        break;
+    }
   }
 
   // Settle gate is only `_waitingSettle` (with timeout). Do NOT also require
@@ -510,7 +712,13 @@ class _GameScreenState extends State<GameScreen>
 
     _decayMergeJuice(dt);
 
-    if (mounted) setState(() {});
+    // Kare-başına tam rebuild yok: yalnız [_frameTick] dinleyen
+    // alt-ağaç (HUD + arena + güç çubuğu + toast bandı) yenilenir.
+    // Duraklatma/bitişte de bildirilir — zafer/yenilgi bayrağı
+    // ([_isFinished]) aynı karede görünür kalır (eski `setState`
+    // davranışı); kapsam alt-ağaçla sınırlı olduğu için maliyet
+    // düşüktür.
+    if (mounted) _frameTick.value++;
   }
 
   /// Tier 2+: short hit-stop; tier 4+ 30–50ms (scales with tier).
@@ -588,22 +796,13 @@ class _GameScreenState extends State<GameScreen>
     unawaited(_triggerMergeVibration(combo, event.tier.tier));
   }
 
+  /// Birleşme titreşimi: tek kapılı yol — [HapticService.onMerge] hem
+  /// `vibrationEnabled` kapısına hem test ortamına saygı duyar, özel
+  /// titreşim desteği yoksa hafif/orta/ağır dokunuş yedeğine düşer (H1).
+  /// Eski kapısız `Vibration.vibrate` + `triggerHaptic` karışımı
+  /// kaldırıldı; ölçekleme (kombo/kademe) serviste korunur.
   Future<void> _triggerMergeVibration(int combo, int tier) async {
-    try {
-      final hasVibrator = await Vibration.hasVibrator();
-      if (hasVibrator != true) {
-        AudioManager().triggerHaptic();
-        return;
-      }
-      final duration = min(120, 28 + combo * 18 + tier * 4);
-      await Vibration.vibrate(duration: duration);
-      if (combo >= 3) {
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-        await Vibration.vibrate(duration: min(80, 20 + combo * 8));
-      }
-    } catch (_) {
-      AudioManager().triggerHaptic();
-    }
+    await HapticService.instance.onMerge(tier: tier, combo: combo);
   }
 
   void _handleMerges(List<MergeEvent> mergeEvents) {
@@ -630,6 +829,9 @@ class _GameScreenState extends State<GameScreen>
         (nextTier.scoreValue * effectiveCombo * heat).round(),
       );
       _score += pointsGained;
+      // 12I: 2048 deseni — birleşme skor verince rekor da canlı büyür
+      // (kalıcı yazım oyun sonunda `_submitSuikaScore` ile aynen kalır).
+      if (_score > _bestScore) _bestScore = _score;
       _mergeTotal++;
       if (_comboCount > _maxCombo) _maxCombo = _comboCount;
 
@@ -639,10 +841,13 @@ class _GameScreenState extends State<GameScreen>
       if (nextTier.tier > _runPeakTier.tier) {
         _runPeakTier = nextTier;
       }
+      // Yeni zirve tek-seferlik sesi birleşme sesinin ARKASINA kuyruğa
+      // girer (aşağıda); önce tier sesi, sonra kutlama repliği.
+      var newPeak = false;
       if (nextTier.tier > _peakTier.tier) {
         _peakTier = nextTier;
         _showMilestone(nextTier);
-        _playMilestoneOneShot(nextTier);
+        newPeak = true;
       }
 
       unawaited(ProgressManager.instance.unlockTier(nextTier.tier));
@@ -656,19 +861,35 @@ class _GameScreenState extends State<GameScreen>
         );
       }
 
+      // Suika replik kuyruğu: chime/kombo SFX anında çalar (karakter
+      // sesi değil), tier/Hışır karakter sesi sıralı kuyruğa girer —
+      // bir ses bitmeden yenisi başlamaz; yazısı da sesle sırayla gelir.
       unawaited(
-        AudioManager().playMerge(tier: nextTier, comboCount: _comboCount),
+        AudioManager().playMergeQueued(
+          tier: nextTier,
+          comboCount: _comboCount,
+          hisirInvolved: event.hisirInvolved,
+          onVoiceStart: () => _showQueuedSpeech(
+            event.hisirInvolved
+                ? HisirCharacter.replik
+                : nextTier.viralReplik,
+          ),
+        ),
       );
-      if (_comboCount >= 3) {
-        AudioManager().triggerHeavyHaptic();
-      }
-      // Büyük kombo eşiği zincir başına bir kez çalınır.
+      // 10D: kombo≥3 ağırlaştırması kaldırıldı — playMerge zaten
+      // onMerge(tier, combo) ile kombo≥3'te ağır titreşim verir
+      // (HapticService.onMerge: custom vibrator'da birincil + ikincil,
+      // yedekte heavyImpact); yanındaki kapısız triggerHeavyHaptic
+      // ikinci impuls demekti. Juice yolundaki _triggerMergeVibration
+      // kapılıdır (18 ms kapı düşürür), çifte sayılmaz.
+      // Büyük kombo eşiği zincir başına bir kez çalınır — Kanka repliği
+      // de kuyruğa girer (toast değişmez, yalnız ses sıraya girer).
       if (_comboCount == 8) {
-        unawaited(AudioManager().playKanka());
+        AudioManager().enqueueSuikaVoice(GameAudio.kanka);
       }
+      if (newPeak) _playMilestoneOneShot(nextTier);
 
       _playMergeJuice(event, _comboCount, pointsGained);
-      _showSpeechBubble(nextTier.viralReplik);
 
       // Check Victory Condition (deferred until every merge is scored).
       if (widget.arcade) continue;
@@ -705,6 +926,28 @@ class _GameScreenState extends State<GameScreen>
     });
   }
 
+  /// Sıralı replik yazısı: kuyrukta o an çalmaya BAŞLAYAN sesin yazısı
+  /// banda yazılır. Güçlendirme zamanlayıcısı eski yazıyı silmesin
+  /// diye iptal edilir; temizlik yalnız kuyruk boşalınca
+  /// [_onSuikaVoiceQueueDrained] ile olur.
+  void _showQueuedSpeech(String text) {
+    _speechTimer?.cancel();
+    _queuedSpeechClearTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _activeSpeechBubble = text);
+  }
+
+  /// Suika replik kuyruğu boşaldı: son replik kısa süre daha görünür,
+  /// sonra bant temizlenir. Güçlendirme balonu (Aydınlat/Terlik/Raid)
+  /// o an gösterimdeyse ona dokunulmaz — kendi zamanlayıcısı temizler.
+  void _onSuikaVoiceQueueDrained() {
+    if (_speechTimer?.isActive == true) return;
+    _queuedSpeechClearTimer?.cancel();
+    _queuedSpeechClearTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _activeSpeechBubble = '');
+    });
+  }
+
   void _onDropperDrag(DragUpdateDetails details) {
     if (_engine == null || _isDropping || _isFinished || _paused) return;
     setState(() => _aimDropperAt(details.localPosition.dx));
@@ -734,25 +977,43 @@ class _GameScreenState extends State<GameScreen>
     });
 
     final dropY = _engine!.arenaBounds.top + 18;
-    _engine!.addBody(_currentDropperTier, _dropperX, dropY);
+    // 10B: doğal bırakma — tohumlu küçük x sapması + başlangıç eğimi /
+    // dönüş; sapma arena sınırları içinde kelepçelenir (motorda).
+    _engine!.addDropBody(
+      _currentDropperTier,
+      _dropperX,
+      dropY,
+      isHisir: _currentDropperIsHisir,
+    );
     // Enerji iadesi sayacı (madde 35): düşürme anında sayılır, zamanlayıcı
     // geri çağrısında değil — 280 ms içinde çıkılsa bile hamle sayılır.
     _dropsMade++;
 
+    // 10D: playDrop zaten lightImpact verir; yanındaki kapısız
+    // triggerHaptic ikinci hafif impuls demekti — kaldırıldı.
     AudioManager().playDrop();
-    AudioManager().triggerHaptic();
     if (!widget.arcade && _currentLevel.isBossLevel && !_bossIntroPlayed) {
       _bossIntroPlayed = true;
       unawaited(AudioManager().playDuktur());
     }
 
     _dropTimer?.cancel();
-    _dropTimer = Timer(const Duration(milliseconds: 280), () {
+    // 12C1: adaptif zorluk — merhamette bir sonraki taş daha geç düşer
+    // (daha sakin), kazanma serisinde daha erken düşer.
+    final dropDelayMs =
+        (280 /
+                DifficultyBinding.instance
+                    .cachedProfileForMode('suika')
+                    .speedMultiplier)
+            .round();
+    _dropTimer = Timer(Duration(milliseconds: dropDelayMs), () {
       if (!mounted || gen != _dropGen) return;
       setState(() {
         _arcadeDropCount++;
         _currentDropperTier = _nextDropperTier;
         _nextDropperTier = _rollDropTier();
+        _currentDropperIsHisir = _nextDropperIsHisir;
+        _nextDropperIsHisir = HisirCharacter.roll(_rng);
         _aimDropperAt(_dropperX);
         _isDropping = false;
         _waitingSettle = true;
@@ -763,6 +1024,12 @@ class _GameScreenState extends State<GameScreen>
         _movesEndTimer?.cancel();
         _movesEndTimer = Timer(const Duration(seconds: 2), () {
           if (!mounted || _isFinished || gen != _dropGen) return;
+          // Duraklatma (elle / diyalog / arka plan) sürerken tur sonu
+          // karara bağlanmaz: devamda [_flushPendingMovesEnd] okur (B9).
+          if (_paused) {
+            _pendingMovesEndGen = gen;
+            return;
+          }
           if (_hasMetObjective()) {
             _triggerVictory();
           } else {
@@ -775,7 +1042,35 @@ class _GameScreenState extends State<GameScreen>
 
   void _togglePause() {
     if (_isFinished) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick).
+    AudioManager().playButtonTap();
+    // Devama geçişte yaşam döngüsü bayrağı temizlenir (Osmantus deseni):
+    // DEVAM / YENİDEN BAŞLAT / OYUNU BİTİR hep bu yoldan geçer.
+    if (_paused) _pausedByLifecycle = false;
     setState(() => _paused = !_paused);
+  }
+
+  /// Duraklatma kaplamasındaki DEVAM: duraklatmayı açar, ertelenmiş
+  /// hamle-sonu değerlendirmesi varsa hemen karara bağlar (B9). Yalnızca
+  /// DEVAM bu yoldan geçer; YENİDEN BAŞLAT / OYUNU BİTİR bekleyen
+  /// değerlendirmeyi ateşlemeden [_togglePause] kullanır.
+  void _resumeFromPause() {
+    if (_isFinished || !_paused) return;
+    _togglePause();
+    _flushPendingMovesEnd();
+  }
+
+  /// Ertelenmiş hamle-sonu değerlendirmesini (varsa) çalıştırır.
+  void _flushPendingMovesEnd() {
+    final gen = _pendingMovesEndGen;
+    _pendingMovesEndGen = null;
+    if (gen == null || !mounted || _isFinished || gen != _dropGen) return;
+    if (_hasMetObjective()) {
+      _triggerVictory();
+    } else {
+      _triggerDefeat();
+    }
   }
 
   void _showMilestone(InsectTier tier) {
@@ -788,21 +1083,41 @@ class _GameScreenState extends State<GameScreen>
 
   /// Hışır Suika'da: tier dışı sürpriz hedef (Selçuk, 2026-11-18).
   /// Belirdiğinde "mezarına sıçtığım" der; dokunulursa +150 bonus.
+  ///
+  /// 12J: kapı geçici kapalıyken kısa yeniden deneme aralığı. Motor
+  /// henüz kurulmadıysa ya da oyun duraklatıldıysa ilk görünme 20 sn
+  /// ötelenmesin; kapı açılınca en geç bu sürede Hışır belirir.
+  static const Duration _hisirRetryDelay = Duration(seconds: 3);
+
   void _scheduleHisir(Duration delay) {
     _hisirTimer?.cancel();
     _hisirTimer = Timer(delay, _showHisir);
   }
 
   void _showHisir() {
-    if (!mounted || _engine == null || _isFinished || _paused) {
-      _scheduleHisir(const Duration(seconds: 20));
+    // Bağlı değilse (dispose sonrası) zamanlama yapılmaz: aksi hâlde
+    // ölü durumda her 20 saniyede bir yeniden zamanlanan timer sızar (D4).
+    if (!mounted) return;
+    if (_isFinished) {
+      // Oyun bitti: artık spawn yok — zamanlayıcı kurulmaz, sızıntı yok.
+      // Yeni tur [_restartLevel] ile 15 sn'lik zamanlamayı kurar.
+      return;
+    }
+    if (_engine == null || _paused) {
+      // Geçici kapı: motor kurulumu bekliyor ya da oyun duraklatılmış
+      // (yaşam döngüsü duraklatması DEVAM beklerken de). 20 sn erteleme
+      // yerine kısa aralıkla yeniden dene: duraklatma açılınca Hışır
+      // en geç 3 sn içinde belirir. Tek zamanlayıcıdır, dispose'da
+      // iptal edilir; duraklatma sürerken gösterim denenmez.
+      _scheduleHisir(_hisirRetryDelay);
       return;
     }
     setState(() {
       _hisirVisible = true;
       _hisirXFraction = 0.15 + _rng.nextDouble() * 0.7;
     });
-    unawaited(AudioManager().playMezarinaSiktigim());
+    // D4: Hışır belirince kendi sesi çalar (hisir_zopa.mp3, Selçuk onaylı).
+    unawaited(AudioManager().playHusurAday());
     _hisirHideTimer?.cancel();
     _hisirHideTimer = Timer(const Duration(seconds: 7), () {
       if (mounted) setState(() => _hisirVisible = false);
@@ -812,24 +1127,38 @@ class _GameScreenState extends State<GameScreen>
 
   void _onHisirTapDown(TapDownDetails _) {
     // Aynı dokunuşun böcek düşürmesini engelle (500 ms).
-    _hisirTapSuppressUntil =
-        DateTime.now().add(const Duration(milliseconds: 500));
+    _hisirTapSuppressUntil = DateTime.now().add(
+      const Duration(milliseconds: 500),
+    );
     if (!_hisirVisible) return;
     _hisirHideTimer?.cancel();
     setState(() {
       _hisirVisible = false;
       _score += 150;
+      // 12I: Hışır ödülü de rekoru canlı büyütür (zamanlayıcıya ve ses
+      // çağrısına dokunulmadı).
+      if (_score > _bestScore) _bestScore = _score;
     });
+    // D4: Hışır dokunuşu (+150) artık sessiz değil — kendi sesi çalar
+    // (hisir_zopa.mp3, Selçuk onaylı).
+    unawaited(AudioManager().playHusurAday());
   }
 
   /// Milestone anına ek viral tek-seferlik ses (mevcut akışa ek, opt-in):
   /// Diva'ya ilk ulaşışta "sinyal", zirve tier'lere (12+) ilk ulaşışta
   /// (büyük birleşme) "mezarına" repliği. Ses ayarlarına metotlar saygı duyar.
   void _playMilestoneOneShot(InsectTier tier) {
+    // Milestone tek-seferlik sesleri de Suika replik kuyruğuna girer:
+    // birleşme sesiyle üst üste binmez, arkasından sırayla çalar.
     if (tier == InsectTier.diva) {
-      unawaited(AudioManager().playDivaSinyal());
+      // Diva "sinyal" repliği: toast o anki Diva repliğinde kalır
+      // (klibin tam sözü koda yazılmaz).
+      AudioManager().enqueueSuikaVoice(GameAudio.divaSinyal);
     } else if (tier.tier >= 12) {
-      unawaited(AudioManager().playMezarinaSiktigim());
+      AudioManager().enqueueSuikaVoice(
+        GameAudio.mezarinaSiktigim,
+        onStart: () => _showQueuedSpeech('Mezarına sıçtığım!'),
+      );
     }
   }
 
@@ -840,16 +1169,24 @@ class _GameScreenState extends State<GameScreen>
     return 0;
   }
 
-  /// Arcade yenilgisinde yıldız, oyun öncesi rekora oranla verilir ve
-  /// 2'yi geçemez: yenilgi ekranı asla 3 yıldız göstermez. Rekor henüz
-  /// yüklenmemişse (0) sıfırdan büyük skor 1 yıldız sayılır.
-  int _defeatArcadeStars() {
-    if (_score <= 0) return 0;
-    if (_bestScore <= 0) return 1;
-    final ratio = _score / _bestScore;
-    if (ratio >= 0.9) return 2;
-    if (ratio >= 0.6) return 1;
-    return 0;
+  /// Arcade yenilgisinde yıldız sabit ölçekten verilir ve 2'yi geçemez:
+  /// yenilgi ekranı asla 3 yıldız göstermez. Kampanya yenilgisinde de
+  /// eşik yıldızı 2 ile sınırlanır.
+  ///
+  /// (12Q-stars: eski sürüm tur-öncesi rekora oranlıyordu; `_bestScore`
+  /// tur içinde canlı güncellendiği için rekor kıran her yenilgi 2
+  /// yıldız alıyordu. Artık `starsForMode` sabit çıtasına bakılır.)
+  int _defeatStars() {
+    if (widget.arcade) {
+      return min(
+        2,
+        ResultScoring.starsForMode(
+          score: _score,
+          modeScoreId: LeaderboardService.modeSuika,
+        ),
+      );
+    }
+    return min(2, _calculateStars());
   }
 
   /// Hamleler bitince hedefe bakılır: hedef-kademe seviyesinde bu turda
@@ -870,31 +1207,50 @@ class _GameScreenState extends State<GameScreen>
   Future<void> _triggerVictory() async {
     if (_isFinished) return;
     _isFinished = true;
+    _pendingMovesEndGen = null;
 
     // Yıldız gerçek eşiklere bırakılır: hedef karşılansa bile skor yıldız
     // eşiğinin altındaysa 0 gösterilir (dürüst skor, garanti yok).
-    final stars = _calculateStars();
+    // Arcade'de seviye eşiği (mutfak seviye-1) kullanılmaz: sonsuz tur
+    // o eşiği kolay aştığı için her zafer 3 yıldız olurdu (12Q-stars) —
+    // arcade zaferi modun sabit çıtasına (`threeStarScore`) göre verilir.
+    final stars = widget.arcade
+        ? ResultScoring.starsForMode(
+            score: _score,
+            modeScoreId: LeaderboardService.modeSuika,
+          )
+        : _calculateStars();
     final earnedCoins = ResultScoring.coinsFor(_score);
-    // recordLevelResult yalnız yıldız ARTIŞI kadar öder (starGain * 50);
-    // önceki yıldız KAYIT ÖNCESİ okunmalıdır (kayıt haritayı günceller).
-    final previousStars =
-        widget.arcade ? 0 : progress.getStarCount(_currentLevel.id);
+    // Kampanya servisinin iç recordLevelResult çağrısı yalnız yıldız
+    // ARTIŞI kadar öder (starGain * 50); önceki yıldız KAYIT ÖNCESİ
+    // okunmalıdır (kayıt haritayı günceller).
+    final previousStars = widget.arcade
+        ? 0
+        : progress.getStarCount(_currentLevel.id);
     final starGain = widget.arcade ? 0 : max(0, stars - previousStars);
     final starCoins = starGain * 50;
-    final totalCoins =
-        widget.arcade ? earnedCoins : max(earnedCoins, starCoins);
-    // Ödenen toplam = starCoins + extraCoins = totalCoins: gösterilen
-    // tutar ile ödenen tutar birebir uyuşur.
+    final totalCoins = widget.arcade
+        ? earnedCoins
+        : max(earnedCoins, starCoins);
+    // Ödenen skor-tabanlı toplam = starCoins + extraCoins = totalCoins.
+    // İlk tamamlamada servis ayrıca rewardCoins + boss bonusu öder
+    // (K3c) — bu ekstralar sonuç ekranındaki coin hapına dahil değildir;
+    // özetten türetilip ayrı bantta gösterilir (5B: `firstClearExtras`).
     final extraCoins = earnedCoins - starCoins;
 
-    AudioManager().playWin();
+    // D1: zafer sesi tek kaynak — sonuç ekranı çalar. Nakarat korunur:
+    // sonuç ekranı öncesi tek ek katman olarak kalır.
     unawaited(AudioManager().playLululuNakarat());
     unawaited(_submitSuikaScore());
     if (!mounted) return;
     // S1#49: ödeme + görev kaydı + sonuç ekranı finishRun() üzerinden;
-    // kampanya ödemesi (recordLevelResult + fark coini) settle kapaması
-    // içinde, eski unawaited sırasıyla aynen yapılır. Liderlik gönderimi
-    // _submitSuikaScore'da kalır (ensureLoaded + rekor tazeleme).
+    // kampanya ödemesi (recordLevelCompletion + fark coini) settle
+    // kapaması içinde, eski unawaited sırasıyla aynen yapılır. Liderlik
+    // gönderimi _submitSuikaScore'da kalır (ensureLoaded + rekor tazeleme).
+    // 5B: settle içindeki TEK recordLevelCompletion çağrısının dönüş
+    // özetinden türetilen salt-görünüm ekstraları burada yakalanır;
+    // arcade yolunda settle özet üretmez, bant boş kalır.
+    var capturedExtras = const FirstClearExtras();
     final replay = await finishRun(
       context,
       score: _score,
@@ -902,22 +1258,44 @@ class _GameScreenState extends State<GameScreen>
       coins: totalCoins,
       stars: stars,
       bestScore: max(_score, _bestScore),
-      bestCombo: max(1, _maxCombo),
+      // Dalga 15 (bulgu 12): kombo 0 olan tur 1'e yuvarlanmaz —
+      // finishRun `max(tur, kalıcı rekor)` ile tek kaynaktan gösterir.
+      bestCombo: _maxCombo,
       merges: _mergeTotal,
+      modeScoreId: LeaderboardService.modeSuika,
+      idempotencyKey: _runIdempotencyKey,
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+      elapsed: Duration(
+        microseconds: DateTime.now().microsecondsSinceEpoch - _runStartStamp,
+      ),
       awaitSettle: false,
+      // 5B: getter verilince finishRun settle'ı gösterimden önce bekler,
+      // böylece özet hazır olur (awaitSettle: false korunur).
+      firstClearExtras: () => capturedExtras,
       settle: () async {
         if (widget.arcade) {
           if (earnedCoins > 0) {
             unawaited(ProgressManager.instance.addCoins(earnedCoins));
           }
         } else {
-          unawaited(
-            progress.recordLevelResult(
-              levelId: _currentLevel.id,
-              score: _score,
-              stars: stars,
-              victory: true,
-            ),
+          // K3c: zafer ödemesi kampanya servisinden geçer — servis
+          // kendi içinde recordLevelResult çağırır (yıldız artışı
+          // ödemesi + kilit açma), ayrıca 0-yıldızlı zaferi tamamlama
+          // sayar ve ilk-geçiş ödüllerini (rewardCoins + boss bonusu)
+          // öder. recordLevelResult ayrıca çağrılmaz (çift ödeme).
+          // 5B: çağrı TEK ve argümanları aynıdır; yalnız dönüş özeti
+          // beklenip salt-görünüm ekstralarına çevrilir (ödeme değişmez).
+          final summary = await CampaignProgressionService.instance
+              .recordLevelCompletion(
+                levelNumber: _currentLevel.id,
+                score: _score,
+                explicitStars: stars,
+                victory: true,
+              );
+          capturedExtras = FirstClearExtras.fromSummary(
+            coinsAwarded: summary.coinsAwarded,
+            bossFirstClearBonusCoins: summary.bossFirstClearBonusCoins,
+            starCoins: starCoins,
           );
           if (extraCoins > 0) {
             unawaited(ProgressManager.instance.addCoins(extraCoins));
@@ -936,16 +1314,14 @@ class _GameScreenState extends State<GameScreen>
   Future<void> _triggerDefeat() async {
     if (_isFinished) return;
     _isFinished = true;
+    _pendingMovesEndGen = null;
 
     final earnedCoins = ResultScoring.coinsFor(_score);
 
-    AudioManager().playLose();
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(_submitSuikaScore());
-    // Yenilgi asla 3 yıldız göstermez: arcade'de rekora oranla (en çok 2),
-    // kampanyada eşik yıldızı 2 ile sınırlanır.
-    final stars = widget.arcade
-        ? _defeatArcadeStars()
-        : min(2, _calculateStars());
+    // Yenilgi asla 3 yıldız göstermez (12Q-stars: sabit ölçek + 2 kap).
+    final stars = _defeatStars();
     // S1#49: ödeme + görev kaydı + sonuç ekranı finishRun() üzerinden
     // (ateşle-unut ödeme, eski unawaited davranışı). Liderlik gönderimi
     // _submitSuikaScore'da kalır.
@@ -956,8 +1332,19 @@ class _GameScreenState extends State<GameScreen>
       coins: earnedCoins,
       stars: stars,
       bestScore: max(_score, _bestScore),
-      bestCombo: max(1, _maxCombo),
+      // Dalga 15 (bulgu 12): kombo 0 olan tur 1'e yuvarlanmaz —
+      // finishRun `max(tur, kalıcı rekor)` ile tek kaynaktan gösterir.
+      bestCombo: _maxCombo,
       merges: _mergeTotal,
+      modeScoreId: LeaderboardService.modeSuika,
+      idempotencyKey: _runIdempotencyKey,
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+      elapsed: Duration(
+        microseconds: DateTime.now().microsecondsSinceEpoch - _runStartStamp,
+      ),
+      // Yenilgi başlığı skordan bağımsızdır: pes etme / taşma / hamle
+      // bitimi skor > 0 olsa da zafer başlığı göstermez (B1).
+      won: false,
       awaitSettle: false,
     );
     if (!mounted) return;
@@ -1015,15 +1402,16 @@ class _GameScreenState extends State<GameScreen>
     });
 
     unawaited(AudioManager().playF16Sfx());
+    // 12S: jet tam ekran uçar (prototip v4); ses + fizik aynen durur.
+    unawaited(playF16Flyover(context));
     final initialBlast = _engine!.f16Bombardment(maxCount: 3);
     final initialAward = initialBlast.length * 180;
     if (initialAward > 0) {
       _score += initialAward;
+      // 12I: ilk patlama ödülü de rekoru canlı büyütür.
+      if (_score > _bestScore) _bestScore = _score;
     }
-    _showSpeechBubble(
-      context.l10n.speechAydinlat,
-      durationSeconds: 3,
-    );
+    _showSpeechBubble(context.l10n.speechAydinlat, durationSeconds: 3);
 
     unawaited(progress.persistBoosters());
 
@@ -1082,97 +1470,198 @@ class _GameScreenState extends State<GameScreen>
         _engine!.bodies.isEmpty) {
       return;
     }
-    setState(() => progress.sprayCount--);
+    // 10F P2-3: Terlik deseni — Sprey de sarsıntılı (0.2, Terlik ile aynı).
+    setState(() {
+      progress.sprayCount--;
+      _screenShake = max(_screenShake, 0.2);
+    });
     unawaited(progress.persistBoosters());
 
     final vaporized = _engine!.sprayVaporizeSmallest(2);
     _score += vaporized * 300;
+    // 12I: Sprey ödülü de rekoru canlı büyütür (Terlik deseni).
+    if (_score > _bestScore) _bestScore = _score;
 
     AudioManager().playSpray();
     _showSpeechBubble(context.l10n.speechSpray, durationSeconds: 2);
   }
 
-  void _showInfoDialog() {
-    showDialog<void>(
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _dropsMade > 0 && !_isFinished;
+
+  /// N7 `PopScope` yolu: `didPop` ise iade `dispose`'da aynen çalışır (madde 35) — burada iade çağrılmaz; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) return;
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: const Color(0xFF141A29),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: LululuColors.liquidGold.withValues(alpha: 0.5),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.6),
-                blurRadius: 24,
-              ),
-            ],
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                ctx.l10n.howToTitle,
-                style: GoogleFonts.exo2(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: LululuColors.liquidGold,
-                ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım deseni: `_showInfoDialog`
+  /// ile aynı — fizik/sayaç `_paused` kapısına takılır).
+  void _pauseForExitConfirm() {
+    if (_isFinished || _paused) return;
+    _pausedForExitConfirm = true;
+    setState(() => _paused = true);
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    // B9: araya yaşam döngüsü duraklatması girdiyse devam kararı
+    // DEVAM düğmesinindir; diyalog kapanışı başlatmaz.
+    if (_pausedByLifecycle) return;
+    setState(() => _paused = false);
+    _flushPendingMovesEnd();
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
+  Future<void> _showInfoDialog() async {
+    // Yardım açıkken fizik/sayaç durur: önceden duraklatılmamışsa
+    // duraklat, diyalog kapanınca devam ettir (B4-suika) — araya arka
+    // plan duraklatması girdiyse ([_pausedByLifecycle]) devam ettirme,
+    // DEVAM beklensin (B9).
+    final wasPaused = _paused;
+    if (!_isFinished && !wasPaused) {
+      setState(() => _paused = true);
+    }
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF141A29),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: LululuColors.liquidGold.withValues(alpha: 0.5),
+                width: 1.5,
               ),
-              const SizedBox(height: 14),
-              Text(
-                ctx.l10n.howToBody,
-                style: GoogleFonts.exo2(
-                  fontSize: 13,
-                  height: 1.45,
-                  color: Colors.white.withValues(alpha: 0.9),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 24,
                 ),
-              ),
-              const SizedBox(height: 20),
-              Semantics(
-                button: true,
-                label: ctx.l10n.understoodButton,
-                child: GestureDetector(
-                  onTap: () => Navigator.pop(ctx),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFFCF3F), LululuColors.liquidGold],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: LululuColors.liquidGold.withValues(alpha: 0.35),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ctx.l10n.howToTitle,
+                  style: GoogleFonts.exo2(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: LululuColors.liquidGold,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  ctx.l10n.howToBody,
+                  style: GoogleFonts.exo2(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Semantics(
+                  button: true,
+                  label: ctx.l10n.understoodButton,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFCF3F), LululuColors.liquidGold],
                         ),
-                      ],
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      ctx.l10n.understoodButton,
-                      style: GoogleFonts.bangers(
-                        fontSize: 18,
-                        color: const Color(0xFF4A2E00),
-                        letterSpacing: 1,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: LululuColors.liquidGold.withValues(
+                              alpha: 0.35,
+                            ),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        ctx.l10n.understoodButton,
+                        style: GoogleFonts.bangers(
+                          fontSize: 18,
+                          color: const Color(0xFF4A2E00),
+                          letterSpacing: 1,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      if (mounted && !_isFinished && !wasPaused && !_pausedByLifecycle) {
+        setState(() => _paused = false);
+        _flushPendingMovesEnd();
+      }
+    }
   }
 
   Widget _buildGameHud() {
@@ -1192,22 +1681,24 @@ class _GameScreenState extends State<GameScreen>
             button: true,
             label: context.l10n.pause,
             child: GestureDetector(
-            onTap: _togglePause,
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1B2336),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-              ),
-              child: const Icon(
-                Icons.pause_rounded,
-                color: Colors.white,
-                size: 22,
+              onTap: _togglePause,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B2336),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.pause_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
               ),
             ),
-          ),
           ),
           const SizedBox(width: 8),
 
@@ -1271,7 +1762,7 @@ class _GameScreenState extends State<GameScreen>
                   ),
                 ),
                 Text(
-                  '${_bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore}',
+                  '$_bestScore',
                   style: GoogleFonts.bangers(
                     fontSize: 20,
                     color: Colors.white,
@@ -1306,7 +1797,10 @@ class _GameScreenState extends State<GameScreen>
                 ),
                 const SizedBox(width: 6),
                 Image.asset(
-                  _nextDropperTier.assetPath,
+                  HisirCharacter.assetFor(
+                    isHisir: _nextDropperIsHisir,
+                    tier: _nextDropperTier,
+                  ),
                   width: 34,
                   height: 34,
                   fit: BoxFit.contain,
@@ -1326,26 +1820,28 @@ class _GameScreenState extends State<GameScreen>
             button: true,
             label: context.l10n.helpButtonLabel,
             child: GestureDetector(
-            onTap: _showInfoDialog,
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF1B2336),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                '?',
-                style: GoogleFonts.exo2(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: LululuColors.liquidGold,
+              onTap: _showInfoDialog,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF1B2336),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '?',
+                  style: GoogleFonts.exo2(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: LululuColors.liquidGold,
+                  ),
                 ),
               ),
             ),
-          ),
           ),
         ],
       ),
@@ -1355,7 +1851,7 @@ class _GameScreenState extends State<GameScreen>
   static const _protoPanel = Color(0xD9080B12);
 
   Widget _buildArcadeGameHud() {
-    final best = _bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore;
+    final best = _bestScore;
     final hudRow = Row(
       children: [
         Semantics(
@@ -1383,9 +1879,20 @@ class _GameScreenState extends State<GameScreen>
           ),
         ),
         const SizedBox(width: 8),
-        _buildArcadeScoreBox(context.l10n.gameScoreLabel, '$_score', 104),
+        _buildArcadeScoreBox(
+          context.l10n.gameScoreLabel,
+          formatGroupedInt(
+            _score,
+            Localizations.localeOf(context).languageCode,
+          ),
+          104,
+        ),
         const SizedBox(width: 8),
-        _buildArcadeScoreBox(context.l10n.gameBestLabel, _formatArcadeScore(best), 84),
+        _buildArcadeScoreBox(
+          context.l10n.gameBestLabel,
+          formatGroupedInt(best, Localizations.localeOf(context).languageCode),
+          84,
+        ),
         const Spacer(),
         Container(
           width: 90,
@@ -1419,7 +1926,10 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
               Image.asset(
-                _nextDropperTier.assetPath,
+                HisirCharacter.assetFor(
+                  isHisir: _nextDropperIsHisir,
+                  tier: _nextDropperTier,
+                ),
                 width: 19.3,
                 height: 38,
                 fit: BoxFit.contain,
@@ -1437,35 +1947,32 @@ class _GameScreenState extends State<GameScreen>
           button: true,
           label: context.l10n.helpButtonLabel,
           child: GestureDetector(
-          onTap: _showInfoDialog,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xDB080B12),
-              border: Border.all(
-                color: const Color(0xB3FFB800),
-                width: 2,
+            onTap: _showInfoDialog,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xDB080B12),
+                border: Border.all(color: const Color(0xB3FFB800), width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
+                ],
               ),
-              boxShadow: const [
-                BoxShadow(color: Color(0x66000000), offset: Offset(0, 3)),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: const Text(
-              '?',
-              style: TextStyle(
-                fontFamily: 'Baloo 2',
-                fontSize: 22,
-                height: 1,
-                fontWeight: FontWeight.w800,
-                color: LululuColors.liquidGold,
+              alignment: Alignment.center,
+              child: const Text(
+                '?',
+                style: TextStyle(
+                  fontFamily: 'Baloo 2',
+                  fontSize: 22,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                  color: LululuColors.liquidGold,
+                ),
               ),
             ),
           ),
-        ),
         ),
       ],
     );
@@ -1481,21 +1988,14 @@ class _GameScreenState extends State<GameScreen>
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.center,
-                child: SizedBox(
-                  width: 406,
-                  height: 50.5,
-                  child: hudRow,
-                ),
+                child: SizedBox(width: 406, height: 50.5, child: hudRow),
               ),
             ),
           );
         }
         return Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: SizedBox(
-            height: 50.5,
-            child: hudRow,
-          ),
+          child: SizedBox(height: 50.5, child: hudRow),
         );
       },
     );
@@ -1546,14 +2046,6 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  String _formatArcadeScore(int score) {
-    final digits = score.toString().split('');
-    for (var index = digits.length - 3; index > 0; index -= 3) {
-      digits.insert(index, '.');
-    }
-    return digits.join();
-  }
-
   Widget _buildCompactGameHud() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
@@ -1566,27 +2058,27 @@ class _GameScreenState extends State<GameScreen>
               button: true,
               label: context.l10n.pause,
               child: GestureDetector(
-              onTap: _togglePause,
-              behavior: HitTestBehavior.opaque,
-              child: Center(
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1B2336),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.16),
+                onTap: _togglePause,
+                behavior: HitTestBehavior.opaque,
+                child: Center(
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1B2336),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.16),
+                      ),
                     ),
-                  ),
-                  child: const Icon(
-                    Icons.pause_rounded,
-                    color: Colors.white,
-                    size: 22,
+                    child: const Icon(
+                      Icons.pause_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                   ),
                 ),
               ),
-            ),
             ),
           ),
           const SizedBox(width: 4),
@@ -1603,7 +2095,7 @@ class _GameScreenState extends State<GameScreen>
             flex: 3,
             child: _buildCompactStatCard(
               label: context.l10n.gameBestLabel,
-              value: '${_bestScore > 0 ? _bestScore : ResultScoring.defaultBestScore}',
+              value: '$_bestScore',
               accent: LululuColors.mutedTitanium,
             ),
           ),
@@ -1634,7 +2126,10 @@ class _GameScreenState extends State<GameScreen>
                   ),
                   const SizedBox(width: 3),
                   Image.asset(
-                    _nextDropperTier.assetPath,
+                    HisirCharacter.assetFor(
+                      isHisir: _nextDropperIsHisir,
+                      tier: _nextDropperTier,
+                    ),
                     width: 26,
                     height: 26,
                     fit: BoxFit.contain,
@@ -1743,7 +2238,7 @@ class _GameScreenState extends State<GameScreen>
                 button: true,
                 label: context.l10n.resumeButtonCaps,
                 child: GestureDetector(
-                  onTap: _togglePause,
+                  onTap: _resumeFromPause,
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1812,14 +2307,15 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
               const SizedBox(height: 12),
-              // OYUNU BİTİR
+              // OYUNU BİTİR (pes et): yenilgi akışı — kilit açmaz,
+              // yıldız kaydetmez; zafer sayılmaz (B1).
               Semantics(
                 button: true,
                 label: context.l10n.finishGameButton,
                 child: GestureDetector(
                   onTap: () {
                     _togglePause();
-                    _triggerVictory();
+                    _triggerDefeat();
                   },
                   child: Container(
                     width: double.infinity,
@@ -1854,7 +2350,9 @@ class _GameScreenState extends State<GameScreen>
                     if (nav != null && nav.canPop()) {
                       nav.maybePop();
                     } else {
+                      _pausedByLifecycle = false;
                       setState(() => _paused = false);
+                      _flushPendingMovesEnd();
                     }
                   },
                   child: Container(
@@ -2013,7 +2511,9 @@ class _GameScreenState extends State<GameScreen>
                       ),
                     ),
                     Text(
-                      _currentLevel.title,
+                      // Bölüm alt başlığı dile göre (EN verisi
+                      // CampaignLevel.titleEn'de hazır; bulgu #17).
+                      _currentLevel.titleFor(Localizations.localeOf(context)),
                       style: GoogleFonts.exo2(
                         fontSize: 11,
                         color: LululuColors.mutedTitanium,
@@ -2140,7 +2640,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildArcadeLayout() {
-    final topInset = max(MediaQuery.paddingOf(context).top, 35.375);
+    final topInset = MediaQuery.paddingOf(context).top;
     return Padding(
       padding: EdgeInsets.only(top: topInset),
       child: Column(
@@ -2208,18 +2708,60 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   Widget build(BuildContext context) {
-    Widget hudAndPlay = widget.arcade
-        ? _buildArcadeLayout()
-        : _buildClassicLayout();
+    // Statik arka plan: kare bildiriminde yeniden kurulmaz —
+    // [ValueListenableBuilder] `child` olarak bir kez kurulur, kare
+    // başına yalnız `builder` içindeki oyun alt-ağacı yenilenir.
+    final background = Stack(
+      fit: StackFit.expand,
+      children: [
+        Opacity(
+          opacity: widget.arcade ? 0.94 : 0.62,
+          child: Image.asset(
+            'assets/design/backgrounds/suika_kitchen.webp',
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => Image.asset(
+              _currentLevel.backgroundPath,
+              fit: BoxFit.cover,
+              errorBuilder: (_, error, _) {
+                // Sessiz boşluk yerine yer tutucu + hata kaydı.
+                debugPrint(
+                  '[GameScreen] Seviye arka planı yüklenemedi: '
+                  '${_currentLevel.backgroundPath} ($error)',
+                );
+                return Container(
+                  color: LululuColors.carbonVoid,
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.bug_report_rounded,
+                    size: 72,
+                    color: Color(0x33FFFFFF),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        widget.arcade
+            ? const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0x4D080B12),
+                      Colors.transparent,
+                      Colors.transparent,
+                      Color(0x52080B12),
+                    ],
+                    stops: [0, 0.24, 0.76, 1],
+                  ),
+                ),
+              )
+            : Container(color: LululuColors.carbonVoid.withValues(alpha: 0.5)),
+      ],
+    );
 
-    if (_isAydinlatActive) {
-      hudAndPlay = ColorFiltered(
-        colorFilter: _aydinlatBwFilter,
-        child: hudAndPlay,
-      );
-    }
-
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    final content = AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.dark,
@@ -2227,85 +2769,55 @@ class _GameScreenState extends State<GameScreen>
       ),
       child: Scaffold(
         backgroundColor: LululuColors.carbonVoid,
-        body: Transform.translate(
-          offset: _shakeOffset,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Opacity(
-                  opacity: widget.arcade ? 0.94 : 0.62,
-                  child: Image.asset(
-                    'assets/design/backgrounds/suika_kitchen.webp',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Image.asset(
-                      _currentLevel.backgroundPath,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, error, _) {
-                        // Sessiz boşluk yerine yer tutucu + hata kaydı.
-                        debugPrint(
-                          '[GameScreen] Seviye arka planı yüklenemedi: '
-                          '${_currentLevel.backgroundPath} ($error)',
-                        );
-                        return Container(
-                          color: LululuColors.carbonVoid,
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.bug_report_rounded,
-                            size: 72,
-                            color: Color(0x33FFFFFF),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: widget.arcade
-                    ? const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0x4D080B12),
-                              Colors.transparent,
-                              Colors.transparent,
-                              Color(0x52080B12),
-                            ],
-                            stops: [0, 0.24, 0.76, 1],
+        body: ValueListenableBuilder<int>(
+          valueListenable: _frameTick,
+          builder: (context, _, child) {
+            Widget hudAndPlay = widget.arcade
+                ? _buildArcadeLayout()
+                : _buildClassicLayout();
+
+            if (_isAydinlatActive) {
+              hudAndPlay = ColorFiltered(
+                colorFilter: _aydinlatBwFilter,
+                child: hudAndPlay,
+              );
+            }
+
+            return Transform.translate(
+              offset: _shakeOffset,
+              child: Stack(
+                children: [
+                  Positioned.fill(child: child!),
+                  Positioned.fill(child: hudAndPlay),
+                  if (_hisirVisible) _buildHisirOverlay(),
+                  if (_paused && !_isFinished) _buildPauseOverlay(),
+                  if (_mergeFlashStrength > 0)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: _mergeFlashColor.withValues(
+                            alpha: _mergeFlashStrength * 0.35,
                           ),
                         ),
-                      )
-                    : Container(
-                        color: LululuColors.carbonVoid.withValues(alpha: 0.5),
-                      ),
-              ),
-              Positioned.fill(child: hudAndPlay),
-              if (_hisirVisible) _buildHisirOverlay(),
-              if (widget.prototypeVisualState)
-                const Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 35.375,
-                  child: IgnorePointer(child: _PrototypeStatusBar()),
-                ),
-              if (_paused && !_isFinished) _buildPauseOverlay(),
-              if (_mergeFlashStrength > 0)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ColoredBox(
-                      color: _mergeFlashColor.withValues(
-                        alpha: _mergeFlashStrength * 0.35,
                       ),
                     ),
-                  ),
-                ),
-            ],
-          ),
+                ],
+              ),
+            );
+          },
+          child: background,
         ),
       ),
+    );
+
+    // N7: Suika'da `PopScope` yoktu, iade `dispose`'daydı (madde 35).
+    // `PopScope` yalnız çıkış onayını ekler; `dispose` iadesine
+    // dokunulmaz. Hamlesiz çıkışta `canPop` true olduğundan iade
+    // aynen çalışır.
+    return PopScope(
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
+      child: content,
     );
   }
 
@@ -2322,15 +2834,11 @@ class _GameScreenState extends State<GameScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: const Color(0xE6111923),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: LululuColors.liquidGold,
-                  width: 1,
-                ),
+                border: Border.all(color: LululuColors.liquidGold, width: 1),
               ),
               child: const Text(
                 'Mezarına sıçtığım!',
@@ -2474,6 +2982,7 @@ class _GameScreenState extends State<GameScreen>
                       coneSpriteScale: 1,
                       dropperX: _dropperX,
                       currentDropperTier: _currentDropperTier,
+                      currentDropperIsHisir: _currentDropperIsHisir,
                       showDropperPreview:
                           !_isFinished && !_paused && !_isDropping,
                       dangerLineLabel: context.l10n.dangerLineLabel,
@@ -2900,46 +3409,6 @@ class _GameScreenState extends State<GameScreen>
           ),
         ),
       ),
-    );
-  }
-}
-
-class _PrototypeStatusBar extends StatelessWidget {
-  const _PrototypeStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        Positioned(
-          top: 14,
-          left: 22,
-          right: 22,
-          height: 19.4,
-          child: Row(
-            children: [
-              Text(
-                '09:41',
-                style: TextStyle(
-                  fontFamily: 'Nunito',
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w900,
-                  height: 1.55,
-                  color: Colors.white,
-                ),
-              ),
-              Spacer(),
-              Icon(
-                Icons.signal_cellular_alt_rounded,
-                size: 15,
-                color: Colors.white,
-              ),
-              SizedBox(width: 5),
-              Icon(Icons.battery_full_rounded, size: 15, color: Colors.white),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

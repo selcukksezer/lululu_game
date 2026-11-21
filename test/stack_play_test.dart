@@ -44,12 +44,26 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    // 7B — fontsChange teardown artıfaktı düzeltmesi: test sırasındaki
+    // tembel GoogleFonts yüklemeleri motorun `fontsChange` bildirimi
+    // göndermesine yol açar; bildirim gövdenin son pump'ından sonra
+    // gelirse `RelayoutWhenSystemFontsChangeMixin`'in bıraktığı
+    // transient frame callback'i `postTest` değişmez denetimine
+    // takılır ("animation is still running"). Üretim kodu hatası
+    // değildir (6D deseni, `stack_kat15_6g_test.dart` ile aynı gerekçe).
+    addTearDown(() async {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      for (var i = 0; i < 3 && binding.transientCallbackCount > 0; i++) {
+        await binding.pump();
+      }
+    });
+
     await pumpWithL10n(tester, StackDropScreen(), theme: buildLululuTheme());
     await pumpFrames(tester, 16);
     await tester.tap(find.text('?'));
     await tester.pump();
     expect(
-      find.textContaining('İlk 15 saniye öğretici tempoda'),
+      find.textContaining('İlk 20 saniye öğretici tempoda'),
       findsOneWidget,
     );
     await tester.tap(find.text('ANLADIM'));

@@ -5,16 +5,20 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/osmantus_cast.dart';
 import '../services/audio_manager.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/global_notify.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
 
@@ -50,14 +54,20 @@ class OsmantusPacing {
   static const tutorialMs = 15000;
   static const rampMs = 60000;
   static const tutorialIntervalMs = 1100;
-  static const minIntervalMs = 620;
-  static const tutorialWindowMs = 190;
-  static const minWindowMs = 110;
+  static const minIntervalMs = 680;
+  static const tutorialWindowMs = 260;
+  static const minWindowMs = 160;
 
   @visibleForTesting
   static Color ringColorAt(double phase) {
+    // Yeşil SADECE puan penceresinin içinde görünür: pencere/genişlik
+    // oranı öğreticide 260/1100 ≈ 0.236, sonda 160/680 ≈ 0.235 —
+    // pencere faz ≈ 0.76'da açılır. 0.76 eşiği pencere açılışıyla
+    // hizalanır (net yeşil ~0.82'den itibaren seçilir) ve doygunluk
+    // eğrisi (phase−0.76)/0.24 ile faz 1,0'da tam yeşile ulaşır;
+    // eski 0.82 eşiği yeşili pencere ortasına kadar geciktiriyordu.
     final progress = Curves.easeInOut.transform(
-      ((phase - 0.3) / 0.7).clamp(0.0, 1.0),
+      ((phase - 0.76) / 0.24).clamp(0.0, 1.0),
     );
     return Color.lerp(
       const Color(0xFF5B6B86),
@@ -94,6 +104,16 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   // (Stopwatch + Ticker) durdurulur; dokunuşlar _onTapDown korumasıyla
   // oyunu etkilemez.
   bool _paused = false;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
+  bool _exitResumeClock = false;
+  bool _exitResumeTicker = false;
   final ValueNotifier<double> _phase = ValueNotifier<double>(0);
   final _rng = Random();
 
@@ -102,9 +122,19 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   int _maxCombo = 0;
   int _best = 0;
   int _lives = 3;
-  int _dayStreak = 0;
   bool _alive = true;
   bool _resultShown = false;
+
+  /// Öğretici sonrası lütuf: tur başına ilk 2 can-kaybettirecek ıska
+  /// bedavadır (can kaybı yok, kombo kırılır). Isınma turundaki
+  /// ıskalar zaten cansızdır, sayaç yalnız öğretici sonrası ıskalarda
+  /// erir; `_restart` yeniler.
+  int _freeMissesLeft = 2;
+  /// Y3 idempotency damgası: tur başlangıcında bir kez alınır
+  /// (`initState` / `_restart`); aynı turun tüm bitiş yolları aynı
+  /// anahtarı kullanır, yeni tur yeni damga alır. Bitiş anında
+  /// `DateTime.now()` alınmaz.
+  int _runStartedAtUs = DateTime.now().microsecondsSinceEpoch;
 
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk dokunuş
   /// (`_onTapDown` — isabet, erken basış veya pencere dışı
@@ -117,6 +147,13 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
+
+  /// Çıkış-sonrası iade bildirimi (S6): `PopScope` `didPop` anında
+  /// bağlam artık ağaçta değildir; bildirim metni her `build`'de
+  /// ÖNCEDEN yakalanır ve iade gerçekten verildiğinde paylaşılan
+  /// `GlobalNotify` üzerinden çıkış yapılan ekranın üstünde
+  /// gösterilir (balon/stack deseninin paylaşılan karşılığı).
+  String? _refundNotice;
   String _hint = '';
   bool _hintSeeded = false;
 
@@ -124,6 +161,11 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   int _beatAtMs = _firstBeatMs;
   bool _hitThisBeat = false;
   int _speakerIndex = 0;
+
+  /// Bu vuruş Hışır vuruşu mu? Hışır vuruşunda konuşmacı figürü
+  /// Hışır görseliyle görünür, replik Hışır repliğidir, isabet sesi
+  /// `hisir_zopa.mp3` olur. Skor/zamanlama aynen kalır.
+  bool _hisirBeat = false;
   final List<String> _lines = [
     OsmantusCast.duo[0].lines[0],
     OsmantusCast.duo[1].lines[2],
@@ -135,7 +177,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   int _face = -1;
   int _flashUntilMs = 0;
   bool _flashBad = false;
-  String? _breakReason;
 
   int _boostUntilMs = 0;
   int _ringUntilMs = 0;
@@ -148,10 +189,16 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   bool get _boostOn => _nowMs < _boostUntilMs;
   bool get _ringOn => _nowMs < _ringUntilMs;
 
+  // 12C1: adaptif zorluk — merhamette vuruş penceresi genişler (daha
+  // bağışlayıcı), kazanma serisinde daralır. Çarpan profilden senkron okunur.
   int get _window =>
-      OsmantusPacing.windowMs(_playMs) +
-      (_boostOn ? 60 : 0) +
-      (_ringOn ? 60 : 0);
+      ((OsmantusPacing.windowMs(_playMs) +
+                  (_boostOn ? 60 : 0) +
+                  (_ringOn ? 60 : 0)) /
+              DifficultyBinding.instance
+                  .cachedProfileForMode('osmantus')
+                  .speedMultiplier)
+          .round();
 
   bool get _tutorial => OsmantusPacing.isTutorial(_playMs);
 
@@ -175,7 +222,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _best = 980;
       _combo = 5;
       _maxCombo = 5;
-      _dayStreak = 5;
       _bandText = 'MÜKEMMEL! X5';
       _bandUntilMs = 1 << 30;
       _phase.value = 1;
@@ -184,6 +230,12 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _loadBest();
       return;
     }
+    // Y3: ilk turun başlangıç damgası (monoton koruma: aynı
+    // mikrosaniyede başlayan iki turun anahtarı çakışmaz).
+    _runStartedAtUs = max(
+      DateTime.now().microsecondsSinceEpoch,
+      _runStartedAtUs + 1,
+    );
     _clock.start();
     _ticker.start();
     _loadBest();
@@ -197,9 +249,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         LeaderboardService.modeOsmantus,
       );
       _best = widget.prototypeVisualState ? max(stored, 980) : stored;
-      _dayStreak = widget.prototypeVisualState
-          ? 5
-          : ProgressManager().dailyStreak;
     });
   }
 
@@ -244,6 +293,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   /// birebir aynı saat durdurulur, can/skor kaybı olmaz.
   void _togglePause() {
     if (widget.prototypeVisualState || !_alive) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    unawaited(AudioManager().playButtonTap());
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
@@ -255,6 +307,37 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _ticker.stop();
     }
     setState(() {});
+  }
+
+  /// Yardım diyaloğu açıkken oyun durur (B4): saat + ticker durdurulur,
+  /// diyalog kapanınca kaldığı yerden devam eder. Elle duraklatma
+  /// bayrağına dokunulmaz (duraklatma kaplaması açılmaz). `_onFrame`
+  /// saat/senkron mantığına dokunulmaz.
+  Future<void> _showHelp() async {
+    final resumeClock = _alive && !_paused && _clock.isRunning;
+    final resumeTicker = _alive && !_paused && _ticker.isActive;
+    if (resumeClock) _clock.stop();
+    if (resumeTicker) _ticker.stop();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(context.l10n.osmantusTitle),
+          content: Text(context.l10n.osmantusRhythmHint),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.understoodButton),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted && _alive && !_paused) {
+        if (resumeClock && !_clock.isRunning) _clock.start();
+        if (resumeTicker && !_ticker.isActive) _ticker.start();
+      }
+    }
   }
 
   void _onFrame(Duration _) {
@@ -269,7 +352,13 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       // kaçan vuruşları kare kare cezalandırmak yerine cezasız
       // yeniden senkronla. Normal oyunda kare başına sapma ~16 ms
       // olduğundan bu eşik asla tutmaz.
-      final interval = OsmantusPacing.intervalMs(_playMs);
+      // 12C1: adaptif zorluk — vuruş aralığı hız çarpanına bölünür
+      // (merhamette daha seyrek vuruş, seride daha sık).
+      final interval =
+          OsmantusPacing.intervalMs(_playMs) ~/
+          DifficultyBinding.instance
+              .cachedProfileForMode('osmantus')
+              .speedMultiplier;
       if (now > _beatAtMs + _window + interval) {
         _beatStartMs = now;
         _beatAtMs = now + interval;
@@ -294,13 +383,27 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   void _advanceBeat() {
-    final interval = OsmantusPacing.intervalMs(_playMs);
+    // 12C1: adaptif zorluk — vuruş aralığı hız çarpanına bölünür
+    // (merhamette daha seyrek vuruş, seride daha sık).
+    final interval =
+        OsmantusPacing.intervalMs(_playMs) ~/
+        DifficultyBinding.instance
+            .cachedProfileForMode('osmantus')
+            .speedMultiplier;
     _beatStartMs = _beatAtMs;
     _beatAtMs = _beatAtMs + interval;
     _hitThisBeat = false;
     _speakerIndex = 1 - _speakerIndex;
-    final lines = OsmantusCast.duo[_speakerIndex].lines;
-    _lines[_speakerIndex] = lines[_rng.nextInt(lines.length)];
+    _hisirBeat =
+        !_tutorial &&
+        !widget.prototypeVisualState &&
+        HisirCharacter.roll(_rng);
+    if (_hisirBeat) {
+      _lines[_speakerIndex] = HisirCharacter.replik;
+    } else {
+      final lines = OsmantusCast.duo[_speakerIndex].lines;
+      _lines[_speakerIndex] = lines[_rng.nextInt(lines.length)];
+    }
     if (_face != -1 && _nowMs > _flashUntilMs) _face = -1;
     setState(() {});
   }
@@ -312,10 +415,13 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   void _miss(String reason, {bool costsLife = true}) {
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
+    // 10D P0-2: ıska sesi — playDrop. Ses çağrısı kapılı lightImpact
+    // içerir; yukarıdaki heavyImpact ile aynı tick'te 18 ms kapısına
+    // takılıp düşer — toplam 1 impuls (ağır olan korunur).
+    unawaited(AudioManager().playDrop());
     final lostCombo = _combo;
     _combo = 0;
-    _breakReason = reason;
     _face = 0;
     _flashBad = true;
     _flashUntilMs = _nowMs + 320;
@@ -327,8 +433,15 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       return;
     }
     if (costsLife && !_tutorial) {
-      _lives -= 1;
-      _hint = context.l10n.osmantusLifeStatus(reason, _lives);
+      if (_freeMissesLeft > 0) {
+        // Öğretici sonrası ilk 2 ölümcül ıska bedava: can gitmez,
+        // yalnız kombo kırılır (yukarıda kırıldı).
+        _freeMissesLeft--;
+        _hint = context.l10n.osmantusWarmupMiss(reason);
+      } else {
+        _lives -= 1;
+        _hint = context.l10n.osmantusLifeStatus(reason, _lives);
+      }
     } else {
       _hint = context.l10n.osmantusWarmupMiss(reason);
     }
@@ -338,7 +451,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _moveMade = true;
       _alive = false;
       _hint = context.l10n.osmantusDuoWonHint;
-      unawaited(AudioManager().playLose());
+      // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
       unawaited(
         LeaderboardService.instance.submitScore(
           LeaderboardService.modeOsmantus,
@@ -363,7 +476,6 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       _hitThisBeat = true;
       final perfect = delta.abs() <= win * 0.35;
       _combo += 1;
-      _breakReason = null;
       if (_combo > _maxCombo) _maxCombo = _combo;
       final basePts = (perfect ? 120 : 70) + min(_combo, 30) * 8;
       _score += _boostOn ? basePts * 2 : basePts;
@@ -375,18 +487,32 @@ class _OsmantusScreenState extends State<OsmantusScreen>
           ? context.l10n.osmantusEarlyBy(delta)
           : context.l10n.osmantusLateBy(delta);
       if (perfect) _hint = context.l10n.osmantusJustInTime;
-      AudioManager().triggerHaptic();
-      HapticFeedback.mediumImpact();
-      unawaited(
-        AudioManager().playOsmantusBeat(
-          isPersonB: _speakerIndex == 1,
-          perfect: perfect,
-          comboCount: _combo,
-        ),
-      );
+      if (_hisirBeat) {
+        // Ritim SFX'i aynen, ses Hışır: Osman sesi Hışır'ı kesmez,
+        // Hışır klibi tek yoldan tam çalar (12K düzeni).
+        unawaited(
+          AudioManager().playOsmantusBeat(
+            isPersonB: _speakerIndex == 1,
+            perfect: perfect,
+            comboCount: _combo,
+            includeVoice: false,
+          ),
+        );
+        unawaited(AudioManager().playHusurAday());
+      } else {
+        unawaited(
+          AudioManager().playOsmantusBeat(
+            isPersonB: _speakerIndex == 1,
+            perfect: perfect,
+            comboCount: _combo,
+          ),
+        );
+      }
       setState(() {});
-    } else if (delta < 0 && delta >= -win * 2.2) {
-      _hitThisBeat = true;
+    } else if (delta < 0 && delta >= -win * 1.2) {
+      // Erken-basış tuzağı: ıska cezası verilir ama vuruş TÜKETİLMEZ
+      // (`_hitThisBeat` burada kurulmaz) — penceredeki 2. dokunuş
+      // skor verebilir. `_miss` `_hitThisBeat`'e dokunmaz.
       _miss(context.l10n.osmantusEarlyPress);
     } else if (delta < 0) {
       _hint = context.l10n.osmantusWaitGreen;
@@ -398,18 +524,25 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     setState(() {
       _paused = false;
       _pausedByLifecycle = false;
+      // Y3: yeni tur, yeni damga — önceki turun anahtarı tekrar
+      // kullanılmaz (monoton koruma çakışmayı engeller).
+      _runStartedAtUs = max(
+        DateTime.now().microsecondsSinceEpoch,
+        _runStartedAtUs + 1,
+      );
       _score = 0;
       _combo = 0;
       _maxCombo = 0;
       _lives = 3;
+      _freeMissesLeft = 2;
       _alive = true;
       _resultShown = false;
       _speakerIndex = 0;
+      _hisirBeat = false;
       _lines[0] = OsmantusCast.duo[0].lines[0];
       _lines[1] = OsmantusCast.duo[1].lines[2];
       _bandText = '';
       _face = -1;
-      _breakReason = null;
       _hint = context.l10n.osmantusHintIdle;
       _hitThisBeat = false;
       _boostUntilMs = 0;
@@ -424,13 +557,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     if (!_ticker.isActive) _ticker.start();
   }
 
-  String _statsLine() =>
-      '${context.l10n.osmantusStatsLine(_maxCombo, _dayStreak)}${_breakReason == null ? '' : ' · ${context.l10n.osmantusLastError(_breakReason!) }'}';
-
   bool _useDikkis() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _boostUntilMs = _nowMs + 12000;
       _showBand(context.l10n.osmantusDikkisBoost, bad: false);
@@ -441,8 +570,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   bool _useRing() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _ringUntilMs = _nowMs + 12000;
       _showBand(context.l10n.osmantusRingActive, bad: false);
@@ -453,8 +581,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   bool _useMic() {
     if (!_alive || _paused || _micShield) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _micShield = true;
       _showBand(context.l10n.osmantusMicShieldCallout, bad: false);
@@ -463,14 +590,28 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
+  Future<void> _presentResult({bool? won}) async {
     // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
-    // üzerinden (tek-ödeme korunur).
+    // üzerinden (tek-ödeme korunur). Doğal bitiş canların bitmesidir
+    // (kayıp); `won` verilmezse kayıp başlığı gösterilir.
     final replay = await finishRun(
       context,
       score: _score,
       best: _best,
+      bestCombo: _maxCombo,
+      won: won ?? false,
       leaderboardMode: LeaderboardService.modeOsmantus,
+      // K16: mod skoru kimliği liderlik kimliğiyle aynıdır
+      // (`lululu_game_mode.dart` bestScoreKey: 'osmantus').
+      modeScoreId: LeaderboardService.modeOsmantus,
+      // Y3: tur başlangıç damgalı anahtar; bu turun tüm bitiş
+      // yolları (_finishEarly + _edgeShowResult) aynı anahtarı
+      // paylaşır, çift ödeme/gösterim engellenir.
+      idempotencyKey:
+          '${LeaderboardService.modeOsmantus}:$_runStartedAtUs',
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur
+      // süresi (duraklatma sayacı durdurur — kronometre esas alınır).
+      elapsed: _clock.elapsed,
     );
     if (!mounted) return;
     _resultShown = false;
@@ -495,7 +636,121 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       return;
     }
     _energyRefunded = true;
+    // S6: bildirim yalnız iade GERÇEKTEN verildiğinde gösterilir —
+    // enerji zaten doluysa `addEnergy` kelepçelenir, değişim olmaz.
+    final before = EnergyService.instance.energy;
     EnergyService.instance.addEnergy(1);
+    if (EnergyService.instance.energy > before) {
+      GlobalNotify.showSnackBar(_refundNotice);
+    }
+  }
+
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && _alive && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım deseni: `_showHelp` ile aynı
+  /// — saat + ticker durur, `_paused` bayrağına dokunulmaz,
+  /// duraklatma kaplaması açılmaz).
+  void _pauseForExitConfirm() {
+    _exitResumeClock = _alive && !_paused && _clock.isRunning;
+    _exitResumeTicker = _alive && !_paused && _ticker.isActive;
+    if (_exitResumeClock) _clock.stop();
+    if (_exitResumeTicker) _ticker.stop();
+    _pausedForExitConfirm = _exitResumeClock || _exitResumeTicker;
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    if (mounted && _alive && !_paused) {
+      if (_exitResumeClock && !_clock.isRunning) _clock.start();
+      if (_exitResumeTicker && !_ticker.isActive) _ticker.start();
+    }
+    _exitResumeClock = false;
+    _exitResumeTicker = false;
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    // Dondurma (B5): sonuç diyaloğu süresince saat + ticker durur,
+    // vuruş kaçırma/can kaybı işlemez. TEKRAR _restart ile döner.
+    if (_clock.isRunning) _clock.stop();
+    _ticker.stop();
+    try {
+      await _presentResult(won: _score > 0);
+    } finally {
+      // _restart saati sıfırlayıp başlattıysa korumalar no-op'tur;
+      // sonuç gösterilemeden dönüldüyse tur donuk kalmaz.
+      if (mounted && _alive && !_paused) {
+        if (!_clock.isRunning) _clock.start();
+        if (!_ticker.isActive) _ticker.start();
+      }
+    }
   }
 
   void _edgeShowResult() {
@@ -521,8 +776,8 @@ class _OsmantusScreenState extends State<OsmantusScreen>
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xDB080B12),
@@ -574,6 +829,15 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                 ),
                 const SizedBox(height: 16),
                 ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+                const SizedBox(height: 12),
+                // N6: duraklatmadan çıkış — mevcut geri yolu
+                // (`maybePop`); iade kuralları PopScope handler'da
+                // aynen korunur, yeni iade mantığı yok.
+                ArcadeButton(
+                  label: context.l10n.quit,
+                  primary: false,
+                  onPressed: () => Navigator.maybePop(context),
+                ),
               ],
             ),
           ),
@@ -584,6 +848,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   @override
   Widget build(BuildContext context) {
+    // S6: iade bildirimi metni çıkıştan ÖNCE yakalanır
+    // (`didPop` anında bağlam ağaçta değildir).
+    _refundNotice = context.l10n.energyRefundNotice;
     if (!_alive && !_resultShown && !widget.prototypeVisualState) {
       _edgeShowResult();
     }
@@ -592,10 +859,8 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     final wideScreen = MediaQuery.sizeOf(context).width >= 400;
     final shiftOffset = wideScreen ? Offset.zero : const Offset(3, 0);
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: MediaQuery.removePadding(
         context: context,
         removeTop: true,
@@ -649,10 +914,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   offset: shiftOffset,
                   child: Column(
                     children: [
-                      _statusBar(
-                        hasShellStatusBar: hasShellStatusBar,
-                        topPad: topPad,
-                      ),
+                      if (hasShellStatusBar) SizedBox(height: topPad),
                       _modeHeader(wideScreen: wideScreen),
                       _statsBar(),
                       Expanded(
@@ -673,58 +935,10 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   ),
                 ),
               ),
-              if (!_alive && !_resultShown)
-                Positioned.fill(
-                  child: ArcadeResultOverlay(
-                    title: context.l10n.osmantusDuoWonTitle,
-                    message: _statsLine(),
-                    score: _score,
-                    best: _best,
-                    won: false,
-                    modeTitle: context.l10n.shopModeOsmantus,
-                    shareLine: _statsLine(),
-                    retryLabel: context.l10n.tryAgainCaps,
-                    onRetry: _restart,
-                  ),
-                ),
               if (_paused && _alive && !widget.prototypeVisualState)
                 _pauseOverlay(),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _statusBar({
-    required bool hasShellStatusBar,
-    required double topPad,
-  }) {
-    if (hasShellStatusBar) {
-      return SizedBox(height: widget.prototypeVisualState ? 35.38 : topPad);
-    }
-    return SizedBox(
-      height: 35.38,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '09:41',
-              style: GoogleFonts.nunito(
-                fontSize: 12.5,
-                height: 1,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(
-              width: 38,
-              height: 16,
-              child: CustomPaint(painter: _OsmantusStatusIndicatorsPainter()),
-            ),
-          ],
         ),
       ),
     );
@@ -863,9 +1077,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   Text(
                     widget.prototypeVisualState
                         ? '12.450'
-                        : ProgressManager().coins.toString().replaceAllMapped(
-                            RegExp(r'\B(?=(\d{3})+(?!\d))'),
-                            (_) => '.',
+                        : formatGroupedInt(
+                            ProgressManager().coins,
+                            Localizations.localeOf(context).languageCode,
                           ),
                     style: GoogleFonts.nunito(
                       fontSize: 13.5,
@@ -886,19 +1100,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
               button: true,
               label: context.l10n.helpButtonLabel,
               child: GestureDetector(
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text(context.l10n.osmantusTitle),
-                  content: Text(context.l10n.osmantusRhythmHint),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(context.l10n.understoodButton),
-                    ),
-                  ],
-                ),
-              ),
+              onTap: _showHelp,
               child: Container(
                 width: 48,
                 height: 48,
@@ -933,11 +1135,15 @@ class _OsmantusScreenState extends State<OsmantusScreen>
 
   Widget _statsBar() {
     return SizedBox(
-      height: 58.5,
+      height: 80.5,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        child: LayoutBuilder(
-          builder: (context, statsBox) {
+        child: Column(
+          children: [
+            SizedBox(
+              height: 50.5,
+              child: LayoutBuilder(
+                builder: (context, statsBox) {
             final row = Row(
               children: [
                 _scoreBox(context.l10n.gameScoreLabel, '$_score', width: 104),
@@ -950,7 +1156,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                   button: true,
                   label: context.l10n.finishRoundLabel,
                   child: GestureDetector(
-                    onTap: _restart,
+                    onTap: _finishEarly,
                     child: Container(
                       width: 57.81,
                       height: 48,
@@ -985,7 +1191,58 @@ class _OsmantusScreenState extends State<OsmantusScreen>
               child: SizedBox(width: 350, height: 50.5, child: row),
             );
           },
+              ),
+            ),
+            const SizedBox(height: 4),
+            _livesStrip(),
+          ],
         ),
+      ),
+    );
+  }
+
+  /// Can + bedava-ıska göstergesi: 3 kalp yuvası (kalan can kırmızı,
+  /// kaybedilen soluk) ve öğretici sonrası ilk ıskaları karşılayan
+  /// bedava hakkı rozeti (0 olunca gizlenir). SKOR/BEST/COMBO
+  /// satırına dokunulmaz; şerit onun altında ayrı satırdadır.
+  Widget _livesStrip() {
+    return SizedBox(
+      height: 18,
+      child: Row(
+        children: [
+          for (var i = 0; i < 3; i++)
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: Icon(
+                Icons.favorite,
+                size: 14,
+                color: i < _lives ? _ruby : const Color(0x59FFFFFF),
+              ),
+            ),
+          if (_freeMissesLeft > 0) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xD9080B12),
+                border: Border.all(
+                  color: const Color(0x73FFB800),
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                '$_freeMissesLeft bedava',
+                style: GoogleFonts.nunito(
+                  fontSize: 10,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFFFFB800),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1044,7 +1301,20 @@ class _OsmantusScreenState extends State<OsmantusScreen>
     );
   }
 
+  /// Güç stokları (B11): dock `ProgressManager`'ı dinler; soğuk
+  /// başlatmada yükleme bitince `notifyListeners` ile yeniden çizilir,
+  /// ilk karelerdeki 0/0/0 kalıcı olmaz. Stok kullanımı/iadesi de aynı
+  /// bildirimle dock'u günceller. `initState`'te `load()` çağrılmaz:
+  /// yükleme ana önyüklemede yapılır ve buradan çağrılmak testlerde
+  /// bekleyen zamanlayıcı bırakırdı.
   Widget _powerDock() {
+    return ListenableBuilder(
+      listenable: ProgressManager(),
+      builder: (context, _) => _powerDockContent(),
+    );
+  }
+
+  Widget _powerDockContent() {
     final items = [
       stockBonusWithResult(
         id: 'dik',
@@ -1272,7 +1542,7 @@ class _OsmantusScreenState extends State<OsmantusScreen>
                       top: 2,
                       left: 0,
                       right: 0,
-                      height: 25,
+                      height: 46,
                       child: _comboBand(wideScreen: wideScreen),
                     ),
                   ],
@@ -1286,11 +1556,54 @@ class _OsmantusScreenState extends State<OsmantusScreen>
   }
 
   Widget _comboBand({required bool wideScreen}) {
-    final visible = _bandText.isNotEmpty;
+    // W13-F: `_hint` (yönlü zamanlama geri bildirimi: "Biraz erken
+    // (-120ms)", "Bekle, halka yeşile dönsün.", ısınma/can durumu)
+    // daha önce yalnız Semantics etiketindeydi — gören oyuncuya hiç
+    // ulaşmıyordu; kör testte zamanlama öğrenilemedi (playtest §9).
+    // Bant varken ipucu ikinci satırda görünür, bant boşken yalnız
+    // ipucu satırı görünür. Mekanik aynen kalır: yalnız görünür
+    // metin, pencere/can kuralına dokunulmaz. Prototip vitrininde
+    // ipucu gizli tutulur, bant dolu ('MÜKEMMEL! X5') olduğundan
+    // kare değişmez.
+    final showHint = _hint.isNotEmpty && !widget.prototypeVisualState;
+    final hasBand = _bandText.isNotEmpty;
+    final visible = hasBand || showHint;
     final color = _bandBad
         ? const Color(0xFFE5334A)
         : (wideScreen ? const Color(0xFFFFB800) : const Color(0xFFFFD700));
     final glow = _bandBad ? const Color(0xFFFFD700) : const Color(0xFFFF6B35);
+    final hintStyle = GoogleFonts.nunito(
+      fontSize: 13,
+      height: 1.2,
+      fontWeight: FontWeight.w800,
+      color: Colors.white,
+      shadows: const [
+        Shadow(
+          color: Color(0xEB080B12),
+          offset: Offset(0, 2),
+          blurRadius: 4,
+        ),
+      ],
+    );
+    final bandStyle = GoogleFonts.bangers(
+      fontSize: _bandBad
+          ? 18
+          : (widget.prototypeVisualState && !wideScreen ? 18 : 22),
+      height: 1,
+      letterSpacing: 0.6,
+      color: color,
+      shadows: [
+        const Shadow(
+          color: Color(0xEB080B12),
+          offset: Offset(0, 3),
+        ),
+        Shadow(color: glow.withValues(alpha: 0.9), blurRadius: 14),
+        Shadow(
+          color: glow.withValues(alpha: 0.55),
+          blurRadius: 32,
+        ),
+      ],
+    );
     return Align(
       alignment: Alignment.topCenter,
       child: AnimatedOpacity(
@@ -1298,23 +1611,25 @@ class _OsmantusScreenState extends State<OsmantusScreen>
             ? (widget.prototypeVisualState && !wideScreen ? 0.55 : 1)
             : 0,
         duration: const Duration(milliseconds: 120),
-        child: Text(
-          _bandText.isEmpty ? ' ' : _bandText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.bangers(
-            fontSize: _bandBad
-                ? 18
-                : (widget.prototypeVisualState && !wideScreen ? 18 : 22),
-            height: 1,
-            letterSpacing: 0.6,
-            color: color,
-            shadows: [
-              const Shadow(color: Color(0xEB080B12), offset: Offset(0, 3)),
-              Shadow(color: glow.withValues(alpha: 0.9), blurRadius: 14),
-              Shadow(color: glow.withValues(alpha: 0.55), blurRadius: 32),
-            ],
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasBand)
+              Text(
+                _bandText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: bandStyle,
+              ),
+            if (showHint)
+              Text(
+                _hint,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: hintStyle,
+              ),
+            if (!hasBand && !showHint) const Text(' '),
+          ],
         ),
       ),
     );
@@ -1402,7 +1717,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
         children: [
           _Fig(
             line: _lines[0],
-            asset: OsmantusCast.duo[0].assetPath,
+            asset: _hisirBeat && _speakerIndex == 0
+                ? HisirCharacter.assetPath
+                : OsmantusCast.duo[0].assetPath,
             wideScreen: wideScreen,
           ),
           if (wideScreen)
@@ -1427,7 +1744,9 @@ class _OsmantusScreenState extends State<OsmantusScreen>
             ),
           _Fig(
             line: _lines[1],
-            asset: OsmantusCast.duo[1].assetPath,
+            asset: _hisirBeat && _speakerIndex == 1
+                ? HisirCharacter.assetPath
+                : OsmantusCast.duo[1].assetPath,
             wideScreen: wideScreen,
           ),
         ],
@@ -1641,43 +1960,3 @@ class _Fig extends StatelessWidget {
   }
 }
 
-class _OsmantusStatusIndicatorsPainter extends CustomPainter {
-  const _OsmantusStatusIndicatorsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    for (var i = 0; i < 4; i++) {
-      final height = 4.0 + i * 3.0;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(1 + i * 4.5, size.height - height, 2.4, height),
-          const Radius.circular(0.7),
-        ),
-        paint,
-      );
-    }
-    final battery = RRect.fromRectAndRadius(
-      Rect.fromLTWH(22, 3, 14, 9),
-      const Radius.circular(2),
-    );
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawRRect(battery, paint);
-    paint.style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(24, 5, 9, 5),
-        const Radius.circular(1),
-      ),
-      paint,
-    );
-    canvas.drawRect(const Rect.fromLTWH(36.5, 5.5, 1.5, 4), paint);
-  }
-
-  @override
-  bool shouldRepaint(_OsmantusStatusIndicatorsPainter oldDelegate) => false;
-}

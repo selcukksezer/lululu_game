@@ -32,19 +32,6 @@ abstract final class GameAudio {
   static const sfxVictory = 'sfx_victory.mp3';
 
   static const voiceAydinlat = 'voice_aydinlat.mp3';
-  static const voiceTier1 = 'voice_tier1.mp3';
-  static const voiceTier2 = 'voice_tier2.mp3';
-  static const voiceTier3 = 'voice_tier3.mp3';
-  static const voiceTier4 = 'voice_tier4.mp3';
-  static const voiceTier5 = 'voice_tier5.mp3';
-  static const voiceTier6 = 'voice_tier6.mp3';
-  static const voiceTier7 = 'voice_tier7.mp3';
-  static const voiceTier8 = 'voice_tier8.mp3';
-  static const voiceTier9 = 'voice_tier9.mp3';
-  static const voiceTier10 = 'voice_tier10.mp3';
-  static const voiceTier11 = 'voice_tier11.mp3';
-  static const voiceTier12 = 'voice_tier12.mp3';
-  static const voiceTier13 = 'voice_tier13.mp3';
 
   /// Prototype design sound naming (`tier1_ses.mp3`..`tier13_ses.mp3`).
   static const tier1Ses = 'tier1_ses.mp3';
@@ -75,9 +62,12 @@ abstract final class GameAudio {
   static const duktur = 'duktur.mp3';
   static const kanka = 'kanka.mp3';
 
-  /// UNVERIFIED candidate: transcript heard "huşur", not confirmed by ear as
-  /// "hışır". Wired as Hışır's voice with that caveat (see ASSETS_NOTE.md).
-  static const husurAday = 'husur_aday.mp3';
+  /// Hışır'ın sesi — onaylı klip: sim_bocekalem.i_7706225030606146834
+  /// 16.6–22.1 sn kesimi ("Gemü'ne sıçtığımın garısı, şimdi şahadet getir,
+  /// sonra zopayı getir"). Selçuk kulakla onayladı (2026-11-19 19:49:
+  /// "evet bu kısım doğru seste"). Eski aday `husur_aday.mp3` artık
+  /// kullanılmıyor; dosya assets'te duruyor, silme kararı koordinatörde.
+  static const hisirZopa = 'hisir_zopa.mp3';
 
   /// Viral one-shot clips, spread into [allAssets] for warmup + integrity checks.
   static const viralOneShots = [
@@ -87,7 +77,7 @@ abstract final class GameAudio {
     lululuNakarat,
     duktur,
     kanka,
-    husurAday,
+    hisirZopa,
   ];
 
   static const allAssets = [
@@ -109,19 +99,6 @@ abstract final class GameAudio {
     voiceOsmanA,
     voiceOsmanB,
     ...viralOneShots,
-    voiceTier1,
-    voiceTier2,
-    voiceTier3,
-    voiceTier4,
-    voiceTier5,
-    voiceTier6,
-    voiceTier7,
-    voiceTier8,
-    voiceTier9,
-    voiceTier10,
-    voiceTier11,
-    voiceTier12,
-    voiceTier13,
     tier1Ses,
     tier2Ses,
     tier3Ses,
@@ -137,78 +114,49 @@ abstract final class GameAudio {
     tier13Ses,
   ];
 
-  /// Verified `voice_tierN.mp3` for merge tier 1–13; null if out of range.
-  static String? voiceForTier(int tier) {
-    switch (tier) {
-      case 1:
-        return voiceTier1;
-      case 2:
-        return voiceTier2;
-      case 3:
-        return voiceTier3;
-      case 4:
-        return voiceTier4;
-      case 5:
-        return voiceTier5;
-      case 6:
-        return voiceTier6;
-      case 7:
-        return voiceTier7;
-      case 8:
-        return voiceTier8;
-      case 9:
-        return voiceTier9;
-      case 10:
-        return voiceTier10;
-      case 11:
-        return voiceTier11;
-      case 12:
-        return voiceTier12;
-      case 13:
-        return voiceTier13;
-      default:
-        return null;
-    }
-  }
-
-  /// Prototype `tierN_ses.mp3` for tier 1–13; null if out of range.
+  /// Design sound `tierN_ses.mp3` for tier 1–13; null if out of range.
   ///
-  /// Merge/tier playback prefers this over [voiceForTier] (see
-  /// `AudioManager._resolveMergeVoice`); `voice_tierN.mp3` is the fallback.
+  /// The single canonical tier-voice set (12A): the byte-identical
+  /// `voice_tierN.mp3` duplicates were deleted, so every tier/merge
+  /// voice resolves here (see `AudioManager._resolveMergeVoice`).
   static String? designSoundForTier(int tier) {
     if (tier < 1 || tier > 13) return null;
     return 'tier${tier}_ses.mp3';
   }
 
   /// Tap/squash character id → voice filename under `assets/audio/`.
+  ///
+  /// `tier_N` ids resolve to the tier's design sound (`tierN_ses.mp3`,
+  /// [designSoundForTier]); the byte-identical `voice_tierN.mp3`
+  /// duplicates were deleted in 12A.
   static String? voiceForCharacterId(String characterId) {
     switch (characterId) {
       case 'tier_1':
-        return voiceTier1;
+        return designSoundForTier(1);
       case 'tier_2':
-        return voiceTier2;
+        return designSoundForTier(2);
       case 'tier_3':
-        return voiceTier3;
+        return designSoundForTier(3);
       case 'tier_4':
-        return voiceTier4;
+        return designSoundForTier(4);
       case 'tier_5':
-        return voiceTier5;
+        return designSoundForTier(5);
       case 'tier_6':
-        return voiceTier6;
+        return designSoundForTier(6);
       case 'tier_7':
-        return voiceTier7;
+        return designSoundForTier(7);
       case 'tier_8':
-        return voiceTier8;
+        return designSoundForTier(8);
       case 'tier_9':
-        return voiceTier9;
+        return designSoundForTier(9);
       case 'tier_10':
-        return voiceTier10;
+        return designSoundForTier(10);
       case 'tier_11':
-        return voiceTier11;
+        return designSoundForTier(11);
       case 'tier_12':
-        return voiceTier12;
+        return designSoundForTier(12);
       case 'tier_13':
-        return voiceTier13;
+        return designSoundForTier(13);
       case 'osman_a':
       case 'osman':
         return voiceOsmanA;
@@ -216,7 +164,7 @@ abstract final class GameAudio {
       case 'tus':
         return voiceOsmanB;
       case 'hisir':
-        return husurAday;
+        return hisirZopa;
       default:
         return null;
     }
@@ -233,6 +181,14 @@ abstract final class GameAudio {
   }
 }
 
+/// Suika birleşme replik kuyruğu öğesi: çalınacak ses + çalmaya
+/// başlarken çağrılacak geri çağrı (Suika ekranı yazıyı bununla yazar).
+class _SuikaVoiceJob {
+  _SuikaVoiceJob(this.assetName, this.onStart);
+  final String assetName;
+  final void Function()? onStart;
+}
+
 class AudioManager {
   static final AudioManager _instance = AudioManager._internal();
   static AudioManager get instance => _instance;
@@ -244,6 +200,20 @@ class AudioManager {
   final List<AudioPlayer> _playersPool = [];
   int _poolIndex = 0;
   static const int _poolSize = 8;
+
+  /// Test dikişi (Dalga 11 P2-1): oyuncu fabrikası + testte çalmayı
+  /// zorlayan bayrak. Üretim varsayılanları: gerçek [AudioPlayer]'lar,
+  /// zorlama kapalı — üretim davranışı değişmez.
+  ///
+  /// 12B-q19: bayraktaki `@visibleForTesting` kaldırıldı — sonuç
+  /// ekranı (`result_screen.dart` `initState`) test atlamasını bu
+  /// bayrağa göre açar; üretim kodu bayrağı okuduğu için işaret
+  /// `invalid_use_of_visible_for_testing_member` uyarısı veriyordu.
+  /// Bayrak yalnız testte açılır, üretimde hep `false` kalır.
+  @visibleForTesting
+  AudioPlayer Function() playerFactory = AudioPlayer.new;
+
+  bool forcePlaybackForTesting = false;
 
   bool _isMuted = false;
   bool _sfxEnabled = true;
@@ -258,6 +228,14 @@ class AudioManager {
   /// channel preferences — [toggleMute] flips only [_isMuted], so unmuting
   /// restores exactly the mix the user had before muting. Every playback
   /// gate in this file derives from these getters (S2#7 / S2#9).
+  ///
+  /// 7C: [_isMuted] is a TRANSIENT lifecycle mute — its only writer is
+  /// [AppLifecycleGuard] (pause → mute, resume → restore) plus
+  /// [toggleMute]. No settings toggle reads or writes it, so the
+  /// `!_isMuted` factor here cannot collapse the two channels into one
+  /// switch: SFX off never silences voice and voice off never silences
+  /// SFX outside a lifecycle pause. The settings-screen `isMuted` reads
+  /// (initState + `_loadPrefs` fallback) were removed for the same reason.
   bool get _sfxAudible => !_isMuted && _sfxEnabled;
   bool get _voiceAudible => !_isMuted && _voiceEnabled;
 
@@ -351,15 +329,18 @@ class AudioManager {
     }
   }
 
-  /// Master mute flag (kept in sync with settings toggles and test overrides).
+  /// Master mute flag — transient lifecycle mute, NOT a settings toggle.
   ///
   /// The single mute switch (S2#7): setting it never rewrites
   /// [sfxEnabled]/[voiceEnabled] — those stay as user
   /// preferences and take effect again on unmute via the derived
   /// [_sfxAudible]/[_voiceAudible] gates. Callers that snapshot/restore
   /// around lifecycle pauses (AppLifecycleGuard) rely on this.
+  /// 7C: no-change writes are no-ops (guard restores can re-write the
+  /// same value without re-stopping playback).
   bool get isMuted => _isMuted;
   set isMuted(bool value) {
+    if (_isMuted == value) return;
     _isMuted = value;
     if (value) {
       unawaited(stopAll());
@@ -369,6 +350,9 @@ class AudioManager {
   /// Settings screen toggle: Sound Effects (`sfxEnabled`).
   bool get sfxEnabled => _sfxEnabled;
   set sfxEnabled(bool value) {
+    // 7C: no-change writes are no-ops — the setter is idempotent, so
+    // `_loadPrefs` / toggle repeats never re-persist or re-notify.
+    if (_sfxEnabled == value) return;
     _sfxEnabled = value;
     if (!value && !_voiceEnabled) {
       unawaited(stopAll());
@@ -387,6 +371,8 @@ class AudioManager {
   /// Settings screen toggle: Viral Bug Voices (`voiceEnabled`).
   bool get voiceEnabled => _voiceEnabled;
   set voiceEnabled(bool value) {
+    // 7C: no-change writes are no-ops (see [sfxEnabled]).
+    if (_voiceEnabled == value) return;
     _voiceEnabled = value;
     if (!value && _exclusiveBusy) {
       unawaited(_stopExclusivePlayer());
@@ -399,6 +385,8 @@ class AudioManager {
   /// Settings screen toggle: Haptic Vibration (`vibrationEnabled`).
   bool get vibrationEnabled => _vibrationEnabled;
   set vibrationEnabled(bool value) {
+    // 7C: no-change writes are no-ops (see [sfxEnabled]).
+    if (_vibrationEnabled == value) return;
     _vibrationEnabled = value;
     final pm = ProgressManager.instance;
     if (pm.vibrationEnabled != value) {
@@ -426,6 +414,76 @@ class AudioManager {
   void Function()? _exclusiveOnComplete;
   bool _exclusiveBusy = false;
 
+  /// Tier voices play on a per-play player (Dalga 12K — 12K-sound-overlap).
+  ///
+  /// Selçuk'un güncel isteği (2026-11-19 20:24, 2048 videosu): bir sonraki
+  /// hamlede önceki ses KESİLMEYECEK, ses tam çalacak; yeni ses eskisinin
+  /// üstüne başlar (örtüşme kabul). Bu, Dalga 11 P2-1'in TERSİDİR (orada
+  /// tek tier-sesi kanalı + yeni ses eskisini durduruyordu).
+  ///
+  /// Her tier sesi [playerFactory] ile yeni bir oyuncuda çalar ve doğal
+  /// bitişte ([onPlayerComplete]) bırakılır — hiçbir çalma başka bir çalmayı
+  /// durdurmaz. Eşzamanlı tier sesi [_maxConcurrentVoices] ile sınırlıdır:
+  /// sınır doluysa YENİ ses düşer (eski ses asla kesilmez). [stopAll] /
+  /// [dispose] yollarındaki kasıtlı susturma aynen durur: onlar bu kümedeki
+  /// her oyuncuyu durdurur/bırakır.
+  final Set<AudioPlayer> _voicePlayers = {};
+
+  /// [_voicePlayers] üyelerinin tamamlanma abonelikleri — bırakma anında
+  /// iptal edilir ([_releaseVoicePlayer]).
+  final Map<AudioPlayer, StreamSubscription<void>> _voiceCompleteSubs = {};
+
+  /// En fazla eşzamanlı tier sesi (12K). Sınır dolunca yeni ses düşer.
+  static const int _maxConcurrentVoices = 4;
+
+  /// SFX havuzunda şu an çalan oyuncular (12K): [playSfx] boş oyuncu
+  /// seçer; havuz doluysa yeni SFX düşer, çalan SFX asla kesilmez.
+  /// Tamamlanma ([onPlayerComplete]) oyuncuyu boşaltır; [stopAll] her
+  /// durdurduğu oyuncuyu buradan çıkarır.
+  final Set<AudioPlayer> _busyPoolPlayers = {};
+
+  /// Havuz oyuncularının tamamlanma abonelikleri ([dispose] iptal eder).
+  final List<StreamSubscription<void>> _poolCompleteSubs = [];
+
+  /// Suika birleşme replik kuyruğu — sıralı, tek ses (Selçuk kuralı,
+  /// 2026-11-20 20:24): Suika'da karakter sesleri birbirine girmeyecek,
+  /// arka arkaya çalacak; bir ses bitmeden yenisi başlamaz.
+  ///
+  /// YALNIZ Suika birleşme akışı ([playMergeQueued] + [enqueueSuikaVoice])
+  /// bu kuyruğu kullanır. [playMerge]/[playMergeHisir] ve diğer modların
+  /// ses yolları aynen kalır (12K örtüşme davranışı onlara dokunulmaz).
+  /// Hışır belirme/dokunma sesi ([playHusurAday] doğrudan çağrıları)
+  /// kuyruğa girmez — onaylı klip aynen çalar; nadir Hışır belirmesi
+  /// kuyruktaki bir replikle çakışabilir (bilinçli, kural dışı bırakıldı).
+  ///
+  /// Kuyruk tek adanmış oyuncuda ([_suikaVoicePlayer]) çalar; doğal
+  /// bitiş ([onPlayerComplete], 10 sn güvenlik zaman aşımıyla) bir
+  /// sonraki öğeyi başlatır. Bekleyen en fazla [_maxSuikaVoicePending]
+  /// öğedir (çalan + 2 bekleyen = en fazla 3 uçuşta); sınır dolunca EN
+  /// ESKİ bekleyen düşer (çalan asla kesilmez, en yeni korunur).
+  /// Ses kapalıysa / testte çalma zorlanmıyorsa öğe ses çıkarmadan
+  /// [_suikaVoiceMutedHold] bekler — toast sırası yine korunur.
+  final List<_SuikaVoiceJob> _suikaVoiceQueue = [];
+  bool _suikaVoiceBusy = false;
+  AudioPlayer? _suikaVoicePlayer;
+  int _suikaVoiceGen = 0;
+  static const int _maxSuikaVoicePending = 2;
+  static const Duration _suikaVoiceMaxClip = Duration(seconds: 10);
+  static const Duration _suikaVoiceMutedHold = Duration(milliseconds: 900);
+
+  /// Kuyruk boşaldığında çağrılır (son ses bittiğinde / [stopAll] /
+  /// [clearSuikaVoiceQueue] ile boşaltıldığında). Suika ekranı bu
+  /// geri çağrıyla replik bandını temizler.
+  VoidCallback? onSuikaVoiceQueueDrained;
+
+  /// Test dikişi: bekleyen (henüz başlamamış) kuyruk öğesi sayısı.
+  @visibleForTesting
+  int get suikaVoicePendingCount => _suikaVoiceQueue.length;
+
+  /// Test dikişi: kuyrukta şu an bir ses çalıyor mu.
+  @visibleForTesting
+  bool get suikaVoiceBusy => _suikaVoiceBusy;
+
   /// True while [playExclusiveSfx] clip is still playing.
   bool get isExclusivePlaying => _exclusiveBusy;
 
@@ -451,9 +509,11 @@ class AudioManager {
     if (!_isTestEnvironment) {
       unawaited(syncWithProgressManager());
     }
-    if (_initialized || _isMuted || _isTestEnvironment) return;
-    _initialized = true;
-
+    if (_initialized ||
+        _isMuted ||
+        (_isTestEnvironment && !forcePlaybackForTesting)) {
+      return;
+    }
     // iOS AudioSession çakışmalarını (Code 561015905) önlemek için global ambient/mixWithOthers context ayarla
     try {
       AudioPlayer.global.setAudioContext(
@@ -475,11 +535,27 @@ class AudioManager {
 
     for (int i = 0; i < _poolSize; i++) {
       try {
-        final p = AudioPlayer();
+        final p = playerFactory();
         unawaited(p.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
         _playersPool.add(p);
+        // 12K: doğal bitiş oyuncuyu boşaltır — havuz dolunca çalan sesin
+        // üstüne yazılmaz, boş oyuncu beklenir.
+        _poolCompleteSubs.add(
+          p.onPlayerComplete.listen((_) {
+            _busyPoolPlayers.remove(p);
+          }),
+        );
       } catch (_) {}
     }
+
+    // 2048 sessizliği araştırması (2026-11-20): `_initialized` eskiden
+    // havuz kurulmadan ÖNCE yazılıyordu — 8 fabrika çağrısı da atarsa
+    // havuz boş kalır ama bayrak `true` olur, sonraki `initialize()`
+    // erken döner ve `_playPooled` içindeki yeniden-dene yolu işe
+    // yaramaz: uygulama yeniden başlayana dek kalıcı sessizlik. Bayrak
+    // yalnız havuzda en az 1 oyuncu varsa yazılır; boşsa sonraki çağrı
+    // yeniden dener.
+    if (_playersPool.isNotEmpty) _initialized = true;
   }
 
   Future<void> _stopExclusivePlayer() async {
@@ -498,6 +574,40 @@ class AudioManager {
     }
   }
 
+  /// Kasıtlı susturma (12K: aynen kalır): kümedeki her tier sesi
+  /// oyuncusunu durdurur ve bırakır. Çalma yolundan çağrılmaz.
+  Future<void> _stopVoicePlayer() async {
+    if (_voicePlayers.isEmpty) return;
+    final players = _voicePlayers.toList();
+    for (final player in players) {
+      await _releaseVoicePlayer(player, stopFirst: true);
+    }
+  }
+
+  /// [player] oyuncusunu tier sesi kümesinden çıkarır, tamamlanma
+  /// aboneliğini iptal eder ve oyuncuyu bırakır. [stopFirst] ise önce
+  /// durdurur ([stopAll] yolu); yoksa ses zaten doğal bitti.
+  /// İki kez çağrılmak güvenlidir (küme/eşleme çıkarma + yakalanan
+  /// hatalar idempotenttir).
+  Future<void> _releaseVoicePlayer(
+    AudioPlayer player, {
+    bool stopFirst = false,
+  }) async {
+    final sub = _voiceCompleteSubs.remove(player);
+    try {
+      await sub?.cancel();
+    } catch (_) {}
+    _voicePlayers.remove(player);
+    if (stopFirst) {
+      try {
+        await player.stop();
+      } catch (_) {}
+    }
+    try {
+      await player.dispose();
+    } catch (_) {}
+  }
+
   /// Stop every pooled player. Call from game-screen [State.dispose]
   /// so SFX / voice do not leak into home / menu after route pop.
   ///
@@ -505,7 +615,21 @@ class AudioManager {
   Future<void> stopAll() async {
     _playGeneration++;
     final gen = _playGeneration;
+    // Suika replik kuyruğu da boşaltılır: bekleyenler düşer, çalan
+    // susturulur (kasıtlı susturma — [dispose]/ekran çıkışı yolu).
+    _suikaVoiceGen++;
+    _suikaVoiceQueue.clear();
+    _suikaVoiceBusy = false;
+    final suikaPlayer = _suikaVoicePlayer;
+    if (suikaPlayer != null) {
+      try {
+        await suikaPlayer.stop();
+      } catch (_) {}
+    }
+    // Kuyruk boşaldı (havuz boşsa bile aşağıdaki erken dönüşten önce).
+    onSuikaVoiceQueueDrained?.call();
     await _stopExclusivePlayer();
+    await _stopVoicePlayer();
     if (_playersPool.isEmpty) return;
     for (final p in _playersPool) {
       if (gen != _playGeneration) return;
@@ -514,6 +638,9 @@ class AudioManager {
       } catch (_) {
         // Platform / already released
       }
+      // 12K: durdurulan oyuncu boştur — çalma yolunda bir daha
+      // seçilebilsin (stop() tamamlanma olayı üretmez).
+      _busyPoolPlayers.remove(p);
     }
   }
 
@@ -526,7 +653,7 @@ class AudioManager {
   }
 
   bool _canPlayAsset(String assetName, {bool? isVoiceOverride}) {
-    if (_isTestEnvironment) return false;
+    if (_isTestEnvironment && !forcePlaybackForTesting) return false;
     final isVoice = isVoiceOverride ?? GameAudio.isVoiceAsset(assetName);
     // S2#9: a voice clip needs only the voice channel (plus master mute,
     // folded into [_voiceAudible]); requiring SFX as well made the voice
@@ -553,6 +680,10 @@ class AudioManager {
     return 'audio/$name';
   }
 
+  /// 12K — çalma öncesi `stop()` yok: seçilen oyuncu çalıyorsa üstüne
+  /// yazılmaz; [_nextFreePoolPlayer] boş oyuncu arar, havuz doluysa yeni
+  /// SFX düşer (çalan ses tam biter). Çalma-sonrası kuşak denetimindeki
+  /// `stop()` kasıtlı susturmadır ([stopAll] araya girdiyse) ve kalır.
   Future<void> playSfx(
     String assetName, {
     double volume = 1.0,
@@ -561,31 +692,58 @@ class AudioManager {
   }) async {
     if (!_canPlayAsset(assetName, isVoiceOverride: isVoice)) return;
     final gen = _playGeneration;
+    AudioPlayer? player;
     try {
       if (_playersPool.isEmpty) initialize();
       if (_playersPool.isEmpty || gen != _playGeneration) return;
-      final player = _playersPool[_poolIndex];
-      _poolIndex = (_poolIndex + 1) % _playersPool.length;
-      await player.stop();
-      if (gen != _playGeneration) return;
+      player = _nextFreePoolPlayer();
+      if (player == null) return;
+      _busyPoolPlayers.add(player);
+      if (gen != _playGeneration) {
+        _busyPoolPlayers.remove(player);
+        return;
+      }
       await player.setVolume(volume.clamp(0.0, 1.0));
       await player.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
-      if (gen != _playGeneration) return;
+      if (gen != _playGeneration) {
+        _busyPoolPlayers.remove(player);
+        return;
+      }
       await player.play(AssetSource(_normalizeAssetPath(assetName)));
       if (gen != _playGeneration) {
         try {
           await player.stop();
         } catch (_) {}
+        _busyPoolPlayers.remove(player);
       }
     } catch (_) {
+      // Çalma kurulamadıysa oyuncu boş sayılır — havuz daralmasın.
+      if (player != null) _busyPoolPlayers.remove(player);
       // Graceful fallback for headless / test / platform audio constraints
     }
+  }
+
+  /// Round-robin sıradaki BOŞ havuz oyuncusu; hepsi çalıyorsa null.
+  /// [_poolIndex] seçilen oyuncunun bir sonrasına ilerler.
+  AudioPlayer? _nextFreePoolPlayer() {
+    for (var i = 0; i < _playersPool.length; i++) {
+      final candidate = _playersPool[(_poolIndex + i) % _playersPool.length];
+      if (!_busyPoolPlayers.contains(candidate)) {
+        _poolIndex = (_poolIndex + i + 1) % _playersPool.length;
+        return candidate;
+      }
+    }
+    return null;
   }
 
   /// One clip at a time. Returns `false` if another exclusive clip is active.
   ///
   /// [onComplete] runs only on natural end — not after [stopAll] / route pop.
   /// Mute or test mode: no audio; [onComplete] still runs so callers can unlock UI.
+  ///
+  /// D12 (F7): internal-only — no external callers besides [playScreamRoach]
+  /// in this file; not part of the public playback API.
+  @visibleForTesting
   Future<bool> playExclusiveSfx(
     String assetName, {
     double volume = 1.0,
@@ -603,7 +761,11 @@ class AudioManager {
     _exclusiveOnComplete = onComplete;
 
     try {
-      _exclusivePlayer ??= AudioPlayer()..setReleaseMode(ReleaseMode.stop);
+      // 12M dikişi: özel oyuncu da [playerFactory] üzerinden kurulur
+      // (varsayılanı `AudioPlayer.new` — üretim davranışı aynen);
+      // testte sahte oyuncu ile bitiş (`onComplete`) tetiklenebilir.
+      _exclusivePlayer ??= playerFactory()
+        ..setReleaseMode(ReleaseMode.stop);
       final player = _exclusivePlayer!;
       await _exclusiveCompleteSub?.cancel();
       _exclusiveCompleteSub = player.onPlayerComplete.listen((_) {
@@ -653,8 +815,7 @@ class AudioManager {
   /// Plays the viral insect voice for [tier] (1..8+, up to 13+).
   ///
   /// Same resolution as the merge flow ([_resolveMergeVoice]): the tier's
-  /// design sound (`tierN_ses.mp3`) first, `voice_tierN.mp3` fallback.
-  /// Tiers > 13 gracefully clamp to tier 13.
+  /// design sound (`tierN_ses.mp3`). Tiers > 13 gracefully clamp to tier 13.
   Future<void> playTierVoice(
     int tier, {
     double volume = 1.0,
@@ -663,17 +824,210 @@ class AudioManager {
     if (tier < 1 || !_voiceAudible) return;
     final clampedTier = tier.clamp(1, 13);
     final voiceAsset =
-        _resolveMergeVoice(tierNumber: clampedTier) ?? GameAudio.voiceTier8;
-    await playSfx(
+        _resolveMergeVoice(tierNumber: clampedTier) ?? GameAudio.tier8Ses;
+    await _playVoiceChannel(
       voiceAsset,
       volume: volume,
       playbackRate: playbackRate,
-      isVoice: true,
     );
   }
 
+  /// Plays [assetName] on a FRESH per-play player (Dalga 12K) — never on
+  /// the SFX pool and never by stopping another voice.
+  ///
+  /// Each call creates its own player via [playerFactory]: a new tier
+  /// voice starts immediately on top of the previous one, and the old one
+  /// finishes on its own ([onPlayerComplete] releases the player). No
+  /// pre-play `stop()` anywhere on this path. At most
+  /// [_maxConcurrentVoices] tier voices overlap; past the cap the NEW
+  /// voice is dropped (the playing ones are never cut). The
+  /// [_playGeneration] guard mirrors [playSfx]: an in-flight voice aborts
+  /// after [stopAll] / leave-screen (intentional silencing, kept).
+  Future<void> _playVoiceChannel(
+    String assetName, {
+    double volume = 1.0,
+    double playbackRate = 1.0,
+  }) async {
+    if (!_canPlayAsset(assetName, isVoiceOverride: true)) return;
+    final gen = _playGeneration;
+    AudioPlayer? player;
+    try {
+      if (_voicePlayers.length >= _maxConcurrentVoices) return;
+      final created = playerFactory();
+      player = created;
+      _voicePlayers.add(created);
+      unawaited(created.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
+      _voiceCompleteSubs[created] = created.onPlayerComplete.listen(
+        (_) => unawaited(_releaseVoicePlayer(created)),
+      );
+      if (gen != _playGeneration) {
+        await _releaseVoicePlayer(created, stopFirst: true);
+        return;
+      }
+      await created.setVolume(volume.clamp(0.0, 1.0));
+      await created.setPlaybackRate(playbackRate.clamp(0.7, 1.45));
+      if (gen != _playGeneration) {
+        await _releaseVoicePlayer(created, stopFirst: true);
+        return;
+      }
+      await created.play(AssetSource(_normalizeAssetPath(assetName)));
+      if (gen != _playGeneration) {
+        await _releaseVoicePlayer(created, stopFirst: true);
+      }
+    } catch (_) {
+      // Kurulamadı/yarıda kesildi: oyuncu bırakılır — küme daralmasın.
+      if (player != null) {
+        await _releaseVoicePlayer(player);
+      }
+      // Graceful fallback for headless / test / platform audio constraints
+    }
+  }
+
+  /// Suika birleşme karakter sesini sıralı kuyruğa ekler (yalnız Suika
+  /// birleşme akışı — diğer modlar [playMerge]/[playSfx] yolunu kullanır).
+  ///
+  /// [onStart] öğe çalmaya BAŞLARKEN çağrılır (Suika ekranı replik
+  /// yazısını bununla yazar). Kuyruk doluysa ([_maxSuikaVoicePending]
+  /// bekleyen) en eski BEKLEYEN düşer — çalan asla kesilmez, en yeni
+  /// korunur. Ses kapalıysa öğe sessizce [_suikaVoiceMutedHold] bekler,
+  /// sonra sıra bir sonrakine geçer.
+  void enqueueSuikaVoice(String assetName, {void Function()? onStart}) {
+    if (_suikaVoiceQueue.length >= _maxSuikaVoicePending) {
+      _suikaVoiceQueue.removeAt(0);
+    }
+    _suikaVoiceQueue.add(_SuikaVoiceJob(assetName, onStart));
+    _pumpSuikaVoiceQueue();
+  }
+
+  /// Suika birleşmesi (kuyruklu): chime/kombo SFX anında çalar
+  /// (karakter sesi değil, birleşme anıyla eşzamanlı kalır), tier/Hışır
+  /// karakter sesi sıralı kuyruğa girer — bir ses bitmeden yenisi
+  /// başlamaz. [onVoiceStart] kuyruktaki ses çalmaya başlarken çağrılır
+  /// (Suika ekranı replik yazısını bununla yazar).
+  ///
+  /// [playMerge]/[playMergeHisir] aynen durur (diğer modlar + eski
+  /// davranış); yalnız Suika ekranı bu yöntemi çağırır.
+  Future<void> playMergeQueued({
+    InsectTier? tier,
+    int? tierNumber,
+    int comboCount = 1,
+    bool hisirInvolved = false,
+    void Function()? onVoiceStart,
+  }) async {
+    final resolvedTier = (tier?.tier ?? tierNumber ?? 1).clamp(1, 13);
+    if (vibrationEnabled) {
+      unawaited(
+        HapticService.instance.onMerge(tier: resolvedTier, combo: comboCount),
+      );
+    }
+    final plays = <Future<void>>[
+      if (_sfxEnabled) playSfx(GameAudio.sfxMergeChime, isVoice: false),
+    ];
+    if (_sfxEnabled && comboCount > 1) {
+      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
+    }
+    final voiceAsset = hisirInvolved
+        ? (GameAudio.voiceForCharacterId('hisir') ?? GameAudio.hisirZopa)
+        : _resolveMergeVoice(tier: tier, tierNumber: tierNumber);
+    if (voiceAsset != null) {
+      enqueueSuikaVoice(voiceAsset, onStart: onVoiceStart);
+    }
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
+  }
+
+  /// Suika replik kuyruğunu boşaltır (yeni tur / ekran değişimi):
+  /// bekleyenler düşer, çalan susturulur, bant temizliği için
+  /// [onSuikaVoiceQueueDrained] çağrılır. SFX havuzuna dokunmaz.
+  void clearSuikaVoiceQueue() {
+    _suikaVoiceGen++;
+    _suikaVoiceQueue.clear();
+    _suikaVoiceBusy = false;
+    final player = _suikaVoicePlayer;
+    if (player != null) {
+      unawaited(player.stop().catchError((_) {}));
+    }
+    onSuikaVoiceQueueDrained?.call();
+  }
+
+  void _pumpSuikaVoiceQueue() {
+    if (_suikaVoiceBusy || _suikaVoiceQueue.isEmpty) return;
+    final job = _suikaVoiceQueue.removeAt(0);
+    _suikaVoiceBusy = true;
+    unawaited(_runSuikaVoiceJob(job));
+  }
+
+  Future<void> _runSuikaVoiceJob(_SuikaVoiceJob job) async {
+    final gen = _suikaVoiceGen;
+    try {
+      job.onStart?.call();
+      if (_canPlayAsset(job.assetName, isVoiceOverride: true)) {
+        await _playSuikaVoiceClip(job.assetName, gen);
+      } else {
+        await Future<void>.delayed(_suikaVoiceMutedHold);
+      }
+    } catch (_) {
+      // Bir öğedeki hata kuyruğu tıkamaz — sıra bir sonrakine geçer.
+    } finally {
+      if (gen == _suikaVoiceGen) {
+        _suikaVoiceBusy = false;
+        if (_suikaVoiceQueue.isEmpty) {
+          onSuikaVoiceQueueDrained?.call();
+        }
+        _pumpSuikaVoiceQueue();
+      }
+      // Kuşak değiştiyse (stopAll/clear/dispose): bu iş artık sahipsiz —
+      // busy bayrağı ve pompa güncel kuşağa aittir, dokunulmaz. Eski
+      // işin finally'si bayrağı sıfırlasaydı, o sırada çalan yeni
+      // kuşağın sesi varken ikinci bir ses başlayabilirdi.
+    }
+  }
+
+  /// Tek kuyruk klibini adanmış oyuncuda çalar; doğal bitişte (veya
+  /// 10 sn güvenlik zaman aşımında) döner. Kuşak değişmişse
+  /// ([stopAll]/[clearSuikaVoiceQueue]/[dispose]) erken döner.
+  Future<void> _playSuikaVoiceClip(String assetName, int gen) async {
+    final player = _suikaVoicePlayer ??= _createSuikaVoicePlayer();
+    final completer = Completer<void>();
+    late final StreamSubscription<void> sub;
+    Timer? watchdog;
+    void finish() {
+      watchdog?.cancel();
+      unawaited(sub.cancel().catchError((_) {}));
+      if (!completer.isCompleted) completer.complete();
+    }
+
+    sub = player.onPlayerComplete.listen((_) => finish());
+    watchdog = Timer(_suikaVoiceMaxClip, finish);
+    try {
+      await player.setVolume(1.0);
+      await player.setPlaybackRate(1.0);
+      if (gen != _suikaVoiceGen) {
+        finish();
+        return;
+      }
+      await player.play(AssetSource(_normalizeAssetPath(assetName)));
+      if (gen != _suikaVoiceGen) {
+        // Kuşak değişti: oyuncu stopAll/clear ile zaten susturuldu ya da
+        // yeni kuşağın klibi çalıyor — buradaki stop() yeni klibi keserdi.
+        finish();
+        return;
+      }
+      await completer.future;
+    } catch (_) {
+      finish();
+    }
+  }
+
+  AudioPlayer _createSuikaVoicePlayer() {
+    final created = playerFactory();
+    unawaited(created.setReleaseMode(ReleaseMode.stop).catchError((_) {}));
+    return created;
+  }
+
   /// Merge juice: merge SFX (+ optional combo) together with the new tier's
-  /// sound (design sound first, `voice_tierN` fallback — [_resolveMergeVoice]).
+  /// design sound ([_resolveMergeVoice]).
   ///
   /// Prefer [tier]; else [tierNumber] 1–13 resolves the same way.
   Future<void> playMerge({
@@ -695,7 +1049,42 @@ class AudioManager {
       plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
     }
     if (_voiceAudible && voiceAsset != null) {
-      plays.add(playSfx(voiceAsset, isVoice: true));
+      // Tier sesi havuza değil çalma başına oyuncuya (Dalga 12K):
+      // chime/combo onu kesemez, yeni birleşme eskisinin üstüne başlar,
+      // eski ses kendi bitirir.
+      plays.add(_playVoiceChannel(voiceAsset));
+    }
+    if (plays.isNotEmpty) {
+      await Future.wait(plays);
+    }
+  }
+
+  /// Hışır birleşme/patlama sesi: birleşme chime'ı (+ kombo SFX) ile
+  /// Hışır'ın onaylı sesi (`hisir_zopa.mp3`) birlikte çalar.
+  ///
+  /// [playMerge] buradan çağrılmaz: o, kademe sesini çalma başına
+  /// oyuncuya yazar (Dalga 12K). Hışır sesi tek yoldan
+  /// ([playHusurAday]) havuzdan çalar — 12K düzeninde hiçbir çalma
+  /// başka çalmayı durdurmadığı için Hışır klibi kesilmeden tam çalar.
+  /// Skor/kademe bu seste taşınmaz; çağıran skor hesabını aynen korur.
+  Future<void> playMergeHisir({
+    int? tierNumber,
+    int comboCount = 1,
+  }) async {
+    final resolvedTier = (tierNumber ?? 1).clamp(1, 13);
+    if (vibrationEnabled) {
+      unawaited(
+        HapticService.instance.onMerge(tier: resolvedTier, combo: comboCount),
+      );
+    }
+    final plays = <Future<void>>[
+      if (_sfxEnabled) playSfx(GameAudio.sfxMergeChime, isVoice: false),
+    ];
+    if (_sfxEnabled && comboCount > 1) {
+      plays.add(playSfx(GameAudio.sfxCombo, volume: 0.85, isVoice: false));
+    }
+    if (_voiceAudible) {
+      plays.add(playHusurAday());
     }
     if (plays.isNotEmpty) {
       await Future.wait(plays);
@@ -703,6 +1092,9 @@ class AudioManager {
   }
 
   /// Prototype alias for merge sound effects (`playMergeSfx`).
+  @Deprecated(
+    'D12 (F7): dead alias with no external callers; use playMerge instead.',
+  )
   Future<void> playMergeSfx({
     int? tier,
     InsectTier? insectTier,
@@ -715,22 +1107,14 @@ class AudioManager {
       );
 
   /// Resolves the sound for a merge/tier event: the tier's design sound
-  /// (`InsectTier.soundFile`, `tierN_ses.mp3`) first, falling back to the
-  /// verified `voice_tierN.mp3` and then to `InsectTier.voiceFile`.
-  ///
-  /// The two file families currently hold byte-identical audio on disk, so
-  /// preferring the design sound changes no audible behaviour; it makes
-  /// `soundFile` / [GameAudio.designSoundForTier] live instead of dead.
-  /// All names stay bare filenames — [_normalizeAssetPath] joins them.
+  /// (`InsectTier.soundFile`, `tierN_ses.mp3`) — the single canonical
+  /// tier-voice set since 12A deleted the byte-identical `voice_tierN.mp3`
+  /// duplicates. All names stay bare filenames — [_normalizeAssetPath]
+  /// joins them.
   String? _resolveMergeVoice({InsectTier? tier, int? tierNumber}) {
     if (tier != null) {
       if (GameAudio.allAssets.contains(tier.soundFile)) {
         return tier.soundFile;
-      }
-      final fromTier = GameAudio.voiceForTier(tier.tier);
-      if (fromTier != null) return fromTier;
-      if (GameAudio.allAssets.contains(tier.voiceFile)) {
-        return tier.voiceFile;
       }
       return null;
     }
@@ -740,7 +1124,7 @@ class AudioManager {
       if (design != null && GameAudio.allAssets.contains(design)) {
         return design;
       }
-      return GameAudio.voiceForTier(clamped);
+      return null;
     }
     return null;
   }
@@ -753,6 +1137,9 @@ class AudioManager {
   }
 
   /// Prototype alias for drop sound effect (`playDropSfx`).
+  @Deprecated(
+    'D12 (F7): dead alias with no external callers; use playDrop instead.',
+  )
   Future<void> playDropSfx() => playDrop();
 
   Future<void> playWin() => playVictorySfx();
@@ -765,7 +1152,7 @@ class AudioManager {
     final plays = <Future<void>>[
       if (_sfxEnabled) playSfx(GameAudio.sfxVictory, isVoice: false),
       if (includeVoice && _voiceAudible)
-        playSfx(GameAudio.voiceTier8, isVoice: true),
+        playSfx(GameAudio.tier8Ses, isVoice: true),
     ];
     if (plays.isNotEmpty) {
       await Future.wait(plays);
@@ -794,6 +1181,11 @@ class AudioManager {
     return playSfx(GameAudio.sfxButtonTap, isVoice: false);
   }
 
+  /// D12 (F7): dead method with no external callers. `voice_aydinlat.mp3`
+  /// still plays through `playF16Sfx(includeVoice: true)`.
+  @Deprecated(
+    'D12 (F7): dead method with no external callers; voice_aydinlat plays via playF16Sfx.',
+  )
   Future<void> playAydinlatVoice() =>
       playSfx(GameAudio.voiceAydinlat, isVoice: true);
 
@@ -818,17 +1210,16 @@ class AudioManager {
   /// Viral one-shot: Kanka ikilisi (TikTok video5 kesimi).
   Future<void> playKanka() => playSfx(GameAudio.kanka, isVoice: true);
 
-  /// Hışır'ın sesi — tek Hışır ses yolu. UNVERIFIED aday: transkriptte
-  /// "huşur" diye geçti, "hışır" olduğu kulakla teyit edilmedi (bkz.
-  /// assets/audio/ASSETS_NOTE.md).
+  /// Hışır'ın sesi — tek Hışır ses yolu. Onaylı klip `hisir_zopa.mp3`
+  /// (Selçuk kulakla onayladı, 2026-11-19; bkz. assets/audio/ASSETS_NOTE.md).
   ///
   /// Resolves through [GameAudio.voiceForCharacterId] (`'hisir'`), the same
-  /// map Terlik Tap uses via [playSlipperSmash]; the [GameAudio.husurAday]
+  /// map Terlik Tap uses via [playSlipperSmash]; the [GameAudio.hisirZopa]
   /// constant is only the fallback if the map ever drops the id. The clip
   /// stays preloaded via [GameAudio.viralOneShots] / [GameAudio.allAssets].
   Future<void> playHusurAday() async {
     final asset =
-        GameAudio.voiceForCharacterId('hisir') ?? GameAudio.husurAday;
+        GameAudio.voiceForCharacterId('hisir') ?? GameAudio.hisirZopa;
     await playSfx(asset, isVoice: true);
   }
 
@@ -864,6 +1255,9 @@ class AudioManager {
   }
 
   /// Prototype alias for slipper slap (`playSlapSfx`).
+  @Deprecated(
+    'D12 (F7): dead alias with no external callers; use playSlipperSmash or playSlipper instead.',
+  )
   Future<void> playSlapSfx({
     String? characterId,
     InsectTier? tier,
@@ -935,6 +1329,9 @@ class AudioManager {
   }
 
   /// Prototype alias for Raid spray (`playSpraySfx`).
+  @Deprecated(
+    'D12 (F7): dead alias with no external callers; use playSpray instead.',
+  )
   Future<void> playSpraySfx() => playSpray();
 
   /// Çığlık Böcek mode scream audio (`playScreamRoach`).
@@ -948,8 +1345,10 @@ class AudioManager {
     if (vibrationEnabled) {
       unawaited(HapticService.instance.onScreamRoach(power: power));
     }
-    final asset = bug?.voiceFile ??
-        (tier != null ? GameAudio.voiceForTier(tier.clamp(1, 13)) : null) ??
+    final asset = bug?.soundFile ??
+        (tier != null
+            ? GameAudio.designSoundForTier(tier.clamp(1, 13))
+            : null) ??
         GameAudio.sfxScreamRoach;
     final volume = (0.82 + power.clamp(0.0, 1.0) * 0.18).clamp(0.0, 1.0);
     final rate = (playbackRate ?? (0.92 + power.clamp(0.0, 1.0) * 0.22))
@@ -1017,8 +1416,10 @@ class AudioManager {
           isVoice: false,
         ),
     ];
-    final voice = bug?.voiceFile ??
-        (tier != null ? GameAudio.voiceForTier(tier.clamp(1, 13)) : null);
+    final voice = bug?.soundFile ??
+        (tier != null
+            ? GameAudio.designSoundForTier(tier.clamp(1, 13))
+            : null);
     if (voice != null && _voiceAudible) {
       plays.add(
         playSfx(
@@ -1037,6 +1438,9 @@ class AudioManager {
   }
 
   /// Light impact — drop / soft feedback.
+  @Deprecated(
+    'D12 (F7): no external callers; use triggerHaptic instead.',
+  )
   void triggerLightHaptic() {
     if (!vibrationEnabled ||
         !ProgressManager.instance.vibrationEnabled ||
@@ -1096,6 +1500,15 @@ class AudioManager {
     _unbindProgressManagerListeners();
     _syncingWithProgress = false;
     _playGeneration++;
+    _suikaVoiceGen++;
+    _suikaVoiceQueue.clear();
+    _suikaVoiceBusy = false;
+    onSuikaVoiceQueueDrained = null;
+    final suikaPlayer = _suikaVoicePlayer;
+    _suikaVoicePlayer = null;
+    try {
+      suikaPlayer?.dispose();
+    } catch (_) {}
     _poolIndex = 0;
     _exclusiveBusy = false;
     _exclusiveOnComplete = null;
@@ -1106,6 +1519,22 @@ class AudioManager {
     try {
       exclusive?.dispose();
     } catch (_) {}
+    for (final sub in _voiceCompleteSubs.values) {
+      unawaited(sub.cancel().catchError((_) {}));
+    }
+    _voiceCompleteSubs.clear();
+    final voices = _voicePlayers.toList();
+    _voicePlayers.clear();
+    for (final voice in voices) {
+      try {
+        voice.dispose();
+      } catch (_) {}
+    }
+    for (final sub in _poolCompleteSubs) {
+      unawaited(sub.cancel().catchError((_) {}));
+    }
+    _poolCompleteSubs.clear();
+    _busyPoolPlayers.clear();
     for (final p in _playersPool) {
       try {
         p.dispose();

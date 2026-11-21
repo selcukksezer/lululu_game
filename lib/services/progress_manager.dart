@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'anti_cheat_service.dart';
 import 'energy_service.dart';
+import 'game_telemetry_service.dart';
 
 class ProgressManager extends ChangeNotifier {
   static final ProgressManager _instance = ProgressManager._internal();
@@ -23,6 +26,10 @@ class ProgressManager extends ChangeNotifier {
   static const int maxCampaignLevels = 80;
   static const int maxSingleCoinGrant = 100000;
   static const int maxTotalCoins = 99999999;
+
+  /// Tek güçlendirici stok üst sınırı (tüketim/iade çekirdeği [O1] ile
+  /// kayıt yükleme kelepçesi aynı sınırı kullanır).
+  static const int _maxPowerStock = 99999;
   /// Tüm modlar için mutlak skor üst sınırı (rules `score 0..500000` ile
   /// uyumlu). Mod bazlı tavanlar [modeScoreCeilings]'tedir; bilinmeyen
   /// modda bu değer varsayılan tavan olarak kullanılır.
@@ -64,6 +71,12 @@ class ProgressManager extends ChangeNotifier {
   static const String _integrityPrefKey = 'lululu_state_integrity_sig';
   static const String _integritySalt = 'LululuVaultSig_2026_v4';
 
+  /// AntiCheat HMAC durum mührü anahtarı (12C1). Mevcut FNV imzasının
+  /// YANINDA tutulur, yerine geçmez: eski imza yerinde kalır, eski
+  /// kurulumlar etkilenmez. Mühür yalnız bu sınıfın sahip olduğu
+  /// alanları kapsar (bkz. [_antiCheatStatePayload]).
+  static const String _antiCheatSigPrefKey = 'lululu_state_anticheat_sig_v1';
+
   /// [load] tarafından okunan yerel ilerleme anahtarları — "İlerlemeyi
   /// Sıfırla" (SettingsScreen.resetAll) ile aynı küme; hesap silme
   /// temizliği ([clearLocalData]) de bu kümeyi kaldırır. Ses/titreşim
@@ -85,12 +98,14 @@ class ProgressManager extends ChangeNotifier {
     'lululu_owned_cosmetics',
     'lululu_unlocked_tiers',
     'lululu_mode_high_scores',
+    'lululu_best_combo',
     'lululu_daily_tasks_day',
     'lululu_daily_tasks_progress',
     'lululu_daily_tasks_claimed',
     'lululu_daily_streak',
     'lululu_last_streak_claim_day',
     'lululu_extra_powers',
+    'lululu_earned_power_keys',
     'lululu_level_stars',
     'lululu_level_scores',
     'lululu_power_seed_v1',
@@ -98,7 +113,30 @@ class ProgressManager extends ChangeNotifier {
     'lululu_daily_free_energy_claims',
     'lululu_last_free_energy_epoch_ms',
     'lululu_state_integrity_sig',
+    // Y6/LWW (Faz 4, 8E) alan damgaları — bkz. aşağıdaki damga bölümü.
+    'lululu_ts_coins',
+    'lululu_ts_energy',
+    'lululu_ts_level',
+    'lululu_ts_f16',
+    'lululu_ts_raid',
+    'lululu_ts_terlik',
+    'lululu_ts_streak',
+    'lululu_ts_tiers',
+    'lululu_ts_display_name',
+    'lululu_ts_extra_powers',
+    // Dalga 3: günlük ödül / görev / ücretsiz enerji damgaları +
+    // buluttan bilinen hak günleri.
+    'lululu_ts_last_streak_claim_day',
+    'lululu_ts_daily_tasks',
+    'lululu_ts_daily_free_energy',
+    'lululu_cloud_last_streak_claim_day',
+    'lululu_cloud_daily_free_energy_day',
+    'lululu_cloud_daily_free_energy_claims',
+    'lululu_lww_stamps_seeded_v1',
   ];
+
+  /// Y6/LWW göç bayrağı: damgalar ilk yüklemede bir kez tohumlandı mı.
+  static const String _lwwSeedFlagKey = 'lululu_lww_stamps_seeded_v1';
 
   /// 11 oyun modundaki 33 güçlendiricinin tam anahtar listesi (11 × 3 = 33).
   static const List<String> all33PowerKeys = [
@@ -162,6 +200,74 @@ class ProgressManager extends ChangeNotifier {
     'yuva_defense',
   ];
 
+  /// Y6/LWW (Faz 4, 8E) — alan-başına zaman-damgalı son-yazan-kazanır
+  /// damgaları (istemci-ms, UTC epoch). Damga, alanın YEREL olarak son
+  /// değiştiği andır; flush anı değil (yoksa her flush damgayı tazeler
+  /// ve LWW anlamsızlaşır). Damgasız alan 0 sayılır (eski istemci /
+  /// göç öncesi veri); ilk yüklemede mevcut değerler bir kez "şimdi"
+  /// ile damgalanır (göçte yerel öncelik — bkz. [_seedFieldStamps]).
+  ///
+  /// Damgalar, değeri gerçekten değişen alan için [touchChangedFieldStamps]
+  /// ile ilerletilir (kalıcı kayıt yolları [_persistEconomy],
+  /// [_persistCoinsOnly], [persistBoosters] içinde çağrılır) ve
+  /// [persistFieldStamps] ile prefs'e yazılır. [totalStars],
+  /// [total11ModesScore] ve en iyi skor türev alanlardır — LWW'ye
+  /// girmezler, damgaları yoktur (tasarım A10 §3.2.4).
+  int coinsUpdatedAtMs = 0;
+  int energyUpdatedAtMs = 0;
+  int unlockedLevelUpdatedAtMs = 0;
+  int f16UpdatedAtMs = 0;
+  int raidUpdatedAtMs = 0;
+  int terlikUpdatedAtMs = 0;
+  int streakUpdatedAtMs = 0;
+  int unlockedTiersUpdatedAtMs = 0;
+  int displayNameUpdatedAtMs = 0;
+
+  /// Dalga 3: günlük ödül / görev / ücretsiz enerji LWW damgaları
+  /// (istemci-ms, UTC epoch). Gün anahtarı (`yyyy-M-d`) kendisi
+  /// sürüm taşır — birleştirme kararı günü karşılaştırarak verilir
+  /// (bkz. [CloudSyncService]); damga, Dalga 2 desenindeki gibi
+  /// taşınır, ön-denetimden geçer ve kural allowlist'indedir.
+  int lastStreakClaimDayUpdatedAtMs = 0;
+  int dailyTasksUpdatedAtMs = 0;
+  int dailyFreeEnergyUpdatedAtMs = 0;
+
+  /// Güç anahtarı başına LWW damgası (`extraPowers` ile aynı anahtarlar).
+  /// Anahtar başına LWW: eksik anahtar "değişim yok" sayılır; silme
+  /// (tombstone) Faz 4 kapsamında eklenmez (tasarım A10 §3.2.4).
+  final Map<String, int> extraPowersUpdatedAtMs = <String, int>{};
+
+  /// Son kalıcı kayıtta görülen değerlerin anlık görüntüsü — damga
+  /// farkı buradan okunur (değeri değişen alan damgalanır).
+  int _snapCoins = defaultCoins;
+  int _snapEnergy = 0;
+  int _snapLevel = 1;
+  int _snapF16 = 0;
+  int _snapRaid = 0;
+  int _snapTerlik = 0;
+  int _snapStreak = 1;
+  // Dalga 3: günlük alanların fark anlık görüntüsü.
+  String _snapLastStreakClaimDay = '';
+  String _snapDailyTasksDay = '';
+  Map<String, int> _snapDailyTaskProgress = <String, int>{
+    'play': 0,
+    'merge': 0,
+    'video': 0,
+    'combo': 0,
+  };
+  Set<String> _snapClaimedDailyTasks = <String>{};
+  String _snapLastDailyFreeEnergyDay = '';
+  int _snapDailyFreeEnergyClaimsToday = 0;
+  Set<int> _snapTiers = <int>{};
+  Map<String, int> _snapExtraPowers = <String, int>{};
+
+  /// Yükleme sürerken damga ilerletme kapalıdır ([load] içindeki
+  /// atamalar değişim sayılmaz; göç tohumlaması bu kapının dışındadır).
+  bool _loading = false;
+
+  /// Enerji damgası dinleyicisi bağlandı mı (tek kez bağlanır).
+  bool _energyListenerAttached = false;
+
   int unlockedLevel = 1;
   int _coins = defaultCoins;
 
@@ -208,6 +314,30 @@ class ProgressManager extends ChangeNotifier {
   /// 11 oyun modunun yerel en yüksek skorları.
   final Map<String, int> modeHighScores = <String, int>{};
 
+  /// Tüm modlardaki tüm zamanların en yüksek kombosu (Dalga 15,
+  /// bulgu 12): TEK KAYNAK. Profil ("BEST COMBO") ve oyun sonu
+  /// ekranı bu değeri okur. Eskiden profil, günlük görev sayacı
+  /// (`dailyTaskProgress['combo']` — her gün sıfırlanır, kombo < 2
+  /// ise hiç yazılmaz) okuyordu; bu yüzden profil x0 gösterirken
+  /// oyun sonu x1 gösteriyordu. Kalıcı anahtar
+  /// `lululu_best_combo`; yalnız artışta yazılır, asla sıfırlanmaz
+  /// (sıfırlama yalnız [clearLocalData] ile olur).
+  static const String _bestComboPrefKey = 'lululu_best_combo';
+  int bestCombo = 0;
+
+  /// Günlük görev tamamlama eşikleri — `TasksScreen` aynası (PM-detailed).
+  ///
+  /// Değerler `TasksScreen._TaskItem.max` ile AYNI (oyna 3, birleştir
+  /// 5, video 1, kombo 4); ekonomi değişimi yok, eşik aynen kopyalandı.
+  /// [recordTaskProgressDetailed] tamamlanma hesabını buradan okur;
+  /// görev ekranı kendi tanımlarını kullanmaya devam eder.
+  static const Map<String, int> dailyTaskTargets = <String, int>{
+    'play': 3,
+    'merge': 5,
+    'video': 1,
+    'combo': 4,
+  };
+
   /// Günlük görev ilerlemeleri ve ödül alım durumları.
   final Map<String, int> dailyTaskProgress = <String, int>{
     'play': 0,
@@ -222,6 +352,15 @@ class ProgressManager extends ChangeNotifier {
   int streak = 1;
   String lastStreakClaimDay = '';
 
+  /// Dalga 3: buluttan son görülen hak günleri — başka cihazda alınan
+  /// ödül, bu cihaz pull yapana kadar yerel alanda görünmez; claim
+  /// kapıları bu değeri de esas alır (bkz.
+  /// [effectiveLastStreakClaimDay], [effectiveFreeEnergyClaimsToday]).
+  /// Yalnız CloudSync pull yazar; [clearLocalData] siler.
+  String cloudLastStreakClaimDay = '';
+  String cloudDailyFreeEnergyDay = '';
+  int cloudDailyFreeEnergyClaims = 0;
+
   int get dailyStreak => streak;
 
   /// Ses ve titreşim ayarları.
@@ -233,6 +372,61 @@ class ProgressManager extends ChangeNotifier {
 
   /// Moda özel güçlendirici stokları (HTML POWERS id'leri).
   final Map<String, int> extraPowers = {};
+
+  /// W13-D — kazanılan/kullanılan güç türlerinin kalıcı kaydı
+  /// (`lululu_earned_power_keys`, 33'lük katalog anahtarları).
+  /// Tohum stokları bu kümeye GİRMEZ: `eco_all_33_boosters` başarımı
+  /// yalnız bu kümeyi sayar, yoksa her taze misafir tohumlar yüzünden
+  /// başarımı ilk hub açılışında bedavaya alırdı. Tohumlar `load()`
+  /// içinde doğrudan `extraPowers` haritasına yazılır ve bu metotları
+  /// çağırmaz; küme yalnız gerçek kazanım/kullanım yollarında
+  /// (`incrementPowerCount`, `consumePower`/`takePower`,
+  /// `grantArcadeDrop`) işaretlenir.
+  static const String _earnedPowersPrefKey = 'lululu_earned_power_keys';
+  final Set<String> _earnedPowerKeys = <String>{};
+
+  /// Kazanılan/kullanılan güç türleri (33'lük katalogdan) — salt okunur.
+  Set<String> get earnedPowerKeys => Set.unmodifiable(_earnedPowerKeys);
+
+  /// `eco_all_33_boosters` sayacı: kazanılan/kullanılan güç türü sayısı.
+  int earnedPowerTypeCount() {
+    var count = 0;
+    for (final key in all33PowerKeys) {
+      if (_earnedPowerKeys.contains(key)) count++;
+    }
+    return count;
+  }
+
+  /// 2048 ekranının ayrı stok anahtarlarını (`undo2048` …) başarım
+  /// kataloğundaki karşılıklarına (`undo` …) katlar: başarım 11×3=33
+  /// gücü sayar ve 2048'in üç gücü katalogda bu adlarla yer alır.
+  /// Mağaza 2048 güçlerini yalnız `*2048` anahtarlarına yazar
+  /// (`shop_dialog.dart` ~421-432) ve 2048 ekranı yalnız `*2048`
+  /// stoklarını tüketir — katlama olmazsa düz `undo`/`shuffle`/`pair`
+  /// yalnız Sezon Bileti 20. kademe paketiyle kazanılır ve başarım
+  /// normal oynayışla tamamlanamaz hâle gelirdi. Stok ayrımı (O1)
+  /// değişmez — yalnız kazanılan-küme eşlemesidir.
+  static String _achievementPowerKey(String canonical) {
+    switch (canonical) {
+      case 'undo2048':
+        return 'undo';
+      case 'shuffle2048':
+        return 'shuffle';
+      case 'pair2048':
+        return 'pair';
+      default:
+        return canonical;
+    }
+  }
+
+  /// Bir güç türünü kazanılan/kullanılan kümeye ekler (yalnız 33'lük
+  /// katalog üyeleri tutulur). Tohum yolları bu metodu çağırmaz.
+  void _markPowerEarned(String canonical) {
+    final key = _achievementPowerKey(canonical);
+    if (all33PowerKeys.contains(key)) {
+      _earnedPowerKeys.add(key);
+    }
+  }
 
   /// Shop daily free case — separate from hub daily challenge claim.
   String shopChestDay = '';
@@ -282,19 +476,39 @@ class ProgressManager extends ChangeNotifier {
 
   bool get canBuyLimitedDrop => limitedDropDay != _todayKey();
 
-  bool get canClaimDailyGiftBox => lastStreakClaimDay != _todayKey();
+  bool get canClaimDailyGiftBox =>
+      effectiveLastStreakClaimDay != _todayKey();
+
+  /// Dalga 3: hediye kutusu için esas alınan hak günü — yerel ve
+  /// buluttan bilinen günlerin yenisi. Başka cihazda bugün alındıysa
+  /// (pull'da görüldü) yerelde tekrar verilmez.
+  String get effectiveLastStreakClaimDay =>
+      latestDayKey(lastStreakClaimDay, cloudLastStreakClaimDay);
+
+  /// Dalga 3: bugün için esas alınan ücretsiz enerji hak sayısı —
+  /// yerel ve buluttan bilinen bugün sayımlarının büyüğü.
+  int get effectiveFreeEnergyClaimsToday {
+    final today = _todayKey();
+    var claims = 0;
+    if (lastDailyFreeEnergyDay == today) {
+      claims = max(claims, dailyFreeEnergyClaimsToday);
+    }
+    if (cloudDailyFreeEnergyDay == today) {
+      claims = max(claims, cloudDailyFreeEnergyClaims);
+    }
+    return claims;
+  }
 
   /// Ana Hub'daki "ENERJİ AL · +5" butonu için günlük ücretsiz hak kontrolü.
   bool get canClaimDailyFreeEnergy {
     final today = _todayKey();
-    if (lastDailyFreeEnergyDay != today) return true;
-    return false;
+    return lastDailyFreeEnergyDay != today &&
+        cloudDailyFreeEnergyDay != today;
   }
 
   /// Reklam izleyerek ek ücretsiz enerji alınıp alınamayacağını kontrol eder (cooldown + günlük limit).
   bool get canClaimAdFreeEnergy {
-    final today = _todayKey();
-    final claims = lastDailyFreeEnergyDay == today ? dailyFreeEnergyClaimsToday : 0;
+    final claims = effectiveFreeEnergyClaimsToday;
     if (claims >= maxDailyFreeEnergyClaimsWithAd) return false;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     return (nowMs - lastFreeEnergyClaimEpochMs) >= freeEnergyCooldownMs;
@@ -308,8 +522,10 @@ class ProgressManager extends ChangeNotifier {
   }) async {
     final today = _todayKey();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    // Dalga 3: başka cihazda bugün alınan haklar yerelde sıfırlanmaz —
+    // bugün sayımı buluttan bilinen değerden başlar.
     if (lastDailyFreeEnergyDay != today) {
-      dailyFreeEnergyClaimsToday = 0;
+      dailyFreeEnergyClaimsToday = effectiveFreeEnergyClaimsToday;
     }
 
     if (!fromRewardedAd) {
@@ -319,23 +535,39 @@ class ProgressManager extends ChangeNotifier {
     }
 
     final safeAmount = amount.clamp(1, EnergyService.maxEnergy);
+    // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
+    // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
+    final snapshot = _ClaimSnapshot.capture(this);
     lastDailyFreeEnergyDay = today;
     dailyFreeEnergyClaimsToday += 1;
     lastFreeEnergyClaimEpochMs = nowMs;
 
     EnergyService.instance.addEnergy(safeAmount);
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('lululu_daily_free_energy_day', lastDailyFreeEnergyDay);
-    await prefs.setInt(
-      'lululu_daily_free_energy_claims',
-      dailyFreeEnergyClaimsToday,
-    );
-    await prefs.setInt(
-      'lululu_last_free_energy_epoch_ms',
-      lastFreeEnergyClaimEpochMs,
-    );
-    await _persistEconomy();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'lululu_daily_free_energy_day',
+        lastDailyFreeEnergyDay,
+      );
+      await prefs.setInt(
+        'lululu_daily_free_energy_claims',
+        dailyFreeEnergyClaimsToday,
+      );
+      await prefs.setInt(
+        'lululu_last_free_energy_epoch_ms',
+        lastFreeEnergyClaimEpochMs,
+      );
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: claimDailyFreeEnergy kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return false;
+    }
     notifyListeners();
     return true;
   }
@@ -418,10 +650,59 @@ class ProgressManager extends ChangeNotifier {
     return sum;
   }
 
+  /// Bir seviye için gereken XP (12A: şişirme değil, seviye hedefi).
+  static const int xpTargetPerLevel = 2000;
+
+  /// Gerçek XP (12A): kalıcı bir XP alanı yoktur; XP gerçek ilerlemeden
+  /// türetilir — TABAN YOK, 0 ilerlemede 0 XP. Bileşenler: yıldız başına
+  /// 25, günlük 'play' başına 40, toplam skorun 50'ye bölümünün 760
+  /// modülü (eski top_bar formülünün 1240 tabansız hâli).
+  int get xp =>
+      totalStars * 25 +
+      (dailyTaskProgress['play'] ?? 0) * 40 +
+      (total11ModesScore ~/ 50) % 760;
+
   static String _todayKey() {
     final n = DateTime.now();
     return '${n.year}-${n.month}-${n.day}';
   }
+
+  /// Dalga 3: gün anahtarı (`yyyy-M-d`, sıfır dolgusuz da olabilir)
+  /// ayrıştırır; bozuk anahtar `null` döner.
+  static DateTime? tryParseDayKey(String key) {
+    final parts = key.split('-');
+    if (parts.length != 3) return null;
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return null;
+    if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) {
+      return null;
+    }
+    final parsed = DateTime(y, m, d);
+    if (parsed.year != y || parsed.month != m || parsed.day != d) {
+      return null;
+    }
+    return parsed;
+  }
+
+  /// Dalga 3: gün anahtarlarını kronolojik karşılaştırır (<0: `a` eski,
+  /// 0: eşit, >0: `a` yeni). Sözlüksel karşılaştırma YANLIŞTIR
+  /// (`2026-11-5` sözlüksel olarak `2026-11-15`'ten büyüktür) — gün
+  /// karşılaştırması her zaman buradan yapılır. Bozuk anahtar en eski
+  /// sayılır.
+  static int compareDayKeys(String a, String b) {
+    final pa = tryParseDayKey(a);
+    final pb = tryParseDayKey(b);
+    if (pa == null && pb == null) return 0;
+    if (pa == null) return -1;
+    if (pb == null) return 1;
+    return pa.compareTo(pb);
+  }
+
+  /// Dalga 3: iki gün anahtarından yenisi (eşitse `a`).
+  static String latestDayKey(String a, String b) =>
+      compareDayKeys(a, b) >= 0 ? a : b;
 
   static String _yesterdayKey() {
     final n = DateTime.now().subtract(const Duration(days: 1));
@@ -433,6 +714,68 @@ class ProgressManager extends ChangeNotifier {
     final now = DateTime.now();
     final midnight = DateTime(now.year, now.month, now.day + 1);
     return midnight.difference(now).inSeconds.clamp(0, 86400);
+  }
+
+  /// Bozuk JSON kaydını kayıt bazında ayıklar (O2): üst düzey çözümleme
+  /// başarısız olursa boş harita döner; tekil bozuk girdiler atlanır,
+  /// sağlam girdiler yüklenir. Atılan her kayıt `debugPrint` ile
+  /// bildirilir; sessizce yutulmaz.
+  static Map<String, dynamic>? _decodeJsonMap(String raw, String prefKey) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v));
+      }
+      debugPrint(
+        'ProgressManager: $prefKey beklenen harita biciminde degil; bos yuklendi.',
+      );
+      return null;
+    } catch (e) {
+      debugPrint(
+        'ProgressManager: $prefKey JSON cozumu basarisiz ($e); bos yuklendi.',
+      );
+      return null;
+    }
+  }
+
+  static Map<String, int> _decodeIntMap(String raw, String prefKey) {
+    final decoded = _decodeJsonMap(raw, prefKey);
+    if (decoded == null) return <String, int>{};
+    final result = <String, int>{};
+    decoded.forEach((key, value) {
+      if (value is! num) {
+        debugPrint(
+          'ProgressManager: $prefKey girdisi atlandi ($key: sayi degil).',
+        );
+        return;
+      }
+      result[key] = value.toInt();
+    });
+    return result;
+  }
+
+  static Map<int, int> _decodeLevelMap(String raw, String prefKey) {
+    final decoded = _decodeJsonMap(raw, prefKey);
+    if (decoded == null) return <int, int>{};
+    final result = <int, int>{};
+    decoded.forEach((key, value) {
+      final levelId = int.tryParse(key);
+      if (levelId == null) {
+        debugPrint(
+          'ProgressManager: $prefKey girdisi atlandi (seviye anahtari sayi degil: $key).',
+        );
+        return;
+      }
+      if (value is! num) {
+        debugPrint(
+          'ProgressManager: $prefKey girdisi atlandi ($key: sayi degil).',
+        );
+        return;
+      }
+      result[levelId] = value.toInt();
+    });
+    return result;
   }
 
   /// Yükleme tamamlanmışsa hemen döner; yoksa [load] ile aynı
@@ -448,7 +791,10 @@ class ProgressManager extends ChangeNotifier {
   Future<void> load() async {
     final inFlight = _loadFuture;
     if (inFlight != null) return inFlight;
-    final future = _loadAsync();
+    // Yükleme yarıda kesilirse bile damga kapısı açık kalmasın.
+    final future = _loadAsync().whenComplete(() {
+      _loading = false;
+    });
     _loadFuture = future;
     try {
       await future;
@@ -458,13 +804,23 @@ class ProgressManager extends ChangeNotifier {
   }
 
   Future<void> _loadAsync() async {
+    _loading = true;
+    // Y6/LWW: enerji damgası dinleyicisi — enerji değişimleri
+    // (regen, grant, tüketim) EnergyService içinden gelir ve PM kalıcı
+    // kayıt yolundan geçmeyebilir; damga, enerji bildiricisini
+    // dinleyerek ilerletilir (bkz. [_onEnergyChanged]).
+    if (!_energyListenerAttached) {
+      _energyListenerAttached = true;
+      EnergyService.instance.energyNotifier.addListener(_onEnergyChanged);
+    }
     final prefs = await SharedPreferences.getInstance();
     unlockedLevel =
         (prefs.getInt('lululu_unlocked_level') ?? 1).clamp(1, maxCampaignLevels);
-    _coins = (prefs.getInt('lululu_coins') ??
+    // Kanonik okuma önceliği (O1): kanonik anahtar önce, alias anahtar
+    // yalnızca geriye dönük uyumluluk için yedek okunur.
+    coins = prefs.getInt('lululu_coins') ??
         prefs.getInt('LululuCoinBalance') ??
-        defaultCoins).clamp(0, maxTotalCoins);
-    coinsNotifier.value = _coins;
+        defaultCoins;
     sprayCount = prefs.getInt('lululu_spray') ??
         prefs.getInt('lululu_raid') ??
         3;
@@ -480,6 +836,11 @@ class ProgressManager extends ChangeNotifier {
         prefs.getString('lululu_daily_free_energy_day') ?? '';
     dailyFreeEnergyClaimsToday =
         prefs.getInt('lululu_daily_free_energy_claims') ?? 0;
+    // Dalga 3: buluttan bilinen ücretsiz enerji hakları.
+    cloudDailyFreeEnergyDay =
+        prefs.getString('lululu_cloud_daily_free_energy_day') ?? '';
+    cloudDailyFreeEnergyClaims =
+        prefs.getInt('lululu_cloud_daily_free_energy_claims') ?? 0;
     lastFreeEnergyClaimEpochMs =
         prefs.getInt('lululu_last_free_energy_epoch_ms') ?? 0;
     if (lastDailyFreeEnergyDay != _todayKey()) {
@@ -511,17 +872,21 @@ class ProgressManager extends ChangeNotifier {
       unlockedTiers.add(1);
     }
 
-    // 11 oyun modu en yüksek skorları
+    // 11 oyun modu en yüksek skorları (O2: kayıt bazlı ayrıştırma —
+    // bozuk girdi atlanır, sağlam skorlar yüklenir).
     modeHighScores.clear();
     final modeScoresRaw = prefs.getString('lululu_mode_high_scores');
     if (modeScoresRaw != null && modeScoresRaw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(modeScoresRaw) as Map<String, dynamic>;
-        decoded.forEach((k, v) {
-          modeHighScores[normalizeModeId(k)] = (v as num).toInt();
-        });
-      } catch (_) {}
+      for (final entry in _decodeIntMap(
+        modeScoresRaw,
+        'lululu_mode_high_scores',
+      ).entries) {
+        modeHighScores[normalizeModeId(entry.key)] = entry.value;
+      }
     }
+
+    // Tüm zamanların en yüksek kombosu (Dalga 15, bulgu 12).
+    bestCombo = (prefs.getInt(_bestComboPrefKey) ?? 0).clamp(0, 999999);
 
     // Günlük görev ilerlemeleri
     final today = _todayKey();
@@ -536,12 +901,14 @@ class ProgressManager extends ChangeNotifier {
     } else {
       final taskProgRaw = prefs.getString('lululu_daily_tasks_progress');
       if (taskProgRaw != null && taskProgRaw.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(taskProgRaw) as Map<String, dynamic>;
-          decoded.forEach((k, v) {
-            dailyTaskProgress[k] = (v as num).toInt();
-          });
-        } catch (_) {}
+        // O2: kayıt bazlı ayrıştırma — bozuk girdi atlanır, sağlam
+        // ilerlemeler yüklenir.
+        for (final entry in _decodeIntMap(
+          taskProgRaw,
+          'lululu_daily_tasks_progress',
+        ).entries) {
+          dailyTaskProgress[entry.key] = entry.value;
+        }
       }
       final claimedRaw = prefs.getStringList('lululu_daily_tasks_claimed');
       claimedDailyTasks
@@ -552,6 +919,9 @@ class ProgressManager extends ChangeNotifier {
     // Günlük hediye kutusu serisi (streak)
     streak = prefs.getInt('lululu_daily_streak') ?? 1;
     lastStreakClaimDay = prefs.getString('lululu_last_streak_claim_day') ?? '';
+    // Dalga 3: buluttan bilinen hediye kutusu hak günü.
+    cloudLastStreakClaimDay =
+        prefs.getString('lululu_cloud_last_streak_claim_day') ?? '';
 
     // Ses ve titreşim ayarları
     sfxEnabled = prefs.getBool('lululu_sfx_enabled') ?? true;
@@ -562,80 +932,129 @@ class ProgressManager extends ChangeNotifier {
     extraPowers.clear();
     final extraRaw = prefs.getString('lululu_extra_powers');
     if (extraRaw != null && extraRaw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(extraRaw) as Map<String, dynamic>;
-        decoded.forEach((k, v) {
-          extraPowers[k] = (v as num).toInt();
-        });
-      } catch (_) {}
+      // O1 kanonik göç + O2 kayıt bazlı ayrıştırma: eski kayıtlardaki
+      // alias anahtarlar (`spray`, `Geri Al` vb.) kanonik anahtara
+      // çevrilir. Tam kanonik girdiler önceliklidir (eski okuma
+      // davranışı aynen korunur); yalnızca alias girdisi varsa en
+      // yüksek stok korunur (kayıpsız). Değerler yazıcı sınırlarına
+      // (0..99999) kelepçelenir.
+      final decoded = _decodeIntMap(extraRaw, 'lululu_extra_powers');
+      final pendingAliases = <String, int>{};
+      for (final entry in decoded.entries) {
+        final canonical = normalizePowerKey(entry.key);
+        final value = entry.value.clamp(0, _maxPowerStock);
+        if (entry.key == canonical) {
+          extraPowers[canonical] = value;
+        } else {
+          final prev = pendingAliases[canonical];
+          pendingAliases[canonical] = prev == null || value > prev
+              ? value
+              : prev;
+        }
+      }
+      for (final entry in pendingAliases.entries) {
+        extraPowers.putIfAbsent(entry.key, () => entry.value);
+      }
+    }
+
+    // W13-D: kazanılan/kullanılan güç kümesini yükle. Eski kayıtlarda
+    // anahtar yoksa küme boş başlar — tohum stokları ASLA buraya
+    // yazılmaz (tohumlar aşağıdaki `seeds` bloğunda doğrudan
+    // `extraPowers` haritasına uygulanır).
+    _earnedPowerKeys.clear();
+    final earnedRaw = prefs.getStringList(_earnedPowersPrefKey);
+    if (earnedRaw != null) {
+      for (final raw in earnedRaw) {
+        final key = _achievementPowerKey(normalizePowerKey(raw));
+        if (all33PowerKeys.contains(key)) {
+          _earnedPowerKeys.add(key);
+        }
+      }
     }
 
     _levelStars.clear();
     final starsJson = prefs.getString('lululu_level_stars');
     if (starsJson != null) {
-      try {
-        final Map<String, dynamic> decoded = jsonDecode(starsJson);
-        decoded.forEach((k, v) {
-          _levelStars[int.parse(k)] = (v as num).toInt();
-        });
-      } catch (_) {}
+      // O2: kayıt bazlı ayrıştırma — bozuk anahtar/değer atlanır.
+      _levelStars.addAll(_decodeLevelMap(starsJson, 'lululu_level_stars'));
     }
 
     _levelHighScores.clear();
     final scoresJson = prefs.getString('lululu_level_scores');
     if (scoresJson != null) {
-      try {
-        final Map<String, dynamic> decoded = jsonDecode(scoresJson);
-        decoded.forEach((k, v) {
-          _levelHighScores[int.parse(k)] = (v as num).toInt();
-        });
-      } catch (_) {}
+      // O2: kayıt bazlı ayrıştırma — bozuk anahtar/değer atlanır.
+      _levelHighScores.addAll(
+        _decodeLevelMap(scoresJson, 'lululu_level_scores'),
+      );
     }
 
-    if (!(prefs.getBool('lululu_power_seed_v1') ?? false)) {
-      const seeds = <String, int>{
-        'raid': 3,
-        'terlik': 5,
-        'f16': 2,
-        'undo': 3,
-        'shuffle': 2,
-        'pair': 1,
-        'triple': 3,
-        'bombb': 2,
-        'slowb': 1,
-        'hammer': 2,
-        'bomb3': 2,
-        'hunter': 1,
-        'chain': 3,
-        'bolt': 1,
-        'magnet': 1,
-        'freeze': 2,
-        'widen': 3,
-        'slows': 1,
-        'dblslip': 3,
-        'goldslip': 2,
-        'spraybug': 1,
-        'yuva_dblslip': 3,
-        'yuva_goldslip': 2,
-        'nest_shield': 1,
-        'dik': 1,
-        'ring': 2,
-        'mic': 3,
-        'jump': 3,
-        'shield': 2,
-        'nitro': 1,
-        'beat': 2,
-        'auto': 2,
-        'x2': 1,
-      };
-      for (final entry in seeds.entries) {
-        extraPowers.putIfAbsent(entry.key, () => entry.value);
+    // 12T: tohumlar HER yüklemede eksik anahtarlara uygulanır
+    // (`putIfAbsent` — mevcut stok asla ezilmez). Eski kod tohumlamayı
+    // `lululu_power_seed_v1` bayrağına bağlıyordu: bayrak bir kez
+    // konduktan sonra tohum haritasına eklenen yeni güç anahtarları
+    // (jump/shield/nitro) mevcut kurulumlara HİÇ ulaşmıyor, stok 0
+    // kalıyor ve bonus düğmeleri ölü görünüyordu. Bayrak yalnızca
+    // geriye dönük uyumluluk için korunur.
+    const seeds = <String, int>{
+      'raid': 3,
+      'terlik': 5,
+      'f16': 2,
+      'undo': 3,
+      'shuffle': 2,
+      'pair': 1,
+      // B3: 2048 ekranı `*2048` anahtarlarını okur; tohumlar
+      // `putIfAbsent` ile verilir, mevcut stoklar ezilmez.
+      'undo2048': 3,
+      'shuffle2048': 2,
+      'pair2048': 1,
+      'triple': 3,
+      'bombb': 2,
+      'slowb': 1,
+      'hammer': 2,
+      'bomb3': 2,
+      'hunter': 1,
+      'chain': 3,
+      'bolt': 1,
+      'magnet': 1,
+      'freeze': 2,
+      'widen': 3,
+      'slows': 1,
+      'dblslip': 3,
+      'goldslip': 2,
+      'spraybug': 1,
+      'yuva_dblslip': 3,
+      'yuva_goldslip': 2,
+      'nest_shield': 1,
+      'dik': 1,
+      'ring': 2,
+      'mic': 3,
+      'jump': 3,
+      'shield': 2,
+      'nitro': 1,
+      'beat': 2,
+      'auto': 2,
+      'x2': 1,
+    };
+    var seeded = false;
+    for (final entry in seeds.entries) {
+      if (!extraPowers.containsKey(entry.key)) {
+        extraPowers[entry.key] = entry.value;
+        seeded = true;
       }
-      await prefs.setBool('lululu_power_seed_v1', true);
-      await _persistEconomy();
     }
+    if (!(prefs.getBool('lululu_power_seed_v1') ?? false)) {
+      await prefs.setBool('lululu_power_seed_v1', true);
+      seeded = true;
+    }
+    if (seeded) await _persistEconomy();
 
     _syncPrimaryPowersToExtra();
+    // Y6/LWW: alan damgalarını prefs'ten yükle; ilk yüklemede
+    // (göç) mevcut değerleri "şimdi" ile damgala.
+    await _loadFieldStamps(prefs);
+    // Damga farkı anlık görüntüsünü yüklenen duruma eşitle: yükleme
+    // sırasındaki atamalar değişim sayılmaz.
+    syncPersistedSnapshot();
     _stateIntegritySig =
         prefs.getString(_integrityPrefKey) ?? _computeStateIntegritySig();
     if (!verifyStateIntegrity()) {
@@ -645,8 +1064,12 @@ class ProgressManager extends ChangeNotifier {
       _stateIntegritySig = _computeStateIntegritySig();
       await prefs.setString(_integrityPrefKey, _stateIntegritySig);
     }
+    // 12C1: AntiCheat HMAC mührünü yüklenen duruma karşı doğrula
+    // (yoksa benimse, uyuşmazsa telemetriye yaz + yeniden mühürle).
+    await _verifyAndResealAntiCheatState(prefs);
 
     _loaded = true;
+    _loading = false;
     notifyListeners();
   }
 
@@ -663,6 +1086,14 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// 33 oyun modu güçlendiricisinin anahtarlarını ve Türkçe mağaza adlarını kanonikleştirir.
+  ///
+  /// Kanonik anahtar seti (O1): [all33PowerKeys] + 2048 ekranının ayrı
+  /// stokları (`undo2048`/`shuffle2048`/`pair2048`). Alias'lar
+  /// (`spray`, `slipper`, `aydinlat`, Türkçe adlar) YALNIZCA okuma
+  /// uyumluluğu için çözülür; yazım yolları kanonik anahtar kullanır.
+  /// `*2048` anahtarları `undo`/`shuffle`/`pair` ile BİRLEŞTİRİLMEZ:
+  /// 2048 ekranı ayrı stok okur, mağaza iki stoku ayrı artırır;
+  /// birleştirmek çift dağıtıma yol açar.
   static String normalizePowerKey(String rawKey) {
     final trimmed = rawKey
         .trim()
@@ -695,12 +1126,21 @@ class ProgressManager extends ChangeNotifier {
       case 'geri al':
       case 'geri_al':
         return 'undo';
+      case 'undo2048':
+      case 'undo_2048':
+        return 'undo2048';
       case 'shuffle':
       case 'karistir':
         return 'shuffle';
+      case 'shuffle2048':
+      case 'shuffle_2048':
+        return 'shuffle2048';
       case 'pair':
       case 'ciftlestir':
         return 'pair';
+      case 'pair2048':
+      case 'pair_2048':
+        return 'pair2048';
       case 'triple':
       case 'uclu ok':
       case 'uclu_ok':
@@ -758,14 +1198,22 @@ class ProgressManager extends ChangeNotifier {
         return 'spraybug';
       case 'yuva_dblslip':
       case 'yuva cift terlik':
+      case 'yuva_cift_terlik':
+      case 'yuva dblslip':
         return 'yuva_dblslip';
       case 'yuva_goldslip':
       case 'yuva altin terlik':
+      case 'yuva_altin_terlik':
+      case 'yuva goldslip':
         return 'yuva_goldslip';
       case 'nest_shield':
       case 'yuva kalkani':
       case 'yuva_kalkani':
+      case 'yuva kalkan':
+      case 'yuva_kalkan':
       case 'yuvakalkan':
+      case 'nest shield':
+      case 'nestshield':
         return 'nest_shield';
       case 'dik':
       case 'dikkis boost':
@@ -805,12 +1253,16 @@ class ProgressManager extends ChangeNotifier {
   }
 
   void _syncPrimaryPowersToExtra() {
+    // Kanonik göç (O1): haritaya YALNIZCA kanonik anahtarlar yazılır.
+    // Eski kayıtlardan gelen alias girdileri (`spray`/`slipper`/
+    // `aydinlat`) kaldırılır — okuma her zaman [normalizePowerKey]
+    // üzerinden kanonik anahtara çözüldüğü için stok kaybı olmaz.
     extraPowers['raid'] = sprayCount;
-    extraPowers['spray'] = sprayCount;
     extraPowers['terlik'] = slipperCount;
-    extraPowers['slipper'] = slipperCount;
     extraPowers['f16'] = aydinlatCount;
-    extraPowers['aydinlat'] = aydinlatCount;
+    extraPowers.remove('spray');
+    extraPowers.remove('slipper');
+    extraPowers.remove('aydinlat');
     extraPowers.putIfAbsent('yuva_dblslip', () => extraPowers['dblslip'] ?? 3);
     extraPowers.putIfAbsent(
       'yuva_goldslip',
@@ -819,8 +1271,13 @@ class ProgressManager extends ChangeNotifier {
     extraPowers.putIfAbsent('nest_shield', () => extraPowers['shield'] ?? 1);
   }
 
-  int powerCount(String id) {
-    final canonical = normalizePowerKey(id);
+  /// Güç stokları için TEK çekirdek (O1): üç tüketim yolu
+  /// ([consumePower]/[takePower]/[refundPower]) ile [setPowerCount] /
+  /// [incrementPowerCount] aynı stok aritmetiğini paylaşır. Bu
+  /// yardımcılar YALNIZCA bellek içi stoku değiştirir; kalıcı kayıt ve
+  /// bildirim her metodun kendi sözleşmesine aittir (senkron yollar
+  /// ateşle-unut yazar, async yollar beklenen kayıt yazar).
+  int _stockOf(String canonical, String rawId) {
     switch (canonical) {
       case 'raid':
         return sprayCount;
@@ -829,29 +1286,60 @@ class ProgressManager extends ChangeNotifier {
       case 'f16':
         return aydinlatCount;
       default:
-        return extraPowers[canonical] ?? extraPowers[id] ?? 0;
+        return extraPowers[canonical] ?? extraPowers[rawId] ?? 0;
     }
+  }
+
+  /// Stoku doğrudan yazar (kanonik anahtar; negatif sıfıra çekilir).
+  /// Üst kelepçe uygulanmaz — eski [setPowerCount] davranışı aynen
+  /// korunur; üst sınır yalnız [incrementPowerCount]/[refundPower]
+  /// yolundaki [_adjustStock] tarafından uygulanır.
+  void _setStock(String canonical, int value) {
+    final safe = value < 0 ? 0 : value;
+    switch (canonical) {
+      case 'raid':
+        sprayCount = safe;
+        break;
+      case 'terlik':
+        slipperCount = safe;
+        break;
+      case 'f16':
+        aydinlatCount = safe;
+        break;
+      default:
+        extraPowers[canonical] = safe;
+        break;
+    }
+  }
+
+  /// Stoku `delta` kadar değiştirir, 0..[_maxPowerStock] aralığına
+  /// kelepçeler ve yeni değeri döner. Ham alias girdisi kalmışsa
+  /// budanır (kanonik girdi tek kaynaktır).
+  int _adjustStock(String canonical, String rawId, int delta) {
+    final next = (_stockOf(canonical, rawId) + delta).clamp(0, _maxPowerStock);
+    _setStock(canonical, next);
+    if (rawId != canonical) extraPowers.remove(rawId);
+    return next;
+  }
+
+  /// Stok > 0 ise 1 düşürür ve true döner; stok yoksa değiştirmeden
+  /// false döner.
+  bool _takeOneStock(String canonical, String rawId) {
+    if (_stockOf(canonical, rawId) <= 0) return false;
+    _adjustStock(canonical, rawId, -1);
+    return true;
+  }
+
+  int powerCount(String id) {
+    final canonical = normalizePowerKey(id);
+    return _stockOf(canonical, id);
   }
 
   /// Moda özel güçlendirici stoğunu doğrudan ayarlar ve kaydeder.
   Future<void> setPowerCount(String id, int count) async {
-    final safeCount = count < 0 ? 0 : count;
     final canonical = normalizePowerKey(id);
-    switch (canonical) {
-      case 'raid':
-        sprayCount = safeCount;
-        break;
-      case 'terlik':
-        slipperCount = safeCount;
-        break;
-      case 'f16':
-        aydinlatCount = safeCount;
-        break;
-      default:
-        extraPowers[canonical] = safeCount;
-        extraPowers[id] = safeCount;
-        break;
-    }
+    _setStock(canonical, count);
+    if (id != canonical) extraPowers.remove(id);
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
@@ -862,29 +1350,10 @@ class ProgressManager extends ChangeNotifier {
   Future<int> incrementPowerCount(String key, [int delta = 1]) async {
     if (delta == 0) return powerCount(key);
     final canonical = normalizePowerKey(key);
-    int nextValue;
-    switch (canonical) {
-      case 'raid':
-        sprayCount = (sprayCount + delta).clamp(0, 99999);
-        nextValue = sprayCount;
-        break;
-      case 'terlik':
-        slipperCount = (slipperCount + delta).clamp(0, 99999);
-        nextValue = slipperCount;
-        break;
-      case 'f16':
-        aydinlatCount = (aydinlatCount + delta).clamp(0, 99999);
-        nextValue = aydinlatCount;
-        break;
-      default:
-        final current = extraPowers[canonical] ?? extraPowers[key] ?? 0;
-        nextValue = (current + delta).clamp(0, 99999);
-        extraPowers[canonical] = nextValue;
-        if (key != canonical) {
-          extraPowers[key] = nextValue;
-        }
-        break;
-    }
+    final nextValue = _adjustStock(canonical, key, delta);
+    // W13-D: pozitif artış gerçek kazanımdır (mağaza/IAP/kampanya/
+    // Sezon Bileti) — tohumlar bu yoldan geçmez.
+    if (delta > 0) _markPowerEarned(canonical);
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
@@ -892,62 +1361,28 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// Oyun içinden veya mağazadan 1 adet güçlendirici harcar (`extraPowers` + `f16Count`/`raidCount`/`terlikCount`).
+  /// Kalıcı kayıt beklenir ([takePower] senkron karşılığıdır, kaydı
+  /// ateşle-unut yazar; stok aritmetiği aynı çekirdektedir).
   Future<bool> consumePower(String key) async {
     final canonical = normalizePowerKey(key);
-    switch (canonical) {
-      case 'raid':
-        if (sprayCount <= 0) return false;
-        sprayCount--;
-        break;
-      case 'terlik':
-        if (slipperCount <= 0) return false;
-        slipperCount--;
-        break;
-      case 'f16':
-        if (aydinlatCount <= 0) return false;
-        aydinlatCount--;
-        break;
-      default:
-        final have = extraPowers[canonical] ?? extraPowers[key] ?? 0;
-        if (have <= 0) return false;
-        final next = have - 1;
-        extraPowers[canonical] = next;
-        if (key != canonical) {
-          extraPowers[key] = next;
-        }
-        break;
-    }
+    if (!_takeOneStock(canonical, key)) return false;
+    // W13-D: güç kullanımı da kazanılan sayılır (tohum stokundan
+    // kullanılsa bile — oyuncu o gücü oyunda gerçekten harcamıştır).
+    _markPowerEarned(canonical);
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
     return true;
   }
 
-  /// Kasadan 1 yük harcar. Stok yoksa false.
+  /// Kasadan 1 yük harcar. Stok yoksa false. Kalıcı kayıt ateşle-unut
+  /// yazılır (senkron sözleşme); stok aritmetiği [consumePower] ile
+  /// aynı çekirdektedir.
   bool takePower(String id) {
     final canonical = normalizePowerKey(id);
-    switch (canonical) {
-      case 'raid':
-        if (sprayCount <= 0) return false;
-        sprayCount--;
-        break;
-      case 'terlik':
-        if (slipperCount <= 0) return false;
-        slipperCount--;
-        break;
-      case 'f16':
-        if (aydinlatCount <= 0) return false;
-        aydinlatCount--;
-        break;
-      default:
-        final have = extraPowers[canonical] ?? extraPowers[id] ?? 0;
-        if (have <= 0) return false;
-        extraPowers[canonical] = have - 1;
-        if (id != canonical) {
-          extraPowers[id] = have - 1;
-        }
-        break;
-    }
+    if (!_takeOneStock(canonical, id)) return false;
+    // W13-D: bkz. [consumePower] — kullanım kazanılan sayılır.
+    _markPowerEarned(canonical);
     _syncPrimaryPowersToExtra();
     notifyListeners();
     unawaited(_persistEconomy());
@@ -960,25 +1395,7 @@ class ProgressManager extends ChangeNotifier {
   /// [incrementPowerCount] ile aynıdır (99999).
   void refundPower(String id) {
     final canonical = normalizePowerKey(id);
-    switch (canonical) {
-      case 'raid':
-        sprayCount = (sprayCount + 1).clamp(0, 99999);
-        break;
-      case 'terlik':
-        slipperCount = (slipperCount + 1).clamp(0, 99999);
-        break;
-      case 'f16':
-        aydinlatCount = (aydinlatCount + 1).clamp(0, 99999);
-        break;
-      default:
-        final have = extraPowers[canonical] ?? extraPowers[id] ?? 0;
-        final next = (have + 1).clamp(0, 99999);
-        extraPowers[canonical] = next;
-        if (id != canonical) {
-          extraPowers[id] = next;
-        }
-        break;
-    }
+    _adjustStock(canonical, id, 1);
     _syncPrimaryPowersToExtra();
     notifyListeners();
     unawaited(_persistEconomy());
@@ -1000,6 +1417,10 @@ class ProgressManager extends ChangeNotifier {
       'lululu_unlocked_tiers',
       unlockedTiers.map((e) => e.toString()).toList(),
     );
+    // Y6/LWW: tier değişimi damgalanır.
+    touchChangedFieldStamps();
+    await persistFieldStamps();
+    await _persistAntiCheatSeal(prefs);
     notifyListeners();
     return true;
   }
@@ -1009,9 +1430,31 @@ class ProgressManager extends ChangeNotifier {
   /// Tavan, [modeScoreCeilings] tablosundan mod bazlı okunur — liderlik
   /// servisinin `submitScore` yolu aynı tabloyu kullandığı için iki depo
   /// ayrışamaz (S1#35).
-  Future<bool> recordModeScore(String modeId, int score) async {
+  ///
+  /// 12C1: yazımdan ÖNCE [AntiCheatService.validateGameScore] çalışır.
+  /// Geçersiz skor (bilinmeyen mod, negatif, tavan üstü) sessizce
+  /// reddedilir (`false` döner, kayıt yazılmaz, hata fırlatılmaz).
+  /// Uzak birleştirme / göç yolu (`fromRemoteSync: true`) ARTIK AYNI
+  /// kapıdan geçer (Dalga 3 ek: kapı deliği kapatıldı) — bilinmeyen mod,
+  /// negatif ve mod tavanı üstü skorlar uzaktan gelse de kayda girmez.
+  /// `fromRemoteSync` yalnız çağrı niyetini belirtir, denetimi atlamaz.
+  Future<bool> recordModeScore(
+    String modeId,
+    int score, {
+    bool fromRemoteSync = false,
+  }) async {
     final key = normalizeModeId(modeId);
     if (key.isEmpty) return false;
+    // Dalga 3 ek: kapı her iki yolda da çalışır — uzak birleştirme /
+    // göç (`fromRemoteSync: true`) artık AntiCheat'i atlamaz.
+    final check = AntiCheatService.instance.validateGameScore(key, score);
+    if (!check.isValid) {
+      debugPrint(
+        '[lululu] AntiCheat: recordModeScore reddedildi '
+        '(mod: ${check.mode}, neden: ${check.reason}, skor: $score)',
+      );
+      return false;
+    }
     if (!isScoreValidForMode(key, score)) return false;
     final prev = modeHighScores[key] ?? 0;
     if (score <= prev) return false;
@@ -1023,6 +1466,22 @@ class ProgressManager extends ChangeNotifier {
     );
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
+    notifyListeners();
+    return true;
+  }
+
+  /// Tüm zamanların en yüksek kombosunu kaydeder (Dalga 15, bulgu 12):
+  /// yalnız artışta kalıcı yazılır (`lululu_best_combo`); düşük/eşit
+  /// değer yazılmaz, `false` döner. Negatif değer yoksayılır.
+  /// Tek yazım noktası [finishRun] settle adımıdır — 11 modun tamamı
+  /// oradan geçtiği için tur kombosu tek yerden kayda girer.
+  Future<bool> recordBestCombo(int combo) async {
+    if (combo <= bestCombo) return false;
+    if (combo < 0) return false;
+    bestCombo = combo;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_bestComboPrefKey, bestCombo);
     notifyListeners();
     return true;
   }
@@ -1037,12 +1496,53 @@ class ProgressManager extends ChangeNotifier {
     int delta = 1,
     int? absoluteValue,
   }) async {
+    // Tek hesaplama yeri _recordTaskProgressCore: dönüş (yeni
+    // tamamlananlar) bu imzada yoksayılır.
+    await _recordTaskProgressCore(
+      taskId,
+      delta: delta,
+      absoluteValue: absoluteValue,
+    );
+  }
+
+  /// Günlük görev ilerlemesini kaydeder ve bu çağrıyla YENİ
+  /// tamamlanan görev kimliklerini döner.
+  ///
+  /// Sözleşme (PM-detailed, koordinatör bağlayacak):
+  /// * İlerleme kaydı [recordTaskProgress] ile aynıdır (varsayılan
+  ///   `delta: 1`; gün değişiminde sıfırlama + kalıcı kayıt + bildirim
+  ///   aynen yapılır — tek hesaplama yeri _recordTaskProgressCore).
+  /// * Dönen liste, bu çağrıdan ÖNCE tamamlanmamışken çağrıyla eşiğe
+  ///   ulaşan görevleri içerir; hiçbiri tamamlanmadıysa boş listedir.
+  ///   Zaten ödülü alınmış görev tekrar bildirilmez.
+  /// * Tek çağrı tek görevi ilerlettiği için liste en fazla bir
+  ///   kimlik içerir (`[kind]` ya da `[]`).
+  /// * Eşikler [dailyTaskTargets]tandır; bilinmeyen görev kaydedilir
+  ///   ama asla tamamlanmış sayılmaz (boş liste döner).
+  Future<List<String>> recordTaskProgressDetailed(String kind) =>
+      _recordTaskProgressCore(kind);
+
+  /// Görev ilerleme kaydının TEK hesaplama yeri: [recordTaskProgress]
+  /// ve [recordTaskProgressDetailed] buraya delege eder. Dönen liste,
+  /// bu çağrıyla yeni tamamlanan görev kimlikleridir (en fazla bir
+  /// kimlik; yoksa boş liste). `delta`/`absoluteValue` parametreleri
+  /// [recordTaskProgress] çağrıcıları içindir (oyun ekranları mutlak
+  /// kombo ve çoklu birleştirme kaydeder); ayrıntılı imza bunları
+  /// taşımaz, varsayılanları kullanır.
+  Future<List<String>> _recordTaskProgressCore(
+    String taskId, {
+    int delta = 1,
+    int? absoluteValue,
+  }) async {
     final today = _todayKey();
     if (dailyTasksDay != today) {
       dailyTasksDay = today;
       dailyTaskProgress.updateAll((_, _) => 0);
       claimedDailyTasks.clear();
     }
+    final target = dailyTaskTargets[taskId];
+    final before = dailyTaskProgress[taskId] ?? 0;
+    final wasClaimed = claimedDailyTasks.contains(taskId);
     if (absoluteValue != null) {
       final current = dailyTaskProgress[taskId] ?? 0;
       if (absoluteValue > current) {
@@ -1053,6 +1553,10 @@ class ProgressManager extends ChangeNotifier {
     }
     await _persistDailyTasks();
     notifyListeners();
+    if (target == null || wasClaimed) return <String>[];
+    final after = dailyTaskProgress[taskId] ?? 0;
+    if (before < target && after >= target) return <String>[taskId];
+    return <String>[];
   }
 
   Future<bool> claimDailyTaskReward(
@@ -1065,6 +1569,9 @@ class ProgressManager extends ChangeNotifier {
     if (progress < target || claimedDailyTasks.contains(taskId)) {
       return false;
     }
+    // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
+    // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
+    final snapshot = _ClaimSnapshot.capture(this);
     claimedDailyTasks.add(taskId);
     if (coinReward > 0) {
       coins += coinReward;
@@ -1072,13 +1579,25 @@ class ProgressManager extends ChangeNotifier {
     if (energyReward > 0) {
       EnergyService.instance.addEnergy(energyReward);
     }
-    await _persistDailyTasks();
-    await _persistEconomy();
+    try {
+      await _persistDailyTasks();
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: claimDailyTaskReward kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return false;
+    }
     notifyListeners();
     return true;
   }
 
   Future<void> _persistDailyTasks() async {
+    // Y6/LWW: değeri değişen alanı damgala, damgaları da yaz.
+    touchChangedFieldStamps();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('lululu_daily_tasks_day', dailyTasksDay);
     await prefs.setString(
@@ -1089,32 +1608,106 @@ class ProgressManager extends ChangeNotifier {
       'lululu_daily_tasks_claimed',
       claimedDailyTasks.toList(),
     );
+    if (!_loading) unawaited(_persistStamps(prefs));
+  }
+
+  /// Dalga 3: bulut birleşmesi sonrası günlük alanları + buluttan
+  /// bilinen hak günleri + damgaları kalıcı olarak yazar.
+  /// [CloudSyncService.applyTimestampedProfileSnapshot] birleşmiş
+  /// değerleri belleğe yazdıktan sonra çağırır (doğrudan prefs yazımı
+  /// yerine — günlük anahtarları tek yerdedir).
+  Future<void> persistDailyCloudState() async {
+    touchChangedFieldStamps();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'lululu_last_streak_claim_day',
+      lastStreakClaimDay,
+    );
+    await prefs.setString('lululu_daily_tasks_day', dailyTasksDay);
+    await prefs.setString(
+      'lululu_daily_tasks_progress',
+      jsonEncode(dailyTaskProgress),
+    );
+    await prefs.setStringList(
+      'lululu_daily_tasks_claimed',
+      claimedDailyTasks.toList(),
+    );
+    await prefs.setString(
+      'lululu_daily_free_energy_day',
+      lastDailyFreeEnergyDay,
+    );
+    await prefs.setInt(
+      'lululu_daily_free_energy_claims',
+      dailyFreeEnergyClaimsToday,
+    );
+    await prefs.setInt(
+      'lululu_last_free_energy_epoch_ms',
+      lastFreeEnergyClaimEpochMs,
+    );
+    await prefs.setString(
+      'lululu_cloud_last_streak_claim_day',
+      cloudLastStreakClaimDay,
+    );
+    await prefs.setString(
+      'lululu_cloud_daily_free_energy_day',
+      cloudDailyFreeEnergyDay,
+    );
+    await prefs.setInt(
+      'lululu_cloud_daily_free_energy_claims',
+      cloudDailyFreeEnergyClaims,
+    );
+    if (!_loading) await _persistStamps(prefs);
   }
 
   /// Günlük hediye kutusu ve seri (`streak`) ödülünü toplar.
+  ///
+  /// TEK TALEP KURALI (O22): günde en fazla bir kez ödenir; aynı gün
+  /// ikinci çağrı her zaman null döner. `doubled` parametresi
+  /// YOKSAYILIR ve yalnızca API uyumluluğu için korunur: ödüllü
+  /// reklam SDK'sı kurulu değildir (reklam doğrulaması yapılamaz),
+  /// bu yüzden doğrulanmamış iki katı ödül yolu kaldırılmıştır.
+  /// Reklam SDK'sı eklendiğinde bu parametre yerine servis içinde
+  /// doğrulanan bir talep akışı getirilmelidir.
   Future<({int coins, int energy, int streak})?> claimDailyGiftBox({
     bool doubled = false,
   }) async {
+    // `doubled` bilinçli olarak okunmaz (bkz. yukarıdaki not).
     final today = _todayKey();
-    if (lastStreakClaimDay == today && !doubled) return null;
-    if (lastStreakClaimDay != today) {
-      if (lastStreakClaimDay == _yesterdayKey()) {
-        streak += 1;
-      } else if (lastStreakClaimDay.isNotEmpty) {
-        streak = 1;
-      } else {
-        streak = streak < 1 ? 1 : streak;
-      }
-      lastStreakClaimDay = today;
+    // Dalga 3: buluttan bilinen hak günü de kapıdır — başka cihazda
+    // bugün alındıysa (pull'da görüldü) yerelde tekrar verilmez.
+    if (effectiveLastStreakClaimDay == today) return null;
+    // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
+    // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
+    final snapshot = _ClaimSnapshot.capture(this);
+    if (lastStreakClaimDay == _yesterdayKey()) {
+      streak += 1;
+    } else if (lastStreakClaimDay.isNotEmpty) {
+      streak = 1;
+    } else {
+      streak = streak < 1 ? 1 : streak;
     }
-    final rewardCoins = (doubled ? 1000 : 500) + (streak - 1) * 25;
+    lastStreakClaimDay = today;
+    final rewardCoins = 500 + (streak - 1) * 25;
     const rewardEnergy = 5;
     coins += rewardCoins;
     EnergyService.instance.addEnergy(rewardEnergy);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('lululu_daily_streak', streak);
-    await prefs.setString('lululu_last_streak_claim_day', lastStreakClaimDay);
-    await _persistEconomy();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('lululu_daily_streak', streak);
+      await prefs.setString(
+        'lululu_last_streak_claim_day',
+        lastStreakClaimDay,
+      );
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: claimDailyGiftBox kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return null;
+    }
     notifyListeners();
     return (coins: rewardCoins, energy: rewardEnergy, streak: streak);
   }
@@ -1174,7 +1767,10 @@ class ProgressManager extends ChangeNotifier {
     // verilmezse eski kural (yıldız > 0) aynen korunur.
     final shouldUnlock = victory ?? (earnedStars > 0);
     if (shouldUnlock) {
-      if (levelId >= unlockedLevel && unlockedLevel < maxCampaignLevels) {
+      // 12W: yalnız sınır seviye ilerletir — ilerideki bir seviyenin
+      // tek tamamlanışı seviyeyi sıçratmaz (seviye = bitirilen en
+      // yüksek seviye + 1 değişmezi; harita zaten sırayla açar).
+      if (levelId == unlockedLevel && unlockedLevel < maxCampaignLevels) {
         unlockedLevel = (levelId + 1).clamp(1, maxCampaignLevels);
       }
     }
@@ -1195,6 +1791,11 @@ class ProgressManager extends ChangeNotifier {
     final scoresMap =
         _levelHighScores.map((k, v) => MapEntry(k.toString(), v));
     await prefs.setString('lululu_level_scores', jsonEncode(scoresMap));
+
+    // Y6/LWW: seviye/coin değişimi damgalanır (bu metot doğrudan
+    // prefs yazar, [_persistEconomy] yolundan geçmez).
+    touchChangedFieldStamps();
+    await persistFieldStamps();
 
     notifyListeners();
   }
@@ -1226,11 +1827,8 @@ class ProgressManager extends ChangeNotifier {
         break;
       default:
         final canonical = normalizePowerKey(type);
-        final next = (extraPowers[canonical] ?? extraPowers[type] ?? 0) + 1;
-        extraPowers[canonical] = next;
-        if (type != canonical) {
-          extraPowers[type] = next;
-        }
+        _setStock(canonical, _stockOf(canonical, type) + 1);
+        if (type != canonical) extraPowers.remove(type);
         break;
     }
 
@@ -1246,72 +1844,94 @@ class ProgressManager extends ChangeNotifier {
   }
 
   /// Coin-shop bundles. Returns false if broke or unknown id.
+  ///
+  /// Ödüller `IapService.storeCatalog` ile aynıdır (K6: katalog
+  /// kanonik). Katalogda karşılığı olmayan id'ler (`makara`,
+  /// `kongo`, `limited`) katalog dışı eski paketlerdir; ödülleri
+  /// değiştirilmeden korunur.
   Future<bool> buyBundle(String id, int cost) async {
-    if (coins < cost) return false;
-    switch (id) {
-      case 'makara':
-        coins -= cost;
-        slipperCount += 3;
-        sprayCount += 3;
-        aydinlatCount += 1;
-        break;
-      case 'kongo':
-        coins -= cost;
-        slipperCount += 5;
-        sprayCount += 5;
-        aydinlatCount += 2;
-        break;
-      case 'limited':
-        if (!canBuyLimitedDrop) return false;
-        coins -= cost;
-        slipperCount += 4;
-        sprayCount += 4;
-        aydinlatCount += 2;
-        coins += 120; // bonus coin splash
-        limitedDropDay = _todayKey();
-        break;
-      case 'f16_x3':
-        coins -= cost;
-        aydinlatCount += 3;
-        break;
-      case 'raid_x3':
-        coins -= cost;
-        sprayCount += 3;
-        break;
-      case 'terlik_x5':
-        coins -= cost;
-        slipperCount += 5;
-        break;
-      case 'full_energy':
-        coins -= cost;
-        await EnergyService.instance.refillFull();
-        break;
-      case 'gold_chest':
-        coins -= cost;
-        coins += 1000;
-        slipperCount += 2;
-        sprayCount += 2;
-        aydinlatCount += 1;
-        break;
-      case 'royal_cape':
-        coins -= cost;
-        hasRoyalCape = true;
-        ownedCosmetics.add('royal_cape');
-        break;
-      case 'mega_starter_pack':
-        coins -= cost;
-        coins += 2500;
-        aydinlatCount += 3;
-        sprayCount += 3;
-        slipperCount += 5;
-        hasRoyalCape = true;
-        ownedCosmetics.add('royal_cape');
-        await EnergyService.instance.refillFull();
-        break;
-      default:
-        return false;
+    // O3: negatif maliyet [buyBooster] ile aynı kuralda reddedilir
+    // (negatif maliyet coin eklerdi).
+    if (cost < 0 || coins < cost) return false;
+    // PM-claim: kalıcı yazım (veya enerji doldurma) başarısız olursa
+    // ödeme geri alınır (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya
+    // fırlatma yok. Koruma öncesi erken dönüşler (bilinmeyen id,
+    // `limited` gün koruması) değişim yapmadan döner.
+    final snapshot = _ClaimSnapshot.capture(this);
+    try {
+      switch (id) {
+        case 'makara':
+          coins -= cost;
+          slipperCount += 3;
+          sprayCount += 3;
+          aydinlatCount += 1;
+          break;
+        case 'kongo':
+          coins -= cost;
+          slipperCount += 5;
+          sprayCount += 5;
+          aydinlatCount += 2;
+          break;
+        case 'limited':
+          if (!canBuyLimitedDrop) return false;
+          coins -= cost;
+          slipperCount += 4;
+          sprayCount += 4;
+          aydinlatCount += 2;
+          coins += 120; // bonus coin splash
+          limitedDropDay = _todayKey();
+          break;
+        case 'f16_x3':
+          coins -= cost;
+          aydinlatCount += 3;
+          break;
+        case 'raid_x3':
+          coins -= cost;
+          sprayCount += 3;
+          break;
+        case 'terlik_x5':
+          coins -= cost;
+          slipperCount += 5;
+          break;
+        case 'full_energy':
+          coins -= cost;
+          await EnergyService.instance.refillFull();
+          break;
+        case 'gold_chest':
+          coins -= cost;
+          coins += 1200;
+          slipperCount += 2;
+          sprayCount += 2;
+          aydinlatCount += 1;
+          break;
+        case 'royal_cape':
+          coins -= cost;
+          hasRoyalCape = true;
+          ownedCosmetics.add('royal_cape');
+          break;
+        case 'mega_starter_pack':
+          coins -= cost;
+          coins += 3000;
+          aydinlatCount += 3;
+          sprayCount += 3;
+          slipperCount += 5;
+          hasRoyalCape = true;
+          ownedCosmetics.add('royal_cape');
+          await EnergyService.instance.refillFull();
+          break;
+        default:
+          return false;
+      }
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: buyBundle kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return false;
     }
-    await _persistEconomy();
     notifyListeners();
     return true;
   }
@@ -1319,6 +1939,9 @@ class ProgressManager extends ChangeNotifier {
   /// Free daily shop case — coins + small booster drip.
   Future<({int coins, int slipper, int spray})?> claimShopChest() async {
     if (!canClaimShopChest) return null;
+    // PM-claim: kalıcı yazım başarısız olursa ödeme geri alınır
+    // (bkz. _ClaimSnapshot) — kısmi ödeme ve UI'ya fırlatma yok.
+    final snapshot = _ClaimSnapshot.capture(this);
     shopChestDay = _todayKey();
     const grantCoins = 80;
     const grantSlipper = 1;
@@ -1326,7 +1949,17 @@ class ProgressManager extends ChangeNotifier {
     coins += grantCoins;
     slipperCount += grantSlipper;
     sprayCount += grantSpray;
-    await _persistEconomy();
+    try {
+      await _persistEconomy();
+    } catch (e) {
+      snapshot.restore(this);
+      notifyListeners();
+      debugPrint(
+        'ProgressManager: claimShopChest kalici kayit basarisiz; '
+        'odeme geri alindi ($e).',
+      );
+      return null;
+    }
     notifyListeners();
     return (coins: grantCoins, slipper: grantSlipper, spray: grantSpray);
   }
@@ -1339,6 +1972,7 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setInt('LululuCoinBalance', coins);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
     notifyListeners();
   }
 
@@ -1352,6 +1986,7 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setInt('LululuCoinBalance', coins);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
     notifyListeners();
     return true;
   }
@@ -1367,9 +2002,19 @@ class ProgressManager extends ChangeNotifier {
     if (coins > 0 && coins <= maxSingleCoinGrant) {
       this.coins = (this.coins + coins).clamp(0, maxTotalCoins);
     }
-    if (slipper > 0) slipperCount += slipper.clamp(0, 1000);
-    if (spray > 0) sprayCount += spray.clamp(0, 1000);
-    if (f16 > 0) aydinlatCount += f16.clamp(0, 1000);
+    if (slipper > 0) {
+      slipperCount += slipper.clamp(0, 1000);
+      // W13-D: tur-sonu/mağaza ödülü gerçek kazanımdır.
+      _markPowerEarned('terlik');
+    }
+    if (spray > 0) {
+      sprayCount += spray.clamp(0, 1000);
+      _markPowerEarned('raid');
+    }
+    if (f16 > 0) {
+      aydinlatCount += f16.clamp(0, 1000);
+      _markPowerEarned('f16');
+    }
     _syncPrimaryPowersToExtra();
     await _persistEconomy();
     notifyListeners();
@@ -1378,6 +2023,8 @@ class ProgressManager extends ChangeNotifier {
   /// Persist booster counts after in-match use (shop buy already saves).
   Future<void> persistBoosters() async {
     _syncPrimaryPowersToExtra();
+    // Y6/LWW: değeri değişen güç alanlarını damgala, damgaları da yaz.
+    touchChangedFieldStamps();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lululu_spray', sprayCount);
     await prefs.setInt('lululu_raid', sprayCount);
@@ -1386,8 +2033,18 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setInt('lululu_aydinlat', aydinlatCount);
     await prefs.setInt('lululu_f16', aydinlatCount);
     await prefs.setString('lululu_extra_powers', jsonEncode(extraPowers));
+    // W13-D: kazanılan güç kümesini de yaz (sıralı — deterministik).
+    final earned = _earnedPowerKeys.toList()..sort();
+    await prefs.setStringList(_earnedPowersPrefKey, earned);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
+    // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
+    // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
+    // (özellikle birleştirme/flush kritik yolunda) tek-uçuş
+    // korumalı akışları bayat işlere takar. Sonraki kalıcı kayıt
+    // da damgaları yazar; yazım penceresi milisaniyelerdir.
+    if (!_loading) unawaited(_persistStamps(prefs));
   }
 
   /// Durum bütünlük imzasını hesaplar (FNV-1a 64-bit benzeri deterministik özet).
@@ -1424,6 +2081,98 @@ class ProgressManager extends ChangeNotifier {
     return _stateIntegritySig == _computeStateIntegritySig();
   }
 
+  /// AntiCheat HMAC mührü için durum paketi (12C1).
+  ///
+  /// Enerji bilinçli olarak 0 geçirilir: enerji [EnergyService]'e
+  /// aittir ve 5 dakikalık yenileme sayacıyla bu sınıfın kalıcı kayıt
+  /// yollarından geçmeden değişir — canlı enerji mühürlense her
+  /// yenileme sahte uyumsuzluk üretirdi. Mühür coin, rekorlar,
+  /// kademe kilitleri ve güç envanterini kapsar; enerji bu mührün
+  /// dışındadır.
+  Map<String, dynamic> _antiCheatStatePayload() {
+    var highScore = 0;
+    for (final s in modeHighScores.values) {
+      if (s > highScore) highScore = s;
+    }
+    return AntiCheatService.instance.buildStatePayload(
+      coins: coins,
+      energy: 0,
+      highScore: highScore,
+      modeHighScores: modeHighScores,
+      unlockedTiers: unlockedTiers,
+      powerCounts: extraPowers,
+    );
+  }
+
+  /// Güncel durumun HMAC mührünü kalıcı yazar. Hata fırlatmaz: mühür
+  /// yazımı oyun akışını bozamaz.
+  Future<void> _persistAntiCheatSeal([SharedPreferences? prefs]) async {
+    try {
+      final store = prefs ?? await SharedPreferences.getInstance();
+      final payload = _antiCheatStatePayload();
+      final signature = AntiCheatService.instance.computeStateSignature(
+        payload,
+      );
+      await store.setString(_antiCheatSigPrefKey, signature);
+    } catch (e) {
+      debugPrint('[lululu] AntiCheat: durum mührü yazılamadı: $e');
+    }
+  }
+
+  /// Saklı HMAC mührünü yüklenen duruma karşı doğrular (12C1).
+  ///
+  /// Mühür yoksa ilk kez mühürlenir (benimseme). Mühür uyuşmazsa veri
+  /// SİLİNMEZ: uyumsuzluk telemetriye yazılır ve güncel durum
+  /// yeniden mühürlenir (bulut birleştirme bu sınıfın kayıt yollarını
+  /// atlayarak yazabildiği için mühür bayat kalabilir — uyumsuzluk
+  /// tek başına hile kanıtı sayılmaz).
+  Future<void> _verifyAndResealAntiCheatState(SharedPreferences prefs) async {
+    try {
+      final stored = prefs.getString(_antiCheatSigPrefKey);
+      if (stored != null && stored.isNotEmpty) {
+        final payload = _antiCheatStatePayload();
+        final valid = AntiCheatService.instance.verifyStateSignature(
+          payload,
+          stored,
+        );
+        if (!valid) {
+          debugPrint(
+            '[lululu] AntiCheat: durum imzası uyuşmadı '
+            '(${AntiCheatService.instance.lastSignatureFailureReason}) — '
+            'durum korunarak yeniden mühürleniyor.',
+          );
+          GameTelemetryService.instance.recordError(
+            'state_signature_mismatch',
+            category: 'anticheat',
+            action: 'state_signature_mismatch',
+            meta: <String, Object?>{
+              'reason': AntiCheatService.instance.lastSignatureFailureReason,
+            },
+          );
+        }
+      }
+      await _persistAntiCheatSeal(prefs);
+    } catch (e) {
+      debugPrint('[lululu] AntiCheat: durum imzası doğrulanamadı: $e');
+    }
+  }
+
+  /// Saklı HMAC mührünü güncel bellek durumuna karşı doğrular
+  /// (test/diagnostik içindir; mühür yoksa `true` döner).
+  Future<bool> verifyStoredAntiCheatSignature() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString(_antiCheatSigPrefKey);
+      if (stored == null || stored.isEmpty) return true;
+      return AntiCheatService.instance.verifyStateSignature(
+        _antiCheatStatePayload(),
+        stored,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// `coins` setter'ının kalıcı kaydı (S1#36): setter senkron olduğu için
   /// kayıt olay kuyruğuna ertelenir; aynı senkron bloktaki tekrarlı
   /// atamalar tek kayıtta birleşir. Erteleme sayesinde kayıt, çağıran
@@ -1434,28 +2183,310 @@ class ProgressManager extends ChangeNotifier {
   void _scheduleCoinPersist() {
     if (_coinPersistScheduled) return;
     _coinPersistScheduled = true;
-    // Microtask: aynı senkron bloktaki coin atamaları birleşir, ama
-    // `Future()` sahte test saatinde sıfır süreli Timer bırakıp
-    // `timersPending` ile testi kilitliyordu.
-    scheduleMicrotask(() async {
-      _coinPersistScheduled = false;
-      await _persistCoinsOnly();
-    });
+    unawaited(
+      Future(() async {
+        _coinPersistScheduled = false;
+        await _persistCoinsOnly();
+      }),
+    );
   }
 
   /// Yalnız coin bakiyesi + bütünlük imzası yazar ([addCoins] ile aynı
   /// kayıt yolu; tam ekonomi kaydı için [_persistEconomy] kullanılır).
   Future<void> _persistCoinsOnly() async {
+    // Y6/LWW: coin değiştiyse damgala, damgaları da yaz.
+    touchChangedFieldStamps();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lululu_coins', coins);
     await prefs.setInt('LululuCoinBalance', coins);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
+    // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
+    // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
+    // (özellikle birleştirme/flush kritik yolunda) tek-uçuş
+    // korumalı akışları bayat işlere takar. Sonraki kalıcı kayıt
+    // da damgaları yazar; yazım penceresi milisaniyelerdir.
+    if (!_loading) unawaited(_persistStamps(prefs));
+  }
+
+  /// Y6/LWW: alan damgalarını prefs'ten yükler; göçte (bayrak yoksa)
+  /// mevcut değerleri "şimdi" ile bir kez damgalar ve bayrağı yazar.
+  /// Damgasız uzak kayıt 0 sayıldığı için tohumlanmış yerel değer
+  /// göçte eski buluta karşı kazanır — veri kaybı olmaz (tasarım
+  /// A10 §3.2.5–§3.2.6, adım 1).
+  Future<void> _loadFieldStamps(SharedPreferences prefs) async {
+    int readStamp(String key) {
+      final v = prefs.getInt(key);
+      return v == null || v < 0 ? 0 : v;
+    }
+
+    coinsUpdatedAtMs = readStamp('lululu_ts_coins');
+    energyUpdatedAtMs = readStamp('lululu_ts_energy');
+    unlockedLevelUpdatedAtMs = readStamp('lululu_ts_level');
+    f16UpdatedAtMs = readStamp('lululu_ts_f16');
+    raidUpdatedAtMs = readStamp('lululu_ts_raid');
+    terlikUpdatedAtMs = readStamp('lululu_ts_terlik');
+    streakUpdatedAtMs = readStamp('lululu_ts_streak');
+    unlockedTiersUpdatedAtMs = readStamp('lululu_ts_tiers');
+    displayNameUpdatedAtMs = readStamp('lululu_ts_display_name');
+    // Dalga 3: günlük alan damgaları (eski kurulumda yoksa 0 — damgasız
+    // sayılır; gün anahtarı kendisi sürüm taşıdığı için birleştirme
+    // damgaya muhtaç değildir).
+    lastStreakClaimDayUpdatedAtMs =
+        readStamp('lululu_ts_last_streak_claim_day');
+    dailyTasksUpdatedAtMs = readStamp('lululu_ts_daily_tasks');
+    dailyFreeEnergyUpdatedAtMs = readStamp('lululu_ts_daily_free_energy');
+    extraPowersUpdatedAtMs.clear();
+    final extraRaw = prefs.getString('lululu_ts_extra_powers');
+    if (extraRaw != null && extraRaw.isNotEmpty) {
+      for (final entry in _decodeIntMap(
+        extraRaw,
+        'lululu_ts_extra_powers',
+      ).entries) {
+        if (entry.value >= 0) {
+          extraPowersUpdatedAtMs[entry.key] = entry.value;
+        }
+      }
+    }
+    if (prefs.getBool(_lwwSeedFlagKey) ?? false) return;
+    // Göç tohumlaması: bu cihazdaki mevcut değerler ilk kez
+    // damgalanır (damga = ilk damgalı yazım anı). İki cihaz da kendi
+    // ilk açılışında tohumlar; tohum anları 2 sn içindeyse eşitlik
+    // kuralı (max) uygulanır, aksi hâlde geç tohumlayan kazanır —
+    // tasarımın kabul ettiği göç yarışıdır, tek cihazda yerel
+    // öncelik korunur.
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    coinsUpdatedAtMs = nowMs;
+    energyUpdatedAtMs = nowMs;
+    unlockedLevelUpdatedAtMs = nowMs;
+    f16UpdatedAtMs = nowMs;
+    raidUpdatedAtMs = nowMs;
+    terlikUpdatedAtMs = nowMs;
+    streakUpdatedAtMs = nowMs;
+    unlockedTiersUpdatedAtMs = nowMs;
+    displayNameUpdatedAtMs = nowMs;
+    // Dalga 3: günlük alanlar da göçte bir kez damgalanır.
+    lastStreakClaimDayUpdatedAtMs = nowMs;
+    dailyTasksUpdatedAtMs = nowMs;
+    dailyFreeEnergyUpdatedAtMs = nowMs;
+    for (final key in extraPowers.keys) {
+      extraPowersUpdatedAtMs[key] = nowMs;
+    }
+    await _persistStamps(prefs);
+    await prefs.setBool(_lwwSeedFlagKey, true);
+  }
+
+  /// Y6/LWW: son kalıcı kayıttan beri değeri değişen alanların
+  /// damgasını "şimdi"ye ilerletir; fark anlık görüntüsünü günceller.
+  /// Yükleme sırasında kapalıdır (yükleme değişim sayılmaz).
+  void touchChangedFieldStamps() {
+    if (_loading) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (coins != _snapCoins) {
+      coinsUpdatedAtMs = nowMs;
+      _snapCoins = coins;
+    }
+    final currentEnergy = EnergyService.instance.energy;
+    if (currentEnergy != _snapEnergy) {
+      energyUpdatedAtMs = nowMs;
+      _snapEnergy = currentEnergy;
+    }
+    if (unlockedLevel != _snapLevel) {
+      unlockedLevelUpdatedAtMs = nowMs;
+      _snapLevel = unlockedLevel;
+    }
+    if (f16Count != _snapF16) {
+      f16UpdatedAtMs = nowMs;
+      _snapF16 = f16Count;
+    }
+    if (raidCount != _snapRaid) {
+      raidUpdatedAtMs = nowMs;
+      _snapRaid = raidCount;
+    }
+    if (terlikCount != _snapTerlik) {
+      terlikUpdatedAtMs = nowMs;
+      _snapTerlik = terlikCount;
+    }
+    if (streak != _snapStreak) {
+      streakUpdatedAtMs = nowMs;
+      _snapStreak = streak;
+    }
+    // Dalga 3: günlük alanlar — hak günü, görev günü/ilerlemesi/
+    // ödül alımları, ücretsiz enerji günü/sayımı.
+    if (lastStreakClaimDay != _snapLastStreakClaimDay) {
+      lastStreakClaimDayUpdatedAtMs = nowMs;
+      _snapLastStreakClaimDay = lastStreakClaimDay;
+    }
+    var tasksChanged = dailyTasksDay != _snapDailyTasksDay ||
+        claimedDailyTasks.length != _snapClaimedDailyTasks.length ||
+        !claimedDailyTasks.containsAll(_snapClaimedDailyTasks);
+    if (!tasksChanged) {
+      for (final entry in dailyTaskProgress.entries) {
+        if (_snapDailyTaskProgress[entry.key] != entry.value) {
+          tasksChanged = true;
+          break;
+        }
+      }
+    }
+    if (tasksChanged) {
+      dailyTasksUpdatedAtMs = nowMs;
+      _snapDailyTasksDay = dailyTasksDay;
+      _snapDailyTaskProgress = Map<String, int>.of(dailyTaskProgress);
+      _snapClaimedDailyTasks = Set<String>.of(claimedDailyTasks);
+    }
+    if (lastDailyFreeEnergyDay != _snapLastDailyFreeEnergyDay ||
+        dailyFreeEnergyClaimsToday != _snapDailyFreeEnergyClaimsToday) {
+      dailyFreeEnergyUpdatedAtMs = nowMs;
+      _snapLastDailyFreeEnergyDay = lastDailyFreeEnergyDay;
+      _snapDailyFreeEnergyClaimsToday = dailyFreeEnergyClaimsToday;
+    }
+    if (unlockedTiers.length != _snapTiers.length ||
+        !unlockedTiers.containsAll(_snapTiers)) {
+      unlockedTiersUpdatedAtMs = nowMs;
+      _snapTiers = Set<int>.of(unlockedTiers);
+    }
+    // Güç anahtarları: birincil güçlerin (raid/terlik/f16) damgası
+    // birincil stok damgasını izler; diğer anahtarlar kendi
+    // değişiminde "şimdi" ile damgalanır.
+    final nextPowers = <String, int>{};
+    for (final entry in extraPowers.entries) {
+      final prev = _snapExtraPowers[entry.key];
+      if (prev == null || prev != entry.value) {
+        switch (entry.key) {
+          case 'raid':
+            extraPowersUpdatedAtMs[entry.key] = raidUpdatedAtMs;
+            break;
+          case 'terlik':
+            extraPowersUpdatedAtMs[entry.key] = terlikUpdatedAtMs;
+            break;
+          case 'f16':
+            extraPowersUpdatedAtMs[entry.key] = f16UpdatedAtMs;
+            break;
+          default:
+            extraPowersUpdatedAtMs[entry.key] = nowMs;
+            break;
+        }
+      }
+      nextPowers[entry.key] = entry.value;
+    }
+    _snapExtraPowers = nextPowers;
+    for (final key in extraPowersUpdatedAtMs.keys.toList()) {
+      if (!extraPowers.containsKey(key)) {
+        extraPowersUpdatedAtMs.remove(key);
+      }
+    }
+  }
+
+  /// Y6/LWW: fark anlık görüntüsünü mevcut duruma eşitler — damga
+  /// ilerletmez. Birleştirme/test sıfırlaması sonrası kullanılır:
+  /// sonraki [touchChangedFieldStamps] yalnız gerçekten yeni
+  /// değişimleri damgalar.
+  void syncPersistedSnapshot() {
+    _snapCoins = coins;
+    _snapEnergy = EnergyService.instance.energy;
+    _snapLevel = unlockedLevel;
+    _snapF16 = f16Count;
+    _snapRaid = raidCount;
+    _snapTerlik = terlikCount;
+    _snapStreak = streak;
+    _snapTiers = Set<int>.of(unlockedTiers);
+    _snapExtraPowers = Map<String, int>.of(extraPowers);
+    // Dalga 3: günlük alanlar.
+    _snapLastStreakClaimDay = lastStreakClaimDay;
+    _snapDailyTasksDay = dailyTasksDay;
+    _snapDailyTaskProgress = Map<String, int>.of(dailyTaskProgress);
+    _snapClaimedDailyTasks = Set<String>.of(claimedDailyTasks);
+    _snapLastDailyFreeEnergyDay = lastDailyFreeEnergyDay;
+    _snapDailyFreeEnergyClaimsToday = dailyFreeEnergyClaimsToday;
+  }
+
+  /// Y6/LWW: enerji bildiricisinden gelen değişimde enerji damgasını
+  /// ilerletir. Enerji (regen/grant/tüketim) PM kalıcı kayıt yolundan
+  /// geçmeden de değişebilir; bu dinleyici o yolu kapatır.
+  void _onEnergyChanged() {
+    if (_loading) return;
+    final currentEnergy = EnergyService.instance.energy;
+    if (currentEnergy == _snapEnergy) return;
+    energyUpdatedAtMs = DateTime.now().millisecondsSinceEpoch;
+    _snapEnergy = currentEnergy;
+    unawaited(persistFieldStamps());
+  }
+
+  /// Y6/LWW: görünen ad değiştiğinde ad damgasını ilerletir. Ad,
+  /// AuthService'e aittir; bu kanca ad değişimini PM'e bildirmek
+  /// içindir (şu an çağrıcısı yok — damga payload'da taşınır,
+  /// pull'da ad ezilmez, bkz. CloudSync).
+  void noteDisplayNameChanged() {
+    displayNameUpdatedAtMs = DateTime.now().millisecondsSinceEpoch;
+    unawaited(persistFieldStamps());
+  }
+
+  /// Y6/LWW: bulut payload'una girecek damga haritası.
+  Map<String, dynamic> fieldUpdatedAtMap() {
+    return <String, dynamic>{
+      'coinsUpdatedAtMs': coinsUpdatedAtMs,
+      'energyUpdatedAtMs': energyUpdatedAtMs,
+      'unlockedLevelUpdatedAtMs': unlockedLevelUpdatedAtMs,
+      'f16UpdatedAtMs': f16UpdatedAtMs,
+      'raidUpdatedAtMs': raidUpdatedAtMs,
+      'terlikUpdatedAtMs': terlikUpdatedAtMs,
+      'streakUpdatedAtMs': streakUpdatedAtMs,
+      'unlockedTiersUpdatedAtMs': unlockedTiersUpdatedAtMs,
+      'displayNameUpdatedAtMs': displayNameUpdatedAtMs,
+      // Dalga 3: günlük alan damgaları.
+      'lastStreakClaimDayUpdatedAtMs': lastStreakClaimDayUpdatedAtMs,
+      'dailyTasksUpdatedAtMs': dailyTasksUpdatedAtMs,
+      'dailyFreeEnergyUpdatedAtMs': dailyFreeEnergyUpdatedAtMs,
+      'extraPowersUpdatedAtMs':
+          Map<String, int>.from(extraPowersUpdatedAtMs),
+    };
+  }
+
+  /// Y6/LWW: damga prefs yazımı (tek yer).
+  Future<void> _persistStamps(SharedPreferences prefs) async {
+    await prefs.setInt('lululu_ts_coins', coinsUpdatedAtMs);
+    await prefs.setInt('lululu_ts_energy', energyUpdatedAtMs);
+    await prefs.setInt('lululu_ts_level', unlockedLevelUpdatedAtMs);
+    await prefs.setInt('lululu_ts_f16', f16UpdatedAtMs);
+    await prefs.setInt('lululu_ts_raid', raidUpdatedAtMs);
+    await prefs.setInt('lululu_ts_terlik', terlikUpdatedAtMs);
+    await prefs.setInt('lululu_ts_streak', streakUpdatedAtMs);
+    await prefs.setInt('lululu_ts_tiers', unlockedTiersUpdatedAtMs);
+    await prefs.setInt('lululu_ts_display_name', displayNameUpdatedAtMs);
+    // Dalga 3: günlük alan damgaları.
+    await prefs.setInt(
+      'lululu_ts_last_streak_claim_day',
+      lastStreakClaimDayUpdatedAtMs,
+    );
+    await prefs.setInt('lululu_ts_daily_tasks', dailyTasksUpdatedAtMs);
+    await prefs.setInt(
+      'lululu_ts_daily_free_energy',
+      dailyFreeEnergyUpdatedAtMs,
+    );
+    await prefs.setString(
+      'lululu_ts_extra_powers',
+      jsonEncode(extraPowersUpdatedAtMs),
+    );
+  }
+
+  /// Y6/LWW: bellek içi damgaları prefs'e yazar (yükleme sırasında
+  /// çağrılmaz; yükleme kendi damga yolunu kullanır).
+  Future<void> persistFieldStamps() async {
+    if (_loading) return;
+    final prefs = await SharedPreferences.getInstance();
+    await _persistStamps(prefs);
   }
 
   Future<void> _persistEconomy() async {
     _syncPrimaryPowersToExtra();
+    // Y6/LWW: değeri değişen alanları damgala, sonra damgaları da yaz.
+    touchChangedFieldStamps();
     final prefs = await SharedPreferences.getInstance();
+    // O1 NOTU: alias pref anahtarlarına yazım BİLİNÇLİ korunur —
+    // `auth_service.dart` ve `cloud_sync_service.dart` aynı çift
+    // anahtarları okuyup yazar; tek-dosya kapsamında göç
+    // tamamlanamaz. Okuma önceliği kanonik anahtardadır (bkz. [load]).
     await prefs.setInt('lululu_coins', coins);
     await prefs.setInt('LululuCoinBalance', coins);
     await prefs.setInt('lululu_spray', sprayCount);
@@ -1472,7 +2503,164 @@ class ProgressManager extends ChangeNotifier {
     await prefs.setString('lululu_shop_chest_day', shopChestDay);
     await prefs.setString('lululu_limited_drop_day', limitedDropDay);
     await prefs.setString('lululu_extra_powers', jsonEncode(extraPowers));
+    // W13-D: kazanılan güç kümesini de yaz (sıralı — deterministik).
+    final earned = _earnedPowerKeys.toList()..sort();
+    await prefs.setStringList(_earnedPowersPrefKey, earned);
     _stateIntegritySig = _computeStateIntegritySig();
     await prefs.setString(_integrityPrefKey, _stateIntegritySig);
+    await _persistAntiCheatSeal(prefs);
+    // Y6/LWW: damga yazımı ateşle-unut — bellek içi damga zaten
+    // günceldir; 11 yazımın her kalıcı kayıt yolunu uzatması
+    // (özellikle birleştirme/flush kritik yolunda) tek-uçuş
+    // korumalı akışları bayat işlere takar. Sonraki kalıcı kayıt
+    // da damgaları yazar; yazım penceresi milisaniyelerdir.
+    if (!_loading) unawaited(_persistStamps(prefs));
+  }
+}
+
+/// Claim/ödeme metotlarının geri alma anlık görüntüsü (PM-claim).
+///
+/// Semantik: kalıcı yazım başarısız olursa bellek durumu ödeme-öncesi
+/// hâle döndürülür ve metot başarısızlık değerini döner
+/// (`false`/`null`) — hata UI'ya fırlatılmaz, `debugPrint` ile
+/// görünür kılınır. Yalnız başarısızlık dönmek yetmezdi: bellek içi
+/// koruma bayrakları (gün işaretleri, `claimedDailyTasks`) tekrar
+/// denemeyi engellerdi; geri alma çağırıcının tekrar deneyebilmesini
+/// sağlar. Ödeme-yan-etki sırası değişmez (önce hesap, sonra yazım);
+/// kısmi ödeme oluşmaz. Desen, IAP tarafındaki O19 geri alma anlık
+/// görüntüsüyle aynıdır.
+///
+/// Kapsam: [ProgressManager]ın claim metotlarının değiştirdiği tüm
+/// alanlar + enerji bakiyesi. Bütünlük imzası bellek içinde geri
+/// alınan durumdan yeniden hesaplanır; kalıcı kayıt yazılmaz.
+/// `coins` setter'ının ertelenmiş kaydı (`_scheduleCoinPersist`)
+/// ateşle-unut yoludur ve bu kapsamın dışındadır (önceden var olan
+/// davranış, değiştirilmedi).
+class _ClaimSnapshot {
+  _ClaimSnapshot.capture(ProgressManager pm)
+      : _coins = pm.coins,
+        _sprayCount = pm.sprayCount,
+        _slipperCount = pm.slipperCount,
+        _aydinlatCount = pm.aydinlatCount,
+        _hasRoyalCape = pm.hasRoyalCape,
+        _ownedCosmetics = Set<String>.of(pm.ownedCosmetics),
+        _extraPowers = Map<String, int>.of(pm.extraPowers),
+        _shopChestDay = pm.shopChestDay,
+        _limitedDropDay = pm.limitedDropDay,
+        _streak = pm.streak,
+        _lastStreakClaimDay = pm.lastStreakClaimDay,
+        _dailyTaskProgress = Map<String, int>.of(pm.dailyTaskProgress),
+        _claimedDailyTasks = Set<String>.of(pm.claimedDailyTasks),
+        _dailyTasksDay = pm.dailyTasksDay,
+        _lastDailyFreeEnergyDay = pm.lastDailyFreeEnergyDay,
+        _dailyFreeEnergyClaimsToday = pm.dailyFreeEnergyClaimsToday,
+        _lastFreeEnergyClaimEpochMs = pm.lastFreeEnergyClaimEpochMs,
+        _energy = EnergyService.instance.energy,
+        // Y6/LWW: damgalar da geri alınır (ödeme geri alınırken
+        // damga ilerlemesi kalırsa harcama "yeni" görünür).
+        _coinsUpdatedAtMs = pm.coinsUpdatedAtMs,
+        _energyUpdatedAtMs = pm.energyUpdatedAtMs,
+        _unlockedLevelUpdatedAtMs = pm.unlockedLevelUpdatedAtMs,
+        _f16UpdatedAtMs = pm.f16UpdatedAtMs,
+        _raidUpdatedAtMs = pm.raidUpdatedAtMs,
+        _terlikUpdatedAtMs = pm.terlikUpdatedAtMs,
+        _streakUpdatedAtMs = pm.streakUpdatedAtMs,
+        _unlockedTiersUpdatedAtMs = pm.unlockedTiersUpdatedAtMs,
+        _displayNameUpdatedAtMs = pm.displayNameUpdatedAtMs,
+        // Dalga 3: günlük alan damgaları da geri alınır.
+        _lastStreakClaimDayUpdatedAtMs = pm.lastStreakClaimDayUpdatedAtMs,
+        _dailyTasksUpdatedAtMs = pm.dailyTasksUpdatedAtMs,
+        _dailyFreeEnergyUpdatedAtMs = pm.dailyFreeEnergyUpdatedAtMs,
+        _extraPowersUpdatedAtMs =
+            Map<String, int>.of(pm.extraPowersUpdatedAtMs);
+
+  final int _coins;
+  final int _sprayCount;
+  final int _slipperCount;
+  final int _aydinlatCount;
+  final bool _hasRoyalCape;
+  final Set<String> _ownedCosmetics;
+  final Map<String, int> _extraPowers;
+  final String _shopChestDay;
+  final String _limitedDropDay;
+  final int _streak;
+  final String _lastStreakClaimDay;
+  final Map<String, int> _dailyTaskProgress;
+  final Set<String> _claimedDailyTasks;
+  final String _dailyTasksDay;
+  final String _lastDailyFreeEnergyDay;
+  final int _dailyFreeEnergyClaimsToday;
+  final int _lastFreeEnergyClaimEpochMs;
+  final int _energy;
+  final int _coinsUpdatedAtMs;
+  final int _energyUpdatedAtMs;
+  final int _unlockedLevelUpdatedAtMs;
+  final int _f16UpdatedAtMs;
+  final int _raidUpdatedAtMs;
+  final int _terlikUpdatedAtMs;
+  final int _streakUpdatedAtMs;
+  final int _unlockedTiersUpdatedAtMs;
+  final int _displayNameUpdatedAtMs;
+  final int _lastStreakClaimDayUpdatedAtMs;
+  final int _dailyTasksUpdatedAtMs;
+  final int _dailyFreeEnergyUpdatedAtMs;
+  final Map<String, int> _extraPowersUpdatedAtMs;
+
+  /// Bellek durumunu anlık görüntüdeki hâle döndürür. `coins`
+  /// doğrudan alana yazılır (setter'ın ertelenmiş kalıcı kaydı hata
+  /// yolunda yeniden zamanlanmaz); bildirim değeri elle eşitlenir.
+  /// Dinleyici bildirimi çağırana aittir (`notifyListeners` korumalı
+  /// üyedir, bu sınıftan çağrılamaz).
+  void restore(ProgressManager pm) {
+    pm._coins = _coins;
+    pm.coinsNotifier.value = _coins;
+    pm.sprayCount = _sprayCount;
+    pm.slipperCount = _slipperCount;
+    pm.aydinlatCount = _aydinlatCount;
+    pm.hasRoyalCape = _hasRoyalCape;
+    pm.ownedCosmetics
+      ..clear()
+      ..addAll(_ownedCosmetics);
+    pm.extraPowers
+      ..clear()
+      ..addAll(_extraPowers);
+    pm.shopChestDay = _shopChestDay;
+    pm.limitedDropDay = _limitedDropDay;
+    pm.streak = _streak;
+    pm.lastStreakClaimDay = _lastStreakClaimDay;
+    pm.dailyTaskProgress
+      ..clear()
+      ..addAll(_dailyTaskProgress);
+    pm.claimedDailyTasks
+      ..clear()
+      ..addAll(_claimedDailyTasks);
+    pm.dailyTasksDay = _dailyTasksDay;
+    pm.lastDailyFreeEnergyDay = _lastDailyFreeEnergyDay;
+    pm.dailyFreeEnergyClaimsToday = _dailyFreeEnergyClaimsToday;
+    pm.lastFreeEnergyClaimEpochMs = _lastFreeEnergyClaimEpochMs;
+    pm._stateIntegritySig = pm._computeStateIntegritySig();
+    // Y6/LWW: damgalar da geri alınır.
+    pm.coinsUpdatedAtMs = _coinsUpdatedAtMs;
+    pm.energyUpdatedAtMs = _energyUpdatedAtMs;
+    pm.unlockedLevelUpdatedAtMs = _unlockedLevelUpdatedAtMs;
+    pm.f16UpdatedAtMs = _f16UpdatedAtMs;
+    pm.raidUpdatedAtMs = _raidUpdatedAtMs;
+    pm.terlikUpdatedAtMs = _terlikUpdatedAtMs;
+    pm.streakUpdatedAtMs = _streakUpdatedAtMs;
+    pm.unlockedTiersUpdatedAtMs = _unlockedTiersUpdatedAtMs;
+    pm.displayNameUpdatedAtMs = _displayNameUpdatedAtMs;
+    pm.lastStreakClaimDayUpdatedAtMs = _lastStreakClaimDayUpdatedAtMs;
+    pm.dailyTasksUpdatedAtMs = _dailyTasksUpdatedAtMs;
+    pm.dailyFreeEnergyUpdatedAtMs = _dailyFreeEnergyUpdatedAtMs;
+    pm.extraPowersUpdatedAtMs
+      ..clear()
+      ..addAll(_extraPowersUpdatedAtMs);
+    // Y6/LWW: enerji ataması dinleyiciyi tetikler; anlık görüntüyü
+    // önce geri alınmış değere eşitle ki dinleyici damgayı yeniden
+    // ilerletmesin; sonra tüm fark anlık görüntülerini geri alınmış
+    // duruma eşitle (sonraki touch yalnız yeni değişimleri damgalar).
+    pm._snapEnergy = _energy;
+    EnergyService.instance.energy = _energy;
+    pm.syncPersistedSnapshot();
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -8,17 +9,25 @@ import '../models/lululu_game_mode.dart';
 import '../navigation/game_routes.dart';
 import '../services/audio_manager.dart';
 import '../services/chat_service.dart';
+import '../services/daily_challenge_service.dart';
 import '../services/energy_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/online_notify_service.dart';
 import '../services/progress_manager.dart';
+import '../services/zero_jank_preloader.dart';
 import '../theme/lululu_theme.dart';
+import '../widgets/coin_fly.dart';
+import '../widgets/energy_empty_popup.dart';
 import '../widgets/hb_overlay.dart';
+import '../widgets/invite_redeem_sheet.dart';
 import '../widgets/top_bar.dart';
+import 'bug_video_hub_screen.dart';
 import 'chat_screen.dart';
 import 'modes_screen.dart';
 import 'online_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
+import 'sticker_gif_screen.dart';
 import 'studio_screens.dart';
 import 'tasks_screen.dart';
 
@@ -65,10 +74,56 @@ class GameSelectorScreen extends StatefulWidget {
 }
 
 class _GameSelectorScreenState extends State<GameSelectorScreen> {
+  /// 12N: başlatılan uçuşların tutamakları — ekran kapanırsa uçuşlar
+  /// iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok; iptal sayıyı
+  /// uçuşsuz son değere döndürür).
+  final List<CoinFlightHandle> _coinFlights = <CoinFlightHandle>[];
+
+  void _trackCoinFlight(CoinFlightHandle? handle) {
+    if (handle != null) _coinFlights.add(handle);
+  }
+
+  @override
+  void dispose() {
+    for (final flight in _coinFlights) {
+      flight.cancel();
+    }
+    super.dispose();
+  }
+
   // Yalnız oturum-içi/uçuş-sırası koruma: kalıcı talep durumu
   // ProgressManager.canClaimDailyGiftBox'tan türetilir.
   bool _dailyRewardClaimed = false;
   bool _dailyEnergyClaimed = false;
+  bool _dailyChallengeClaiming = false;
+
+  /// Dalga 15 bulgu 14: uçuş-sırası başlatma kilidi. İlk dokunuşun
+  /// zinciri (enerji yüklemesi + 520ms kalp katmanı + 340ms rota)
+  /// bitmeden gelen ikinci dokunuş ayrı bir tüketim + ayrı bir rota
+  /// açıyordu (çift kalp, üst üste iki oyun) — kullanıcı da ilk
+  /// dokunuşu "tepkisiz" sanıyordu. Zincir bitene kadar yeni
+  /// başlatma yutulur.
+  bool _launching = false;
+
+  /// PLAY NOW basılı görsel geri bildirimi (anında tepki hissi):
+  /// düğmenin basıldığı an görülür, zincir bitene kadar beklenmez.
+  bool _playPressed = false;
+
+  /// 12N: son ödül düğmesi dokunma noktaları — uçuş kalkış yeridir.
+  Offset? _lastGiftTap;
+  Offset? _lastChallengeTap;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(DailyChallengeService.instance.ensureLoaded());
+    unawaited(OnlineNotifyService.instance.ensureLoaded());
+    // Dalga 15 bulgu 14: ilk PLAY NOW dokunuşu, kalıcı enerjinin ilk
+    // yüklemesini (SharedPreferences) beklerken görünürde tepkisiz
+    // kalıyordu. Yüklemeyi açılışta önceden yap — ilk dokunuş zinciri
+    // beklemez, yalnız kalp katmanı + rota süresi kalır.
+    unawaited(EnergyService.instance.ensureLoaded());
+  }
 
   void _openProfile() {
     AudioManager().playPop();
@@ -97,12 +152,43 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
   }
 
   Future<void> _launchMode(GameModeKind kind) async {
-    AudioManager().playPop();
-    if (EnergyService.instance.energy > 0) {
+    // Dalga 15 bulgu 14: uçuş-sırası kilidi (alan tanımındaki nota bak).
+    if (_launching) return;
+    _launching = true;
+    try {
+      AudioManager().playPop();
+      ZeroJankPreloader.instance.notePointerDown();
+      // B31 — sıralama: enerji ÖNCE tüketilir, kalp kırılma overlay'i
+      // YALNIZ başarılı tüketimden sonra oynatılır. Tüketim burada
+      // yapıldığı için gezinme openGameMode'un tüketimsiz eşdeğeridir
+      // (aynı widget + aynı zero-jank rota + GameAudioGate); enerji
+      // yoksa aynı boş-enerji popup'ı gösterilir, overlay oynatılmaz.
+      final consumed = await EnergyService.instance.tryConsume();
+      if (!consumed) {
+        if (mounted) {
+          await showEnergyEmptyPopup(context);
+        }
+        return;
+      }
+      if (!mounted) return;
       await HbOverlay.play(context);
+      if (!mounted) return;
+      final child = LululuRoutes.buildGameModeWidget(
+        kind,
+        energyConsumed: true,
+      );
+      await Navigator.of(context).push(
+        LululuRoutes.buildZeroJankRoute<void>(
+          child: GameAudioGate(child: child),
+          routeName: kind.name,
+          duration: const Duration(milliseconds: 340),
+          reverseDuration: const Duration(milliseconds: 220),
+          scaleTransition: true,
+        ),
+      );
+    } finally {
+      _launching = false;
     }
-    if (!mounted) return;
-    await openGameMode(context, kind);
   }
 
   void _playSuika() {
@@ -120,6 +206,21 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     // claimDailyGiftBox aynı gün tekrarında null döner: yarış
     // durumunda da ses/snackbar verilmez.
     if (reward == null) return;
+    // 12N: hediye kutusu coinleri düğmeden üst bara uçar (ödeme yukarıda
+    // yapıldı; uçuş yalnız görünümü erteler).
+    if (reward.coins > 0 && mounted) {
+      _trackCoinFlight(
+        CoinFlyService.instance.fly(
+          context: context,
+          from: _lastGiftTap ??
+              Offset(
+                MediaQuery.sizeOf(context).width / 2,
+                MediaQuery.sizeOf(context).height / 2,
+              ),
+          amount: reward.coins,
+        ),
+      );
+    }
     AudioManager().playWin();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -132,6 +233,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
   /// verilmez. Gerçek SDK eklendiğinde reklam dalları gerçek reklam
   /// akışına bağlanmalıdır; sahte (mock) reklamla ödül verilmez (madde 4).
   void _showRewardsComingSoon() {
+    // 10D P1-5: 2× ödül + enerji-bitti dalları sessizdi (yalnız
+    // snackbar) — dokunuşa ses + titreşim (playButtonTap tek çağrıda).
+    AudioManager().playButtonTap();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(context.l10n.rewardedAdsComingSoon),
@@ -145,11 +249,35 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
 
   Future<void> _claimDailyEnergy() async {
     final pm = ProgressManager.instance;
+    // FULL dalı (Dalga 16 ek bulgu): enerji 30/30 doluyken talep
+    // günlük hakkı TÜKETMEZ ve +0'a "+5 eklendi" denmez — doğru
+    // bildirim "dolu"dur; hak, enerji düşünce kullanılmak üzere kalır.
+    if (EnergyService.instance.isFull) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.shopEnergyFullToast),
+        ),
+      );
+      return;
+    }
     if (!_dailyEnergyClaimed && pm.canClaimDailyFreeEnergy) {
       setState(() => _dailyEnergyClaimed = true);
       final granted = await pm.claimDailyFreeEnergy(amount: 5);
       if (!granted) {
-        EnergyService.instance.addEnergy(5);
+        // K13 — fallback KALDIRILDI: claim reddedildiyse (yarışta
+        // başka talep önce davrandıysa) enerji EKLENMEZ; kullanıcıya
+        // görünür "bugün alındı" bildirimi gösterilir, oturum bayrağı
+        // geri alınır ki kalıcı durum tek doğruluk kaynağı kalsın.
+        if (mounted) {
+          setState(() => _dailyEnergyClaimed = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(context.l10n.dailyEnergyAlreadyClaimedSnack),
+            ),
+          );
+        }
+        return;
       }
       AudioManager().playWin();
       if (mounted) {
@@ -162,9 +290,101 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       return;
     }
 
-    // Ücretsiz hak tükendi: reklam dalı ödül vermez, bilgi gösterir.
+    // Ücretsiz hak tükendi: bu dala yalnız günlük ücretsiz hak zaten
+    // kullanılmışken gelinir (_dailyEnergyClaimed yalnız başarılı
+    // talepte kurulur; canClaimDailyFreeEnergy yalnız o gün talep
+    // yokken true döner). Doğru bildirim "bugün zaten alındı"dır —
+    // reklam-yokluğu mesajı kullanıcıyı yanıltır (buton canlı görünüp
+    // kalp artmayınca "ölü" sanılır). Reklam dalı ödül vermez.
     if (!mounted) return;
-    _showRewardsComingSoon();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.l10n.dailyEnergyAlreadyClaimedSnack),
+      ),
+    );
+  }
+
+  /// K2-UI — günlük challenge ödül talebi. Kapı HER İKİ koşulu da
+  /// denetler: `canClaimToday` yalnız `lastClaimDay`'e bakar
+  /// (tamamlanmamış günde de true döner), o yüzden `completedToday`
+  /// ayrıca şarttır. Ödül, talep ÖNCESİ okunur (talep sonrası
+  /// `nextClaimRewardCoins` değişir).
+  Future<void> _claimDailyChallenge() async {
+    final daily = DailyChallengeService.instance;
+    if (_dailyChallengeClaiming ||
+        !daily.completedToday ||
+        !daily.canClaimToday) {
+      return;
+    }
+    setState(() => _dailyChallengeClaiming = true);
+    final reward = daily.nextClaimRewardCoins;
+    final ok = await daily.claimDailyChallengeReward();
+    if (!mounted) return;
+    setState(() => _dailyChallengeClaiming = false);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    // 12N: günlük challenge coin ödülü düğmeden üst bara uçar.
+    if (reward > 0) {
+      _trackCoinFlight(
+        CoinFlyService.instance.fly(
+          context: context,
+          from: _lastChallengeTap ??
+              Offset(
+                MediaQuery.sizeOf(context).width / 2,
+                MediaQuery.sizeOf(context).height / 2,
+              ),
+          amount: reward,
+        ),
+      );
+    }
+    AudioManager().playWin();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.l10n.dailyChallengeClaimedSnack(reward)),
+      ),
+    );
+  }
+
+  /// B7/K19 — hub "Haberdar Et" düğmesi: [OnlineNotifyService] tek
+  /// kaynaktır; Online ekranıyla aynı tercihi okuyup yazar. Bildirim
+  /// gönderilmez, yalnız tercih saklanır (push altyapısı yok).
+  Future<void> _toggleOnlineNotify() async {
+    AudioManager().playPop();
+    final subscribed = await OnlineNotifyService.instance.toggle();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          subscribed
+              ? context.l10n.onlineNotifySignupSnack
+              : context.l10n.onlineNotifyRemovedSnack,
+          style: GoogleFonts.nunito(fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: const Color(0xFF141B2A),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+    );
+  }
+
+  /// K3-giriş — kampanya haritası girişi: harita kendi akışıyla açılır;
+  /// enerji/kilit mantığı haritanın kendisindedir, bypass yok.
+  Future<void> _openCampaign() async {
+    AudioManager().playPop();
+    await goTo(context, 'campaign');
+  }
+
+  /// K17-hub + 9A — davet sheet'i: profil satırıyla AYNI sheet açılır
+  /// (paylaşım + kod karşılama). Hub kartı sheet'e bağlandı.
+  void _openInviteSheet() {
+    AudioManager().playPop();
+    showInviteRedeemSheet(context);
   }
 
   @override
@@ -172,21 +392,15 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     final l10n = context.l10n;
     final topPad = MediaQuery.paddingOf(context).top;
     final hasHostStatusBar = topPad > 0;
-    final statusBarHeight = hasHostStatusBar ? topPad : 35.4;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
       body: Column(
         children: [
-          // .statusbar (y: 0..35.4 in headless golden test; SafeArea top inset on real device)
-          SizedBox(
-            height: statusBarHeight,
-            width: double.infinity,
-            child: hasHostStatusBar
-                ? const SizedBox.shrink()
-                : _buildStatusBar(),
-          ),
-          // .pillbar (y: 35.4..91.4, height: 56, padding: 8.6px 8px 3.4px -> top=44.0 integer!)
+          // Ust pay: gercek cihazda sistem durum cubugu yuksekligi;
+          // headless ortamda pay yok (sahte cubuk kaldirildi, 12X).
+          if (hasHostStatusBar) SizedBox(height: topPad),
+          // .pillbar (height: 56, padding: 8.6px 8px 3.4px -> top=44.0 integer!)
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8.6, 8, 3.4),
             child: LululuTopBar(
@@ -241,6 +455,28 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                     child: _buildTasksCard(),
+                  ),
+                ),
+
+                // Günlük Challenge kartı (K2-UI)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: _buildDailyChallengeCard(),
+                  ),
+                ),
+
+                // Kampanya + davet girişleri (K3-giriş / K17-hub)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                    child: Row(
+                      children: [
+                        Expanded(child: _buildCampaignEntryCard()),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildInviteEntryCard()),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -352,10 +588,13 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             Color(0xFFF4538B),
                             Color(0xFFE01E5A),
                           ],
+                          // 12D1: video merkezi (hub) üzerinden açılır.
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute<void>(
-                              builder: (_) => const StudioWatchScreen(),
+                              builder: (_) => const BugVideoHubScreen(
+                                initial: BugVideoTab.watch,
+                              ),
                             ),
                           ),
                         ),
@@ -368,10 +607,13 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             Color(0xFF9B5DE5),
                             Color(0xFF7C3AED),
                           ],
+                          // 12D1: video merkezi (hub) üzerinden açılır.
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute<void>(
-                              builder: (_) => const StudioCreateScreen(),
+                              builder: (_) => const BugVideoHubScreen(
+                                initial: BugVideoTab.create,
+                              ),
                             ),
                           ),
                         ),
@@ -400,10 +642,11 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                             Color(0xFF37E08B),
                             Color(0xFF12B76A),
                           ],
+                          // 12D1: çıkartma/GIF ekranı üzerinden açılır.
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute<void>(
-                              builder: (_) => const StudioGifScreen(),
+                              builder: (_) => const StickerGifScreen(),
                             ),
                           ),
                         ),
@@ -432,32 +675,6 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                 const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            '09:41',
-            style: GoogleFonts.nunito(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF141B2A),
-              height: 1.55,
-            ),
-          ),
-          const SizedBox(
-            width: 55,
-            height: 15,
-            child: CustomPaint(painter: _StatusBarIconsPainter()),
           ),
         ],
       ),
@@ -708,8 +925,30 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     label: l10n.playNow,
                     child: GestureDetector(
                       onTap: _playSuika,
+                      // Dalga 15 bulgu 14: basıldığı an görünür tepki —
+                      // zincir (enerji + kalp katmanı + rota) bitmeden
+                      // düğme küçülür; kullanıcı "tık yutuluyor" sanmaz.
+                      onTapDown: (_) {
+                        if (!_playPressed) {
+                          setState(() => _playPressed = true);
+                        }
+                      },
+                      onTapUp: (_) {
+                        if (_playPressed) {
+                          setState(() => _playPressed = false);
+                        }
+                      },
+                      onTapCancel: () {
+                        if (_playPressed) {
+                          setState(() => _playPressed = false);
+                        }
+                      },
                       behavior: HitTestBehavior.opaque,
-                      child: CustomPaint(
+                      child: AnimatedScale(
+                        scale: _playPressed ? LululuMotion.pressScale : 1,
+                        duration: LululuMotion.pressDuration,
+                        curve: Curves.easeOutCubic,
+                        child: CustomPaint(
                         painter: const _RealBoxShadowPainter(
                           radius: 18,
                           shadows: [
@@ -781,6 +1020,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     ),
                   ),
                 ),
+                  ),
                   ),
               ],
             ),
@@ -909,6 +1149,8 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         enabled: !claimed,
                         label: claimed ? l10n.claimedShort : l10n.claim500,
                         child: GestureDetector(
+                          // 12N: uçuş kalkış noktası (dokunma konumu).
+                          onTapDown: (d) => _lastGiftTap = d.globalPosition,
                           onTap: claimed ? null : _claimDailyReward,
                       child: CustomPaint(
                         painter: const _RealBoxShadowPainter(
@@ -1064,12 +1306,31 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
           ),
           const SizedBox(height: 10),
           // #dailyEnergy button (height: 48)
-          Semantics(
-            button: true,
-            label: l10n.claimEnergy5,
-            child: GestureDetector(
-              onTap: _claimDailyEnergy,
-              child: CustomPaint(
+          ListenableBuilder(
+            listenable: ProgressManager.instance,
+            builder: (context, _) {
+              // Talep durumu kalıcı kaynaktan türetilir (hediye kutusu
+              // düğmesiyle aynı desen): hak kullanılmışsa düğme
+              // talep-edilmiş görünür ve dokunmaz.
+              final energyClaimed =
+                  _dailyEnergyClaimed ||
+                  !ProgressManager.instance.canClaimDailyFreeEnergy;
+              // Dalga 17: hak kullanılmışken bile enerji doluysa düğme
+              // dokunulabilir kalır — _claimDailyEnergy FULL dalı
+              // "dolu" bildirir (hak zaten tüketilmiş sayılır).
+              final tappable =
+                  !energyClaimed || EnergyService.instance.isFull;
+              return Semantics(
+                button: true,
+                enabled: tappable,
+                label: energyClaimed
+                    ? l10n.claimedShort
+                    : l10n.claimEnergy5,
+                child: GestureDetector(
+                  onTap: tappable ? _claimDailyEnergy : null,
+                  child: Opacity(
+                    opacity: energyClaimed ? 0.55 : 1.0,
+                    child: CustomPaint(
                 painter: const _RealBoxShadowPainter(
                   radius: 14,
                   shadows: [
@@ -1120,7 +1381,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          l10n.claimEnergy5,
+                          energyClaimed
+                              ? l10n.claimedShort
+                              : l10n.claimEnergy5,
                           style: GoogleFonts.baloo2(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
@@ -1140,7 +1403,10 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   ),
                 ),
               ),
+              ),
             ),
+          );
+            },
           ),
         ],
       ),
@@ -1156,6 +1422,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       label: l10n.onlineModeTitle,
       child: GestureDetector(
         onTap: () {
+          AudioManager().playPop();
           Navigator.of(
             context,
           ).push(MaterialPageRoute<void>(builder: (_) => const OnlineScreen()));
@@ -1342,25 +1609,16 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Semantics(
-                  button: true,
-                  label: l10n.notifyMe,
-                  child: GestureDetector(
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            l10n.onlineNotifySignupSnack,
-                            style: GoogleFonts.nunito(fontWeight: FontWeight.w700),
-                          ),
-                          backgroundColor: const Color(0xFF141B2A),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      );
-                    },
+                ListenableBuilder(
+                  listenable: OnlineNotifyService.instance,
+                  builder: (context, _) {
+                    final subscribed =
+                        OnlineNotifyService.instance.isSubscribed;
+                    return Semantics(
+                      button: true,
+                      label: subscribed ? l10n.notifyOnLabel : l10n.notifyMe,
+                      child: GestureDetector(
+                    onTap: _toggleOnlineNotify,
                     behavior: HitTestBehavior.opaque,
                     child: CustomPaint(
                       painter: const _RealBoxShadowPainter(
@@ -1404,7 +1662,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            l10n.notifyMe,
+                            subscribed ? l10n.notifyOnCaps : l10n.notifyMe,
                             style: GoogleFonts.baloo2(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
@@ -1417,7 +1675,9 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
                     ),
                   ),
                   ),
-                ),
+                  ),
+                    );
+                  },
                 ),
             ],
           ),
@@ -1459,6 +1719,7 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
           label: badgeLabel != null ? l10n.dockUnreadLabel(l10n.chatTitle, badgeLabel) : l10n.chatTitle,
           child: GestureDetector(
             onTap: () {
+              AudioManager().playPop();
               Navigator.of(
                 context,
               ).push(
@@ -1888,6 +2149,384 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
     );
   }
 
+  // Günlük Challenge kartı (K2-UI): DailyChallengeService tek kaynaktır;
+  // ListenableBuilder ile talep/tamamlanma değişince kart güncellenir.
+  // Talep kapısı HER İKİ koşulu denetler: canClaimToday yalnız
+  // lastClaimDay'e bakar, completedToday ayrıca şarttır (3A kodu).
+  Widget _buildDailyChallengeCard() {
+    return ListenableBuilder(
+      listenable: DailyChallengeService.instance,
+      builder: (context, _) {
+        final l10n = context.l10n;
+        final daily = DailyChallengeService.instance;
+        final claimed = !daily.canClaimToday;
+        final claimable = daily.completedToday && daily.canClaimToday;
+        final best = daily.bestTowardTarget;
+        final target = daily.targetScore;
+        return Container(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14141B2A),
+                offset: Offset(0, 6),
+                blurRadius: 0,
+              ),
+              BoxShadow(
+                color: Color(0x14141B2A),
+                blurRadius: 20,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment(-0.34, -0.94),
+                        end: Alignment(0.34, 0.94),
+                        colors: [Color(0xFFFFCF3F), Color(0xFFFFB800)],
+                      ),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    alignment: Alignment.center,
+                    child: Image.asset(
+                      'assets/icons2/trophy.png',
+                      width: 27,
+                      height: 27,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.emoji_events_rounded,
+                        size: 27,
+                        color: Color(0xFF4A2E00),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.dailyChallengeTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.baloo2(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF141B2A),
+                            height: 1.05,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          l10n.dailyChallengeHeadline(
+                            daily.modeLabel,
+                            daily.targetScore,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.nunito(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF66738A),
+                            height: 1.38,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Semantics(
+                    button: true,
+                    enabled: claimable && !_dailyChallengeClaiming,
+                    label: claimed ? l10n.claimedShort : l10n.claimReward,
+                    child: GestureDetector(
+                      key: const Key('daily_challenge_claim_hub'),
+                      // 12N: uçuş kalkış noktası (dokunma konumu).
+                      onTapDown: (d) => _lastChallengeTap = d.globalPosition,
+                      onTap: claimable && !_dailyChallengeClaiming
+                          ? _claimDailyChallenge
+                          : null,
+                      child: Container(
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          gradient: claimable
+                              ? const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xFF37E08B),
+                                    Color(0xFF12B76A),
+                                  ],
+                                )
+                              : null,
+                          color: claimable ? null : const Color(0xFFE2E6EE),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: claimable
+                              ? const [
+                                  BoxShadow(
+                                    color: Color(0xFF066C3C),
+                                    offset: Offset(0, 3),
+                                    blurRadius: 0,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        alignment: Alignment.center,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            claimed ? l10n.claimedShort : l10n.claimReward,
+                            style: GoogleFonts.baloo2(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: claimable
+                                  ? Colors.white
+                                  : const Color(0xFF8E9CAE),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                height: 10,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEDF0F6),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: daily.progressTowardTarget,
+                  heightFactor: 1.0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: const Color(0xFFE01E5A),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Text(
+                    '$best / $target',
+                    style: GoogleFonts.baloo2(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF141B2A),
+                    ),
+                  ),
+                  const Spacer(),
+                  Flexible(
+                    child: Text(
+                      l10n.rewardCoins(daily.nextClaimRewardCoins),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.nunito(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF8A6D00),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (!claimed && !daily.completedToday) ...[
+                const SizedBox(height: 6),
+                Text(
+                  l10n.dailyChallengeHint,
+                  style: GoogleFonts.nunito(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF66738A),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Kampanya haritası girişi (K3-giriş): mevcut hub kart deseninde;
+  // harita kendi akışıyla açılır, enerji/kilit mantığı bypass edilmez.
+  Widget _buildCampaignEntryCard() {
+    final l10n = context.l10n;
+    return Semantics(
+      button: true,
+      label: l10n.campaignMapTitle,
+      child: GestureDetector(
+        key: const Key('hub_campaign_entry'),
+        onTap: _openCampaign,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14141B2A),
+                offset: Offset(0, 6),
+                blurRadius: 0,
+              ),
+              BoxShadow(
+                color: Color(0x14141B2A),
+                blurRadius: 20,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFF4538B), Color(0xFFE01E5A)],
+                  ),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.map_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.campaignMapTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.baloo2(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF141B2A),
+                  height: 1.1,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                l10n.campaignHubSubtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.nunito(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF66738A),
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Davet girişi (K17-hub + 9A): profil satırıyla aynı başlık/alt yazı;
+  // dokununca profil ile aynı sheet açılır (paylaşım + kod karşılama).
+  Widget _buildInviteEntryCard() {
+    final l10n = context.l10n;
+    return Semantics(
+      button: true,
+      label: l10n.profileInviteRowTitle,
+      child: GestureDetector(
+        key: const Key('hub_invite_entry'),
+        onTap: _openInviteSheet,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14141B2A),
+                offset: Offset(0, 6),
+                blurRadius: 0,
+              ),
+              BoxShadow(
+                color: Color(0x14141B2A),
+                blurRadius: 20,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF9B5DE5), Color(0xFF7C3AED)],
+                  ),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.group_add_rounded,
+                  color: Colors.white,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.profileInviteRowTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.baloo2(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF141B2A),
+                  height: 1.1,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                l10n.profileInviteRowSub,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.nunito(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF66738A),
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // 2x2 Mode Grid (#hubModes) matching reference-spec.json
   Widget _buildModeGrid() {
     final l10n = context.l10n;
@@ -2143,7 +2782,10 @@ class _GameSelectorScreenState extends State<GameSelectorScreen> {
       button: true,
       label: '$title: $subtitle',
       child: GestureDetector(
-        onTap: onTap,
+        onTap: () {
+          AudioManager().playPop();
+          onTap();
+        },
         child: Container(
           width: 106,
           height: 130.3,
@@ -2248,80 +2890,6 @@ class _HubModeData {
   final Color artBg;
   final String bugAsset;
   final String defaultBest;
-}
-
-class _StatusBarIconsPainter extends CustomPainter {
-  const _StatusBarIconsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const color = Color(0xFF141B2A);
-    final fillPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    // 1. Signal bars (0..15, 0..15) based on viewBox 0 0 24 24
-    const s = 15.0 / 24.0;
-    canvas.drawRect(
-      const Rect.fromLTWH(2 * s, 17 * s, 3 * s, 4 * s),
-      fillPaint,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(7.5 * s, 13 * s, 3 * s, 8 * s),
-      fillPaint,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(13 * s, 9 * s, 3 * s, 12 * s),
-      fillPaint,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(18.5 * s, 5 * s, 3 * s, 16 * s),
-      fillPaint,
-    );
-
-    // 2. Wifi icon (x offset 20, 0..15)
-    canvas.save();
-    canvas.translate(20, 0);
-    final wifiStroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4 * s
-      ..strokeCap = StrokeCap.round;
-    final wifiPath = Path()
-      ..moveTo(4 * s, 10.5 * s)
-      ..quadraticBezierTo(12 * s, 4.5 * s, 20 * s, 10.5 * s)
-      ..moveTo(7 * s, 14 * s)
-      ..quadraticBezierTo(12 * s, 10.2 * s, 17 * s, 14 * s);
-    canvas.drawPath(wifiPath, wifiStroke);
-    canvas.drawCircle(Offset(12 * s, 17.6 * s), 1.4 * s, fillPaint);
-    canvas.restore();
-
-    // 3. Battery icon (x offset 40, 0..15)
-    canvas.save();
-    canvas.translate(40, 0);
-    final batStroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0 * s;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(2.5 * s, 8 * s, 17 * s, 9 * s),
-        const Radius.circular(2.5 * s),
-      ),
-      batStroke,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(4.5 * s, 10 * s, 10 * s, 5 * s),
-        const Radius.circular(1.0 * s),
-      ),
-      fillPaint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _CssBottomShadowPainter extends CustomPainter {

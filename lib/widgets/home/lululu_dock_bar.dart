@@ -213,10 +213,10 @@ class _DockItem extends StatelessWidget {
       selected: active,
       label: badge == null ? label : context.l10n.dockUnreadLabel(label, badge),
       excludeSemantics: true,
-      child: Tooltip(
-        message: label,
-        excludeFromSemantics: true,
-        child: GestureDetector(
+      // 12O: hover ipucu kaldırıldı — etiket her zaman simgenin
+      // altında görünür olduğundan ipucu yalnız aynı yazıyı tekrar
+      // eder. Erişilebilirlik etiketi yukarıdaki Semantics'te durur.
+      child: GestureDetector(
           onTap: onTap,
           behavior: HitTestBehavior.opaque,
           child: Padding(
@@ -370,7 +370,6 @@ class _DockItem extends StatelessWidget {
             ),
           ],
         ),
-      ),
       ),
       ),
     );

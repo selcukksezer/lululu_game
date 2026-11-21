@@ -90,6 +90,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get quit => 'Exit';
 
   @override
+  String get exitRoundConfirmTitle => 'Leave this round?';
+
+  @override
+  String get exitRoundConfirmBody =>
+      'If you leave, this round and the spent energy will be lost.';
+
+  @override
   String get profile => 'Profile';
 
   @override
@@ -153,6 +160,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String rewardCoins(int amount) => 'Reward: +$amount COIN';
 
   @override
+  String bossFirstClearBonus(int amount) =>
+      'Boss first-clear bonus: +$amount COIN';
+
+  @override
   String rewardEnergy(int amount) => 'Reward: +$amount ENERGY';
 
   @override
@@ -189,8 +200,26 @@ class AppLocalizationsEn extends AppLocalizations {
       'Daily energy claimed: +5 energy added!';
 
   @override
+  String get dailyEnergyAlreadyClaimedSnack =>
+      'Daily energy was already claimed today.';
+
+  @override
+  String get hbEnergyTag => '-1 ENERGY';
+
+  @override
+  String get chestClaimFailed =>
+      'The chest could not be opened. Try again.';
+
+  @override
+  String boosterOutOfStockToast(String label) =>
+      '$label is out of stock! Get more in the shop.';
+
+  @override
+  String taskRewardClaimedSnack(String rewardText) => '$rewardText claimed!';
+
+  @override
   String get onlineNotifySignupSnack =>
-      "You're signed up! We'll let you know as soon as Online mode opens.";
+      'Preference saved! Online mode will appear here as soon as it opens.';
 
   @override
   String get seeAllArrow => 'See all →';
@@ -392,6 +421,54 @@ class AppLocalizationsEn extends AppLocalizations {
   String get myBadges => 'MY BADGES';
 
   @override
+  String get profilePassRowSub => 'View your achievements and season pass';
+
+  @override
+  String get profileInviteRowTitle => 'Invite a Friend';
+
+  @override
+  String get profileInviteRowSub => 'Share your invite code and call your rival';
+
+  @override
+  String get profileInviteFailed => 'The invite could not be shared. Try again.';
+
+  @override
+  String get inviteRedeemTitle => 'Redeem an Invite Code';
+
+  @override
+  String get inviteRedeemHint => 'Enter a friend’s invite code';
+
+  @override
+  String get inviteRedeemButton => 'Redeem Code';
+
+  @override
+  String get inviteRedeemLocalNote =>
+      'Codes are checked only on this device; there is no server verification.';
+
+  // --- 12C2: invite code copy ---
+  @override
+  String get inviteCopyCodeLabel => 'Copy code';
+
+  @override
+  String get inviteCodeCopied => 'Invite code copied';
+
+  @override
+  String get inviteRedeemErrorInvalid =>
+      'Invalid code format. Example: LULU-AB12345';
+
+  @override
+  String get inviteRedeemErrorOwn => 'You can’t use your own code.';
+
+  @override
+  String get inviteRedeemErrorUsed => 'This code was already used.';
+
+  @override
+  String inviteRedeemSuccess(int coins) => 'Nice! You earned +$coins coins.';
+
+  @override
+  String get profileRoyalCapeBadge => 'Royal Cape';
+
+  @override
   String badgesEarnedCount(int count) => '$count/6 EARNED';
 
   @override
@@ -481,7 +558,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingVersionLine =>
-      'v3.0 · Touch-friendly on mobile & desktop';
+      'v1.0 · Touch-friendly on mobile & desktop';
 
   // --- Dalga 15 göçü: Açılış ekranı (splash_screen) ---
 
@@ -504,7 +581,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get splashContinueButton => 'CONTINUE ›';
 
   @override
-  String get splashVersionLabel => 'v1.0 · Design Prototype';
+  String get splashVersionLabel => 'v1.0';
 
   @override
   String get splashKicker1 => 'NEW ADVENTURE';
@@ -628,6 +705,66 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInButton => 'SIGN IN';
 
   @override
+  String get authUsernameRequired => 'Enter a username.';
+
+  @override
+  String get authUsernameInvalid =>
+      'Username must be 3–20 characters and use only lowercase letters, digits and underscores.';
+
+  @override
+  String get authPasswordRequired => 'Enter a password.';
+
+  @override
+  String get authPasswordTooShort => 'Password must be at least 6 characters.';
+
+  @override
+  String get authPasswordTooLong => 'Password can be at most 128 characters.';
+
+  @override
+  String get authPasswordInvalid => 'Password contains an invalid character.';
+
+  @override
+  String get authGenericFailed =>
+      'The action could not be completed. Try again.';
+
+  @override
+  String get authWrongPassword => 'Wrong password.';
+
+  @override
+  String get authUserNotFound => 'User not found — register first.';
+
+  @override
+  String get authUsernameTaken =>
+      'This username is already registered — sign in.';
+
+  @override
+  String get authTooManyAttempts =>
+      'Too many failed attempts. Wait a bit and try again.';
+
+  @override
+  String get authSignOutFailed => 'Could not sign out. Try again.';
+
+  @override
+  String get authSignInSuccess => 'Signed in.';
+
+  @override
+  String get authRegisterSuccess =>
+      'Your account was created and you are signed in.';
+
+  @override
+  String get authRegisterLocalOnly =>
+      'Your account was created on this device; the cloud record will be completed at your next sign-in.';
+
+  @override
+  String get settingsResetFailed => 'Progress could not be reset. Try again.';
+
+  @override
+  String get settingsResetDone => 'Progress has been reset.';
+
+  @override
+  String get onboardingSaveFailed => 'Could not save. Try again.';
+
+  @override
   String get orDivider => 'OR';
 
   // --- Dalga 20 göçü: Oyun + sonuç ekranı (game_screen, result_screen) ---
@@ -725,6 +862,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your score was copied to the clipboard: $score points! #LululuGame';
 
   @override
+  String scoreShareText(int score) =>
+      'My Lülülü score: $score points! #LululuGame';
+
+  @override
   String get resultSubtitle =>
       'One step closer to the top — the Pink Bathrobe!';
 
@@ -732,7 +873,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get levelCompleteTitle => 'LEVEL COMPLETE!';
 
   @override
+  String get resultGameOverTitle => 'GAME OVER!';
+
+  @override
+  String get resultGameOverSubtitle => 'Try again — the next run is yours!';
+
+  @override
   String get bestComboResultLabel => 'BEST COMBO';
+
+  @override
+  String get newRecordBadge => 'NEW RECORD!';
 
   @override
   String get mergesLabel => 'MERGES';
@@ -755,6 +905,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get shareButton => 'SHARE';
 
+  @override
+  String get shareScoreFailed => 'Score card could not be shared.';
+
   // --- Dalga 20 göçü: Ayarlar (settings_screen) ---
 
   @override
@@ -769,6 +922,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get resetButton => 'RESET';
+
+  @override
+  String accountDeletedPartialSnack(int failedCount) =>
+      'Your account was deleted, but $failedCount cleanup steps could not be completed.';
 
   @override
   String accountDeleteFailed(String error) =>
@@ -925,7 +1082,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacySection5Body3 =>
-      'You can delete your account with the button below: the account record on your device is deleted and you are signed out. Your game progress and copies stored in the cloud are not deleted separately.';
+      'You can delete your account with the button below: the account record and game progress on your device are deleted and you are signed out; if you are signed in, your profile, scores and chat messages stored in the cloud are also deleted and your account is closed.';
 
   @override
   String get privacySection6Title => '6. Changes';
@@ -934,7 +1091,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get privacySection6Body1 =>
       'If this text changes, the updated version will be published in the game.';
 
-  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen + campaign_map_sheet) ---
+  // --- Dalga 20 göçü: Bölüm haritası (campaign_map_screen) ---
 
   @override
   String get campaignSuikaHeader => '🪳 SUIKA ARENA (80 CHAPTERS)';
@@ -976,24 +1133,6 @@ class AppLocalizationsEn extends AppLocalizations {
       '🎁 $stars⭐ Chest Unlocked: +$coins Gold & +$boosterCount $boosterName!';
 
   @override
-  String get campaignSheetTitle => '80-LEVEL CAMPAIGN MAP';
-
-  @override
-  String get campaignSheetSubtitle =>
-      '8 Chapters · 8 Boss Battles · 24 Star Chests';
-
-  @override
-  String chapterBannerTitle(int index, String title) =>
-      'CHAPTER $index: $title';
-
-  @override
-  String bossBannerLine(int id, String bossName, int hp, String hazard) =>
-      '👑 Boss #$id: $bossName ($hp HP) · Hazard: $hazard';
-
-  @override
-  String levelRangeShort(int start, int end) => 'Lv $start-$end';
-
-  @override
   String chestStarsLabel(int stars) => '$stars⭐ Chest';
 
   @override
@@ -1001,9 +1140,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String chestRewardLine(int coins, int count) => '+$coins🪙 +$count⚡';
-
-  @override
-  String get bossShort => 'BOSS';
 
   // --- Dalga 20 göçü: Sohbet (chat_lobby_screen, chat_screen) ---
 
@@ -1019,6 +1155,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get messageSendFailed =>
       'Message could not be sent. Try again.';
+
+  @override
+  String get chatLobbyTitle => 'Chat Lobby';
+
+  @override
+  String get chatLobbySubtitle => 'Join the live lobby chat';
 
   @override
   String get stickerSendFailed =>
@@ -1113,6 +1255,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noScoresHint =>
       'Play a game — your score will show up here once it is saved.';
 
+  @override
+  String get noRivalsYet => 'No rivals yet';
+
+  @override
+  String get noRivalsHint =>
+      'You are the only one on the board for now — no made-up rivals.';
+
   // --- Dalga 20 göçü: Hesap (auth_screen, auth_panel) ---
 
   @override
@@ -1140,6 +1289,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get linkCopiedToast => 'Link copied — ready to share';
+
+  @override
+  String get videoPreviewBadge => 'PREVIEW';
+
+  @override
+  String get videoSharedToast => 'Video shared';
+
+  @override
+  String get videoTextCopiedToast => 'Video info copied to clipboard';
 
   @override
   String get videoAddedToDownloadsToast => 'Video added to Downloads';
@@ -1291,6 +1449,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String deleteItemLabel(String title) => 'Delete: $title';
+
+  @override
+  String get deleteDownloadTitle => 'Delete downloaded file?';
+
+  @override
+  String deleteDownloadConfirm(String title) =>
+      '"$title" will be removed from downloads. Are you sure?';
 
   // --- Dalga 33 göçü (W33-1): erişilebilirlik etiketleri ---
   // Yalnız anahtar eklendi; UI göçü sonraki dalgada (kaynak metinler
@@ -1612,7 +1777,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemEnergyPackDesc => '+10 energy · fills instantly, no waiting';
 
   @override
-  String get shopItemEnergyDepotTitle => 'Energy Depot';
+  String get shopItemEnergyDepotTitle => 'Full Energy';
 
   @override
   String get shopItemEnergyDepotDesc => 'Fill hearts to 30/30 · full energy in one go';
@@ -1621,13 +1786,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemStarPackTitle => 'Star Pack';
 
   @override
-  String get shopItemStarPackDesc => '25 stars + 1,000 coins';
+  String get shopItemStarPackDesc => '1,000 coins + F16 x1';
 
   @override
   String get shopItemSurpriseBoxTitle => 'Surprise Box';
 
   @override
-  String get shopItemSurpriseBoxDesc => '1 power-up from a random mode';
+  String get shopItemSurpriseBoxDesc => 'Slipper Shake x1 + Raid Spray x1';
 
   @override
   String get shopItemHandfulTitle => 'A Handful';
@@ -1642,10 +1807,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemCrateDesc => '7,500 coins · +50% bonus';
 
   @override
+  String get shopItemCoinsMidTitle => 'Reel Pack';
+
+  @override
+  String get shopItemCoinsMidDesc => '1,500 coins';
+
+  @override
+  String get shopItemCoinsBigTitle => 'Congo Chest';
+
+  @override
+  String get shopItemCoinsBigDesc => '5,000 coins';
+
+  @override
+  String get shopItemRoyalCapeTitle => 'Royal Cape';
+
+  @override
+  String get shopItemRoyalCapeDesc => 'Legendary Royal Cape cosmetic look';
+
+  @override
+  String get shopCosmeticsTitle => 'Cosmetics';
+
+  @override
+  String get shopRoyalCapeOwnedLabel => 'Owned';
+
+  @override
   String get shopItemWoodenChestTitle => 'Wooden Chest';
 
   @override
-  String get shopItemWoodenChestDesc => 'Random power-up + coins';
+  String get shopItemWoodenChestDesc => 'Slipper Shake x1 + 250 coins';
 
   @override
   String get shopItemGoldenChestTitle => 'Golden Chest';
@@ -1657,13 +1846,45 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shopItemDoubleCoinTitle => 'Double Coins';
 
   @override
-  String get shopItemDoubleCoinDesc => '2× coins for 30 minutes';
+  String get shopItemDoubleCoinDesc => 'Makarayız Score Multiplier x2';
 
   @override
   String get shopItemLuckPotionTitle => 'Luck Potion';
 
   @override
-  String get shopItemLuckPotionDesc => 'Increases crit chance on merges';
+  String get shopItemLuckPotionDesc => '2048 Pair Up x1';
+
+  // 8F: EN karşılıkları (TR katalog değerlerinin çevirisi).
+  @override
+  String get shopItemCoinsSmallTitle => 'Small Pouch';
+
+  @override
+  String get shopItemCoinsSmallDesc => '500 coins';
+
+  @override
+  String get shopItemF16PackTitle => 'F16 x3';
+
+  @override
+  String get shopItemF16PackDesc => '3 F16 Air Support power-ups';
+
+  @override
+  String get shopItemRaidPackTitle => 'Raid x3';
+
+  @override
+  String get shopItemRaidPackDesc => '3 Raid Spray power-ups';
+
+  @override
+  String get shopItemTerlikPackTitle => 'Slipper Shake x5';
+
+  @override
+  String get shopItemTerlikPackDesc => '5 Slipper Shake power-ups';
+
+  @override
+  String get shopItemGoldChestIapTitle => 'Golden Chest';
+
+  @override
+  String get shopItemGoldChestIapDesc =>
+      '+1,200 Gold + F16 x1 + Raid x2 + Slipper Shake x2';
 
   @override
   String get shopNotEnoughGoldToast => 'Not enough gold! Play games to earn gold.';
@@ -1703,6 +1924,50 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shopAddedLuckPotionToast => 'Luck Potion added to cart';
+
+  // 8F: yeni IAP güçlendirici kartlarının başarı toast'ları.
+  @override
+  String get shopAddedF16Toast => 'F16 x3 added to cart';
+
+  @override
+  String get shopAddedRaidToast => 'Raid x3 added to cart';
+
+  @override
+  String get shopAddedTerlikToast => 'Slipper Shake x5 added to cart';
+
+  @override
+  String get energyPackBoughtToast => '+5 energy added!';
+
+  @override
+  String get energyRefundNotice => 'No moves made — 1 energy refunded.';
+
+  @override
+  String get shopPurchaseFailedRefundToast => 'Purchase failed — your coins were refunded.';
+
+  @override
+  String get shopPurchaseConfirmTitle => 'Confirm purchase';
+
+  @override
+  String get shopEnergyEmptyConfirmBody => 'Buy +5 energy for 100 coins?';
+
+  @override
+  String get shopRestorePurchasesLabel => 'Restore purchases';
+
+  @override
+  String get shopRestoreStartedToast => 'Restore started — your purchases will be restored.';
+
+  @override
+  String get shopRestoreUnavailableToast => 'Restore unavailable — store not available.';
+
+  @override
+  String get shopAddedRoyalCapeToast => 'Royal Cape added to cart';
+
+  @override
+  String shopPurchaseConfirmBody(String itemName, String priceLabel) =>
+      'Buy "$itemName" for $priceLabel?';
+
+  @override
+  String shopCoinPriceLabel(int cost) => '$cost coins';
 
   @override
   String shopPowerUpDescModeSuffix(String desc, String modeName) => '$desc · only in $modeName mode';
@@ -1927,6 +2192,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get makaraFreezeHint => 'BEAT FREEZE · notes frozen for 8 sec!';
 
   @override
+  String get makaraFinishConfirmTitle => 'End the round?';
+
+  @override
+  String get makaraFinishConfirmBody =>
+      'Your score is saved and the result screen opens. An early finish does not count as a level win.';
+
+  @override
+  String get makaraFinishedEarlyReason => 'You ended the round early.';
+
+  @override
   String get makaraFreezeCallout => 'BEAT FREEZE!';
 
   @override
@@ -1940,6 +2215,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get makaraX2Active => 'SCORE X2 ACTIVE!';
+
+  @override
+  String get makaraRules =>
+      'Tap or swipe the correct lane when a note reaches the beat line. '
+      'Well-timed hits build combos; bigger combos score more, and a perfect hit scores extra. '
+      'Every hit fills the reel; a full reel gives +250 points and restores 1 life if you are missing one. '
+      'A missed note or a tap on the wrong lane breaks the combo and costs a life; the run ends when all 3 lives are gone. '
+      'Powers: BEAT FREEZE stops the notes for 8 sec, AUTO REEL hits automatically for 6 sec, SCORE X2 doubles points for 12 sec. '
+      'Powers themselves never break combos or cost lives.';
 
   @override
   String get makaraEndedTitle => 'REEL OVER';
@@ -1964,13 +2248,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   // --- W60-2: G5 osmantus (i18n göç planı) ---
   @override
-  String get osmantusHintIdle => 'Tap when the ring turns green!';
+  // W13-F: "DUO KEY" was read as double-tap (playtest §9);
+  // the mechanic is a single tap — the hint now says so.
+  String get osmantusHintIdle => 'Tap ONCE when the ring turns green!';
 
   @override
   String get osmantusDikkisChant => 'DIKKIS DIKKIS!';
 
   @override
-  String get osmantusHowToBody1 => 'When the rhythm ring turns green, tap the DUO KEY button! ';
+  String get osmantusHowToBody1 => 'When the rhythm ring turns green, tap the TAP ONCE button once! ';
 
   @override
   String get osmantusHintResume => 'Go on! Tap when the ring turns green.';
@@ -2056,6 +2342,14 @@ class AppLocalizationsEn extends AppLocalizations {
   // --- W60-2: G6 terlik_tap (i18n göç planı) ---
   @override
   String get terlikHintIdle => 'Smash the flying bug with the slipper!';
+
+  @override
+  String get terlikHowToBody =>
+      'Tap the bugs popping out of the holes to smash them. Every hit scores; the bigger your combo, the more each hit is worth. An escaped bug breaks your combo, every 3rd miss costs a life, and the run ends when all 3 lives are gone. Tapping an empty hole only breaks the combo and costs no life. Traps appear once your score passes 220: touching a trap counts as a miss, but letting it expire has no penalty. Powers: Double Slipper smashes one extra bug on your next hit, Golden Slipper doubles all points for 20 seconds, and Medicine clears every target on screen. You can end the run early with the FINISH button.';
+
+  @override
+  String get terlikEnergyRefundNotice =>
+      'You left without a single hit, so 1 energy was refunded.';
 
   @override
   String get terlikBonusComboSlipper => 'COMBO x8 SLIPPER +1';
@@ -2166,7 +2460,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   // --- W65-1: G7 scream_roach (i18n göç planı) ---
   @override
-  String get screamHintIdle => 'Spam-tap = jump. Get through slipper · spray · pan!';
+  String get screamHintIdle => 'Tap or Space = jump. Get through slipper · spray · pan!';
+
+  @override
+  String get screamHowToBody =>
+      'Tap to make the bug jump; when you stop tapping, gravity pulls it down. You score only by passing through gates — the more you jump, the more each gate is worth. The first 15 seconds are slower, with wider gate gaps. Hitting a gate or resting on the ground too long ends the run. The microphone is optional: turn it on with the mic button to jump by shouting; if permission is denied, you can keep playing by tapping. Powers: Jump launches a mighty leap and forgives one gate hit, Shield saves you from death once, and Nitro speeds you up for 8 seconds and adds +25 points per gate. You can end the run early with the FINISH button. You can also jump with Space / Up-arrow / W on the keyboard.';
 
   @override
   String get screamGatePrototype => 'GATE X7!';
@@ -2181,7 +2479,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get screamMicPermissionSettings => 'Allow microphone permission from Settings for voice control.';
 
   @override
-  String get screamMicDeniedHint => 'Voice permission not granted · you can jump by tapping.';
+  String get screamMicDeniedHint => 'Voice permission not granted · you can jump by tapping or with Space.';
+
+  // --- 12C2: microphone explainer shown before asking + threshold ---
+  @override
+  String get screamMicExplainTitle => 'Shout to jump?';
+
+  @override
+  String get screamMicExplainBody =>
+      'If you turn on the microphone, the bug jumps when you shout. Your voice never leaves the device and nothing is recorded. If you decline, you keep playing by tapping.';
+
+  @override
+  String get screamMicEnableAction => 'Turn on microphone';
+
+  @override
+  String screamMicThreshold(int db) => 'Shout threshold: $db dB';
 
   @override
   String get screamMegaJumpCallout => 'MEGA JUMP!';
@@ -2215,9 +2527,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get screamGateStat => 'GATE';
-
-  @override
-  String get screamCrushedTitle => 'CRUSHED';
 
   @override
   String get gateTerlikDeath => 'Slipper slap!';
@@ -2265,22 +2574,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String screamCrushedHint(int gates, int streak) => 'Crushed! Gate $gates · max spam x$streak';
 
   @override
-  String screamStatsLine(int gates, int streak, int dayStreak) => 'Gate $gates · Max spam x$streak · Streak $dayStreak';
-
-  @override
   String screamNextGate(int gate) => 'NEXT: GATE $gate';
 
   @override
   String screamShoutingPercent(int percent) => '%$percent · SHOUTING';
 
   @override
-  String screamArcadeHint(String hint) => 'Tap or turn on the mic and shout to jump. $hint';
-
-  @override
   String screamPauseScore(int score, int gates) => 'Score $score · Gate $gates';
   // --- W65-1: G8 stack_drop (i18n göç planı) ---
   @override
   String get stackHintIdle => 'Tap. Dead centre = combo. The edge gets cut.';
+
+  @override
+  String get stackHelpBody =>
+      'Tap to drop the swaying block onto the tower. Dead centre builds your combo; the overhanging edge gets cut. Your first 5 misses in the first 5 floors are forgiven; after that, missing the tower or shaving the block too thin ends the run!';
 
   @override
   String get stackPerfectPrototype => 'PERFECT HIT! X3';
@@ -2343,7 +2650,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String stackStatsLine(int floors, int perfects, int nears, int combo) => 'Floor $floors · Perfect $perfects · Near $nears · Max combo x$combo';
 
   @override
-  String stackTutorialHint(String hint) => 'First 15 seconds at tutorial pace. $hint';
+  String stackTutorialHint(String hint) => 'First 20 seconds at tutorial pace. $hint';
+
+  @override
+  String get stackWarmupForgiven => 'Warm-up floor — miss forgiven, slice kept!';
 
   @override
   String stackFloorLabel(int floor) => 'FLOOR $floor';
@@ -2424,6 +2734,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get gridHowToBody4 => '• PAIR UP: Instantly merges the two highest matching bugs.';
 
   @override
+  String get gridBoosterNoEffect => 'This booster has no effect on this board.';
+
+  @override
   String gridSuperMergeSpeech(String title) => 'LULULU! SUPER MERGE! ($title)';
 
   @override
@@ -2458,6 +2771,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get continueToHomeAnyway => 'Continue to home anyway';
+
+  @override
+  String get energyLoadTimeout =>
+      'Energy status could not be read. Continuing with default energy.';
 
   @override
   String get bugFamilyTitle => 'BUG FAMILY';
@@ -2548,6 +2865,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get energyEmptyTitle => 'OUT OF ENERGY!';
 
   @override
+  String get energyTopUpTitle => 'GET ENERGY';
+
+  @override
   String get energyEmptyBodyStart => 'Your energy ';
 
   @override
@@ -2590,10 +2910,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String levelTileLabel(int id, int stars, bool locked) =>
       'Level $id, $stars stars${locked ? ' · Locked' : ''}';
-
-  @override
-  String chapterTabLabel(int index, int stars) =>
-      'Chapter $index, $stars/30 stars';
 
   @override
   String chestClaimLabel(int stars, String state) => state == 'claimed'
@@ -2678,6 +2994,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'balloons drifting · pop 3 matching balloons';
 
   @override
+  String get balloonHelpBody =>
+      'Drag to aim, release to fire. Match 3 identical balloons to pop them; clear the board before the balloons reach the shooter!';
+
+  @override
   String get balloonHintRowDropped =>
       'balloons drifting · another row dropped';
 
@@ -2751,7 +3071,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get yuvaBanner => 'NEST DEFENSE · 360°';
 
   @override
-  String get osmantusDoubleButton => 'DOUBLE BUTTON';
+  String get osmantusDoubleButton => 'TAP ONCE';
 
   @override
   String get osmanRoleSub => 'Button masher · pointer';
@@ -2761,7 +3081,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get osmantusRhythmHint =>
-      'When the rhythm ring turns green, tap the DOUBLE BUTTON! '
+      'When the rhythm ring turns green, tap the TAP ONCE button once! '
       'Build combos with well-timed taps and use special stage powers.';
 
   @override
@@ -2872,6 +3192,44 @@ class AppLocalizationsEn extends AppLocalizations {
   String get makaraOverTitle => 'REEL OVER';
   String get bonusLifePlus => 'LIFE +1';
   String get gotItPlay => 'GOT IT, PLAY!';
+  String get chatReportAction => 'Report';
+  String get chatBlockAction => 'Block';
+  String get chatUnblockAction => 'Unblock';
+  String get chatReportTitle => 'Report message';
+  String get chatReportReasonSpam => 'Spam';
+  String get chatReportReasonInappropriate => 'Inappropriate content';
+  String get chatReportReasonHarassment => 'Harassment';
+  String get chatReportReasonOther => 'Other';
+  String get chatReportSent => 'Your report was sent. Thank you.';
+  String get chatReportQueued => 'Your report was saved and will be sent when you are back online.';
+  String get chatReportAlreadySent => 'You already reported this message.';
+  String get chatUserBlocked => 'User blocked.';
+  String get chatUserUnblocked => 'User unblocked.';
+  String get chatBlockedTitle => 'Blocked users';
+  String get chatBlockedEmpty => 'You have not blocked anyone.';
+  String get chatTermsTitle => 'Chat rules';
+  String get chatTermsBody => 'Be respectful in chat: insults, harassment and spam are not allowed. Messages that break the rules can be reported and removed.';
+  String get chatTermsAccept => 'I agree';
+  String get chatTermsDecline => 'Decline';
+  String get chatTermsRequired => 'Accept the chat rules before sending messages.';
+  String get chatGuestBadge => 'GUEST';
+  String get chatGuestNameTitle => 'Change your display name';
+  String get chatGuestNameHint => 'Display name';
+  String get chatGuestNameEmpty => 'Name cannot be empty.';
+  String get chatGuestNameSaved => 'Your name was saved.';
+  String get chatActionFailed =>
+      'The action could not be completed. Try again.';
+  String get chatEmptyChannel => 'No messages in this channel yet.';
+  String get chatOptionsLabel => 'Chat options';
+  String get chatChangeNameAction => 'Change name';
+  String get chatBlockedListAction => 'View blocked users';
+  String get chatDeleteAction => 'Delete';
+  String get chatDeleteTitle => 'Delete message?';
+  String get chatDeleteBody =>
+      'This message will be deleted. This cannot be undone.';
+  String get chatMessageDeleted => 'Message deleted.';
+  String get chatDeleteLocalOnly =>
+      'Message deleted from this device; a cloud copy may remain.';
   String match3StatsLine(int merge, int chain, int made, int fired) => 'Merges $merge · Max chain x$chain · Bombs $made/$fired';
   String match3RocketBombGain(int gained) => '+$gained ROCKET BOMB!';
   String match3RocketHint(int n) => 'Row Rocket & 3x3 Bomb blasted $n tiles!';
@@ -2884,4 +3242,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String balloonBombGain(int gained) => '+$gained BOMB!';
   String makaraComboBroken(String reason) => 'COMBO BROKEN · $reason';
   String osmantusLastError(String reason) => 'Last error: $reason';
+
+  // --- Dalga 3H: günlük challenge kartı + kampanya/davet girişleri ---
+  @override
+  String get dailyChallengeTitle => 'DAILY CHALLENGE';
+  @override
+  String get dailyChallengeHint => 'Reach the target to claim the reward.';
+  @override
+  String get campaignHubSubtitle => 'Clear chapters and beat the bosses';
+  @override
+  String dailyChallengeClaimedSnack(int coins) =>
+      'Daily challenge reward claimed: +$coins coins!';
+  @override
+  String dailyChallengeHeadline(String modeLabel, int targetScore) =>
+      'Today $modeLabel · $targetScore points';
+
+  // --- S7 (koordinatör takibi): tur sonu görev-tamamlanma bildirimi ---
+  @override
+  String taskCompletedSnack(String taskTitle) =>
+      'Task completed: $taskTitle — claim your reward in Tasks!';
 }

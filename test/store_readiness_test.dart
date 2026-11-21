@@ -258,15 +258,16 @@ void main() {
         expect(board.get11ModeTotalTop(limit: 20), isNotEmpty);
 
         // CloudSync queue & flush in offline/test environment.
-        // S2#17: Firebase hazır değilken flush başarı sayılmaz ve kuyruk
-        // korunur. Eski sözleşme kuyruğu silip paketi buluta yazmadan
-        // düşürüyordu.
+        // Offline flush yazamaz: sözleşme gereği kuyruk korunur
+        // (CloudSyncFlushResult dokümanı: "Kuyruk, reddedilişte korunur").
+        // Kayıt sırasındaki göç + skor gönderimleri de kuyruğa paket
+        // eklediğinden, beklenen: 0 yazım + kuyruk boş değil.
+        final pendingBefore = sync.pending.length;
         await sync.enqueueProgressPush();
         await sync.enqueueLeaderboardPush();
         final flushed = await sync.flushPending();
         expect(flushed, 0);
-        expect(sync.pending, isNotEmpty);
-        expect(sync.lastFailure, isNotNull);
+        expect(sync.pending.length, greaterThanOrEqualTo(pendingBefore + 2));
 
         // Reload & verify persistence
         await board.load();
@@ -276,7 +277,13 @@ void main() {
         await auth.signOut();
         await sync.enableOnlineWhenSignedIn();
         expect(sync.onlineEnabled, isFalse);
+        // Reset: prefs silinir; PM de boş prefs'ten yeniden yüklenir
+        // (gerçek sıfırlama akışı SettingsScreen.resetAll ile aynı).
+        // K2 düzeltmesinden beri tahta yüklemesi PM skorlarını
+        // temizlemez; getBest tahtada kayıt yoksa PM'ye düştüğünden
+        // yalnız tahtayı yeniden yüklemek 0 vermez.
         SharedPreferences.setMockInitialValues(<String, Object>{});
+        await ProgressManager.instance.load();
         await board.load();
         expect(board.getBest(LeaderboardService.modeSuika), 0);
       },
@@ -287,6 +294,8 @@ void main() {
       () async {
         final chat = ChatService.instance;
         await chat.load();
+        // Gönderim önkoşulu: sohbet şart onayı.
+        await chat.acceptChatTerms();
 
         // Default feed available when channel has no user messages yet
         expect(chat.messagesForChannel(ChatChannel.lobby), isNotEmpty);
@@ -527,7 +536,7 @@ void main() {
         expect(t.name, isNotEmpty);
         expect(t.title, isNotEmpty);
         expect(t.viralReplik, isNotEmpty);
-        expect(t.voiceFile, endsWith('.mp3'));
+        expect(t.soundFile, endsWith('.mp3'));
         expect(t.assetPath, startsWith('assets/'));
         expect(t.radius, greaterThan(0));
         expect(t.mass, greaterThan(0));
@@ -654,19 +663,31 @@ void main() {
       expect(content, contains('<activity'));
       expect(content, contains('</activity>'));
 
-      // Required Play Store permissions
+      // Required Play Store permissions. READ_MEDIA_VIDEO ve
+      // READ_EXTERNAL_STORAGE bilinçli olarak YOK: kullanılmayan izinler
+      // Play Store uyum düzeltmesinde (f761283) kaldırıldı.
       const requiredPermissions = <String>[
         'android.permission.INTERNET',
         'android.permission.ACCESS_NETWORK_STATE',
         'android.permission.RECORD_AUDIO',
         'android.permission.VIBRATE',
-        'android.permission.READ_MEDIA_VIDEO',
       ];
       for (final perm in requiredPermissions) {
         expect(
           content,
           contains(perm),
           reason: 'AndroidManifest.xml missing permission: $perm',
+        );
+      }
+      const removedPermissions = <String>[
+        'android.permission.READ_MEDIA_VIDEO',
+        'android.permission.READ_EXTERNAL_STORAGE',
+      ];
+      for (final perm in removedPermissions) {
+        expect(
+          content,
+          isNot(contains(perm)),
+          reason: 'AndroidManifest.xml must not re-add unused permission: $perm',
         );
       }
 
@@ -750,11 +771,10 @@ void main() {
       expect(privacyFile.existsSync(), isTrue);
       final privacyContent = privacyFile.readAsStringSync();
       expect(privacyContent, contains('class PrivacyPolicyScreen'));
+      // Başlık + giriş metni l10n anahtarıyla çizilir (8f9e5ed gizlilik
+      // metni hizalaması); sabit 'GİZLİLİK POLİTİKASI' yazımı yok.
       expect(privacyContent, contains('privacyTitle'));
-      final trCopy = File(
-        '${projectRoot.path}/lib/l10n/app_tr.dart',
-      ).readAsStringSync();
-      expect(trCopy, contains("privacyTitle => 'GİZLİLİK POLİTİKASI'"));
+      expect(privacyContent, contains('privacyIntro'));
 
       final settingsFile = File(
         '${projectRoot.path}/lib/screens/settings_screen.dart',

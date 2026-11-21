@@ -65,6 +65,17 @@ class HapticService {
     return _hasCustomVibrator!;
   }
 
+  /// Kapılı olmayan [HapticFeedback] yedeği: platform kanalı hata verirse
+  /// titreşim sessizce atlanır (debug log düşülür), çağıran oyun akışı
+  /// asla bozulmaz.
+  Future<void> _fallbackHaptic(Future<void> Function() feedback) async {
+    try {
+      await feedback();
+    } catch (e) {
+      debugPrint('[HapticService] fallback haptic failed: $e');
+    }
+  }
+
   /// Hafif dokunuş / böcek bırakma geri bildirimi.
   Future<void> lightImpact() async {
     if (!_canTrigger()) return;
@@ -111,11 +122,11 @@ class HapticService {
     } catch (_) {}
 
     if (clampedCombo >= 3 || clampedTier >= 6) {
-      await HapticFeedback.heavyImpact();
+      await _fallbackHaptic(HapticFeedback.heavyImpact);
     } else if (clampedTier >= 3 || clampedCombo == 2) {
-      await HapticFeedback.mediumImpact();
+      await _fallbackHaptic(HapticFeedback.mediumImpact);
     } else {
-      await HapticFeedback.lightImpact();
+      await _fallbackHaptic(HapticFeedback.lightImpact);
     }
   }
 
@@ -133,9 +144,9 @@ class HapticService {
     } catch (_) {}
 
     if (golden || combo >= 3) {
-      await HapticFeedback.heavyImpact();
+      await _fallbackHaptic(HapticFeedback.heavyImpact);
     } else {
-      await HapticFeedback.mediumImpact();
+      await _fallbackHaptic(HapticFeedback.mediumImpact);
     }
   }
 
@@ -151,7 +162,7 @@ class HapticService {
         return;
       }
     } catch (_) {}
-    await HapticFeedback.mediumImpact();
+    await _fallbackHaptic(HapticFeedback.mediumImpact);
   }
 
   /// F16 Bombardımanı ("Aydınlat Hele!") — 3 ardışık bomba şok dalgası.
@@ -170,7 +181,7 @@ class HapticService {
       }
     } catch (_) {}
 
-    await HapticFeedback.heavyImpact();
+    await _fallbackHaptic(HapticFeedback.heavyImpact);
   }
 
   /// Osmantuş ritim halkası vuruş titreşimi (`perfect` ve `combo` duyarlı).
@@ -187,9 +198,9 @@ class HapticService {
     } catch (_) {}
 
     if (perfect || combo >= 3) {
-      await HapticFeedback.heavyImpact();
+      await _fallbackHaptic(HapticFeedback.heavyImpact);
     } else {
-      await HapticFeedback.mediumImpact();
+      await _fallbackHaptic(HapticFeedback.mediumImpact);
     }
   }
 
@@ -205,9 +216,9 @@ class HapticService {
     } catch (_) {}
 
     if (combo >= 3) {
-      await HapticFeedback.mediumImpact();
+      await _fallbackHaptic(HapticFeedback.mediumImpact);
     } else {
-      await HapticFeedback.lightImpact();
+      await _fallbackHaptic(HapticFeedback.lightImpact);
     }
   }
 
@@ -224,11 +235,11 @@ class HapticService {
     } catch (_) {}
 
     if (p >= 0.75) {
-      await HapticFeedback.heavyImpact();
+      await _fallbackHaptic(HapticFeedback.heavyImpact);
     } else if (p >= 0.4) {
-      await HapticFeedback.mediumImpact();
+      await _fallbackHaptic(HapticFeedback.mediumImpact);
     } else {
-      await HapticFeedback.lightImpact();
+      await _fallbackHaptic(HapticFeedback.lightImpact);
     }
   }
 
@@ -249,7 +260,7 @@ class HapticService {
       }
     } catch (_) {}
 
-    await HapticFeedback.heavyImpact();
+    await _fallbackHaptic(HapticFeedback.heavyImpact);
   }
 
   /// Oyun bitti / taşma darbesi.
@@ -261,6 +272,6 @@ class HapticService {
         return;
       }
     } catch (_) {}
-    await HapticFeedback.heavyImpact();
+    await _fallbackHaptic(HapticFeedback.heavyImpact);
   }
 }

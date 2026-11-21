@@ -7,14 +7,8 @@ import '../services/audio_manager.dart';
 /// 1:1 Pixel-Perfect `#infoOverlay` (`.info-card`) popup matching `LÜLÜLÜ UI:UX Tasarım.html`.
 Future<void> showItemDetailPopup(
   BuildContext context, {
-  String badge = '',
-  Color badgeColor = const Color(0xFF121826),
   required String title,
-  String subtitle = '',
   required String description,
-  Widget? visual,
-  String? footerHint,
-  List<MapEntry<String, String>>? stats,
   String? boldLead,
 }) {
   AudioManager().playPop();
@@ -24,14 +18,8 @@ Future<void> showItemDetailPopup(
     barrierColor: const Color(0xB805070C),
     useSafeArea: false,
     builder: (_) => ItemDetailPopup(
-      badge: badge,
-      badgeColor: badgeColor,
       title: title,
-      subtitle: subtitle,
       description: description,
-      visual: visual,
-      footerHint: footerHint,
-      stats: stats,
       boldLead: boldLead,
     ),
   );
@@ -58,26 +46,14 @@ Future<void> showHowToPlayOverlay(
 class ItemDetailPopup extends StatelessWidget {
   const ItemDetailPopup({
     super.key,
-    this.badge = '',
-    this.badgeColor = const Color(0xFF121826),
     required this.title,
-    this.subtitle = '',
     required this.description,
-    this.visual,
-    this.footerHint,
-    this.stats,
     this.boldLead,
     this.onClose,
   });
 
-  final String badge;
-  final Color badgeColor;
   final String title;
-  final String subtitle;
   final String description;
-  final Widget? visual;
-  final String? footerHint;
-  final List<MapEntry<String, String>>? stats;
   final String? boldLead;
   final VoidCallback? onClose;
 
@@ -133,7 +109,15 @@ class ItemDetailPopup extends StatelessWidget {
     return spans;
   }
 
-  static String _toTurkishUpper(String input) {
+  /// Dile duyarlı büyük-harf dönüşümü (studio_screens/modes_screen deseni).
+  ///
+  /// EN locale'de düz [String.toUpperCase] kullanılır; aksi hâlde EN
+  /// metindeki `i` yanlışlıkla `İ` olur. TR ve diğer dillerde Türkçe
+  /// eşleme (i→İ, ı→I, ...) aynen korunur.
+  static String _upperForLocale(String input, Locale locale) {
+    if (locale.languageCode == 'en') {
+      return input.toUpperCase();
+    }
     return input
         .replaceAll('i', 'İ')
         .replaceAll('ı', 'I')
@@ -197,7 +181,10 @@ class ItemDetailPopup extends StatelessWidget {
                     children: [
                       // `h3#infoTitle`
                       Text(
-                        _toTurkishUpper(title),
+                        _upperForLocale(
+                          title,
+                          Localizations.localeOf(context),
+                        ),
                         style: GoogleFonts.baloo2(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,

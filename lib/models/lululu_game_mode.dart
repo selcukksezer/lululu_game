@@ -32,7 +32,22 @@ class LululuGameMode {
   final String badgeIconAsset;
   final String mechanicSummary;
   final String bestScoreKey;
+
+  /// Katalog tohumu (temsilî iyi skor). W13-F: ARTIK HİÇBİR YERDE
+  /// GÖSTERİLMEZ — mod listesi yalnız oyuncunun gerçek en iyi skorunu
+  /// (`ProgressManager.getModeBestScore`) gösterir, hiç oynanmamış
+  /// modda '—'. Tohum yalnız tarihsel referans olarak durur; yıldız
+  /// çıtaları `threeStarScore`'dadır (12Q-stars, best'ten bağımsız).
   final int defaultBestScore;
+
+  /// Sabit arcade yıldız ölçeği (12Q-stars): bu modda 3 yıldız için
+  /// gereken skor. Kişisel rekora göre DEĞİL, bu sabit çıtaya göre
+  /// yıldız verilir (`ResultScoring.starsForMode`); rekor kırmak tek
+  /// başına 3 yıldız vermez. Değerler katalogdaki `defaultBestScore`
+  /// tohumlarıyla aynıdır (temsilî iyi skor), yalnız 2048'de tohum
+  /// 0 olduğu için prototip rekoru 12480 yazılır.
+  final int threeStarScore;
+
   final bool isHot;
 
   const LululuGameMode({
@@ -51,6 +66,7 @@ class LululuGameMode {
     required this.mechanicSummary,
     required this.bestScoreKey,
     this.defaultBestScore = 0,
+    required this.threeStarScore,
     this.isHot = false,
   });
 
@@ -114,7 +130,7 @@ class LululuGameMode {
       case LululuGameModeId.yuvaDefense:
         return 'Slap anything reaching the nest with a slipper';
       case LululuGameModeId.osmantus:
-        return 'Hit the double tap in the green ring!';
+        return 'Tap once in the green ring!';
       case LululuGameModeId.screamBug:
         return 'Shout to fly through the gates without getting squashed';
       case LululuGameModeId.makarayiz:
@@ -204,6 +220,7 @@ class LululuGameMode {
           'Böcekleri kavanoza bırak, aynı seviyeleri çarpıştırarak Kral Böceğe ulaş!',
       bestScoreKey: 'suika',
       defaultBestScore: 4820,
+      threeStarScore: 4820,
       isHot: true,
     ),
     LululuGameMode(
@@ -222,7 +239,8 @@ class LululuGameMode {
       mechanicSummary:
           '4x4 tahtayı 4 yöne kaydır! Eşleşen böcekler bir üst seviyeye evrimleşir.',
       bestScoreKey: 'grid_2048',
-      defaultBestScore: 12480,
+      defaultBestScore: 0,
+      threeStarScore: 12480,
     ),
     LululuGameMode(
       id: LululuGameModeId.bubblePop,
@@ -241,6 +259,7 @@ class LululuGameMode {
           'Aşağıdan nişan al, aynı böcek balonundan en az 3 tanesini vur ve düşür!',
       bestScoreKey: 'balloon_pop',
       defaultBestScore: 3260,
+      threeStarScore: 3260,
     ),
     LululuGameMode(
       id: LululuGameModeId.match3,
@@ -259,6 +278,7 @@ class LululuGameMode {
           "Komşu böcekleri yer değiştir, yatay veya dikey 3'lü dizileri patlat!",
       bestScoreKey: 'match3',
       defaultBestScore: 5940,
+      threeStarScore: 5940,
     ),
     LululuGameMode(
       id: LululuGameModeId.connectBlast,
@@ -277,6 +297,7 @@ class LululuGameMode {
           'Parmağını kaldırmadan komşu aynı böcekler arasında uzun zincirler çiz!',
       bestScoreKey: 'connect_pop',
       defaultBestScore: 2870,
+      threeStarScore: 2870,
     ),
     LululuGameMode(
       id: LululuGameModeId.stackDrop,
@@ -295,6 +316,7 @@ class LululuGameMode {
           'Sallanan böcek bloklarını tam üst üste bırak, gökdeleni devirmeden yüksel!',
       bestScoreKey: 'stack_drop',
       defaultBestScore: 1540,
+      threeStarScore: 1540,
     ),
     LululuGameMode(
       id: LululuGameModeId.terlikTap,
@@ -313,6 +335,7 @@ class LululuGameMode {
           'Deliklerden fırlayan böceklere anne terliğiyle şaplak indir, bombalara dokunma!',
       bestScoreKey: 'terlik_tap',
       defaultBestScore: 1150,
+      threeStarScore: 1150,
       isHot: true,
     ),
     LululuGameMode(
@@ -332,12 +355,13 @@ class LululuGameMode {
           '4 koridordan mutfak tezgahına koşan böcekleri terlikle durdur, pastayı koru!',
       bestScoreKey: 'yuva_defense',
       defaultBestScore: 1240,
+      threeStarScore: 1240,
     ),
     LululuGameMode(
       id: LululuGameModeId.osmantus,
       index: 9,
       title: 'Osmantuş',
-      subtitle: 'Yeşil halkada ikili tuş!',
+      subtitle: 'Yeşil halkada bir kez dokun!',
       badgeLabel: 'VİRAL',
       badgeColor: Color(0xFFFFD700),
       badgeTextColor: Color(0xFF4A2E00),
@@ -350,6 +374,7 @@ class LululuGameMode {
           'Daralan zamanlama halkasını tam yeşil çizgide yakala, Osman Tuşu indir!',
       bestScoreKey: 'osmantus',
       defaultBestScore: 980,
+      threeStarScore: 980,
       isHot: true,
     ),
     LululuGameMode(
@@ -369,6 +394,7 @@ class LululuGameMode {
           'Mikrofona bağırarak veya basılı tutarak böceği uçur, borulara çarpma!',
       bestScoreKey: 'scream_roach',
       defaultBestScore: 2105,
+      threeStarScore: 2105,
       isHot: true,
     ),
     LululuGameMode(
@@ -388,10 +414,20 @@ class LululuGameMode {
           'Ritim notalarını çizgide yakala, makarayı döndürerek kombo çarpanını katla!',
       bestScoreKey: 'makarayiz',
       defaultBestScore: 1760,
+      threeStarScore: 1760,
     ),
   ];
 
   static LululuGameMode byId(LululuGameModeId id) {
     return catalog.firstWhere((m) => m.id == id, orElse: () => catalog.first);
+  }
+
+  /// `bestScoreKey` ile mod bulur (`finishRun`'un `modeScoreId` değeri
+  /// bu anahtardır); bilinmeyen anahtarda `null` döner.
+  static LululuGameMode? byBestScoreKey(String key) {
+    for (final mode in catalog) {
+      if (mode.bestScoreKey == key) return mode;
+    }
+    return null;
   }
 }

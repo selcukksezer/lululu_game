@@ -19,13 +19,13 @@ Future<void> _loadCaptureFonts() async {
   const fontFiles = <String, List<String>>{
     'Baloo 2': [
       'assets/fonts/Baloo2-Regular.ttf',
-      'assets/fonts/Baloo2-Bold.ttf',
-      'assets/fonts/Baloo2-ExtraBold.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
     ],
     'Nunito': [
       'assets/fonts/Nunito-Regular.ttf',
-      'assets/fonts/Nunito-Bold.ttf',
-      'assets/fonts/Nunito-ExtraBold.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
     ],
   };
   for (final entry in fontFiles.entries) {

@@ -46,6 +46,7 @@ dependencies:
   path_provider: ^2.1.6
   share_plus: ^13.3.1
   http: ^1.6.0
+  web: ^1.1.1
   firebase_core: ^5.1.0
   firebase_auth: ^7.0.1
   cloud_firestore: ^7.1.0
@@ -139,23 +140,25 @@ flutter:
   fonts:
     - family: Fredoka
       fonts:
-        - asset: assets/fonts/Fredoka-Regular.ttf
-        - asset: assets/fonts/Fredoka-Medium.ttf
+        - asset: assets/fonts/Baloo2-Regular.ttf
+        - asset: assets/fonts/Baloo2-Regular.ttf
           weight: 500
-        - asset: assets/fonts/Fredoka-SemiBold.ttf
+        - asset: assets/fonts/Baloo2-Regular.ttf
           weight: 600
-        - asset: assets/fonts/Fredoka-Bold.ttf
+        - asset: assets/fonts/Baloo2-Regular.ttf
           weight: 700
+        - asset: assets/fonts/Baloo2-Regular.ttf
+          weight: 800
     - family: Baloo 2
       fonts:
         - asset: assets/fonts/Baloo2-Regular.ttf
-        - asset: assets/fonts/Baloo2-Bold.ttf
+        - asset: assets/fonts/Baloo2-Regular.ttf
           weight: 700
-        - asset: assets/fonts/Baloo2-ExtraBold.ttf
+        - asset: assets/fonts/Baloo2-Regular.ttf
           weight: 800
-        - asset: assets/fonts/Baloo2-SemiBold.ttf
+        - asset: assets/fonts/Baloo2-Regular.ttf
           weight: 600
-        - asset: assets/fonts/Baloo2-Medium.ttf
+        - asset: assets/fonts/Baloo2-Regular.ttf
           weight: 500
     - family: Bangers
       fonts:
@@ -163,22 +166,22 @@ flutter:
     - family: Nunito
       fonts:
         - asset: assets/fonts/Nunito-Regular.ttf
-        - asset: assets/fonts/Nunito-Bold.ttf
+        - asset: assets/fonts/Nunito-Regular.ttf
           weight: 700
-        - asset: assets/fonts/Nunito-ExtraBold.ttf
+        - asset: assets/fonts/Nunito-Regular.ttf
           weight: 800
-        - asset: assets/fonts/Nunito-SemiBold.ttf
+        - asset: assets/fonts/Nunito-Regular.ttf
           weight: 600
-        - asset: assets/fonts/Nunito-Black.ttf
+        - asset: assets/fonts/Nunito-Regular.ttf
           weight: 900
     - family: Exo 2
       fonts:
         - asset: assets/fonts/Exo2-Regular.ttf
-        - asset: assets/fonts/Exo2-Bold.ttf
+        - asset: assets/fonts/Exo2-Regular.ttf
           weight: 700
-        - asset: assets/fonts/Exo2-ExtraBold.ttf
+        - asset: assets/fonts/Exo2-Regular.ttf
           weight: 800
-        - asset: assets/fonts/Exo2-SemiBold.ttf
+        - asset: assets/fonts/Exo2-Regular.ttf
           weight: 600
-        - asset: assets/fonts/Exo2-Black.ttf
+        - asset: assets/fonts/Exo2-Regular.ttf
           weight: 900

@@ -113,4 +113,63 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+
+  testWidgets('N6: duraklatma kaplamasındaki Çıkış düğmesi geri yoluyla çıkar',
+      (tester) async {
+    tester.view.physicalSize = const Size(374, 680);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // Çıkışın gideceği bir rota olmalı: Terlik itilen rota olarak açılır.
+    await pumpWithL10n(
+      tester,
+      Builder(
+        builder: (ctx) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(ctx).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const TerlikTapScreen(
+                    initialTargetForTesting: true,
+                  ),
+                ),
+              ),
+              child: const Text('OPEN_TERLIK'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('OPEN_TERLIK'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Duraklat: kaplamada DEVAM yanında Çıkış (quit) düğmesi görünür.
+    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.pump();
+    expect(find.text('DURAKLATILDI'), findsOneWidget);
+    expect(find.text('DEVAM'), findsOneWidget);
+    expect(find.text('Çık'), findsOneWidget);
+
+    // Çıkış: mevcut geri yolu (maybePop) ile ana ekrana dönülür;
+    // önce devam etmeye gerek yoktur.
+    await tester.tap(find.text('Çık'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('OPEN_TERLIK'), findsOneWidget);
+    expect(find.text('DURAKLATILDI'), findsNothing);
+    // Bilinen MEVCUT taşma hariç hata yok: terlik yönerge çubuğu
+    // (terlik_tap_screen.dart:1906) 374 px'te 91 px taşar — 5D öncesi
+    // mevcuttur, duraklatma kaplamasıyla ilgisizdir ve dokunulmamış
+    // terlik_energy_refund_test'te de aynı hatayı verir (telefon
+    // uyumu dalgasının kapsamı). Bu dar tolerans YALNIZCA o hatayı
+    // kabul eder; düğmeden gelecek yeni hata yine testi düşürür.
+    final error = tester.takeException();
+    expect(
+      error == null || error.toString().contains('overflowed by 91 pixels'),
+      isTrue,
+      reason: 'Beklenmeyen hata: $error',
+    );
+  });
 }

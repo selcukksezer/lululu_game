@@ -1,45 +1,37 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui' show ImageFilter, lerpDouble;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/global_notify.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/sticker_image.dart';
 import '../widgets/mode_bonus_bar.dart';
 
-const _tcol = [
-  Color(0xFFFFE9C9),
-  Color(0xFFFFE3D6),
-  Color(0xFFE4F0FF),
-  Color(0xFFF3E4FF),
-  Color(0xFFFFE0EC),
-  Color(0xFFDFF7EA),
-  Color(0xFFFFF0D6),
-  Color(0xFFE8ECF5),
-  Color(0xFFFFE1E1),
-  Color(0xFFFFE0EC),
-  Color(0xFFEDF1F8),
-  Color(0xFFE8ECF5),
-  Color(0xFFFFDFF2),
-];
-
 class _Note {
-  _Note(this.lane, this.hitMs, this.tier, this.travelMs);
+  _Note(this.lane, this.hitMs, this.tier, this.travelMs, {this.isHisir = false});
   final int lane;
   double hitMs;
   final int tier; // 0-based
   final double travelMs;
+
+  /// Hışır derisi: nota bu kademenin notası gibi davranır (zamanlama,
+  /// skor aynen), yalnız görseli `hisir_hd.png`, vuruş sesi
+  /// `hisir_zopa.mp3`.
+  final bool isHisir;
   bool done = false;
 }
 
@@ -68,10 +60,41 @@ class MakarayizScreen extends StatefulWidget {
 class MakarayizScreenState extends State<MakarayizScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const tutorialMs = 15000;
-  static const _noteSize = 45.0;
+  /// Nota çapı [InsectTier.radius]'tan türetilir: 30 + radius × 0,35,
+  /// üst sınır 60 px (radius 23 → ~38 px, radius 90 → 61,5 → 60 px).
+  /// Eskiden bütün notalar sabit 45 px'ti; PNG oran farkı (0,375–0,897)
+  /// + `BoxFit.contain` 2,4× görünür boyut farkı üretiyordu.
+  static double _noteSizeFor(InsectTier tier) =>
+      min(60.0, 30.0 + tier.radius * 0.35);
+
+  /// Geniş dalda (wideScreen) notanın üst boşluğu: eskiden yalnız
+  /// tier 1–5 için ayarlıydı, 6–13 varsayılan 5,3'e düşüyordu.
+  /// 6–13 + Hışır için de açık değer verilir (önceki varsayılan
+  /// aynen korunur — bu kademeler için ayrı ayar verisi yok).
+  static const Map<int, double> _wideTopPad = {
+    1: 7.2,
+    2: 5.9,
+    3: 3.15,
+    4: 3.15,
+    5: 5.5,
+    6: 5.3,
+    7: 5.3,
+    8: 5.3,
+    9: 5.3,
+    10: 5.3,
+    11: 5.3,
+    12: 5.3,
+    13: 5.3,
+  };
+  static const double _hisirTopPad = 5.3;
   static const _beatInset = 44.0; // beat çizgisi şerit tabanından yukarıda
 
   late final Ticker _ticker;
+
+  /// Kare sayacı (10E, 8C VLB deseni): `advance` yalnız bu sayacı
+  /// artırır; sahne [ValueListenableBuilder] ile yenilenir. Tick
+  /// sıklığı ve vuruş penceresi (190-280 ms) aynen korunur.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
   final _rng = Random();
 
   final List<_Note> _notes = [];
@@ -84,10 +107,36 @@ class MakarayizScreenState extends State<MakarayizScreen>
   int _lives = 3;
   int _hits = 0;
   int _misses = 0;
+
+  /// Kaçan-nota sayacı (can kuralı): 2 kaçan nota = 1 can. `_misses`
+  /// her kombo-kırılmayı sayar (yanlış şerit / erken dokunuş dahil —
+  /// `debugMisses` anlamı aynen korunur); bu sayaç YALNIZ kaçan
+  /// notaları sayar ve 2'ye ulaşınca sıfırlanır.
+  int _missesSinceLife = 0;
   double _reel = 0;
   double _nextPulseMs = 1800;
   bool _alive = true;
   bool _resultShown = false;
+
+  /// 12P: tur sayacı — sahne giriş animasyonu her turda yeniden
+  /// oynar (`TweenAnimationBuilder` anahtarı). `_boot` artırır.
+  int _roundId = 0;
+
+  /// 12P: bitiş sebebi satırı — sonuç ekranının alt başlığında
+  /// görünür (can bitmesi / erken bitirme). `_gameOver` can bitmesi
+  /// sebebini yazar, `_finishEarly` erken bitirme sebebini.
+  String? _endReason;
+
+  /// 12P: BİTİR onay diyaloğu açıkken ticker bu bayrakla durdurulur;
+  /// iptalde yalnız bu bayrak set edildiyse devam edilir (yardım /
+  /// çıkış-onayı deseni).
+  bool _pausedForFinishConfirm = false;
+  bool _finishConfirmShowing = false;
+
+  /// Y3 idempotency damgası: tur başlangıcında bir kez alınır
+  /// (`_boot`); aynı turun tüm bitiş yolları aynı anahtarı kullanır,
+  /// yeni tur yeni damga alır. Bitiş anında `DateTime.now()` alınmaz.
+  int _runStartedAtUs = DateTime.now().microsecondsSinceEpoch;
 
   /// Hamle bayrağı (enerji iadesi): oturum boyunca ilk şerit dokunuşu
   /// (`tryHit`, ıska da dahil), oto-vuruş isabeti (`_hit`) veya tur
@@ -98,10 +147,28 @@ class MakarayizScreenState extends State<MakarayizScreen>
   /// Çift-iade koruması: iade bu oturumda en fazla bir kez yapılır.
   bool _energyRefunded = false;
 
+  /// Çıkış-sonrası iade bildirimi (S6): `PopScope` `didPop` anında
+  /// bağlam artık ağaçta değildir; bildirim metni her `build`'de
+  /// ÖNCEDEN yakalanır ve iade gerçekten verildiğinde paylaşılan
+  /// `GlobalNotify` üzerinden çıkış yapılan ekranın üstünde
+  /// gösterilir (balon/stack deseninin paylaşılan karşılığı).
+  String? _refundNotice;
+
   // Duraklatma (madde 37): Osmantuş deseni — arka planda ticker durur,
   // elle duraklatmada da aynı ticker durdurulur; oyun saati (_now) donar.
   bool _paused = false;
   bool _pausedByLifecycle = false;
+  // F9: yardım diyaloğu açıkken ticker bu bayrakla durdurulur; diyalog
+  // kapanınca yalnız bu bayrak set edildiyse devam edilir.
+  bool _pausedForHelp = false;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
   String _hint = '';
   bool _hintSeeded = false;
   String? _comboText;
@@ -120,11 +187,11 @@ class MakarayizScreenState extends State<MakarayizScreen>
   /// İlk 15 sn eğitim hızı; sonra beat sıklaşır, nota daha hızlı iner.
   double _rampAt(double timeMs) =>
       ((timeMs - tutorialMs) / 60000).clamp(0.0, 1.0).toDouble();
-  double _beatAt(double timeMs) => lerpDouble(900, 520, _rampAt(timeMs))!;
-  double _travelAt(double timeMs) => lerpDouble(2600, 1500, _rampAt(timeMs))!;
+  double _beatAt(double timeMs) => lerpDouble(950, 600, _rampAt(timeMs))!;
+  double _travelAt(double timeMs) => lerpDouble(2800, 1800, _rampAt(timeMs))!;
   double get beatMs => _beatAt(_now);
-  double get windowMs => lerpDouble(230, 140, _rampAt(_now))!;
-  double get perfectMs => 70;
+  double get windowMs => lerpDouble(280, 190, _rampAt(_now))!;
+  double get perfectMs => 80;
 
   @visibleForTesting
   List<({int lane, double hitMs})> get debugNotes => [
@@ -140,15 +207,39 @@ class MakarayizScreenState extends State<MakarayizScreen>
   @visibleForTesting
   int get debugScore => _score;
   @visibleForTesting
+  int get debugBest => _best;
+  @visibleForTesting
   int get debugCombo => _combo;
   @visibleForTesting
   int get debugLives => _lives;
+  @visibleForTesting
+  int get debugMisses => _misses;
   @visibleForTesting
   bool get debugAlive => _alive;
   @visibleForTesting
   String? get debugBreakText => _breakText;
   @visibleForTesting
   String get debugHint => _hint;
+  @visibleForTesting
+  int get debugRoundId => _roundId;
+  @visibleForTesting
+  String? get debugEndReason => _endReason;
+  @visibleForTesting
+  bool get debugResultShown => _resultShown;
+  @visibleForTesting
+  bool get debugPausedForFinishConfirm => _pausedForFinishConfirm;
+
+  /// 12P: dondurma gücünün test yolu — yalnız `_freezeUntil`
+  /// yazar (ses/ipucu yok); güç envanteri testte 0 olduğu için
+  /// düğme üzerinden tetiklenemez.
+  @visibleForTesting
+  void debugApplyFreeze(double durationMs) {
+    _freezeUntil = _now + durationMs;
+  }
+
+  /// 12P: yeniden başlatmanın test yolu.
+  @visibleForTesting
+  void debugRestart() => _restart();
 
   @override
   void didChangeDependencies() {
@@ -185,6 +276,13 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   void _boot() {
+    // Y3: tur başlangıç damgası — her turda bir kez yenilenir; monoton
+    // koruma aynı mikrosaniyede başlayan iki turun anahtar çakışmasını
+    // engeller (aynı anahtar ikinci turu ödeme dışı bırakırdı).
+    _runStartedAtUs = max(
+      DateTime.now().microsecondsSinceEpoch,
+      _runStartedAtUs + 1,
+    );
     _notes.clear();
     _now = 0;
     _nextHit = 1800;
@@ -194,11 +292,17 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _lives = 3;
     _hits = 0;
     _misses = 0;
+    _missesSinceLife = 0;
     _reel = 0;
     _nextPulseMs = _nextHit;
     _alive = true;
     _paused = false;
     _pausedByLifecycle = false;
+    _pausedForHelp = false;
+    _roundId++;
+    _endReason = null;
+    _pausedForFinishConfirm = false;
+    _finishConfirmShowing = false;
     _lastElapsed = null;
     _comboText = null;
     _breakText = null;
@@ -208,13 +312,17 @@ class MakarayizScreenState extends State<MakarayizScreen>
   }
 
   Future<void> _loadBest() async {
-    await LeaderboardService.instance.ensureLoaded();
-    if (!mounted) return;
-    setState(() {
-      _best = LeaderboardService.instance.getBest(
-        LeaderboardService.modeMakarayiz,
-      );
-    });
+    // F4: ateşle-unut çağrısı; liderlik yüklemesi fırlatırsa hata
+    // yutulur, rekor 0 kalır, oyun etkilenmez.
+    try {
+      await LeaderboardService.instance.ensureLoaded();
+      if (!mounted) return;
+      setState(() {
+        _best = LeaderboardService.instance.getBest(
+          LeaderboardService.modeMakarayiz,
+        );
+      });
+    } catch (_) {}
   }
 
   @override
@@ -224,6 +332,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
       AudioManager().stopAll();
       _ticker.dispose();
     }
+    _tickNotifier.dispose();
     super.dispose();
   }
 
@@ -256,6 +365,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
   /// Elle duraklatma / devam (madde 37): ticker durur, oyun saati donar.
   void _togglePause() {
     if (widget.prototypeVisualState || !_alive) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    unawaited(AudioManager().playButtonTap());
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
@@ -266,6 +378,29 @@ class MakarayizScreenState extends State<MakarayizScreen>
       _ticker.stop();
     }
     setState(() {});
+  }
+
+  /// Yardım diyaloğu açılırken oyunu duraklat (F9): ticker durur,
+  /// oyun saati donar; notalar düşmez, can kaybı olmaz. Önceden elle
+  /// duraklatılmışsa bayrak set edilmez, kapanınca devam edilmez.
+  void _pauseForHelpDialog() {
+    if (widget.prototypeVisualState || !_alive || _paused) return;
+    if (_ticker.isActive) {
+      _ticker.stop();
+      _pausedForHelp = true;
+    }
+  }
+
+  /// Yardım diyaloğu kapanınca devam et (F9): yalnız diyalog
+  /// duraklatmasıysa ve elle/lifecycle duraklatması yoksa ticker
+  /// yeniden başlar.
+  void _resumeAfterHelpDialog() {
+    if (widget.prototypeVisualState || !_pausedForHelp) return;
+    _pausedForHelp = false;
+    _lastElapsed = null;
+    if (_alive && !_paused && !_pausedByLifecycle && !_ticker.isActive) {
+      _ticker.start();
+    }
   }
 
   Duration? _lastElapsed;
@@ -279,9 +414,10 @@ class MakarayizScreenState extends State<MakarayizScreen>
     // Kare süresi kısması: arka plan dönüşü / takılma sonrası dev dt,
     // oyun saatini ileri fırlatıp birikmiş notaları toplu kaçırmasın.
     dt = dt.clamp(0.0, 33.0).toDouble();
-    // Opening grace in live ticker mode so the very first note before the
-    // player's first tap doesn't immediately deduct a life at 1.9s.
-    if (_hits == 0 && _now + dt < 4200) {
+    // Opening grace in live ticker mode so the very first notes before
+    // the player's first tap don't immediately deduct a life at 1.9s.
+    // Lütuf ilk 4 notaya uzanır (hitMs ≤ ~5400 ms: 1800/2750/3700/4650).
+    if (_hits == 0 && _now + dt < 5400) {
       for (final n in _notes) {
         if (!n.done && (_now + dt) - n.hitMs > windowMs * 0.85) {
           n.done = true;
@@ -311,6 +447,8 @@ class MakarayizScreenState extends State<MakarayizScreen>
           _nextHit,
           _rng.nextInt(InsectTier.values.length),
           _travelAt(_nextHit),
+          isHisir:
+              !widget.prototypeVisualState && HisirCharacter.roll(_rng),
         ),
       );
       _nextHit += _beatAt(_nextHit);
@@ -322,13 +460,21 @@ class MakarayizScreenState extends State<MakarayizScreen>
     }
     // Kare başına en fazla 1 can kaybı: aynı karede birden çok nota
     // kaçsa bile diğerleri yalnız kombo/ıska sayar, can almaz.
+    // Can kuralı: 2 kaçan nota = 1 can (`_missesSinceLife`).
     var lifeLost = false;
     for (final n in _notes) {
       if (!n.done && _now - n.hitMs > windowMs) {
         n.done = true;
-        final loseLife = !lifeLost;
-        lifeLost = true;
+        _missesSinceLife++;
+        final loseLife = !lifeLost && _missesSinceLife >= 2;
+        if (loseLife) {
+          lifeLost = true;
+          _missesSinceLife = 0;
+        }
         _breakCombo(context.l10n.missedCaps, loseLife: loseLife);
+        // F18: canlar bittiyse (_gameOver) aynı karedeki diğer kaçan
+        // notalar _misses'i şişirmesin; döngüden çık.
+        if (!_alive) break;
       }
     }
     _notes.removeWhere((n) => n.done && _now - n.hitMs > 400);
@@ -341,7 +487,15 @@ class MakarayizScreenState extends State<MakarayizScreen>
       _breakText = null;
       _gainText = null;
     }
-    if (mounted) setState(() {});
+    // 12P: canlar bu yolda (kaçan nota) biterse `_gameOver` çalışır
+    // ama dış `build()` çalışmadığı için `build()` içindeki
+    // `_edgeShowResult` kenarı hiç tetiklenmezdi — sonuç ekranı
+    // açılmaz, `_alive == false` olduğu için `_onTick` erken döner
+    // ve oyun sonsuza dek donardı (video: ~10. sn donma, ~14. sn
+    // BİTİR'e basınca sonuç). Sonucu buradan da tetikle; bayrak
+    // (`_resultShown`) çift sunumu engeller.
+    if (!_alive && !_resultShown) _edgeShowResult();
+    if (mounted) _tickNotifier.value++;
   }
 
   void _showText({String? combo, String? brk, String? gain}) {
@@ -357,7 +511,12 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _misses++;
     _hint = context.l10n.makaraMissWindow(reason, windowMs.round());
     _showText(brk: had >= 2 ? context.l10n.makaraComboBroken(reason) : reason);
-    HapticFeedback.heavyImpact();
+    unawaited(HapticService.instance.heavyImpact());
+    // 10D P0-2: ıska sesi — playDrop. Ses çağrısı kapılı lightImpact
+    // içerir; yukarıdaki heavyImpact ile aynı tick'te 18 ms kapısına
+    // takılıp düşer — toplam 1 impuls (ağır olan korunur). Bu tek
+    // _breakCombo erken/yanlış/kaçan üç ıska yolunu da kapsar.
+    AudioManager().playDrop();
     if (loseLife) {
       _lives -= 1;
       if (_lives <= 0) _gameOver();
@@ -370,7 +529,9 @@ class MakarayizScreenState extends State<MakarayizScreen>
     _moveMade = true;
     _alive = false;
     _hint = context.l10n.makaraReelOut;
-    unawaited(AudioManager().playLose());
+    // 12P: bitiş sebebi sonuç ekranında görünür.
+    _endReason = context.l10n.makaraReelOut;
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
       LeaderboardService.instance.submitScore(
         LeaderboardService.modeMakarayiz,
@@ -391,27 +552,49 @@ class MakarayizScreenState extends State<MakarayizScreen>
     final perfect = d <= perfectMs;
     final gain = (60 + _combo * 10 + (perfect ? 40 : 0)) * (_x2 ? 2 : 1);
     _score += gain;
-    _reel += 0.08;
+    _reel += 0.10;
     if (_reel >= 1) {
       _reel = 0;
       _score += 250;
       _lives = min(3, _lives + 1);
+      // 10F P2-4: dolum anı sesi — playPop kapılı lightImpact içerir;
+      // aynı _hit içindeki playMakaraSpin haptic'i ile çakışırsa 18 ms
+      // kapı ikinciyi düşürür, tek impuls kalır.
+      unawaited(AudioManager().playPop());
     }
+    // G33: REKOR HUD'da canlı güncellenir (match3 deseni: skor yazılan
+    // her yerde `_best` eşitlenir; kalıcı kayıt `_gameOver` /
+    // `finishRun` akışında aynen kalır).
+    if (_score > _best) _best = _score;
     final bug = InsectTier.values[n.tier];
     _bubbleTier = n.tier;
-    _hint = bug.viralReplik;
+    _hint = n.isHisir ? HisirCharacter.replik : bug.viralReplik;
     _showText(
-      combo: _combo >= 2 ? 'COMBO X$_combo!' : (perfect ? context.l10n.perfectCaps : null),
+      combo: _combo >= 2
+          ? 'COMBO X$_combo!'
+          : (perfect ? context.l10n.perfectCaps : null),
       gain: '+$gain X$_combo',
     );
-    unawaited(
-      AudioManager().playMakaraSpin(
-        bug: bug,
-        comboCount: _combo,
-        playbackRate: 0.95 + _rng.nextDouble() * 0.2,
-      ),
-    );
-    HapticFeedback.mediumImpact();
+    final rate = 0.95 + _rng.nextDouble() * 0.2;
+    if (n.isHisir) {
+      // Makara SFX'i seste, Hışır sesi tek yoldan: kademe sesi
+      // Hışır'ı kesmez, Hışır klibi tam çalar (12K düzeni).
+      unawaited(
+        AudioManager().playMakaraSpin(
+          comboCount: _combo,
+          playbackRate: rate,
+        ),
+      );
+      unawaited(AudioManager().playHusurAday());
+    } else {
+      unawaited(
+        AudioManager().playMakaraSpin(
+          bug: bug,
+          comboCount: _combo,
+          playbackRate: rate,
+        ),
+      );
+    }
   }
 
   /// Şerit vuruşu: pencere içindeki en yakın nota, çizgiye bağlıdır.
@@ -448,9 +631,19 @@ class MakarayizScreenState extends State<MakarayizScreen>
             );
       if (other.isNotEmpty) {
         other.first.done = true;
-        _breakCombo(context.l10n.makaraWrongLane, loseLife: true);
+        // Yanlış şerit: can kaybı yok — yalnız kombo kırılır + nota
+        // kaybolur (yukarıda `done` yapıldı).
+        _breakCombo(context.l10n.makaraWrongLane, loseLife: false);
       } else if (_notes.any((n) => !n.done && n.lane == lane)) {
         _breakCombo(context.l10n.makaraEarlyTap, loseLife: false);
+      } else {
+        // W13-F: şeritte hiç nota yokken dokunuş TAMAMEN sessizdi —
+        // oyuncu neyin yanlış olduğunu öğrenemiyordu (playtest §11:
+        // "büyük düğmeye 5 basış + şeride dokunuş skor vermedi" ve
+        // "TAPPED TOO EARLY dışında geri bildirim yok"). Yalnız
+        // öğretici ipucu güncellenir (artık görünür satırda);
+        // skor/can/kombo/ıska sayacı aynen kalır — mekanik değişmez.
+        _hint = context.l10n.makaraBeatLine;
       }
     }
     setState(() {});
@@ -463,8 +656,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useBeatFreeze() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _freezeUntil = _now + 8000;
       _hint = context.l10n.makaraFreezeHint;
@@ -475,8 +667,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useAuto() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _autoUntil = _now + 6000;
       _hint = context.l10n.makaraAutoHint;
@@ -487,8 +678,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   bool _useX2() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _x2Until = _now + 12000;
       _hint = context.l10n.makaraX2Hint;
@@ -497,16 +687,43 @@ class MakarayizScreenState extends State<MakarayizScreen>
     return true;
   }
 
-  Future<void> _presentResult() async {
+  Future<void> _presentResult({bool? won}) async {
     // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
     // üzerinden (tek-ödeme korunur). _gameOver'daki liderlik gönderimi
     // ayrıca durur (eski çift-gönderim davranışı aynen korunur).
-    final replay = await finishRun(
-      context,
-      score: _score,
-      best: _best,
-      leaderboardMode: LeaderboardService.modeMakarayiz,
-    );
+    // Doğal bitiş canların bitmesidir (kayıp); `won` verilmezse
+    // kayıp başlığı gösterilir.
+    // F4: finishRun fırlatırsa sonuçsuz takılma olmasın — bayrak
+    // düşürülür, BİTİR/geri ile yeniden deneme yolu açık kalır.
+    // setState çağrılmaz: yeniden çizim _edgeShowResult'u tetikleyip
+    // hatayı döngüye sokardı.
+    bool replay;
+    try {
+      replay = await finishRun(
+        context,
+        score: _score,
+        best: _best,
+        bestCombo: _bestCombo,
+        won: won ?? false,
+        // 12P: bitiş sebebi sonuç ekranının alt başlığında görünür.
+        resultLine: _endReason,
+        leaderboardMode: LeaderboardService.modeMakarayiz,
+        // K16: mod skoru kimliği liderlik kimliğiyle aynıdır
+        // (`lululu_game_mode.dart` bestScoreKey: 'makarayiz').
+        modeScoreId: LeaderboardService.modeMakarayiz,
+        // Y3: tur başlangıç damgalı anahtar; bu turun tüm bitiş
+        // yolları (_finishEarly + _edgeShowResult) aynı anahtarı
+        // paylaşır, çift ödeme/gösterim engellenir.
+        idempotencyKey: '${LeaderboardService.modeMakarayiz}:$_runStartedAtUs',
+        // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+        elapsed: Duration(
+          microseconds: DateTime.now().microsecondsSinceEpoch - _runStartedAtUs,
+        ),
+      );
+    } catch (_) {
+      if (mounted) _resultShown = false;
+      return;
+    }
     if (!mounted) return;
     _resultShown = false;
     if (!replay) {
@@ -527,7 +744,163 @@ class MakarayizScreenState extends State<MakarayizScreen>
       return;
     }
     _energyRefunded = true;
+    // S6: bildirim yalnız iade GERÇEKTEN verildiğinde gösterilir —
+    // enerji zaten doluysa `addEnergy` kelepçelenir, değişim olmaz.
+    final before = EnergyService.instance.energy;
     EnergyService.instance.addEnergy(1);
+    if (EnergyService.instance.energy > before) {
+      GlobalNotify.showSnackBar(_refundNotice);
+    }
+  }
+
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed && _moveMade && _alive && !_resultShown;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _maybeRefundEnergy();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (yardım deseni: `_pauseForHelpDialog`
+  /// ile aynı — yalnız ticker durur, `_paused` bayrağı konmaz,
+  /// duraklatma kaplaması açılmaz; oyun saati donar).
+  void _pauseForExitConfirm() {
+    if (widget.prototypeVisualState || !_alive || _paused) return;
+    if (_ticker.isActive) {
+      _ticker.stop();
+      _pausedForExitConfirm = true;
+    }
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (widget.prototypeVisualState || !_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    _lastElapsed = null;
+    if (_alive && !_paused && !_pausedByLifecycle && !_ticker.isActive) {
+      _ticker.start();
+    }
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
+  }
+
+  /// BİTİR: 12P — tek dokunuşla tur bitmez; onay istenir (video:
+  /// donan oyundan çıkmak için BİTİR'e basılınca skor > 0 diye
+  /// "SEVİYE TAMAM!" açılmıştı — Makarayız'da seviye hedefi yok).
+  /// Onayda tur kazanıldı sayılmaz (`won: false`) ve erken-bitirme
+  /// sebebi sonuç ekranında görünür. Onay diyaloğu açıkken ticker
+  /// durur (yardım/çıkış-onayı deseni); iptalde oyun kaldığı yerden
+  /// devam eder.
+  Future<void> _finishEarly() async {
+    if (_resultShown || _finishConfirmShowing) return;
+    _finishConfirmShowing = true;
+    _pauseForFinishConfirm();
+    final confirmed = await _confirmFinishRound();
+    _finishConfirmShowing = false;
+    if (!mounted) return;
+    if (!confirmed) {
+      _resumeAfterFinishConfirm();
+      return;
+    }
+    _resultShown = true;
+    // Canlar zaten bittiyse sebep can bitmesidir, erken bitirme değil.
+    if (_alive) _endReason = context.l10n.makaraFinishedEarlyReason;
+    await _presentResult(won: false);
+  }
+
+  /// BİTİR onay diyaloğu (N7 çıkış-onayı deseni).
+  Future<bool> _confirmFinishRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.makaraFinishConfirmTitle),
+        content: Text(ctx.l10n.makaraFinishConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.confirm),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// BİTİR onayı duraklatması (yardım deseni: yalnız ticker durur,
+  /// `_paused` bayrağı konmaz, duraklatma kaplaması açılmaz).
+  void _pauseForFinishConfirm() {
+    if (widget.prototypeVisualState || !_alive || _paused) return;
+    if (_ticker.isActive) {
+      _ticker.stop();
+      _pausedForFinishConfirm = true;
+    }
+  }
+
+  void _resumeAfterFinishConfirm() {
+    if (widget.prototypeVisualState || !_pausedForFinishConfirm) return;
+    _pausedForFinishConfirm = false;
+    _lastElapsed = null;
+    if (_alive && !_paused && !_pausedByLifecycle && !_ticker.isActive) {
+      _ticker.start();
+    }
   }
 
   void _edgeShowResult() {
@@ -549,15 +922,22 @@ class MakarayizScreenState extends State<MakarayizScreen>
     int tier, {
     double opacity = 1,
     bool wideScreen = false,
+    bool isHisir = false,
   }) {
     final bug =
         InsectTier.values[(tier - 1).clamp(0, InsectTier.values.length - 1)];
+    final assetPath = isHisir ? HisirCharacter.assetPath : bug.assetPath;
+    // Dalga 17: nota arkasındaki opak pastel daire (_tcol) kaldırıldı —
+    // PNG'ler şeffaf; pastel (özellikle tier 8/11/12'ye yakın beyaz)
+    // beyaz arka plan izlenimi veriyordu. Beyaz Hayalet (tier 11)
+    // koyu sahnede desteksiz de görünür.
+    final noteSize = _noteSizeFor(bug);
     if (wideScreen) {
-      final topPad = (tier == 3 || tier == 4)
-          ? 3.15
-          : (tier == 2
-                ? 5.9
-                : (tier == 1 ? 7.2 : (tier == 5 ? 5.5 : 5.3)));
+      // Görsel genişlik nota çapının ~0,86'sı (eskiden 38,7 / 45 px);
+      // yükseklik payı en uzun sprite'a (Hışır, oran 0,325) göre ölçeklenir.
+      final imgWidth = noteSize * 0.86;
+      final topPad =
+          isHisir ? _hisirTopPad : (_wideTopPad[tier] ?? 5.3);
       return Positioned(
         top: top,
         left: 0,
@@ -565,24 +945,20 @@ class MakarayizScreenState extends State<MakarayizScreen>
         child: Center(
           child: Opacity(
             opacity: opacity,
-            child: Container(
-              width: _noteSize,
-              height: _noteSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _tcol[(tier - 1) % _tcol.length],
-              ),
+            child: SizedBox(
+              width: noteSize,
+              height: noteSize,
               child: OverflowBox(
                 alignment: Alignment.topCenter,
-                minWidth: 38.7,
-                maxWidth: 38.7,
+                minWidth: imgWidth,
+                maxWidth: imgWidth,
                 minHeight: 0,
-                maxHeight: 120,
+                maxHeight: noteSize * 2.7,
                 child: Padding(
                   padding: EdgeInsets.only(top: topPad),
                   child: Image.asset(
-                    bug.assetPath,
-                    width: 38.7,
+                    assetPath,
+                    width: imgWidth,
                     fit: BoxFit.fitWidth,
                   ),
                 ),
@@ -599,15 +975,13 @@ class MakarayizScreenState extends State<MakarayizScreen>
       child: Center(
         child: Opacity(
           opacity: opacity,
-          child: Container(
-            width: _noteSize,
-            height: _noteSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _tcol[(tier - 1) % _tcol.length],
+          child: SizedBox(
+            width: noteSize,
+            height: noteSize,
+            child: Padding(
+              padding: const EdgeInsets.all(3),
+              child: StickerImage(assetPath: assetPath, size: noteSize - 6),
             ),
-            padding: const EdgeInsets.all(3),
-            child: StickerImage(assetPath: bug.assetPath, size: 39),
           ),
         ),
       ),
@@ -625,13 +999,27 @@ class MakarayizScreenState extends State<MakarayizScreen>
       for (final n in _notes) {
         if (n.lane != lane) continue;
         final p = 1 - (n.hitMs - _now) / n.travelMs;
-        final top = -_noteSize + (beatY - _noteSize / 2 + _noteSize) * p;
+        final noteSize = _noteSizeFor(InsectTier.values[n.tier]);
+        final top = -noteSize + (beatY + noteSize / 2) * p;
         if (n.done) {
           children.add(
-            _note(top, n.tier + 1, opacity: 0.0, wideScreen: wideScreen),
+            _note(
+              top,
+              n.tier + 1,
+              opacity: 0.0,
+              wideScreen: wideScreen,
+              isHisir: n.isHisir,
+            ),
           );
         } else {
-          children.add(_note(top, n.tier + 1, wideScreen: wideScreen));
+          children.add(
+            _note(
+              top,
+              n.tier + 1,
+              wideScreen: wideScreen,
+              isHisir: n.isHisir,
+            ),
+          );
         }
       }
     }
@@ -645,12 +1033,12 @@ class MakarayizScreenState extends State<MakarayizScreen>
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0x0FFFFFFF)),
           ),
-          child: wideScreen
-              ? Stack(clipBehavior: Clip.none, children: children)
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(11),
-                  child: Stack(children: children),
-                ),
+          // Dalga 17: geniş dal da dar dal gibi ClipRRect ile kırpılır —
+          // eskiden Clip.none + OverflowBox taşması şerit dışına çıkıyordu.
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: Stack(children: children),
+          ),
         ),
       ),
     );
@@ -671,216 +1059,308 @@ class MakarayizScreenState extends State<MakarayizScreen>
 
   @override
   Widget build(BuildContext context) {
+    // S6: iade bildirimi metni çıkıştan ÖNCE yakalanır
+    // (`didPop` anında bağlam ağaçta değildir).
+    _refundNotice = context.l10n.energyRefundNotice;
     if (!_alive && !_resultShown) _edgeShowResult();
     final proto = widget.prototypeVisualState;
     final wideScreen = MediaQuery.sizeOf(context).width >= 400;
-    final pulse = proto ? 0.0 : (1 - ((_now - _pulseAt) / 220).clamp(0.0, 1.0));
-    final pct = (_reel * 100).round();
-    final hero = InsectTier.values[proto ? 2 : _bubbleTier];
 
-    return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _maybeRefundEnergy();
-      },
-      child: _MakarayizChrome(
-        score: _score,
-      best: _best,
-      combo: _combo,
-      hint: _hint,
-      onRestart: _restart,
-      prototypeVisualState: proto,
-      showPauseButton: !proto,
-      onPausePressed: _togglePause,
-      overlay: (!_alive && !_resultShown)
-          ? ArcadeResultOverlay(
-              title: context.l10n.makaraOverTitle,
-              message:
-                  context.l10n.makaraResultMessage(_bestCombo, _hits, _misses),
-              score: _score,
-              best: _best,
-              won: false,
-              modeTitle: context.l10n.shopModeMakarayiz,
-              shareLine: context.l10n.makaraShareLine,
-              retryLabel: context.l10n.tryAgainCaps,
-              onRetry: _restart,
-            )
-          : (_paused
-              ? _pauseOverlay()
-              : null),
-      bonuses: [
-        stockBonusWithResult(
-          id: 'beat',
-          label: context.l10n.powerBeatFreezeCaps,
-          asset: 'assets/icons2/clock.png',
-          effect: _useBeatFreeze,
+    // Statik arka plan: kare bildiriminde yeniden kurulmaz --
+    // [ValueListenableBuilder] `child` olarak bir kez kurulur.
+    final background = Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: Opacity(
+            opacity: wideScreen ? 0.96 : 1,
+            child: Image.asset(
+              'assets/design/backgrounds/makarayiz_stage.webp',
+              fit: BoxFit.cover,
+              alignment: wideScreen ? Alignment.center : Alignment.centerLeft,
+            ),
+          ),
         ),
-        stockBonusWithResult(
-          id: 'auto',
-          label: context.l10n.powerAutoReelCaps,
-          asset: 'assets/icons2/wheel.png',
-          effect: _useAuto,
-        ),
-        stockBonusWithResult(
-          id: 'x2',
-          label: context.l10n.powerScoreX2,
-          asset: 'assets/icons2/boost_coins.png',
-          effect: _useX2,
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: wideScreen
+                    ? const [0, 0.24, 0.76, 1]
+                    : const [0, 0.3, 0.58, 1],
+                colors: wideScreen
+                    ? const [
+                        Color(0x4D080B12),
+                        Color(0x00080B12),
+                        Color(0x00080B12),
+                        Color(0x52080B12),
+                      ]
+                    : const [
+                        Color(0x7A080B12),
+                        Color(0x00080B12),
+                        Color(0x00080B12),
+                        Color(0x94080B12),
+                      ],
+              ),
+            ),
+          ),
         ),
       ],
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragEnd: (d) {
-          final v = d.primaryVelocity ?? 0;
-          if (v.abs() < 200) return;
-          // Kaydırma: en yakın nota şeridini yöne göre seç.
-          final cand =
-              _notes
-                  .where((n) => !n.done && (_now - n.hitMs).abs() <= windowMs)
-                  .toList()
-                ..sort(
-                  (a, b) =>
-                      (a.hitMs - _now).abs().compareTo((b.hitMs - _now).abs()),
-                );
-          if (cand.isNotEmpty) tryHit(cand.first.lane);
-        },
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, c) {
-                      final h = c.maxHeight - 12 - 74 - 2;
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 74),
-                        child: Row(
-                          children: [
-                            for (var i = 0; i < 3; i++) ...[
-                              if (i > 0) const SizedBox(width: 7),
-                              _lane(i, h, wideScreen: wideScreen),
-                            ],
-                          ],
-                        ),
-                      );
-                    },
+    );
+    return PopScope(
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
+      child: ValueListenableBuilder<int>(
+        valueListenable: _tickNotifier,
+        child: background,
+        builder: (context, _, backgroundChild) {
+          // Kare başına değişen değerler burada, VLB içinde okunur
+          // (dış `build` yalnız olay `setState`'lerinde çalışır).
+          final pulse = proto
+              ? 0.0
+              : (1 - ((_now - _pulseAt) / 220).clamp(0.0, 1.0));
+          final pct = (_reel * 100).round();
+          final hero = InsectTier.values[proto ? 2 : _bubbleTier];
+          return _MakarayizChrome(
+            score: _score,
+            best: _best,
+            combo: _combo,
+            hint: _hint,
+            onRestart: _finishEarly,
+            prototypeVisualState: proto,
+            showPauseButton: !proto,
+            onPausePressed: _togglePause,
+            onHelpOpened: _pauseForHelpDialog,
+            onHelpClosed: _resumeAfterHelpDialog,
+            // F6: tek sonuç yolu finishRun diyaloğudur (_edgeShowResult);
+            // ölü ArcadeResultOverlay dalı kaldırıldı.
+            overlay: _paused ? _pauseOverlay() : null,
+            bonuses: [
+              stockBonusWithResult(
+                id: 'beat',
+                label: context.l10n.powerBeatFreezeCaps,
+                asset: 'assets/icons2/clock.png',
+                effect: _useBeatFreeze,
+              ),
+              stockBonusWithResult(
+                id: 'auto',
+                label: context.l10n.powerAutoReelCaps,
+                asset: 'assets/icons2/wheel.png',
+                effect: _useAuto,
+              ),
+              stockBonusWithResult(
+                id: 'x2',
+                label: context.l10n.powerScoreX2,
+                asset: 'assets/icons2/boost_coins.png',
+                effect: _useX2,
+              ),
+            ],
+            background: backgroundChild!,
+            stageBuilder: () {
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragEnd: (d) {
+                  final v = d.primaryVelocity ?? 0;
+                  if (v.abs() < 200) return;
+                  // Kaydırma: en yakın nota şeridini yöne göre seç.
+                  final cand =
+                      _notes
+                          .where(
+                            (n) =>
+                                !n.done && (_now - n.hitMs).abs() <= windowMs,
+                          )
+                          .toList()
+                        ..sort(
+                          (a, b) => (a.hitMs - _now).abs().compareTo(
+                            (b.hitMs - _now).abs(),
+                          ),
+                        );
+                  if (cand.isNotEmpty) tryHit(cand.first.lane);
+                },
+                child: TweenAnimationBuilder<double>(
+                  // 12P: sahne girişi — şeritler ("boru") + beat çizgisi
+                  // + makara, rota açılışında aniden belirmek yerine
+                  // 600 ms'de solarak + hafifçe yükselerek girer
+                  // (video: f02 liste → f03 sahne, sıfır geçiş).
+                  // Anahtar tur sayacıdır: TEKRAR OYNA'da da yeniden
+                  // oynar. Aynı turda kare yenilemeleri animasyonu
+                  // başlatmaz (tween/anahtar değişmez). Prototip
+                  // vitrininde (`prototypeVisualState`) giriş
+                  // oynatılmaz: piksel yakalama statik kareyi
+                  // değişmeden alır (begin == end → ilk karede tam
+                  // görünür).
+                  key: ValueKey<int>(_roundId),
+                  tween: Tween<double>(begin: proto ? 1.0 : 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 600),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) => Opacity(
+                    opacity: t,
+                    child: Transform.translate(
+                      offset: Offset(0, (1 - t) * 28),
+                      child: child,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 118,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      boxShadow: pulse > 0
-                          ? [
-                              BoxShadow(
-                                color: const Color(
-                                  0xFFFFD700,
-                                ).withValues(alpha: 0.7 * pulse),
-                                blurRadius: 10,
+                  child: Stack(
+                    children: [
+                      Column(
+                        children: [
+                          Expanded(
+                            child: LayoutBuilder(
+                              builder: (context, c) {
+                                final h = c.maxHeight - 12 - 74 - 2;
+                                return Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    12,
+                                    16,
+                                    74,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      for (var i = 0; i < 3; i++) ...[
+                                        if (i > 0) const SizedBox(width: 7),
+                                        _lane(i, h, wideScreen: wideScreen),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 118,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            height: 3,
+                            decoration: BoxDecoration(
+                              boxShadow: pulse > 0
+                                  ? [
+                                      BoxShadow(
+                                        color: const Color(
+                                          0xFFFFD700,
+                                        ).withValues(alpha: 0.7 * pulse),
+                                        blurRadius: 10,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: CustomPaint(
+                              size: const Size(double.infinity, 3),
+                              painter: _DashPainter(),
+                            ),
+                          ),
+                          Positioned(
+                            right: 0,
+                            top: -19,
+                            child: Text(
+                              'BEAT',
+                              style: GoogleFonts.nunito(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                                color: const Color(0xFFFFD700),
                               ),
-                            ]
-                          : null,
-                    ),
-                    child: CustomPaint(
-                      size: const Size(double.infinity, 3),
-                      painter: _DashPainter(),
-                    ),
-                  ),
-                  Positioned(
-                    right: 0,
-                    top: -19,
-                    child: Text(
-                      'BEAT',
-                      style: GoogleFonts.nunito(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.8,
-                        color: const Color(0xFFFFD700),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 8,
-              child: _reelWrap(hero, pct, wideScreen: wideScreen),
-            ),
-            if (!proto)
-              Positioned(
-                right: 12,
-                top: 10,
-                child: IgnorePointer(
-                  child: Text(
-                    '${'♥' * _lives}${'♡' * (3 - _lives)}',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: Color(0xFFE01E5A),
-                      height: 1,
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 8,
+                      child: _reelWrap(hero, pct, wideScreen: wideScreen),
                     ),
-                  ),
-                ),
-              ),
-            if (_comboText != null || _breakText != null)
-              Positioned(
-                left: 12,
-                top: 10,
-                child: IgnorePointer(
-                  child: _breakText != null
-                      ? Text(
-                          _breakText!,
-                          style: _bangers(
-                            21,
-                            const Color(0xFFE52E2E),
-                            const Color(0xFFFFD700),
-                          ),
-                        )
-                      : Text(
-                          _comboText!,
-                          style: _bangers(
-                            23,
-                            const Color(0xFFFFB800),
-                            const Color(0xFFFF6B35),
+                    if (!proto)
+                      Positioned(
+                        right: 12,
+                        top: 10,
+                        // 12P: biten can `♡` ince kontur olarak açık
+                        // zemin üstünde görünmez oluyordu (video:
+                        // m10/m12'de kalp yok sanıldı). Biten can da
+                        // aynı dolu glifle, yalnız soluk renkte çizilir;
+                        // 3 yuva her zaman görünür.
+                        child: IgnorePointer(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (var i = 0; i < 3; i++)
+                                Text(
+                                  '♥',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: const Color(
+                                      0xFFE01E5A,
+                                    ).withValues(alpha: i < _lives ? 1 : 0.3),
+                                    height: 1,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                ),
-              ),
-            if (_gainText != null && !proto)
-              Positioned(
-                left: 126,
-                top: 58,
-                child: IgnorePointer(
-                  child: Text(
-                    _gainText!,
-                    style: _bangers(
-                      20,
-                      const Color(0xFFFFB800),
-                      const Color(0xFFFF6B35),
-                    ),
+                      ),
+                    if (_comboText != null || _breakText != null)
+                      Positioned(
+                        left: 12,
+                        top: 10,
+                        child: IgnorePointer(
+                          child: _breakText != null
+                              ? Text(
+                                  _breakText!,
+                                  style: _bangers(
+                                    21,
+                                    const Color(0xFFE52E2E),
+                                    const Color(0xFFFFD700),
+                                  ),
+                                )
+                              : Text(
+                                  _comboText!,
+                                  style: _bangers(
+                                    23,
+                                    const Color(0xFFFFB800),
+                                    const Color(0xFFFF6B35),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    if (_gainText != null && !proto)
+                      Positioned(
+                        left: 126,
+                        top: 58,
+                        child: IgnorePointer(
+                          child: Text(
+                            _gainText!,
+                            style: _bangers(
+                              20,
+                              const Color(0xFFFFB800),
+                              const Color(0xFFFF6B35),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (proto || (_combo >= 2 && _alive))
+                      Positioned(
+                        right: 12,
+                        bottom: 158,
+                        child: IgnorePointer(
+                          child: _bubble(hero, wideScreen: wideScreen),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            if (proto || (_combo >= 2 && _alive))
-              Positioned(
-                right: 12,
-                bottom: 158,
-                child: IgnorePointer(
-                  child: _bubble(hero, wideScreen: wideScreen),
-                ),
-              ),
-          ],
-        ),
-      ),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -916,7 +1396,19 @@ class MakarayizScreenState extends State<MakarayizScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+                ArcadeButton(
+                  label: context.l10n.continueAction,
+                  onPressed: _togglePause,
+                ),
+                const SizedBox(height: 12),
+                // N6: duraklatmadan çıkış — mevcut geri yolu
+                // (`maybePop`); iade kuralları PopScope handler'da
+                // aynen korunur, yeni iade mantığı yok.
+                ArcadeButton(
+                  label: context.l10n.quit,
+                  primary: false,
+                  onPressed: () => Navigator.maybePop(context),
+                ),
               ],
             ),
           ),
@@ -932,10 +1424,7 @@ class MakarayizScreenState extends State<MakarayizScreen>
       children: [
         Container(
           constraints: const BoxConstraints(maxWidth: 176),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 11,
-            vertical: 6,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
             color: const Color(0xF0080B12),
             borderRadius: BorderRadius.circular(14),
@@ -1080,10 +1569,13 @@ class _MakarayizChrome extends StatelessWidget {
     required this.onRestart,
     required this.prototypeVisualState,
     required this.bonuses,
-    required this.child,
+    required this.stageBuilder,
+    required this.background,
     this.overlay,
     this.showPauseButton = false,
     this.onPausePressed,
+    this.onHelpOpened,
+    this.onHelpClosed,
   });
 
   final int score;
@@ -1093,10 +1585,41 @@ class _MakarayizChrome extends StatelessWidget {
   final VoidCallback onRestart;
   final bool prototypeVisualState;
   final List<ModeBonus> bonuses;
-  final Widget child;
+  final Widget Function() stageBuilder;
+  final Widget background;
   final Widget? overlay;
   final bool showPauseButton;
   final VoidCallback? onPausePressed;
+  final VoidCallback? onHelpOpened;
+  final VoidCallback? onHelpClosed;
+
+  /// Yardım diyaloğu (F9): açılırken oyun duraklatılır, kapanınca
+  /// (önceden duraklatılmamışsa) devam eder. Diyalog içeriği kural
+  /// metnidir (F4, tek kaynak `makaraRules`); canlı hint yardım
+  /// diyaloğuna sızmaz (bulgu #9). İki yardım düğmesi de (geniş/dar
+  /// yerleşim) bu tek metoda bağlıdır.
+  Future<void> _showHelpDialog(BuildContext context) async {
+    onHelpOpened?.call();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(context.l10n.makarayizTitle),
+          // F4: kural metni; canlı hint yardım diyaloğuna
+          // sızmaz (bulgu #9). Oyun-içi hint gösterimi aynen durur.
+          content: Text(context.l10n.makaraRules),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.understoodButton),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      onHelpClosed?.call();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1112,53 +1635,41 @@ class _MakarayizChrome extends StatelessWidget {
         body: Stack(
           fit: StackFit.expand,
           children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: wideScreen ? 0.96 : 1,
-                child: Image.asset(
-                  'assets/design/backgrounds/makarayiz_stage.webp',
-                  fit: BoxFit.cover,
-                  alignment: wideScreen
-                      ? Alignment.center
-                      : Alignment.centerLeft,
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: wideScreen
-                        ? const [0, 0.24, 0.76, 1]
-                        : const [0, 0.3, 0.58, 1],
-                    colors: wideScreen
-                        ? const [
-                            Color(0x4D080B12),
-                            Color(0x00080B12),
-                            Color(0x00080B12),
-                            Color(0x52080B12),
-                          ]
-                        : const [
-                            Color(0x7A080B12),
-                            Color(0x00080B12),
-                            Color(0x00080B12),
-                            Color(0x94080B12),
-                          ],
-                  ),
-                ),
-              ),
-            ),
+            background,
             Column(
               children: [
-                _statusBar(
-                  hasShellStatusBar: hasShellStatusBar,
-                  wideScreen: wideScreen,
-                  topPad: topPad,
-                ),
+                if (hasShellStatusBar) SizedBox(height: topPad),
                 _header(context, wideScreen: wideScreen),
                 _hud(wideScreen: wideScreen),
+                // W13-F: öğretici ipucu satırı. `hint` (boşta "Nota beat
+                // çizgisine gelince…", ıskada pencere bilgisi, güç
+                // duyuruları) daha önce chrome'a geçiriliyor ama HİÇ
+                // çizilmiyordu — kör testte doğru vuruş öğrenilemedi
+                // (playtest §11). Mekanik aynen kalır: yalnız görünür
+                // metin. Prototip vitrininde gizlidir (kare değişmez).
+                if (!prototypeVisualState && hint.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    child: Text(
+                      hint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.nunito(
+                        fontSize: 12.5,
+                        height: 1.2,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xE6FFFFFF),
+                        shadows: const [
+                          Shadow(
+                            color: Color(0xCC080B12),
+                            offset: Offset(0, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
@@ -1177,53 +1688,16 @@ class _MakarayizChrome extends StatelessWidget {
                         width: 2,
                       ),
                     ),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                      child: child,
-                    ),
+                    // Dalga 17: tam ekran BackdropFilter blur kaldırıldı
+                    // (her kare pahalı blur); önceden-blurlanmış arka
+                    // plan yok, sahne gradyanı + stage görseli aynen durur.
+                    child: stageBuilder(),
                   ),
                 ),
                 _dock(context, wideScreen: wideScreen),
               ],
             ),
             ?overlay,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _statusBar({
-    required bool hasShellStatusBar,
-    required bool wideScreen,
-    required double topPad,
-  }) {
-    final h = wideScreen ? 35.4 : 38.0;
-    if (hasShellStatusBar) {
-      return SizedBox(height: prototypeVisualState ? h : topPad);
-    }
-    return SizedBox(
-      height: h,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(22, wideScreen ? 14 : 12, 22, 2),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '09:41',
-              style: GoogleFonts.nunito(
-                fontSize: 12.5,
-                height: 1,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(
-              width: 38,
-              height: 16,
-              child: CustomPaint(painter: _StatusIndicatorsPainter()),
-            ),
           ],
         ),
       ),
@@ -1268,27 +1742,34 @@ class _MakarayizChrome extends StatelessWidget {
                         color: const Color(0x8C080B12),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Text(
-                        context.l10n.makarayizTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.baloo2(
-                          fontSize: 20,
-                          height: 1.05,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          shadows: const [
-                            Shadow(
-                              color: Color(0xE6000000),
-                              offset: Offset(0, 2),
-                              blurRadius: 6,
-                            ),
-                            Shadow(
-                              color: Color(0xD9000000),
-                              offset: Offset(0, 1),
-                              blurRadius: 2,
-                            ),
-                          ],
+                      child: FittedBox(
+                        // F-12 deseni: ellipsis yerine scaleDown —
+                        // tam başlık her genişlikte sığar.
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          context.l10n.makarayizTitle,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.clip,
+                          style: GoogleFonts.baloo2(
+                            fontSize: 20,
+                            height: 1.05,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            shadows: const [
+                              Shadow(
+                                color: Color(0xE6000000),
+                                offset: Offset(0, 2),
+                                blurRadius: 6,
+                              ),
+                              Shadow(
+                                color: Color(0xD9000000),
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -1337,10 +1818,9 @@ class _MakarayizChrome extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      _format(
-                        prototypeVisualState
-                            ? 12450
-                            : ProgressManager().coins,
+                      formatGroupedInt(
+                        prototypeVisualState ? 12450 : ProgressManager().coins,
+                        Localizations.localeOf(context).languageCode,
                       ),
                       style: GoogleFonts.nunito(
                         fontSize: 13.5,
@@ -1370,19 +1850,7 @@ class _MakarayizChrome extends StatelessWidget {
                     color: const Color(0xFFFFB800),
                   ),
                 ),
-                onTap: () => showDialog<void>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: Text(context.l10n.makarayizTitle),
-                    content: Text(hint),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text(context.l10n.understoodButton),
-                      ),
-                    ],
-                  ),
-                ),
+                onTap: () => _showHelpDialog(context),
               ),
             ],
           ),
@@ -1424,27 +1892,35 @@ class _MakarayizChrome extends StatelessWidget {
                       color: const Color(0x66080B12),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      context.l10n.makarayizTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.baloo2(
-                        fontSize: 20,
-                        height: 1.05,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        shadows: const [
-                          Shadow(
-                            color: Color(0xD9000000),
-                            offset: Offset(0, 2),
-                            blurRadius: 6,
-                          ),
-                          Shadow(
-                            color: Color(0xCC000000),
-                            offset: Offset(0, 1),
-                            blurRadius: 2,
-                          ),
-                        ],
+                    child: FittedBox(
+                      // F-12: 360 px'te başlık "MAKA..." diye
+                      // kesiliyordu — FittedBox (scaleDown) tam
+                      // başlığı sığdırır.
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        context.l10n.makarayizTitle,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.clip,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 20,
+                          height: 1.05,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          shadows: const [
+                            Shadow(
+                              color: Color(0xD9000000),
+                              offset: Offset(0, 2),
+                              blurRadius: 6,
+                            ),
+                            Shadow(
+                              color: Color(0xCC000000),
+                              offset: Offset(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1485,15 +1961,12 @@ class _MakarayizChrome extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.asset(
-                    'assets/icons2/coin.png',
-                    width: 20,
-                    height: 20,
-                  ),
+                  Image.asset('assets/icons2/coin.png', width: 20, height: 20),
                   const SizedBox(width: 6),
                   Text(
-                    _format(
+                    formatGroupedInt(
                       ProgressManager().coins,
+                      Localizations.localeOf(context).languageCode,
                     ),
                     style: GoogleFonts.nunito(
                       fontSize: 13.5,
@@ -1522,19 +1995,7 @@ class _MakarayizChrome extends StatelessWidget {
                   color: const Color(0xFFFFB800),
                 ),
               ),
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text(context.l10n.makarayizTitle),
-                  content: Text(hint),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(context.l10n.understoodButton),
-                    ),
-                  ],
-                ),
-              ),
+              onTap: () => _showHelpDialog(context),
             ),
           ],
         ),
@@ -1546,19 +2007,38 @@ class _MakarayizChrome extends StatelessWidget {
     return SizedBox(
       height: wideScreen ? 58.5 : 60,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(wideScreen ? 12 : 11, 8, wideScreen ? 12 : 8, 0),
+        padding: EdgeInsets.fromLTRB(
+          wideScreen ? 12 : 11,
+          8,
+          wideScreen ? 12 : 8,
+          0,
+        ),
         child: LayoutBuilder(
           builder: (context, hudBox) {
             final row = Row(
               children: [
                 SizedBox(
                   width: wideScreen ? 104 : 108,
-                  child: _stat(context.l10n.gameScoreLabel, _format(score), wideScreen: wideScreen),
+                  child: _stat(
+                    context.l10n.gameScoreLabel,
+                    formatGroupedInt(
+                      score,
+                      Localizations.localeOf(context).languageCode,
+                    ),
+                    wideScreen: wideScreen,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 84,
-                  child: _stat(context.l10n.gameBestLabel, _format(best), wideScreen: wideScreen),
+                  child: _stat(
+                    context.l10n.gameBestLabel,
+                    formatGroupedInt(
+                      best,
+                      Localizations.localeOf(context).languageCode,
+                    ),
+                    wideScreen: wideScreen,
+                  ),
                 ),
                 const Spacer(),
                 SizedBox(
@@ -1570,32 +2050,32 @@ class _MakarayizChrome extends StatelessWidget {
                   button: true,
                   label: context.l10n.finishRoundLabel,
                   child: GestureDetector(
-                  onTap: onRestart,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    width: wideScreen ? 57.8 : 58,
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFB800),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0xFFB97A00),
-                          offset: Offset(0, 3),
+                    onTap: onRestart,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      width: wideScreen ? 57.8 : 58,
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFB800),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0xFFB97A00),
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        context.l10n.finishCaps,
+                        style: GoogleFonts.baloo2(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w900,
+                          color: const Color(0xFF4A2E00),
                         ),
-                      ],
-                    ),
-                    child: Text(
-                      context.l10n.finishCaps,
-                      style: GoogleFonts.baloo2(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF4A2E00),
                       ),
                     ),
                   ),
-                ),
                 ),
               ],
             );
@@ -1621,9 +2101,7 @@ class _MakarayizChrome extends StatelessWidget {
       decoration: BoxDecoration(
         color: wideScreen ? const Color(0xD9080B12) : const Color(0x73080B12),
         border: Border.all(
-          color: wideScreen
-              ? const Color(0x8CFFB800)
-              : const Color(0x73FFB800),
+          color: wideScreen ? const Color(0x8CFFB800) : const Color(0x73FFB800),
         ),
         borderRadius: BorderRadius.circular(16),
       ),
@@ -1792,15 +2270,11 @@ class _MakarayizChrome extends StatelessWidget {
       ),
     );
   }
-
-  static String _format(int value) => value.toString().replaceAllMapped(
-    RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => '.',
-  );
 }
 
 /// Küçük duraklatma düğmesi (madde 37): başlık satırında '?' düğmesinin
 /// yanında, HUD düzenini kaydırmadan durur; prototip vitrininde gizlidir.
+/// Vuruş kutusu 48×48'dir (komşu _RoundButton ile aynı).
 class _PauseHeaderButton extends StatelessWidget {
   const _PauseHeaderButton({required this.onTap});
 
@@ -1814,8 +2288,8 @@ class _PauseHeaderButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xDB080B12),
@@ -1877,55 +2351,10 @@ class _RoundButton extends StatelessWidget {
     );
     final label = semanticLabel;
     if (label != null) {
-      button = Semantics(
-        button: true,
-        label: label,
-        child: button,
-      );
+      button = Semantics(button: true, label: label, child: button);
     }
     return button;
   }
-}
-
-class _StatusIndicatorsPainter extends CustomPainter {
-  const _StatusIndicatorsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    for (var i = 0; i < 4; i++) {
-      final height = 4.0 + i * 3.0;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(1 + i * 4.5, size.height - height, 2.4, height),
-          const Radius.circular(0.7),
-        ),
-        paint,
-      );
-    }
-    final battery = RRect.fromRectAndRadius(
-      Rect.fromLTWH(22, 3, 14, 9),
-      const Radius.circular(2),
-    );
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawRRect(battery, paint);
-    paint.style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(24, 5, 9, 5),
-        const Radius.circular(1),
-      ),
-      paint,
-    );
-    canvas.drawRect(const Rect.fromLTWH(36.5, 5.5, 1.5, 4), paint);
-  }
-
-  @override
-  bool shouldRepaint(_StatusIndicatorsPainter oldDelegate) => false;
 }
 
 class _DashPainter extends CustomPainter {

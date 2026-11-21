@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/achievement_pass_service.dart';
+import '../services/audio_manager.dart';
 import '../services/progress_manager.dart';
+import 'coin_fly.dart';
 
 /// Yeni bir başarım açıldığında ekranın üstünden kayarak gelen altın çerçeveli bildirim banner'ı.
 class AchievementToastBanner extends StatefulWidget {
@@ -26,6 +28,11 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
   late final AnimationController _controller;
   late final Animation<Offset> _slideAnimation;
 
+  // D7 (F9): toast gösterim sesi için son seslendirilen başarım kimliği.
+  // Aynı toast tekrar çizilirken ses tekrarlanmaz; toast kalktığında
+  // sıfırlanır, böylece aynı başarım yeniden gösterilirse yine çalar.
+  String? _lastSoundedToastId;
+
   @override
   void initState() {
     super.initState();
@@ -40,6 +47,9 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
       CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
     _syncVisibility();
+    AchievementPassService.instance.activeToastNotifier
+        .addListener(_onToastChanged);
+    _onToastChanged();
   }
 
   @override
@@ -47,7 +57,26 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.achievement?.id != widget.achievement?.id) {
       _syncVisibility();
+      _onToastChanged();
     }
+  }
+
+  /// D7 (F9): yeni bir başarım toast'ı gösterildiğinde claim sesiyle
+  /// aynı zafer sesi ([AudioManager.playWin]) çalar. Bildirimci
+  /// (`activeToastNotifier`) değişiklikleri `didUpdateWidget`'a
+  /// uğramadığı için ses bu dinleyicide çalınır; `build` içinde
+  /// yan etki yapılmaz.
+  void _onToastChanged() {
+    final active = widget.achievement ??
+        AchievementPassService.instance.activeToastNotifier.value;
+    final id = active?.id;
+    if (id == null) {
+      _lastSoundedToastId = null;
+      return;
+    }
+    if (id == _lastSoundedToastId) return;
+    _lastSoundedToastId = id;
+    AudioManager().playWin();
   }
 
   void _syncVisibility() {
@@ -70,6 +99,8 @@ class _AchievementToastBannerState extends State<AchievementToastBanner>
 
   @override
   void dispose() {
+    AchievementPassService.instance.activeToastNotifier
+        .removeListener(_onToastChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -266,10 +297,74 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
   late int _tabIndex;
   AchievementCategory? _selectedCategory;
 
+  /// 12N: son kademe düğmesi dokunma noktası (uçuş kalkış yeri).
+  Offset? _lastTierTapPosition;
+
+  /// 12N: başlatılan uçuşların tutamakları — sayfa kapanırsa uçuşlar
+  /// iptal edilir (bekleyen zamanlayıcı/test sızıntısı yok; iptal sayıyı
+  /// uçuşsuz son değere döndürür).
+  final List<CoinFlightHandle> _coinFlights = <CoinFlightHandle>[];
+
+  void _trackCoinFlight(CoinFlightHandle? handle) {
+    if (handle != null) _coinFlights.add(handle);
+  }
+
+  @override
+  void dispose() {
+    for (final flight in _coinFlights) {
+      flight.cancel();
+    }
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
     _tabIndex = widget.initialTabIndex.clamp(0, 1);
+  }
+
+  /// Kademe ödülünü talep eder; başarıda ses + görünür bildirim (S3),
+  /// başarısızlıkta (yarışta kaybedilen talep) hata bildirimi gösterir
+  /// (tasks_screen `_claimTask` deseni). Gold track davranışı ve
+  /// `activateGoldPass` akışı değiştirilmez.
+  Future<void> _claimTier({
+    required int tier,
+    required bool goldTrack,
+    required String rewardLabel,
+    int coins = 0,
+  }) async {
+    final ok = await AchievementPassService.instance.claimPassTierReward(
+      tier,
+      goldTrack: goldTrack,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorGeneric)),
+      );
+      return;
+    }
+    // 12N: kademe coin ödülü düğmeden üst bara uçar (ödeme serviste
+    // yapıldı; uçuş yalnız görünümü erteler, coin içermeyen ödülde yok).
+    if (coins > 0) {
+      _trackCoinFlight(
+        CoinFlyService.instance.fly(
+          context: context,
+          from: _lastTierTapPosition ??
+              Offset(
+                MediaQuery.sizeOf(context).width / 2,
+                MediaQuery.sizeOf(context).height / 2,
+              ),
+          amount: coins,
+        ),
+      );
+    }
+    AudioManager().playWin();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(context.l10n.taskRewardClaimedSnack(rewardLabel)),
+      ),
+    );
   }
 
   @override
@@ -744,9 +839,12 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                   claimed: freeClaimed,
                   canClaim: canClaimFree,
                   isGold: false,
-                  onTap: () => service.claimPassTierReward(
-                    tierDef.tier,
+                  onTapDown: (d) => _lastTierTapPosition = d.globalPosition,
+                  onTap: () => _claimTier(
+                    tier: tierDef.tier,
                     goldTrack: false,
+                    rewardLabel: tierDef.freeReward.label,
+                    coins: tierDef.freeReward.coins,
                   ),
                 ),
               ),
@@ -759,9 +857,12 @@ class _AchievementPassSheetState extends State<AchievementPassSheet> {
                   claimed: goldClaimed,
                   canClaim: canClaimGold,
                   isGold: true,
-                  onTap: () => service.claimPassTierReward(
-                    tierDef.tier,
+                  onTapDown: (d) => _lastTierTapPosition = d.globalPosition,
+                  onTap: () => _claimTier(
+                    tier: tierDef.tier,
                     goldTrack: true,
+                    rewardLabel: tierDef.goldReward.label,
+                    coins: tierDef.goldReward.coins,
                   ),
                 ),
               ),
@@ -874,6 +975,9 @@ class _PassRewardTrackTile extends StatelessWidget {
   final bool isGold;
   final VoidCallback onTap;
 
+  /// 12N: uçuş kalkış noktası için dokunma konumu (opsiyonel).
+  final ValueChanged<TapDownDetails>? onTapDown;
+
   const _PassRewardTrackTile({
     required this.trackKey,
     required this.trackTitle,
@@ -882,6 +986,7 @@ class _PassRewardTrackTile extends StatelessWidget {
     required this.canClaim,
     required this.isGold,
     required this.onTap,
+    this.onTapDown,
   });
 
   @override
@@ -892,6 +997,7 @@ class _PassRewardTrackTile extends StatelessWidget {
       label: canClaim ? "$trackTitle, ${reward.label}, ${context.l10n.claimReward}" : "$trackTitle, ${reward.label}",
       child: GestureDetector(
         key: trackKey,
+        onTapDown: canClaim ? onTapDown : null,
         onTap: canClaim ? onTap : null,
         child: Container(
           padding: const EdgeInsets.all(6),

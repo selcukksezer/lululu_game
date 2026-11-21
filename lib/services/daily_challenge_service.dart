@@ -36,6 +36,10 @@ class DailyChallengeService extends ChangeNotifier {
 
   bool _loaded = false;
 
+  /// Devam eden `claimDailyChallengeReward` çağrısı (çift-talep
+  /// yarışı koruması): eşzamanlı ikinci talep `false` döner.
+  bool _claimInFlight = false;
+
   /// Devam eden `load()` çağrısı (uçuş koruması): eşzamanlı
   /// `load()`/`ensureLoaded()` çağrıları aynı yüklemeyi paylaşır.
   Future<void>? _loadFuture;
@@ -175,8 +179,6 @@ class DailyChallengeService extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get headline => 'Bugün $modeLabel · $targetScore puan';
-
   Duration get timeLeft {
     final now = DateTime.now();
     final end = DateTime(now.year, now.month, now.day).add(
@@ -211,14 +213,49 @@ class DailyChallengeService extends ChangeNotifier {
     return lastClaimDay != _todayKey();
   }
 
+  /// Günlük challenge ödülünü talep eder (K2a, kesin imza — 3H bu
+  /// imzaya güvenir).
+  ///
+  /// Sözleşme: bugün tamamlanmadıysa (`completedToday` false) `false`
+  /// döner, ödeme yok. Aynı gün zaten talep edildiyse `false` döner,
+  /// ödeme yok (çift-talep koruması kalıcıdır: `lastClaimDay`
+  /// prefs'e yazılır). Aksi hâlde `nextClaimRewardCoins` ödenir
+  /// (yalnız coin — challenge'ın tanımlı bir enerji ödülü yoktur;
+  /// `defaultMissions` enerji değerleri görev ödülleridir, burayla
+  /// karıştırılmaz), `lastClaimDay` + streak güncellenir, kalıcı
+  /// kayıt yapılır, `true` döner. Talep sonrası `canClaimToday`
+  /// `false` döner.
+  Future<bool> claimDailyChallengeReward() async {
+    if (_claimInFlight) return false;
+    _claimInFlight = true;
+    try {
+      await ensureLoaded();
+      if (!completedToday) return false;
+      final today = _todayKey();
+      if (lastClaimDay == today) return false;
+      // Ödül ve yeni seri, durum değişmeden ÖNCE hesaplanır:
+      // `nextClaimRewardCoins` mevcut `lastClaimDay`/streak'e dayanır.
+      final rewardCoins = nextClaimRewardCoins;
+      final nextStreak = lastClaimDay == _dayKeyOffset(-1) ? streak + 1 : 1;
+      await ProgressManager.instance.addCoins(rewardCoins);
+      streak = nextStreak;
+      lastClaimDay = today;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('${_prefsKey}_streak', streak);
+      await prefs.setString('${_prefsKey}_lastClaim', today);
+      notifyListeners();
+      return true;
+    } finally {
+      _claimInFlight = false;
+    }
+  }
+
   /// Hesap silme için yerel günlük görev verisinin tamamını temizler
   /// (hesap-silme, yerel-temizlik): gün / mod / hedef anahtarları,
   /// `LululuDailyV1_done_*` tamamlandı kayıtları (bugün + önceki
-  /// günlerden kalmış olabilecekler) ve aynı ad alanındaki
-  /// `_streak` / `_lastClaim` okumaları kaldırılır; bellek-içi durum
-  /// varsayılanlara döner. `_streak` / `_lastClaim` kod tabanında
-  /// hiçbir yerde yazılmaz (ölü okuma) ama aynı hesap verisi ad
-  /// alanında oldukları için yine de kaldırılır.
+  /// günlerden kalmış olabilecekler) ve `claimDailyChallengeReward`
+  /// tarafından yazılan `_streak` / `_lastClaim` kayıtları kaldırılır;
+  /// bellek-içi durum varsayılanlara döner.
   Future<void> clearLocalData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('${_prefsKey}_day');
@@ -243,13 +280,13 @@ class DailyChallengeService extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _todayKey() {
-    final n = DateTime.now();
-    return '${n.year}-${n.month}-${n.day}';
-  }
+  /// Gün anahtarı (saf yardımcı): `yıl-ay-gün`, sıfır doldurmasız
+  /// (mevcut kalıcı anahtar biçimi aynen korunur — davranış değişmez).
+  static String dayKeyFor(DateTime date) =>
+      '${date.year}-${date.month}-${date.day}';
 
-  String _dayKeyOffset(int days) {
-    final n = DateTime.now().add(Duration(days: days));
-    return '${n.year}-${n.month}-${n.day}';
-  }
+  String _todayKey() => dayKeyFor(DateTime.now());
+
+  String _dayKeyOffset(int days) =>
+      dayKeyFor(DateTime.now().add(Duration(days: days)));
 }

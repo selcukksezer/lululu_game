@@ -3,6 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+// path geçişli bağımlılıktır; doğrudan bağımlılık olarak pubspec.yaml'a
+// eklenmesi koordinatörün birleştirme adımına bırakılmıştır.
+// ignore: depend_on_referenced_packages
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -250,6 +254,8 @@ class BugVideoService extends ChangeNotifier {
   final List<BugGifItem> _gifs = <BugGifItem>[];
   final List<BugDownloadEntry> _downloads = <BugDownloadEntry>[];
   bool _loaded = false;
+  Future<void>? _loadFuture;
+  Future<void> _pendingOperation = Future<void>.value();
 
   bool get isLoaded => _loaded;
 
@@ -331,7 +337,7 @@ class BugVideoService extends ChangeNotifier {
     final clean = path.trim();
     if (clean.isEmpty) return null;
     try {
-      final baseName = clean.split('/').last;
+      final baseName = p.basename(clean);
       final candidates = <File>[
         File(clean),
         File('../$clean'),
@@ -479,12 +485,64 @@ class BugVideoService extends ChangeNotifier {
     ]);
   }
 
+  /// Yazma işlemlerini serileştirir: eşzamanlı sahne/yükleme/GIF
+  /// çağrıları aynı `_posts`/`_save` durumuna yarışmadan sırayla çalışır.
+  /// Çağrılar reddedilmez, kuyruğa girer; önceki işlemin hatası
+  /// kuyruğu bozmaz.
+  Future<T> _runSerialized<T>(Future<T> Function() action) async {
+    final previous = _pendingOperation;
+    final completer = Completer<void>();
+    _pendingOperation = completer.future;
+    try {
+      await previous;
+    } catch (_) {}
+    try {
+      return await action();
+    } finally {
+      completer.complete();
+    }
+  }
+
+  /// `path` paketiyle güvenli video uzantısı çıkarır.
+  ///
+  /// Uzantısız, gizli dosya (`.mp4` gibi) veya harf/rakam dışı karakter
+  /// içeren yollarda `mp4` döner; elle `split('.')` ayrıştırmasının
+  /// `dizin.adi/dosya` yolunu `dosya` uzantısı sayma hatasını yapmaz.
+  String _safeVideoExtension(String? sourcePath) {
+    if (sourcePath == null || sourcePath.isEmpty) return 'mp4';
+    final raw = p.extension(sourcePath).replaceFirst('.', '').toLowerCase();
+    if (raw.isEmpty) return 'mp4';
+    final isSafe = raw.codeUnits.every(
+      (c) => (c >= 97 && c <= 122) || (c >= 48 && c <= 57),
+    );
+    return isSafe ? raw : 'mp4';
+  }
+
   Future<void> ensureLoaded() async {
     if (_loaded) return;
     await load();
   }
 
+  /// Eşzamanlı `load()` çağrıları tek yüklemede birleşir; yükleme
+  /// bitince koruma sıfırlanır, sonraki `load()` yeniden okur.
   Future<void> load() async {
+    final pending = _loadFuture;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+    final future = _loadInternal();
+    _loadFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_loadFuture, future)) {
+        _loadFuture = null;
+      }
+    }
+  }
+
+  Future<void> _loadInternal() async {
     _seedViralWatchFeed();
     _seedDefaultGifs();
     _seedDefaultDownloads();
@@ -634,6 +692,30 @@ class BugVideoService extends ChangeNotifier {
     String? backgroundAsset,
     bool isPublic = true,
     bool addToDownloads = true,
+  }) {
+    return _runSerialized(
+      () => _createSceneVideoImpl(
+        title: title,
+        caption: caption,
+        trimPercent: trimPercent,
+        stickerIndex: stickerIndex,
+        stickerAsset: stickerAsset,
+        backgroundAsset: backgroundAsset,
+        isPublic: isPublic,
+        addToDownloads: addToDownloads,
+      ),
+    );
+  }
+
+  Future<BugVideoPost> _createSceneVideoImpl({
+    String title = '',
+    String caption = 'LÜLÜLÜ!',
+    double trimPercent = 62.0,
+    int stickerIndex = 1,
+    String? stickerAsset,
+    String? backgroundAsset,
+    bool isPublic = true,
+    bool addToDownloads = true,
   }) async {
     if (kIsWeb) {
       throw StateError('Sahne videosu oluşturma web sürümünde desteklenmiyor');
@@ -655,6 +737,8 @@ class BugVideoService extends ChangeNotifier {
     final id = 'scene_${DateTime.now().microsecondsSinceEpoch}';
     final dest = File('${dir.path}/$id.mp4');
 
+    // Yer tutucu baytlar bilinçli korunur (O18): dosya oluşmazsa load()
+    // süzgeci gönderiyi atar; stüdyo akışı dosyanın varlığına dayanır.
     final rawSample =
         resolvePlayableFile(rawTiktokVideoPaths[0], baseDir: dir.path);
     if (rawSample != null) {
@@ -720,6 +804,22 @@ class BugVideoService extends ChangeNotifier {
     String? sourcePath,
     bool isPublic = true,
     bool requireSignedIn = false,
+  }) {
+    return _runSerialized(
+      () => _uploadCustomVideoImpl(
+        title: title,
+        sourcePath: sourcePath,
+        isPublic: isPublic,
+        requireSignedIn: requireSignedIn,
+      ),
+    );
+  }
+
+  Future<BugVideoPost> _uploadCustomVideoImpl({
+    required String title,
+    String? sourcePath,
+    bool isPublic = true,
+    bool requireSignedIn = false,
   }) async {
     if (kIsWeb) {
       throw StateError('Video yükleme web sürümünde desteklenmiyor');
@@ -732,9 +832,7 @@ class BugVideoService extends ChangeNotifier {
 
     final dir = await _resolveStorageDir('bug_videos');
     final id = 'v_${DateTime.now().microsecondsSinceEpoch}';
-    final ext = (sourcePath != null && sourcePath.contains('.'))
-        ? sourcePath.split('.').last
-        : 'mp4';
+    final ext = _safeVideoExtension(sourcePath);
     final dest = File('${dir.path}/$id.$ext');
 
     var copied = false;
@@ -759,6 +857,8 @@ class BugVideoService extends ChangeNotifier {
       }
     }
 
+    // Yer tutucu baytlar bilinçli korunur (O18): dosya oluşmazsa load()
+    // süzgeci gönderiyi atar; stüdyo akışı dosyanın varlığına dayanır.
     if (!copied) {
       try {
         await dest.writeAsBytes(utf8.encode('LULULU_VIDEO:$id:$title'));
@@ -805,6 +905,22 @@ class BugVideoService extends ChangeNotifier {
 
   /// Stüdyo "GIF" sekmesi: seçili karelerden ve hızdan hareketli GIF kaydı üretir.
   Future<BugGifItem> createAnimatedGif({
+    String caption = 'DANS ZAMANI!',
+    Set<int> selectedFrames = const <int>{0, 1},
+    int speedIndex = 1,
+    bool addToDownloads = true,
+  }) {
+    return _runSerialized(
+      () => _createAnimatedGifImpl(
+        caption: caption,
+        selectedFrames: selectedFrames,
+        speedIndex: speedIndex,
+        addToDownloads: addToDownloads,
+      ),
+    );
+  }
+
+  Future<BugGifItem> _createAnimatedGifImpl({
     String caption = 'DANS ZAMANI!',
     Set<int> selectedFrames = const <int>{0, 1},
     int speedIndex = 1,

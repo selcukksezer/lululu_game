@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/audio_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../widgets/achievement_toast_overlay.dart';
 import '../widgets/home/lululu_dock_bar.dart';
 import '../widgets/shop_dialog.dart';
 import 'game_selector_screen.dart';
@@ -50,6 +52,9 @@ class _HomeShellState extends State<HomeShell> {
 
   void _select(LululuDockTab tab) {
     if (tab == _tab) return;
+    // S10: sekme değişim sesi TEK katmanda, burada — dock çubuğundaki
+    // tüm dokunuşlar bu yoldan geçer (dock bar'da ayrıca çalınmaz).
+    AudioManager().playPop();
     setState(() => _tab = tab);
   }
 
@@ -70,44 +75,63 @@ class _HomeShellState extends State<HomeShell> {
     // sekmelerin kendisinde (örn. mqTop) hesaplanır, burada
     // yinelenmez.
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark,
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: LululuColors.paperSoft,
-        body: Stack(
-          children: [
-            // İçerik: dock'un üstünde biter; alt boşluk merkezi.
-            Positioned.fill(
-              child: Padding(
-                padding:
-                    EdgeInsets.only(bottom: _dockClearance + bottomInset),
-                child: _buildActiveTab(),
-              ),
-            ),
-            // Floating dock: içeriğin üstünde (etkileşim katmanı).
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: bottomInset,
-              child: Opacity(
-                opacity: 0.0,
-                child: LululuDockBar(
-                  selected: _tab,
-                  onSelect: _select,
+    return PopScope(
+      // N5: hub-dışı sekmede geri hub sekmesine döner; hub sekmesinde
+      // geri varsayılan davranıştır (uygulamadan çıkış).
+      canPop: _tab == LululuDockTab.home,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _select(LululuDockTab.home);
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.dark,
+        child: Scaffold(
+          extendBody: true,
+          backgroundColor: LululuColors.paperSoft,
+          body: Stack(
+            children: [
+              // İçerik: dock'un üstünde biter; alt boşluk merkezi.
+              Positioned.fill(
+                child: Padding(
+                  padding:
+                      EdgeInsets.only(bottom: _dockClearance + bottomInset),
+                  child: _buildActiveTab(),
                 ),
               ),
-            ),
-            // CSS v5 dock specular highlights + active label color (--paper)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: bottomInset,
-              child: IgnorePointer(
-                child: _DockVisualOverlay(selected: _tab),
+              // Floating dock: içeriğin üstünde (etkileşim katmanı).
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: bottomInset,
+                child: Opacity(
+                  opacity: 0.0,
+                  child: LululuDockBar(
+                    selected: _tab,
+                    onSelect: _select,
+                  ),
+                ),
               ),
-            ),
-          ],
+              // CSS v5 dock specular highlights + active label color (--paper)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: bottomInset,
+                child: IgnorePointer(
+                  child: _DockVisualOverlay(selected: _tab),
+                ),
+              ),
+              // K1-mount: başarım toast banner'ı, engelsiz üst katman.
+              // Banner toast yokken sıfır boyutludur (SizedBox.shrink) ve
+              // yerleşimi kaydırmaz; toast varken yalnız kendi kutusu
+              // kadar yer kaplar (kapatma düğmesi dokunulabilir kalır).
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: AchievementToastBanner(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -221,7 +245,14 @@ class _DockVisualOverlay extends StatelessWidget {
                             return Stack(
                               clipBehavior: Clip.none,
                               children: [
-                                Positioned(
+                                // 12O: hap EN ARKADA kayar — AnimatedPositioned
+                                // Row'dan ÖNCE gelir; simge+yazı katmanı her
+                                // zaman hapın üstünde boyanır. (Eskiden statik
+                                // Positioned idi: sekme değişiminde hap
+                                // zıplıyor, kayma hissi yoktu.)
+                                AnimatedPositioned(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeOutBack,
                                   left: selected.index * tabWidth,
                                   top: 0,
                                   width: tabWidth,

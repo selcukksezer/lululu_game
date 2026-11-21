@@ -3,7 +3,6 @@ import 'dart:math';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/hisir_character.dart';
@@ -11,11 +10,14 @@ import '../l10n/app_localizations.dart';
 import '../models/insect_tier.dart';
 import '../services/audio_manager.dart';
 import '../services/daily_challenge_service.dart';
+import '../services/difficulty_binding.dart';
 import '../services/energy_service.dart';
 import '../services/finish_run.dart';
+import '../services/haptic_service.dart';
 import '../services/leaderboard_service.dart';
 import '../services/progress_manager.dart';
 import '../theme/lululu_theme.dart';
+import '../utils/number_format.dart';
 import '../widgets/arcade_chrome.dart';
 import '../widgets/mode_bonus_bar.dart';
 import '../widgets/sticker_image.dart';
@@ -42,6 +44,14 @@ class TerlikTapScreen extends StatefulWidget {
   @visibleForTesting
   final bool initialTargetForTesting;
 
+  /// Tur-sonu skor→coin bağışı (13E): `skor ~/ 400`, en az 1.
+  ///
+  /// Ölüm (`_die`) ve BİTİR (`_presentResult`) yolları aynı bağışı
+  /// bir kez uygular (`_applyEndCoins` — `_endCoinsApplied`
+  /// korumasıyla). Skor 0'da BİTİR yolu bağış vermez (F10 kuralı);
+  /// ölüm yolunun `max(1, ...)` davranışı aynen korunur.
+  static int endCoinsForScore(int score) => max(1, score ~/ 400);
+
   @override
   State<TerlikTapScreen> createState() => _TerlikTapScreenState();
 }
@@ -55,15 +65,15 @@ class TerlikTapPacing {
   static double spawnInterval(double elapsedSeconds) {
     final rampTime = max(0.0, elapsedSeconds - tutorialSeconds);
     return elapsedSeconds < tutorialSeconds
-        ? 1.15
-        : max(0.58, 1.05 - rampTime * 0.01);
+        ? 1.3
+        : max(0.80, 1.2 - rampTime * 0.01);
   }
 
   static double targetVisibleSeconds(double elapsedSeconds) {
     final rampTime = max(0.0, elapsedSeconds - tutorialSeconds);
     return elapsedSeconds < tutorialSeconds
-        ? 1.8
-        : max(1.0, 1.55 - rampTime * 0.008);
+        ? 2.4
+        : max(1.6, 2.4 - rampTime * 0.008);
   }
 }
 
@@ -129,6 +139,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   int _missed = 0;
   int _lives = 3;
   int _coinsEarned = 0;
+  // 13E: tur-sonu skor→coin bağışı bu turda uygulandı mı? Ölüm
+  // (`_die`) ve BİTİR (`_presentResult`) aynı bağışı paylaşır —
+  // bayrak çift eklemeyi kapatır. `_restart` sıfırlar.
+  bool _endCoinsApplied = false;
   int _slipperEarned = 0;
   int _sprayEarned = 0;
   double _elapsedSeconds = 0;
@@ -151,6 +165,15 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   // Çift-iade koruması: iade oturum başına en fazla bir kez yapılır.
   bool _energyRefunded = false;
   int _runId = 0;
+  // Y3: tur başlangıç damgası — tur başına tek `finishRun` anahtarı
+  // ('<mod>:<damga>') bu damgadan üretilir. İlk turda State
+  // kuruluşunda, sonraki turlarda `_restart`'ta yakalanır; BİTİR +
+  // can-bitiş yolları aynı anahtarı paylaşır, bitiş-anı
+  // `DateTime.now()` kullanılmaz.
+  int _runStartStamp = DateTime.now().microsecondsSinceEpoch;
+
+  String get _runIdempotencyKey =>
+      '${LeaderboardService.modeTerlik}:$_runStartStamp';
   String? _missMessage;
   String _hint = '';
   bool _hintSeeded = false;
@@ -159,12 +182,26 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   double _hitStop = 0;
   DateTime _last = DateTime.now();
   Timer? _loop;
+
+  /// Kare bildirimi: [_tick] tam `setState` yerine bunu artırır —
+  /// yalnız `build` içindeki [ValueListenableBuilder] alt-ağacı
+  /// (başlık + delikler + güç çubuğu) yenilenir; arka plan,
+  /// [Scaffold] ve [PopScope] kare başına kurulmaz.
+  final ValueNotifier<int> _tickNotifier = ValueNotifier<int>(0);
   // Duraklatma (madde 37): Osmantuş deseni — arka planda oyun zamanlayıcısı
   // durur, elle duraklatmada da aynı zamanlayıcı durdurulur; altın terlik
   // gibi duvar-saati süreleri duraklatma süresi kadar ötelenir.
   bool _paused = false;
   bool _pausedByLifecycle = false;
   DateTime? _pauseStartedAt;
+
+  /// N7 çıkış onayı durumu: onay bayrağı (diyalogda Çık seçildiyse
+  /// `PopScope` çıkışı geçirir), çift-diyalog kilidi ve diyalog
+  /// duraklatması bayrağı (yardım deseni: yalnız bu diyalog için
+  /// duraklatıldıysa kapanınca devam edilir).
+  bool _exitConfirmed = false;
+  bool _exitConfirmShowing = false;
+  bool _pausedForExitConfirm = false;
   Size _arena = const Size(320, 480);
 
   static const _osmanA = (
@@ -276,6 +313,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     AudioManager().stopAll();
     _loop?.cancel();
     _pulse.dispose();
+    _tickNotifier.dispose();
     super.dispose();
   }
 
@@ -330,6 +368,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   /// ve doğma sayacı donar; tek-ödeme mantığına dokunulmaz.
   void _togglePause() {
     if (widget.prototypeVisualState || !_alive) return;
+    // 10D P0-3: duraklatma sesi + titreşimi tek çağrıda
+    // (playButtonTap içi selectionClick; ayrıca trigger* eklenmez).
+    unawaited(AudioManager().playButtonTap());
     if (_paused) {
       _paused = false;
       _pausedByLifecycle = false;
@@ -343,26 +384,78 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     setState(() {});
   }
 
+  /// Yardım diyaloğu açıkken oyun durur (B4): zamanlayıcı durdurulur,
+  /// diyalog kapanınca kaldığı yerden devam eder; altın terlik süresi
+  /// duraklatma kadar ötelenir. Elle duraklatma bayrağına dokunulmaz
+  /// (duraklatma kaplaması açılmaz).
+  Future<void> _showHelp() async {
+    final resumeLoop = _alive && !_paused && _loop != null;
+    if (resumeLoop) {
+      _pauseStartedAt ??= DateTime.now();
+      _stopLoop();
+    }
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(ctx.l10n.slipperTapTitle),
+          // Kural metni (F4): yardım diyaloğu canlı _hint'i
+          // (ıskalama/kombo mesajları) değil oyun kurallarını
+          // gösterir; oyun-içi _hint gösterimi aynen durur
+          // (bulgu #9).
+          content: Text(ctx.l10n.terlikHowToBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(ctx.l10n.understoodButton),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (resumeLoop && mounted && _alive && !_paused) {
+        _shiftPauseDeadlines();
+        _startLoop();
+      }
+    }
+  }
+
   void _tick(Timer _) {
     if (!_alive || !mounted || _paused) return;
     final now = DateTime.now();
     var dt = now.difference(_last).inMicroseconds / 1e6;
     _last = now;
-    if (dt < 0.008 || dt > 0.05) dt = 0.016;
+    // Kare süresi kısması: 50 ms üstü gecikme eskiden tek 16 ms kare
+    // sayılıyordu (`dt = 0.016`) — geçen süre çöpe atılıyor, kısılan
+    // zamanlayıcıda (arka-plan sekmesi) oyun 30-60× yavaşlıyor, böcekler
+    // 30-60 sn delikte kalıyordu (T-2). Şimdi dt 0.25 sn'de kelepçelenir:
+    // 60 fps'de dt ~0.016 olduğundan normal oyun aynen; kısılan tikte
+    // oyun gerçek zamana yaklaşır, sıçrama yine sınırlıdır (kare başına
+    // en fazla 1 sayılan ıska kuralı ayrıca korur).
+    if (dt < 0) dt = 0;
+    if (dt > 0.25) dt = 0.25;
 
     if (_hitStop > 0) {
       _hitStop = max(0, _hitStop - dt);
       // Soft freeze: skip spawn/physics while hit-stop active.
       if (_hitStop > 0) {
         _shake = max(0, _shake - dt * 4);
-        setState(() {});
+        // Kare-başına tam rebuild yok: yalnız [_tickNotifier]
+        // dinleyen alt-ağaç yenilenir.
+        _tickNotifier.value++;
         return;
       }
     }
 
     _elapsedSeconds += dt;
     _spawnAcc += dt;
-    final spawnEvery = TerlikTapPacing.spawnInterval(_elapsedSeconds);
+    // 12C1: adaptif zorluk — merhamette doğuş aralığı uzar (daha sakin),
+    // kazanma serisinde kısalır. Çarpan profilden senkron okunur.
+    final difficultySpeed = DifficultyBinding.instance
+        .cachedProfileForMode('terlik')
+        .speedMultiplier;
+    final spawnEvery =
+        TerlikTapPacing.spawnInterval(_elapsedSeconds) / difficultySpeed;
     final maxConcurrent = _elapsedSeconds < 12 ? 3 : 4;
     if (_spawnAcc >= spawnEvery &&
         _bugs.where((bug) => !bug.smashed).length < maxConcurrent) {
@@ -384,7 +477,12 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
           if (b.isTrap) {
             // Tuzaktan kaçmak ödülsüzdür (madde 40): skor verilmez.
             final center = _holeCenter(b.holeIndex);
-            _pushFx(context.l10n.terlikTrapPassed, center.dx, center.dy, LululuColors.toxicNeon);
+            _pushFx(
+              context.l10n.terlikTrapPassed,
+              center.dx,
+              center.dy,
+              LululuColors.toxicNeon,
+            );
           } else if (!countedMissThisTick) {
             countedMissThisTick = true;
             _applyMiss(context.l10n.terlikEscaped);
@@ -401,13 +499,17 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     for (final f in _fx) {
       f.life -= dt * 1.6;
       f.y -= 48 * dt;
+      // 6H (G32): pankart bölgesine yükselmesin — çizgide durup solsun.
+      if (f.y < _fxTopClearance) f.y = _fxTopClearance;
     }
     _fx.removeWhere((f) => f.life <= 0);
 
     if (_shake > 0) {
       _shake = max(0, _shake - dt * 3.8);
     }
-    setState(() {});
+    // Kare-başına tam rebuild yok: yalnız [_tickNotifier] dinleyen
+    // alt-ağaç yenilenir (başlık + delikler + güç çubuğu).
+    _tickNotifier.value++;
   }
 
   void _spawn({int? preferredRow}) {
@@ -429,7 +531,18 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       }
     }
     final holeIndex = freeHoles[_rng.nextInt(freeHoles.length)];
-    final visibleFor = TerlikTapPacing.targetVisibleSeconds(_elapsedSeconds);
+    // 12C1: adaptif zorluk — merhamette hedef daha uzun görünür.
+    // DDA hız çarpanı görünme bölmesinde 1.15 ile kelepçelenir:
+    // seri oyuncuda (speed 1.35) taban görünme 1.6 / 1.35 ≈ 1.19 sn'ye
+    // inmez, en az 1.6 / 1.15 ≈ 1.39 sn kalır.
+    final visibleFor =
+        TerlikTapPacing.targetVisibleSeconds(_elapsedSeconds) /
+        min(
+          DifficultyBinding.instance
+              .cachedProfileForMode('terlik')
+              .speedMultiplier,
+          1.15,
+        );
 
     // Skor yükselince %12 ihtimalle dokunulmaması gereken elektrik/bomba tuzağı.
     if (!widget.prototypeVisualState &&
@@ -473,8 +586,13 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       return;
     }
 
-    // ~8% Hışır özel hedefi (tier dışı; sesi 'hisir' kimliğiyle husur_aday).
-    if (_rng.nextDouble() < 0.08) {
+    // ~8% Hışır özel hedefi (tier dışı; sesi 'hisir' kimliğiyle hisir_zopa).
+    // HisirCharacter.roll üzerinden: üretimde %8, testte debugForceHisir
+    // ile zorlanabilir.
+    if (HisirCharacter.roll(
+      _rng,
+      chance: HisirCharacter.terlikSpawnChance,
+    )) {
       _bugs.add(
         _Bug(
           id: _nextId++,
@@ -507,8 +625,30 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     );
   }
 
+  // 6H (G32): yüzen-yazı sınırı + yayılma. Eski mantık
+  // (`y - _fx.length * 16`) hızlı vuruşlarda yazıları sınırsız yukarı
+  // taşıyıp pankartın üstüne yığıyordu: aynı x'te (orta sütun) üst üste
+  // binen yazılar okunmaz kırmızı blok oluşturuyordu. Şimdi aynı anda en
+  // fazla 6 yazı yaşar (yenisi en eskisini atar), yazılar vuruş
+  // noktasından sınırlı bir yelpazeye yayılır (±34 px yatay, 0–32 px
+  // yukarı) ve pankart bölgesine (arena üstü) asla girmez.
+  static const int _maxFx = 6;
+  // FX metni ~13 px: üst kenarı (y - 12) pankart altından (~40 px)
+  // aşağıda kalsın diye merkez y en az 56 px olur; yükselirken de bu
+  // çizgide durup solmaya devam eder.
+  static const double _fxTopClearance = 56;
+
   void _pushFx(String label, double x, double y, Color color) {
-    _fx.add(_FloatFx(id: _nextFx++, label: label, x: x, y: y, color: color));
+    final slot = _nextFx % 3;
+    final fxX = min(
+      max(x + (slot - 1) * 34.0, 52.0),
+      max(52.0, _arena.width - 52.0),
+    );
+    final fxY = max(_fxTopClearance, y - slot * 16.0);
+    if (_fx.length >= _maxFx) _fx.removeAt(0);
+    _fx.add(
+      _FloatFx(id: _nextFx++, label: label, x: fxX, y: fxY, color: color),
+    );
   }
 
   /// Combo / rastgele / Osmantuş damlaları: SADECE biriktirilir, vault'a
@@ -639,19 +779,111 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   /// false). Tur bittikten / sonuç gösterildikten sonra çağrılsa bile
   /// ödemez: _die _runEnded'i, finishRun içindeki ödeme de
   /// _economySettled'i çoktan true yapmıştır.
-  void _refundEnergyIfNoHit() {
+  ///
+  /// Dönüş değeri iadenin gerçekten yapılıp yapılmadığını bildir
+  /// (S6: Geri düğmesi yalnız iade verildiyse bildirim gösterir).
+  bool _refundEnergyIfNoHit() {
     if (!widget.energyConsumed ||
         _energyRefunded ||
         _hasHit ||
         _runEnded ||
         _economySettled ||
         !_alive) {
-      return;
+      return false;
     }
     // Çift-iade koruması: bayrak eklemeden ÖNCE konur; Geri düğmesi +
     // PopScope aynı çıkışta iki kez çağırsa bile ikinci çağrı döner.
     _energyRefunded = true;
     EnergyService.instance.addEnergy(1);
+    return true;
+  }
+
+  /// N7: tur sürerken, hamle yapılmışsa ve giriş enerjisi
+  /// tüketilmişse (iade hakkı yoksa) çıkış onayı gerekir. Hamlesiz
+  /// çıkışta onay YOK — çıkış anında kalır, iade yolu aynen çalışır
+  /// (S6'ya dokunulmaz).
+  bool get _needsExitConfirm =>
+      widget.energyConsumed &&
+      _hasHit &&
+      _alive &&
+      !_runEnded &&
+      !_economySettled;
+
+  /// N7 `PopScope` yolu: `didPop` ise mevcut iade mantığı aynen
+  /// çalışır; veto ise onay diyaloğu açılır.
+  void _handleExitPop(bool didPop) {
+    if (didPop) {
+      _refundEnergyIfNoHit();
+      return;
+    }
+    unawaited(_showExitConfirm());
+  }
+
+  /// N7 çıkış onayı: sohbet/satın alma onay deseni
+  /// (`showDialog<bool>` + `AlertDialog` + İptal TextButton / Çık
+  /// FilledButton). Yeni dialog widget'ı yok, mevcut desen çağrılır.
+  Future<bool> _confirmExitRound() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.l10n.exitRoundConfirmTitle),
+        content: Text(ctx.l10n.exitRoundConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(ctx.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ctx.l10n.quit),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  /// N7 diyalog duraklatması (`_togglePause` deseni): oyun
+  /// zamanlayıcısı durur, duvar-saati süreleri devamda kaydırılır.
+  void _pauseForExitConfirm() {
+    if (widget.prototypeVisualState || !_alive || _paused) return;
+    _pausedForExitConfirm = true;
+    _paused = true;
+    _pauseStartedAt ??= DateTime.now();
+    _stopLoop();
+    setState(() {});
+  }
+
+  void _resumeAfterExitConfirm() {
+    if (!_pausedForExitConfirm) return;
+    _pausedForExitConfirm = false;
+    _paused = false;
+    _shiftPauseDeadlines();
+    _startLoop();
+    setState(() {});
+  }
+
+  Future<void> _showExitConfirm() async {
+    if (_exitConfirmShowing) return;
+    _exitConfirmShowing = true;
+    _pauseForExitConfirm();
+    final confirmed = await _confirmExitRound();
+    _exitConfirmShowing = false;
+    if (!mounted) return;
+    if (confirmed) {
+      setState(() => _exitConfirmed = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final popped = await Navigator.of(context).maybePop();
+        if (!popped && mounted) {
+          setState(() => _exitConfirmed = false);
+          _resumeAfterExitConfirm();
+        }
+      });
+    } else {
+      _resumeAfterExitConfirm();
+    }
   }
 
   Offset _holeCenter(int index) {
@@ -688,7 +920,11 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         return;
       }
       _breakComboOnly(context.l10n.terlikMissedHit);
-      HapticFeedback.selectionClick();
+      unawaited(HapticService.instance.selectionClick());
+      // 10D P0-2: ıska sesi — playDrop. Ses çağrısı kapılı lightImpact
+      // içerir; yukarıdaki selectionClick ile aynı tick'te 18 ms
+      // kapısına takılıp düşer — toplam 1 impuls.
+      unawaited(AudioManager().playDrop());
       setState(() {});
       return;
     }
@@ -699,8 +935,9 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       // Gerçek vuruş: tuzağa basmak da hamledir, iade hakkı biter.
       _hasHit = true;
       _applyMiss(context.l10n.terlikSteppedTrap);
-      HapticFeedback.heavyImpact();
-      unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
+      // D8: tuzak sesi sprey DEĞİL terlik tokadı — tuzağa basmak fiziksel
+      // bir darbedir; sprey sesi güçlendiriciye aittir (F13).
+      unawaited(AudioManager().playSlipper());
       if (_lives <= 0) {
         _die();
         return;
@@ -766,15 +1003,14 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
           _lives = min(3, _lives + b.amount);
           break;
       }
-      _pushFx(
-        b.label,
-        hitCenter.dx,
-        hitCenter.dy - 10 - _fx.length * 14.0,
-        b.color,
-      );
+      _pushFx(b.label, hitCenter.dx, hitCenter.dy - 10, b.color);
     }
 
     _score += scoreGain;
+    // G33: REKOR HUD'da canlı güncellenir (match3 deseni: skor yazılan
+    // her yerde `_best` eşitlenir; kalıcı kayıt `_die` / `_presentResult`
+    // akışında aynen kalır).
+    if (_score > _best) _best = _score;
     _coinsEarned += coinDrop;
     _slipperEarned += slipperDrop;
     _sprayEarned += sprayDrop;
@@ -799,12 +1035,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _hitStop = max(_hitStop, juiceTier >= 6 || hit.isOsman ? 0.05 : 0.03);
     }
 
-    if (_combo >= 5 || hit.isOsman) {
-      AudioManager().triggerHeavyHaptic();
-    } else {
-      HapticFeedback.mediumImpact();
-    }
-
+    // 7A: açık haptic kaldırıldı — playSlipperSmash kendi haptic'ini
+    // (onSlipperSlap, komboya göre) zaten tetikler; çift titreşimdi.
     unawaited(
       AudioManager().playSlipperSmash(
         characterId: hit.characterId,
@@ -824,14 +1056,15 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
   void _applyMiss(String reason) {
     _missed++;
     _combo = 0;
-    final lifeLost = _missed % 3 == 0;
+    // Iska toleransı: 4 ıska = 1 can (3 değil).
+    final lifeLost = _missed % 4 == 0;
     if (lifeLost) _lives--;
     _missMessage = lifeLost
         ? context.l10n.missLifeLost(reason)
-        : context.l10n.terlikComboBreakLives(reason, 3 - (_missed % 3));
+        : context.l10n.terlikComboBreakLives(reason, 4 - (_missed % 4));
     _hint = lifeLost
         ? context.l10n.terlikComboBreakLifeLost(reason, _lives)
-        : context.l10n.terlikComboBreakLives(reason, 3 - (_missed % 3));
+        : context.l10n.terlikComboBreakLives(reason, 4 - (_missed % 4));
     _pushFx(
       context.l10n.comboBrokenShort,
       _arena.width / 2,
@@ -854,18 +1087,27 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     );
   }
 
+  /// Tur-sonu skor→coin bağışı (13E): [TerlikTapScreen.endCoinsForScore]
+  /// bir kez `_coinsEarned`'e eklenir. Ölüm yolu (`_die`) ve BİTİR
+  /// yolu (`_presentResult`) aynı yardımcıdan geçer; ikinci çağrı
+  /// no-op'tur. Ödeme burada yapılmaz — birikim yalnız artırılır,
+  /// grant `_settleRunEconomy` içindeki tek noktadadır (madde 8).
+  void _applyEndCoins() {
+    if (_endCoinsApplied) return;
+    _endCoinsApplied = true;
+    _coinsEarned += TerlikTapScreen.endCoinsForScore(_score);
+  }
+
   void _die() {
     _alive = false;
     _runEnded = true;
     _diedAt = DateTime.now();
     // Run sonu skor→coin: SADECE biriktirilir; ödeme _presentResult'taki
     // tek noktadan yapılır (madde 8). Burada grant YOK.
-    final endCoins = max(1, _score ~/ 400);
-    _coinsEarned += endCoins;
-    _hint =
-        context.l10n.terlikOutOfSlippers(_smashed, _maxCombo, _coinsEarned);
-    HapticFeedback.heavyImpact();
-    unawaited(AudioManager().playLose());
+    _applyEndCoins();
+    _hint = context.l10n.terlikOutOfSlippers(_smashed, _maxCombo, _coinsEarned);
+    unawaited(HapticService.instance.heavyImpact());
+    // D1: bitiş sesi tek kaynak — sonuç ekranı çalar.
     unawaited(
       LeaderboardService.instance.submitScore(
         LeaderboardService.modeTerlik,
@@ -894,11 +1136,19 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     _runEnded = true;
     unawaited(_settleRunEconomy());
     _runId++;
+    // Y3: yeni tur, yeni idempotency anahtarı — damga tur
+    // başlangıcında bir kez yakalanır.
+    _runStartStamp = DateTime.now().microsecondsSinceEpoch;
     setState(() {
       _economySettled = false;
+      _endCoinsApplied = false;
       _paused = false;
       _pausedByLifecycle = false;
       _pauseStartedAt = null;
+      // Güç etkileri yeni tura sızmaz (B6): çift terlik / altın terlik
+      // sıfırlanır, yoksa önceki turun etkisi yeni turda da sürerdi.
+      _doubleNext = false;
+      _goldUntil = null;
       _resultShown = false;
       _bugs.clear();
       _fx.clear();
@@ -918,6 +1168,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       _shake = 0;
       _hitStop = 0;
       _hint = context.l10n.terlikHintIdle;
+      // Bayat ıska mesajı yeni tura sızmaz (bulgu #15).
+      _missMessage = null;
       _last = DateTime.now();
       if (!widget.prototypeVisualState) {
         _spawn();
@@ -928,20 +1180,11 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     if (!widget.prototypeVisualState) _startLoop();
   }
 
-  String _stats() =>
-      context.l10n.terlikStatsLine1(_smashed, _missed, _maxCombo) +
-      context.l10n.terlikStatsLine2(
-        _coinsEarned,
-        _slipperEarned,
-        _sprayEarned,
-      );
-
   /// Oyun sonu: yeni sonuç ekranı. "TEKRAR OYNA" yeni turu başlatır,
   /// "ANA SAYFA"da eski sonuç akışı devam eder (bozulmadı).
   bool _useDoubleSlip() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _doubleNext = true;
       _hint = context.l10n.terlikDoubleReadyHint;
@@ -957,8 +1200,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   bool _useGoldSlip() {
     if (!_alive || _paused) return false;
-    HapticFeedback.mediumImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxButtonTap));
+    unawaited(AudioManager().playButtonTap());
     setState(() {
       _goldUntil = DateTime.now().add(const Duration(seconds: 20));
       _hint = context.l10n.terlikGoldHint;
@@ -974,13 +1216,18 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
 
   bool _useBugSpray() {
     if (!_alive || _paused) return false;
-    HapticFeedback.heavyImpact();
-    unawaited(AudioManager().playSfx(GameAudio.sfxSpray));
+    // Boş tahta (B13): ezilecek hedef yoksa stok yanmaz. `false` dönüşü
+    // stockBonusWithResult'ın iade yolunu işletir; hedef üretmek için
+    // böcek doğurulmaz, skor verilmez, ipucu 0 hedefi gösterir.
+    if (!_bugs.any((b) => !b.smashed)) {
+      setState(() {
+        _hint = context.l10n.terlikSprayedTargets(0);
+      });
+      return false;
+    }
+    // D8: sprey güçlendirici sesi haptic'li yoldan çalar.
+    unawaited(AudioManager().playSpray());
     setState(() {
-      if (_bugs.every((b) => b.smashed)) {
-        _spawn();
-        _spawn();
-      }
       var cleared = 0;
       for (final bug in _bugs) {
         if (bug.smashed) continue;
@@ -993,6 +1240,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
           if (_combo > _maxCombo) _maxCombo = _combo;
           final pts = bug.basePoints + _combo * 10;
           _score += pts;
+          // G33: sprey skoru da REKOR'u canlı günceller (match3 deseni).
+          if (_score > _best) _best = _score;
           final c = _holeCenter(bug.holeIndex);
           _pushFx('+$pts', c.dx, c.dy, LululuColors.toxicNeon);
         }
@@ -1012,7 +1261,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     return true;
   }
 
-  Future<void> _presentResult(int runId) async {
+  Future<void> _presentResult(int runId, {bool? won}) async {
     // Tur değiştiyse (yeniden başlatma araya girdiyse) eski turun sonucunu
     // gösterme ve yeni turun ödülüne dokunma.
     if (runId != _runId) {
@@ -1024,6 +1273,10 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     // içindeki tek _settleRunEconomy çağrısıyla, bir kez ödenir.
     // Görüntülenecek tutar ödeme öncesi anlık görüntüden alınır
     // (_settleRunEconomy toplamları değiştirmez).
+    // 13E: BİTİR yolu _die() uğramadan gelir — tur-sonu bağışı burada
+    // da bir kez uygulanır (ölüm yolunda _die zaten uyguladıysa
+    // no-op). Skor 0 ise bağış yok (F10 kuralı).
+    if (_score > 0) _applyEndCoins();
     final earnedCoins = _coinsEarned;
     // S1#49: ödeme + liderlik + görev kaydı + sonuç ekranı finishRun()
     // üzerinden. Tur değiştiyse sonuç gösterilmez (stillValid koruması,
@@ -1033,7 +1286,17 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       score: _score,
       best: _best,
       coins: earnedCoins,
+      bestCombo: _maxCombo,
+      won: won ?? false,
       leaderboardMode: LeaderboardService.modeTerlik,
+      // K16: mod skoru kimliği `bestScoreKey` ile aynıdır
+      // ('terlik_tap'); Y3: anahtar tur başlangıç damgalıdır.
+      modeScoreId: LeaderboardService.modeTerlik,
+      idempotencyKey: _runIdempotencyKey,
+      // 12C1: AntiCheat hız denetimi + adaptif zorluk kaydı için tur süresi.
+      elapsed: Duration(
+        microseconds: DateTime.now().microsecondsSinceEpoch - _runStartStamp,
+      ),
       settle: _settleRunEconomy,
       stillValid: () => mounted && runId == _runId,
     );
@@ -1050,6 +1313,25 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     _restart();
   }
 
+  /// BİTİR: turu sessizce silmek yerine sonuç ekranını açar
+  /// (playtest bulgu #10). Erken bitirmede başlık skora göre
+  /// belirlenir (skor 0 ise kayıp başlığı). Tur kimliği korunur:
+  /// _restart çağrılmaz (runId değişirse sonuç gösterilmez).
+  Future<void> _finishEarly() async {
+    if (_resultShown) return;
+    _resultShown = true;
+    // Dondurma (B5): sonuç diyaloğu hazırlanırken/gösterilirken tur
+    // ilerlemesin — zamanlayıcı durur. TEKRAR _restart ile döner.
+    _stopLoop();
+    try {
+      await _presentResult(_runId, won: _score > 0);
+    } finally {
+      // _restart zamanlayıcıyı başlattıysa _startLoop no-op'tur
+      // (_loop ??=); sonuç gösterilemeden dönüldüyse tur donuk kalmaz.
+      if (mounted && _alive && !_paused) _startLoop();
+    }
+  }
+
   void _edgeShowResult() {
     if (_resultShown) return;
     _resultShown = true;
@@ -1059,10 +1341,11 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
     });
   }
 
-  String _formatNumber(int value) {
-    final digits = value.toString();
-    return digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
-  }
+  // 12A: dile duyarlı binlik ayırıcı (TR '.', EN ',').
+  String _formatNumber(int value) => formatGroupedInt(
+        value,
+        Localizations.localeOf(context).languageCode,
+      );
 
   /// Küçük duraklatma düğmesi (madde 37): başlık satırında '?' düğmesinin
   /// yanında, HUD düzenini kaydırmadan durur; prototip vitrininde gizlidir.
@@ -1073,8 +1356,8 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       child: GestureDetector(
         onTap: _togglePause,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xDB080B12),
@@ -1125,7 +1408,19 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                ArcadeButton(label: context.l10n.continueAction, onPressed: _togglePause),
+                ArcadeButton(
+                  label: context.l10n.continueAction,
+                  onPressed: _togglePause,
+                ),
+                const SizedBox(height: 12),
+                // N6: duraklatmadan çıkış — mevcut geri yolu
+                // (`maybePop`); iade kuralları PopScope handler'da
+                // aynen korunur, yeni iade mantığı yok.
+                ArcadeButton(
+                  label: context.l10n.quit,
+                  primary: false,
+                  onPressed: () => Navigator.maybePop(context),
+                ),
               ],
             ),
           ),
@@ -1145,9 +1440,7 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
         : 0.0;
     final topPad = MediaQuery.paddingOf(context).top;
     final hasHostStatusBar = topPad > 0;
-    final coins = widget.prototypeVisualState
-        ? 12450
-        : ProgressManager().coins;
+    final coins = widget.prototypeVisualState ? 12450 : ProgressManager().coins;
     final bonusItems = [
       stockBonusWithResult(
         id: 'dblslip',
@@ -1181,764 +1474,799 @@ class _TerlikTapScreenState extends State<TerlikTapScreen>
       ),
     ];
 
+    // Statik arka plan: kare bildiriminde yeniden kurulmaz --
+    // [ValueListenableBuilder] `child` olarak bir kez kurulur.
+    final background = Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: Opacity(
+            opacity: 0.96,
+            child: ColorFiltered(
+              colorFilter: const ColorFilter.matrix(<double>[
+                0.95,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0.95,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0.95,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
+              ]),
+              child: Image.asset(
+                'assets/design/backgrounds/terlik_livingroom.webp',
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+        ),
+        const Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0, 0.24, 0.76, 1],
+                colors: [
+                  Color(0x4D080B12),
+                  Color(0x00080B12),
+                  Color(0x00080B12),
+                  Color(0x52080B12),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        // Sistem geri tuşu / kaydırma ile çıkış: Geri düğmesiyle aynı
-        // iade kontrolü; çift-iade koruması _refundEnergyIfNoHit içinde.
-        if (didPop) _refundEnergyIfNoHit();
-      },
+      canPop: _exitConfirmed || !_needsExitConfirm,
+      onPopInvokedWithResult: (didPop, _) => _handleExitPop(didPop),
       child: MediaQuery.removePadding(
-      context: context,
-      removeTop: true,
-      removeBottom: true,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF080B12),
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.96,
-                child: ColorFiltered(
-                  colorFilter: const ColorFilter.matrix(<double>[
-                    0.95, 0, 0, 0, 0,
-                    0, 0.95, 0, 0, 0,
-                    0, 0, 0.95, 0, 0,
-                    0, 0, 0, 1, 0,
-                  ]),
-                  child: Image.asset(
-                    'assets/design/backgrounds/terlik_livingroom.webp',
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-            ),
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0, 0.24, 0.76, 1],
-                    colors: [
-                      Color(0x4D080B12),
-                      Color(0x00080B12),
-                      Color(0x00080B12),
-                      Color(0x52080B12),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Column(
+        context: context,
+        removeTop: true,
+        removeBottom: true,
+        child: Scaffold(
+          backgroundColor: const Color(0xFF080B12),
+          body: ValueListenableBuilder<int>(
+            valueListenable: _tickNotifier,
+            builder: (context, _, backgroundChild) => Stack(
+              fit: StackFit.expand,
               children: [
-                if (hasHostStatusBar)
-                  SizedBox(height: widget.prototypeVisualState ? 35.4 : topPad)
-                else
-                  SizedBox(
-                    height: 35.4,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 14, 22, 2),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '09:41',
-                            style: GoogleFonts.nunito(
-                              fontSize: 12.5,
-                              height: 1,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(
-                            width: 38,
-                            height: 16,
-                            child: CustomPaint(
-                              painter: _TerlikStatusIndicatorsPainter(),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                SizedBox(
-                  height: 54,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-                    child: Row(
-                      children: [
-                        Tooltip(
-                          message: 'Back',
-                          child: Semantics(
-                          button: true,
-                          label: context.l10n.goBackLabel,
-                          child: GestureDetector(
-                            onTap: () {
-                              _refundEnergyIfNoHit();
-                              Navigator.maybePop(context);
-                            },
-                            child: Container(
-                              width: 48,
-                              height: 48,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: const Color(0xD9080B12),
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x73000000),
-                                    offset: Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Image.asset(
-                                'assets/icons2/back-prototype.png',
-                                width: 29,
-                                height: 29,
-                              ),
-                            ),
-                          ),
-                        ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    height: 27,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0x8C080B12),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      context.l10n.slipperTapTitle,
-                                      style: GoogleFonts.baloo2(
-                                        fontSize: 20,
-                                        height: 1.05,
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.white,
-                                        shadows: const [
-                                          Shadow(
-                                            color: Color(0xEB000000),
-                                            offset: Offset(0, 2),
-                                            blurRadius: 6,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    height: 20.3,
-                                    alignment: Alignment.center,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 9,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFF6B35),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      context.l10n.newBadge,
-                                      style: GoogleFonts.baloo2(
-                                        fontSize: 10.5,
-                                        height: 1.0,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.735,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Container(
-                          height: 35,
-                          padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xD1080B12),
-                            borderRadius: BorderRadius.circular(999),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x59000000),
-                                offset: Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Image.asset(
-                                'assets/icons2/coin.png',
-                                width: 25,
-                                height: 25,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _formatNumber(coins),
-                                style: GoogleFonts.nunito(
-                                  fontSize: 13.5,
-                                  height: 1,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (!widget.prototypeVisualState) ...[
-                          const SizedBox(width: 10),
-                          _pauseButton(),
-                        ],
-                        const SizedBox(width: 10),
-                        Semantics(
-                          button: true,
-                          label: context.l10n.helpButtonLabel,
-                          child: GestureDetector(
-                            onTap: () => showDialog<void>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Text(ctx.l10n.slipperTapTitle),
-                                content: Text(_hint),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: Text(ctx.l10n.understoodButton),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            child: Container(
-                              width: 48,
-                              height: 48,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: const Color(0xDB080B12),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: const Color(0xB3FFB800),
-                                  width: 2,
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x73000000),
-                                    offset: Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Text(
-                                '?',
-                                style: GoogleFonts.baloo2(
-                                  fontSize: 22,
-                                  height: 1,
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFFFFB800),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  height: 58.5,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                    child: LayoutBuilder(
-                      builder: (context, hudBox) {
-                        final hudRow = Row(
+                Positioned.fill(child: backgroundChild!),
+                Column(
+                  children: [
+                    if (hasHostStatusBar) SizedBox(height: topPad),
+                    SizedBox(
+                      height: 54,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                        child: Row(
                           children: [
-                            Container(
-                              width: 104,
-                              height: 50.5,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xD9080B12),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: const Color(0x73FFB800),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SizedBox(
-                                    height: 12,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        context.l10n.gameScoreLabel,
-                                        style: GoogleFonts.nunito(
-                                          fontSize: 10,
-                                          height: 1,
-                                          letterSpacing: 1,
-                                          fontWeight: FontWeight.w900,
-                                          color: const Color(0xFFFFB800),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3.5),
-                                  SizedBox(
-                                    height: 21,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          '$_score',
-                                          style: GoogleFonts.baloo2(
-                                            fontSize: 21,
-                                            height: 1,
-                                            fontWeight: FontWeight.w800,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              width: 84,
-                              height: 50.5,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xD9080B12),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: const Color(0x73FFB800),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SizedBox(
-                                    height: 12,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        context.l10n.gameBestLabel,
-                                        style: GoogleFonts.nunito(
-                                          fontSize: 10,
-                                          height: 1,
-                                          letterSpacing: 1,
-                                          fontWeight: FontWeight.w900,
-                                          color: const Color(0xFFFFB800),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3.5),
-                                  SizedBox(
-                                    height: 21,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          _formatNumber(_best),
-                                          style: GoogleFonts.baloo2(
-                                            fontSize: 21,
-                                            height: 1,
-                                            fontWeight: FontWeight.w800,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Spacer(),
-                            Container(
-                              width: 98.4,
-                              height: 50.5,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xD9080B12),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: const Color(0x73FFB800),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SizedBox(
-                                    height: 12,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        context.l10n.livesLabel,
-                                        style: GoogleFonts.nunito(
-                                          fontSize: 10,
-                                          height: 1,
-                                          letterSpacing: 1,
-                                          fontWeight: FontWeight.w900,
-                                          color: const Color(0xFFFFB800),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      for (var index = 0; index < 3; index++) ...[
-                                        if (index > 0)
-                                          const SizedBox(width: 4.2),
-                                        Opacity(
-                                          opacity: index < _lives ? 1 : 0.25,
-                                          child: Image.asset(
-                                            'assets/icons/health.png',
-                                            width: 20,
-                                            height: 20,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
                             Semantics(
                               button: true,
-                              label: context.l10n.finishRoundLabel,
+                              label: context.l10n.goBackLabel,
                               child: GestureDetector(
-                              onTap: _restart,
-                              child: Container(
-                                width: 57.8,
-                                height: 48,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFB800),
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0xFFB97A00),
-                                      offset: Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: Text(
-                                  context.l10n.finishCaps,
-                                  style: GoogleFonts.baloo2(
-                                    fontSize: 12.5,
-                                    height: 1,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFF4A2E00),
+                                onTap: () {
+                                  // S6: iade verildiyse kapanma ÖNCESİ
+                                  // bildir (ScaffoldMessenger rota üstünde
+                                  // yaşar; bildirim dönen ekranda görünür
+                                  // — auth S5 deseni). Sistem-geri
+                                  // yolunda (PopScope) görünür bağlam
+                                  // yoktur: iade sessiz yapılır.
+                                  final refunded = _refundEnergyIfNoHit();
+                                  if (refunded && mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          context.l10n.terlikEnergyRefundNotice,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  Navigator.maybePop(context);
+                                },
+                                child: Container(
+                                  width: 48,
+                                  height: 48,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xD9080B12),
+                                    borderRadius: BorderRadius.circular(14),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x73000000),
+                                        offset: Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Image.asset(
+                                    'assets/icons2/back-prototype.png',
+                                    width: 29,
+                                    height: 29,
                                   ),
                                 ),
                               ),
                             ),
-                            ),
-                          ],
-                        );
-                        if (hudBox.maxWidth >= 364) return hudRow;
-                        return FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.center,
-                          child: SizedBox(
-                            width: 364,
-                            height: 50.5,
-                            child: hudRow,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Color(0x660E1422), Color(0x800E1422)],
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: const Color(0x24FFFFFF),
-                              width: 2,
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: LayoutBuilder(
-                              builder: (context, box) {
-                                _arena = Size(box.maxWidth, box.maxHeight);
-                                return Semantics(
-                                  label: _hint,
-                                  child: Transform.translate(
-                                    offset: Offset(shakeX, shakeY),
-                                    child: Stack(
-                                      children: [
-                                        if (!widget.prototypeVisualState)
-                                          Positioned(
-                                            left: 0,
-                                            top: 0,
-                                            width: 0,
-                                            height: 0,
-                                            child: Opacity(
-                                              opacity: 0,
-                                              child: Text(context.l10n.slipperTapTitle),
-                                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Container(
+                                        height: 27,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0x8C080B12),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
                                           ),
-                                        Center(
-                                          child: GridView.count(
-                                            crossAxisCount: 3,
-                                            mainAxisExtent:
-                                                widget.prototypeVisualState
-                                                ? 76
-                                                : 146,
-                                            mainAxisSpacing:
-                                                widget.prototypeVisualState
-                                                ? 10
-                                                : 28,
-                                            crossAxisSpacing:
-                                                widget.prototypeVisualState
-                                                ? 12
-                                                : 16,
-                                            padding: const EdgeInsets.fromLTRB(
-                                              16,
-                                              16,
-                                              16,
-                                              6,
-                                            ),
-                                            shrinkWrap: true,
-                                            physics:
-                                                const NeverScrollableScrollPhysics(),
-                                            children: [
-                                              for (var index = 0;
-                                                  index < 9;
-                                                  index++)
-                                                _TerlikHole(
-                                                  key: ValueKey(
-                                                    'terlik-hole-$index',
-                                                  ),
-                                                  index: index,
-                                                  bug: _bugs
-                                                      .where(
-                                                        (bug) =>
-                                                            bug.holeIndex ==
-                                                                index &&
-                                                            (bug.smashed ||
-                                                                bug.life > 0),
-                                                      )
-                                                      .firstOrNull,
-                                                  pulse: _pulse.value,
-                                                  prototypeVisualState:
-                                                      widget.prototypeVisualState,
-                                                  onTap: () => _tapHole(index),
-                                                ),
+                                        ),
+                                        child: Text(
+                                          context.l10n.slipperTapTitle,
+                                          style: GoogleFonts.baloo2(
+                                            fontSize: 20,
+                                            height: 1.05,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                            shadows: const [
+                                              Shadow(
+                                                color: Color(0xEB000000),
+                                                offset: Offset(0, 2),
+                                                blurRadius: 6,
+                                              ),
                                             ],
                                           ),
                                         ),
-                                        if (_combo > 0)
-                                          Positioned(
-                                            left: 12,
-                                            top: 10,
-                                            child: _TerlikCombo(
-                                              label: 'COMBO X$_combo!',
-                                            ),
-                                          )
-                                        else if (!widget.prototypeVisualState)
-                                          Positioned(
-                                            left: 12,
-                                            right: 12,
-                                            top: 12,
-                                            child: IgnorePointer(
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 14,
-                                                      vertical: 7,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(
-                                                    0x8C080B12,
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  border: Border.all(
-                                                    color: const Color(
-                                                      0x2EFFFFFF,
-                                                    ),
-                                                    width: 1,
-                                                  ),
-                                                ),
-                                                child: Row(
-                                                  children: [
-                                                    Flexible(
-                                                      child: Text(
-                                                      context.l10n.terlikInstruction,
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontFamily: 'Nunito',
-                                                        fontSize: 10.5,
-                                                        fontWeight:
-                                                            FontWeight.w900,
-                                                        letterSpacing: 0.7,
-                                                        color: Color(
-                                                          0xFFFFB800,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Text(
-                                                      context.l10n.terlikSpeedMultiplier((1 + _elapsedSeconds / 30).clamp(1.0, 2.5).toStringAsFixed(1)),
-                                                      style: const TextStyle(
-                                                        fontFamily: 'Nunito',
-                                                        fontSize: 10.5,
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                        letterSpacing: 0.5,
-                                                        color: Color(
-                                                          0xCCFFFFFF,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        Positioned(
-                                          left: 10,
-                                          bottom: 52,
-                                          child: _TerlikChip(
-                                            label: context.l10n.terlikHitsChip(_smashed),
+                                      ),
+                                      Container(
+                                        height: 20.3,
+                                        alignment: Alignment.center,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 9,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFF6B35),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
                                           ),
                                         ),
-                                        Positioned(
-                                          right: 12,
-                                          bottom: 54,
-                                          child: _TerlikCombo(
-                                            label: context.l10n.terlikMissedChip(_missed),
-                                            danger: true,
+                                        child: Text(
+                                          context.l10n.newBadge,
+                                          style: GoogleFonts.baloo2(
+                                            fontSize: 10.5,
+                                            height: 1.0,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.735,
+                                            color: Colors.white,
                                           ),
                                         ),
-                                        if (_missMessage != null)
-                                          Positioned(
-                                            top: 42,
-                                            right: 12,
-                                            child: _TerlikChip(
-                                              label: _missMessage!,
-                                              danger: true,
-                                            ),
-                                          ),
-                                        for (final f in _fx)
-                                          Positioned(
-                                            left: f.x - 48,
-                                            top: f.y - 12,
-                                            width: 96,
-                                            child: IgnorePointer(
-                                              child: Opacity(
-                                                opacity: f.life.clamp(0.0, 1.0),
-                                                child: Text(
-                                                  f.label,
-                                                  textAlign: TextAlign.center,
-                                                  style: GoogleFonts.exo2(
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w900,
-                                                    color: f.color,
-                                                    shadows: [
-                                                      Shadow(
-                                                        color: LululuColors
-                                                            .carbonVoid
-                                                            .withValues(
-                                                              alpha: 0.85,
-                                                            ),
-                                                        blurRadius: 4,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                      ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Container(
+                              height: 35,
+                              padding: const EdgeInsets.fromLTRB(6, 5, 12, 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xD1080B12),
+                                borderRadius: BorderRadius.circular(999),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x59000000),
+                                    offset: Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Image.asset(
+                                    'assets/icons2/coin.png',
+                                    width: 25,
+                                    height: 25,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _formatNumber(coins),
+                                    style: GoogleFonts.nunito(
+                                      fontSize: 13.5,
+                                      height: 1,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
                                     ),
                                   ),
-                                );
-                              },
+                                ],
+                              ),
+                            ),
+                            if (!widget.prototypeVisualState) ...[
+                              const SizedBox(width: 10),
+                              _pauseButton(),
+                            ],
+                            const SizedBox(width: 10),
+                            Semantics(
+                              button: true,
+                              label: context.l10n.helpButtonLabel,
+                              child: GestureDetector(
+                                onTap: _showHelp,
+                                child: Container(
+                                  width: 48,
+                                  height: 48,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xDB080B12),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: const Color(0xB3FFB800),
+                                      width: 2,
+                                    ),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x73000000),
+                                        offset: Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    '?',
+                                    style: GoogleFonts.baloo2(
+                                      fontSize: 22,
+                                      height: 1,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFFFFB800),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 58.5,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                        child: LayoutBuilder(
+                          builder: (context, hudBox) {
+                            final hudRow = Row(
+                              children: [
+                                Container(
+                                  width: 104,
+                                  height: 50.5,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xD9080B12),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: const Color(0x73FFB800),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        height: 12,
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            context.l10n.gameScoreLabel,
+                                            style: GoogleFonts.nunito(
+                                              fontSize: 10,
+                                              height: 1,
+                                              letterSpacing: 1,
+                                              fontWeight: FontWeight.w900,
+                                              color: const Color(0xFFFFB800),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3.5),
+                                      SizedBox(
+                                        height: 21,
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              '$_score',
+                                              style: GoogleFonts.baloo2(
+                                                fontSize: 21,
+                                                height: 1,
+                                                fontWeight: FontWeight.w800,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  width: 84,
+                                  height: 50.5,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xD9080B12),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: const Color(0x73FFB800),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        height: 12,
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            context.l10n.gameBestLabel,
+                                            style: GoogleFonts.nunito(
+                                              fontSize: 10,
+                                              height: 1,
+                                              letterSpacing: 1,
+                                              fontWeight: FontWeight.w900,
+                                              color: const Color(0xFFFFB800),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3.5),
+                                      SizedBox(
+                                        height: 21,
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              _formatNumber(_best),
+                                              style: GoogleFonts.baloo2(
+                                                fontSize: 21,
+                                                height: 1,
+                                                fontWeight: FontWeight.w800,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  width: 98.4,
+                                  height: 50.5,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xD9080B12),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: const Color(0x73FFB800),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        height: 12,
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            context.l10n.livesLabel,
+                                            style: GoogleFonts.nunito(
+                                              fontSize: 10,
+                                              height: 1,
+                                              letterSpacing: 1,
+                                              fontWeight: FontWeight.w900,
+                                              color: const Color(0xFFFFB800),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          for (
+                                            var index = 0;
+                                            index < 3;
+                                            index++
+                                          ) ...[
+                                            if (index > 0)
+                                              const SizedBox(width: 4.2),
+                                            Opacity(
+                                              opacity: index < _lives
+                                                  ? 1
+                                                  : 0.25,
+                                              child: Image.asset(
+                                                'assets/icons/health.png',
+                                                width: 20,
+                                                height: 20,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Semantics(
+                                  button: true,
+                                  label: context.l10n.finishRoundLabel,
+                                  child: GestureDetector(
+                                    onTap: _finishEarly,
+                                    child: Container(
+                                      width: 57.8,
+                                      height: 48,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFB800),
+                                        borderRadius: BorderRadius.circular(12),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Color(0xFFB97A00),
+                                            offset: Offset(0, 3),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Text(
+                                        context.l10n.finishCaps,
+                                        style: GoogleFonts.baloo2(
+                                          fontSize: 12.5,
+                                          height: 1,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFF4A2E00),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                            if (hudBox.maxWidth >= 364) return hudRow;
+                            return FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.center,
+                              child: SizedBox(
+                                width: 364,
+                                height: 50.5,
+                                child: hudRow,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x660E1422),
+                                    Color(0x800E1422),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: const Color(0x24FFFFFF),
+                                  width: 2,
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(2),
+                                child: LayoutBuilder(
+                                  builder: (context, box) {
+                                    _arena = Size(box.maxWidth, box.maxHeight);
+                                    return Semantics(
+                                      label: _hint,
+                                      child: Transform.translate(
+                                        offset: Offset(shakeX, shakeY),
+                                        child: Stack(
+                                          children: [
+                                            if (!widget.prototypeVisualState)
+                                              Positioned(
+                                                left: 0,
+                                                top: 0,
+                                                width: 0,
+                                                height: 0,
+                                                child: Opacity(
+                                                  opacity: 0,
+                                                  child: Text(
+                                                    context
+                                                        .l10n
+                                                        .slipperTapTitle,
+                                                  ),
+                                                ),
+                                              ),
+                                            Center(
+                                              child: GridView.count(
+                                                crossAxisCount: 3,
+                                                mainAxisExtent:
+                                                    widget.prototypeVisualState
+                                                    ? 76
+                                                    : 146,
+                                                mainAxisSpacing:
+                                                    widget.prototypeVisualState
+                                                    ? 10
+                                                    : 28,
+                                                crossAxisSpacing:
+                                                    widget.prototypeVisualState
+                                                    ? 12
+                                                    : 16,
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                      16,
+                                                      16,
+                                                      16,
+                                                      6,
+                                                    ),
+                                                shrinkWrap: true,
+                                                physics:
+                                                    const NeverScrollableScrollPhysics(),
+                                                children: [
+                                                  for (
+                                                    var index = 0;
+                                                    index < 9;
+                                                    index++
+                                                  )
+                                                    _TerlikHole(
+                                                      key: ValueKey(
+                                                        'terlik-hole-$index',
+                                                      ),
+                                                      index: index,
+                                                      bug: _bugs
+                                                          .where(
+                                                            (bug) =>
+                                                                bug.holeIndex ==
+                                                                    index &&
+                                                                (bug.smashed ||
+                                                                    bug.life >
+                                                                        0),
+                                                          )
+                                                          .firstOrNull,
+                                                      pulse: _pulse.value,
+                                                      prototypeVisualState: widget
+                                                          .prototypeVisualState,
+                                                      onTap: () =>
+                                                          _tapHole(index),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            if (_combo > 0)
+                                              Positioned(
+                                                left: 12,
+                                                top: 10,
+                                                child: _TerlikCombo(
+                                                  label: 'COMBO X$_combo!',
+                                                ),
+                                              )
+                                            else if (!widget
+                                                .prototypeVisualState)
+                                              Positioned(
+                                                left: 12,
+                                                right: 12,
+                                                top: 12,
+                                                child: IgnorePointer(
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 14,
+                                                          vertical: 7,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                        0x8C080B12,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            12,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: const Color(
+                                                          0x2EFFFFFF,
+                                                        ),
+                                                        width: 1,
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceBetween,
+                                                      children: [
+                                                        Text(
+                                                          context
+                                                              .l10n
+                                                              .terlikInstruction,
+                                                          style: TextStyle(
+                                                            fontFamily:
+                                                                'Nunito',
+                                                            fontSize: 10.5,
+                                                            fontWeight:
+                                                                FontWeight.w900,
+                                                            letterSpacing: 0.7,
+                                                            color: Color(
+                                                              0xFFFFB800,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          context.l10n.terlikSpeedMultiplier(
+                                                            // T-6: gösterilen hız gerçek doğma
+                                                            // oranıdır (1.3 / o anki doğma
+                                                            // aralığı); eski `(1 + süre/30)`
+                                                            // formülü 30. sn'de X2.0 yazıyordu,
+                                                            // gerçek oran ~1.24× idi.
+                                                            (1.3 /
+                                                                    TerlikTapPacing.spawnInterval(
+                                                                      _elapsedSeconds,
+                                                                    ))
+                                                                .clamp(1.0, 2.5)
+                                                                .toStringAsFixed(
+                                                                  1,
+                                                                ),
+                                                          ),
+                                                          style:
+                                                              const TextStyle(
+                                                                fontFamily:
+                                                                    'Nunito',
+                                                                fontSize: 10.5,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800,
+                                                                letterSpacing:
+                                                                    0.5,
+                                                                color: Color(
+                                                                  0xCCFFFFFF,
+                                                                ),
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            Positioned(
+                                              left: 10,
+                                              bottom: 52,
+                                              child: _TerlikChip(
+                                                label: context.l10n
+                                                    .terlikHitsChip(_smashed),
+                                              ),
+                                            ),
+                                            Positioned(
+                                              right: 12,
+                                              bottom: 54,
+                                              child: _TerlikCombo(
+                                                label: context.l10n
+                                                    .terlikMissedChip(_missed),
+                                                danger: true,
+                                              ),
+                                            ),
+                                            if (_missMessage != null)
+                                              Positioned(
+                                                top: 42,
+                                                right: 12,
+                                                child: _TerlikChip(
+                                                  label: _missMessage!,
+                                                  danger: true,
+                                                ),
+                                              ),
+                                            for (final f in _fx)
+                                              Positioned(
+                                                left: f.x - 48,
+                                                top: f.y - 12,
+                                                width: 96,
+                                                child: IgnorePointer(
+                                                  child: Opacity(
+                                                    opacity: f.life.clamp(
+                                                      0.0,
+                                                      1.0,
+                                                    ),
+                                                    child: Text(
+                                                      f.label,
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style: GoogleFonts.exo2(
+                                                        fontSize: 13,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        color: f.color,
+                                                        shadows: [
+                                                          Shadow(
+                                                            color: LululuColors
+                                                                .carbonVoid
+                                                                .withValues(
+                                                                  alpha: 0.85,
+                                                                ),
+                                                            blurRadius: 4,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+                    SizedBox(
+                      height: 80.9,
+                      child: _TerlikBonusDock(items: bonusItems),
+                    ),
+                  ],
                 ),
-                SizedBox(
-                  height: 80.9,
-                  child: _TerlikBonusDock(items: bonusItems),
-                ),
+                if (_paused && _alive && !widget.prototypeVisualState)
+                  _pauseOverlay(),
               ],
             ),
-            if (!_alive && !_resultShown)
-              Positioned.fill(
-                child: ArcadeResultOverlay(
-                  title: context.l10n.terlikOutTitle,
-                  message: _stats(),
-                  score: _score,
-                  best: _best,
-                  won: false,
-                  modeTitle: context.l10n.slipperTapTitle,
-                  shareLine: _stats(),
-                  retryLabel: context.l10n.tryAgainCaps,
-                  onRetry: _restart,
-                ),
-              ),
-            if (_paused && _alive && !widget.prototypeVisualState)
-              _pauseOverlay(),
-          ],
+            child: background,
+          ),
         ),
-      ),
       ),
     );
   }
@@ -1971,7 +2299,9 @@ class _TerlikHole extends StatelessWidget {
     final bugBottom = prototypeVisualState ? 13.0 : 19.0;
     return Semantics(
       button: true,
-      label: visibleBug ? context.l10n.terlikHoleSemantics(index + 1) : context.l10n.terlikEmptyHole,
+      label: visibleBug
+          ? context.l10n.terlikHoleSemantics(index + 1)
+          : context.l10n.terlikEmptyHole,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: prototypeVisualState ? null : (_) => onTap(),
@@ -2243,10 +2573,7 @@ class _TerlikBonusButton extends StatelessWidget {
                             ),
                           ],
                         ),
-                        child: Image.asset(
-                          item.asset,
-                          fit: BoxFit.contain,
-                        ),
+                        child: Image.asset(item.asset, fit: BoxFit.contain),
                       ),
                       Positioned(
                         top: -4,
@@ -2335,43 +2662,3 @@ class _TerlikChip extends StatelessWidget {
   );
 }
 
-class _TerlikStatusIndicatorsPainter extends CustomPainter {
-  const _TerlikStatusIndicatorsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    for (var i = 0; i < 4; i++) {
-      final height = 4.0 + i * 3.0;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(1 + i * 4.5, size.height - height, 2.4, height),
-          const Radius.circular(0.7),
-        ),
-        paint,
-      );
-    }
-    final battery = RRect.fromRectAndRadius(
-      Rect.fromLTWH(22, 3, 14, 9),
-      const Radius.circular(2),
-    );
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawRRect(battery, paint);
-    paint.style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(24, 5, 9, 5),
-        const Radius.circular(1),
-      ),
-      paint,
-    );
-    canvas.drawRect(const Rect.fromLTWH(36.5, 5.5, 1.5, 4), paint);
-  }
-
-  @override
-  bool shouldRepaint(_TerlikStatusIndicatorsPainter oldDelegate) => false;
-}

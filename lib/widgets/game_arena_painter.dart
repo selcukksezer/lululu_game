@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../models/hisir_character.dart';
 import '../models/insect_tier.dart';
 import '../physics/physics_engine.dart';
 import '../theme/lululu_theme.dart';
@@ -22,6 +23,7 @@ class GameArenaPainter extends CustomPainter {
   final double coneSpriteScale;
   final double? dropperX;
   final InsectTier? currentDropperTier;
+  final bool currentDropperIsHisir;
   final bool showDropperPreview;
   final String dangerLineLabel;
   final String dangerAlertLabel;
@@ -35,6 +37,7 @@ class GameArenaPainter extends CustomPainter {
     this.coneSpriteScale = 1,
     this.dropperX,
     this.currentDropperTier,
+    this.currentDropperIsHisir = false,
     this.showDropperPreview = false,
     required this.dangerLineLabel,
     required this.dangerAlertLabel,
@@ -192,6 +195,9 @@ class GameArenaPainter extends CustomPainter {
           0,
           0.95,
           opacity: 0.34,
+          assetPathOverride: currentDropperIsHisir
+              ? HisirCharacter.assetPath
+              : null,
         );
       }
 
@@ -204,6 +210,9 @@ class GameArenaPainter extends CustomPainter {
         0,
         1.0,
         opacity: 0.96,
+        assetPathOverride: currentDropperIsHisir
+            ? HisirCharacter.assetPath
+            : null,
       );
     }
 
@@ -216,6 +225,7 @@ class GameArenaPainter extends CustomPainter {
         body.angle,
         body.spawnScale,
         squash: body.mergeSquash,
+        assetPathOverride: body.isHisir ? HisirCharacter.assetPath : null,
       );
     }
 
@@ -275,6 +285,7 @@ class GameArenaPainter extends CustomPainter {
     double scale, {
     double opacity = 1.0,
     double squash = 0,
+    String? assetPathOverride,
   }) {
     canvas.save();
     canvas.translate(x, y);
@@ -287,7 +298,7 @@ class GameArenaPainter extends CustomPainter {
     );
 
     final r = tier.radius;
-    final imgInfo = insectImages[tier.assetPath];
+    final imgInfo = insectImages[assetPathOverride ?? tier.assetPath];
     if (imgInfo != null) {
       final img = imgInfo.image;
       final srcRect = Rect.fromLTWH(

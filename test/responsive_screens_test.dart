@@ -45,27 +45,27 @@ Future<void> _loadCustomFonts() async {
   final fontMap = <String, List<String>>{
     'Baloo 2': [
       'assets/fonts/Baloo2-Regular.ttf',
-      'assets/fonts/Baloo2-Bold.ttf',
-      'assets/fonts/Baloo2-ExtraBold.ttf',
-      'assets/fonts/Baloo2-SemiBold.ttf',
-      'assets/fonts/Baloo2-Medium.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
+      'assets/fonts/Baloo2-Regular.ttf',
     ],
     'Bangers': [
       'assets/fonts/Bangers-Regular.ttf',
     ],
     'Nunito': [
       'assets/fonts/Nunito-Regular.ttf',
-      'assets/fonts/Nunito-Bold.ttf',
-      'assets/fonts/Nunito-ExtraBold.ttf',
-      'assets/fonts/Nunito-SemiBold.ttf',
-      'assets/fonts/Nunito-Black.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
+      'assets/fonts/Nunito-Regular.ttf',
     ],
     'Exo 2': [
       'assets/fonts/Exo2-Regular.ttf',
-      'assets/fonts/Exo2-Bold.ttf',
-      'assets/fonts/Exo2-ExtraBold.ttf',
-      'assets/fonts/Exo2-SemiBold.ttf',
-      'assets/fonts/Exo2-Black.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
+      'assets/fonts/Exo2-Regular.ttf',
     ],
   };
 

@@ -14,9 +14,14 @@ class ScoreShareCard {
   ScoreShareCard._();
   static final instance = ScoreShareCard._();
 
-  /// Web'de dosya API'si yoktur: [StateError] fırlatır, çağıran hata mesajını
-  /// kullanıcıya gösterir.
-  Future<void> share({
+  /// Skor kartını render edip sistem paylaşımını açar.
+  ///
+  /// Başarıda `true` döner. Web'de dosya API'si olmadığı için paylaşım
+  /// yapılamaz ve `false` döner (erken dönüş, fırlatma yok); render veya
+  /// paylaşım hatasında da `false` döner. Hiçbir durumda fırlatmaz:
+  /// çağıran `false` durumunda kullanıcıya görünür bildirim gösterir.
+  /// Geçici PNG dosyası paylaşım bitince (başarıda da hatada da) silinir.
+  Future<bool> share({
     required AppLocalizations l10n,
     required String modeTitle,
     required int score,
@@ -24,28 +29,44 @@ class ScoreShareCard {
     String? line,
   }) async {
     if (kIsWeb) {
-      throw StateError('Skor kartı paylaşımı web sürümünde desteklenmiyor');
+      return false;
     }
-    final bytes = await _renderPng(
-      l10n: l10n,
-      modeTitle: modeTitle,
-      score: score,
-      best: best,
-      line: line ?? 'Lülülü viral skor',
-    );
-    final dir = await getTemporaryDirectory();
-    final file = File(
-      '${dir.path}/lululu_score_${DateTime.now().millisecondsSinceEpoch}.png',
-    );
-    await file.writeAsBytes(bytes);
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(file.path, mimeType: 'image/png')],
-        text: modeTitle.toLowerCase().contains('osmantuş')
-            ? '$modeTitle · $score puan — Lülülü #lululu #osmantuş #ikili #viral'
-            : '$modeTitle · $score puan — Lülülü #lululu #böcek #osmantuş #viral',
-      ),
-    );
+    File? tempFile;
+    try {
+      final bytes = await _renderPng(
+        l10n: l10n,
+        modeTitle: modeTitle,
+        score: score,
+        best: best,
+        line: line ?? 'Lülülü viral skor',
+      );
+      final dir = await getTemporaryDirectory();
+      tempFile = File(
+        '${dir.path}/lululu_score_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await tempFile.writeAsBytes(bytes);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tempFile.path, mimeType: 'image/png')],
+          text: modeTitle.toLowerCase().contains('osmantuş')
+              ? '$modeTitle · $score puan — Lülülü #lululu #osmantuş #ikili #viral'
+              : '$modeTitle · $score puan — Lülülü #lululu #böcek #osmantuş #viral',
+        ),
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[ScoreShareCard] share failed: $e');
+      return false;
+    } finally {
+      final file = tempFile;
+      if (file != null) {
+        try {
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   Future<List<int>> _renderPng({
@@ -96,7 +117,7 @@ class ScoreShareCard {
 
     final mode = TextPainter(
       text: TextSpan(
-        text: modeTitle.toUpperCase(),
+        text: _displayUpper(modeTitle, l10n.locale),
         style: TextStyle(
           color: LululuColors.cyberFuchsia,
           fontSize: 42,
@@ -170,6 +191,29 @@ class ScoreShareCard {
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     image.dispose();
     picture.dispose();
-    return byteData!.buffer.asUint8List();
+    if (byteData == null) {
+      throw StateError('Skor kartı PNG baytları üretilemedi');
+    }
+    return byteData.buffer.asUint8List();
   }
+}
+
+/// Dile duyarlı büyük-harf dönüşümü (stüdyo ekranlarındaki desenle aynı).
+///
+/// TR locale'de Türkçe eşleme (i→İ, ı→I, ...) aynen korunur; EN locale'de
+/// düz [String.toUpperCase] kullanılır, aksi hâlde EN metindeki `i`
+/// yanlışlıkla `İ` olur.
+String _displayUpper(String input, Locale locale) {
+  if (locale.languageCode == 'en') {
+    return input.toUpperCase();
+  }
+  return input
+      .replaceAll('i', 'İ')
+      .replaceAll('ı', 'I')
+      .replaceAll('ğ', 'Ğ')
+      .replaceAll('ü', 'Ü')
+      .replaceAll('ş', 'Ş')
+      .replaceAll('ö', 'Ö')
+      .replaceAll('ç', 'Ç')
+      .toUpperCase();
 }

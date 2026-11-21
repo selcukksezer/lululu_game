@@ -10,6 +10,7 @@ import 'navigation/game_routes.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/achievement_pass_service.dart';
 import 'services/adaptive_quality_scaler.dart';
 import 'services/app_lifecycle_guard.dart';
 import 'services/audio_manager.dart';
@@ -18,15 +19,19 @@ import 'services/campaign_progression_service.dart';
 import 'services/chat_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/daily_challenge_service.dart';
+import 'services/difficulty_binding.dart';
 import 'services/energy_service.dart';
 import 'services/firebase_bootstrap.dart';
 import 'services/firebase_options.dart';
+import 'services/global_notify.dart';
 import 'services/iap_service.dart';
 import 'services/leaderboard_service.dart';
 import 'services/locale_service.dart';
 import 'services/progress_manager.dart';
+import 'services/splash_session.dart';
 import 'services/zero_jank_preloader.dart';
 import 'theme/lululu_theme.dart';
+import 'widgets/app_frame.dart';
 
 Future<void> main() async {
   await runZonedGuarded<Future<void>>(
@@ -70,7 +75,7 @@ Future<void> main() async {
       unawaited(LocaleService.instance.load());
 
       // Paint immediately — never sit on white native splash waiting for I/O.
-      runApp(const _BootApp());
+      runApp(const BootApp());
     },
     (Object error, StackTrace stack) {
       // Yakalanamayan asenkron hata: kaydet, çökertme.
@@ -119,14 +124,15 @@ void _installGlobalErrorHandlers() {
   };
 }
 
-class _BootApp extends StatefulWidget {
-  const _BootApp();
+/// Uygulama kökü: splash → boot → ana ekran/onboarding.
+class BootApp extends StatefulWidget {
+  const BootApp({super.key});
 
   @override
-  State<_BootApp> createState() => _BootAppState();
+  State<BootApp> createState() => _BootAppState();
 }
 
-class _BootAppState extends State<_BootApp> {
+class _BootAppState extends State<BootApp> {
   Widget? _home;
   String? _bootError;
   bool _splashDone = false;
@@ -140,6 +146,15 @@ class _BootAppState extends State<_BootApp> {
   @override
   void initState() {
     super.initState();
+    // 12H-splash: aynı tarayıcı oturumunda splash atlanır — bayrak varsa
+    // doğrudan `_boot()` yoluna girilir (yalnızca intro animasyonu
+    // atlanır; onboarding/boot akışı aynen çalışır). Bayrak yoksa veya
+    // okunamazsa splash gösterilir. Web-dışı platformlarda bayrak hiç
+    // yazılmadığı için davranış değişmez: her soğuk açılışta splash.
+    if (SplashSession.isSeen) {
+      _splashDone = true;
+      unawaited(_boot());
+    }
     // Firebase hazır olunca bekleyen bulut kuyruğunu boşalt (madde 47).
     // ValueNotifier aynı değerde bildirim göndermez; dinleyici yalnızca
     // false→true geçişinde tetiklenir.
@@ -173,6 +188,20 @@ class _BootAppState extends State<_BootApp> {
     super.dispose();
   }
 
+  /// Kök bağlam `MaterialApp`'in ÜSTÜNDE olduğundan `_rootL10n`
+  /// burada null döner (yerelleştirme `MaterialApp`'in içinde
+  /// kurulur); tablo, ErrorWidget desenindeki gibi doğrudan
+  /// çözümlenir (kullanıcı dil seçimi varsa o, yoksa cihaz dili).
+  /// 12H-splash: bayrak dalında ilk kare boot-yükleme ekranıdır,
+  /// bu çözüm olmadan o kare çöker (önceden `context.l10n.loading`
+  /// null-check hatası veriyordu).
+  AppLocalizations get _rootL10n {
+    final locale =
+        LocaleService.instance.overrideNotifier.value ??
+        WidgetsBinding.instance.platformDispatcher.locale;
+    return AppLocalizations.lookup(locale);
+  }
+
   /// Dil seçimi değişince kök ağacı yeniden kur (yeniden başlatma yok).
   void _onLocaleChanged() {
     if (mounted) setState(() {});
@@ -187,12 +216,18 @@ class _BootAppState extends State<_BootApp> {
   /// `ensureLoaded()` (paylaşımlı; `_boot()`'taki çağrıyla aynı
   /// yükleme), sonra flush. Kuyruk yüklenmeden yapılan flush boş
   /// kuyrukla çalışır ve `ensureLoaded()` ile yarışırdı (R5).
+  /// Y7: flush'tan önce online kapısı açılır; kapı açılmadan yapılan
+  /// flush sessiz no-op'tur (`success(0)`) ve kuyruk hiç boşalmaz.
   Future<void> _flushQueueAfterLoad() async {
     await CloudSyncService.instance.ensureLoaded();
+    await CloudSyncService.instance.enableOnlineWhenSignedIn();
     await CloudSyncService.instance.flushPending();
   }
 
   void _onSplashDone() {
+    // 12H-splash: splash tamamlandı — oturum bayrağını yaz ki sekme
+    // yenilemede splash atlanıp doğrudan oyuna girilsin.
+    SplashSession.markSeen();
     setState(() => _splashDone = true);
     unawaited(_boot());
   }
@@ -234,24 +269,73 @@ class _BootAppState extends State<_BootApp> {
     }
     try {
       await ProgressManager().load().timeout(const Duration(seconds: 3));
+      // 12C1: adaptif zorluk geçmişi PM'den sonra yüklenir (3 sn zaman
+      // aşımı — yüklenemezse tarafsız profillerle devam edilir; mod
+      // başlangıçları `DifficultyBinding.cachedProfileForMode` ile
+      // senkron okur).
+      try {
+        await DifficultyBinding.instance.ensureLoaded().timeout(
+          const Duration(seconds: 2),
+        );
+      } catch (e) {
+        debugPrint('[lululu] DDA geçmişi boot yüklemesi atlandı: $e');
+      }
       // Kampanya ilerlemesi (sandık/boss kayıtları) PM senkronu gerektirir:
       // PM yüklenmeden önce çağrılmamalı (W55-4 / R1).
       await CampaignProgressionService.instance
           .load()
           .timeout(const Duration(seconds: 3));
-      final firebaseReady = await _ensureFirebaseWithRetry();
+      // Başarım/pass (K1b): PM yüklemesinden sonra, kampanya deseniyle
+      // (3 sn zaman aşımı). `load()` uçuş korumalıdır; yapıcıdaki
+      // `_autoLoad` ile aynı yükleme paylaşılır.
+      await AchievementPassService.instance
+          .load()
+          .timeout(const Duration(seconds: 3));
+      // Boot senkronu (K1b): önceden kazanılmış ilerlemeden hak edilen
+      // başarımları açar. `syncWithProgressManager` idempotenttir
+      // (`recordProgress` yalnız mutlak-değer artışı yazar, açık
+      // başarım tekrar ödül vermez) — boot'ta bir kez çağrılır.
+      // Senkron hatası boot'u düşürmez: kayıt + varsayılanlarla devam.
+      try {
+        await AchievementPassService.instance.syncWithProgressManager();
+      } catch (e) {
+        debugPrint('[lululu] başarım boot senkronu başarısız: $e');
+      }
+      // Firebase hazırlığı kapı kararını etkilemez: kapı oturum/kimlik
+      // temellidir; hazırlık durumu flush'un iç dallarında ele alınır.
+      await _ensureFirebaseWithRetry();
       await AuthService.instance.load().timeout(const Duration(seconds: 3));
       // Yükleme yarışı (şüphe 1): enerji boot'ta beklenir; bekletilmeyen
       // load() bulut birleştirmenin erken yazısını ezebilirdi.
-      await EnergyService.instance.load();
+      // Ş14: zaman aşımıyla beklenir — kalıcı okuma asılırsa boot
+      // kilitlenmez; zaman aşımında bellek varsayılanlarıyla (5 enerji)
+      // devam edilir, yarım kalan load() arka planda tamamlanıp durumu
+      // düzeltir (paylaşımlı yükleme + notifyListeners) ve ana ekranda
+      // uyarı bandı gösterilir (madde 66 deseni).
+      var energyLoadTimedOut = false;
+      try {
+        await EnergyService.instance.load().timeout(
+          const Duration(seconds: 3),
+        );
+      } on TimeoutException catch (e) {
+        energyLoadTimedOut = true;
+        debugPrint(
+          '[lululu] enerji yükleme zaman aşımı — varsayılanlarla devam: $e',
+        );
+      }
       unawaited(ChatService.instance.ensureLoaded());
       unawaited(LeaderboardService.instance.ensureLoaded());
       unawaited(DailyChallengeService.instance.ensureLoaded());
-      // Kuyruk belleğe yüklendikten sonra, Firebase hazırsa boşalt.
+      // Kuyruk belleğe yüklendikten sonra online kapısını aç: Y7 — boot
+      // kapıyı açmadan flush çağırırsa flush sessiz no-op döner ve
+      // oturumu olan kullanıcının kuyruğu hiç boşalmaz. Kapı, oturum +
+      // Firebase kimlik uyumuna göre `enableOnlineWhenSignedIn` içinde
+      // değerlendirilir; açıksa flush'ı kendisi tetikler. Firebase
+      // henüz hazır değilse flush çevrimdışı dalda kuyruğu korur ve
+      // hazır olunca `_flushQueueAfterLoad` dinleyicisi tekrar dener.
+      // Ateşle-unut: kapı değerlendirmesi boot'u bekletmez.
       await CloudSyncService.instance.ensureLoaded();
-      if (firebaseReady) {
-        unawaited(CloudSyncService.instance.flushPending());
-      }
+      unawaited(CloudSyncService.instance.enableOnlineWhenSignedIn());
       unawaited(IapService.instance.ensureLoaded());
       final bool onboardingDone;
       try {
@@ -271,6 +355,18 @@ class _BootAppState extends State<_BootApp> {
         _home = onboardingDone
             ? const HomeShell()
             : const OnboardingScreen();
+        if (energyLoadTimedOut) {
+          // Ş14 uyarı bandı (madde 66 deseni): `_bootError` doluysa ana
+          // ekran uyarı bandıyla açılır. `_boot`'un BuildContext'i
+          // MaterialApp'in üstünde olduğundan tablo, ErrorWidget
+          // desenindeki gibi doğrudan çözümlenir; kullanıcı dil seçimi
+          // varsa o, yoksa cihaz dili geçerlidir.
+          final bootLocale =
+              LocaleService.instance.overrideNotifier.value ??
+              WidgetsBinding.instance.platformDispatcher.locale;
+          _bootError =
+              AppLocalizations.lookup(bootLocale).energyLoadTimeout;
+        }
       });
     } catch (e, st) {
       debugPrint('[lululu] boot fallback: $e\n$st');
@@ -311,7 +407,7 @@ class _BootAppState extends State<_BootApp> {
               ),
               const SizedBox(height: 16),
               Text(
-                context.l10n.loading,
+                _rootL10n.loading,
                 style: const TextStyle(color: LululuColors.mutedTitanium),
               ),
             ],
@@ -336,6 +432,14 @@ class _BootAppState extends State<_BootApp> {
         // web/index.html ile aynı: 'LÜLÜLÜ'.
         title: 'LÜLÜLÜ',
         debugShowCheckedModeBanner: false,
+        // S6: pop-sonrası bildirimler (enerji iadesi) için paylaşılan
+        // messenger anahtarı — `GlobalNotify.messengerKey` rota
+        // çıkışlarında hayatta kalır.
+        scaffoldMessengerKey: GlobalNotify.messengerKey,
+        // Masaüstü/web: oyun 834 dp'lik telefon-tablet çerçevesine
+        // oturur, dışı koyu kalır; pencere genişliğine yayılmaz.
+        builder: (context, child) =>
+            AppFrame(child: child ?? const SizedBox.shrink()),
         theme: buildLululuTheme(),
         // Madde 95 [P1]: yerelleştirme altyapısı — EN + TR. Dil
         // varsayılanı cihaz dilinden alınır (desteklenmeyen dilde TR);
@@ -386,7 +490,7 @@ class _BootAppState extends State<_BootApp> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  context.l10n.welcomeStatusReadFail,
+                  _rootL10n.welcomeStatusReadFail,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: LululuColors.cream,
@@ -396,14 +500,14 @@ class _BootAppState extends State<_BootApp> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  context.l10n.welcomeSkipFail,
+                  _rootL10n.welcomeSkipFail,
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: LululuColors.mutedTitanium),
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: () => unawaited(_boot()),
-                  child: Text(context.l10n.retry),
+                  child: Text(_rootL10n.retry),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
@@ -413,7 +517,7 @@ class _BootAppState extends State<_BootApp> {
                       _home = const HomeShell();
                     });
                   },
-                  child: Text(context.l10n.continueToHomeAnyway),
+                  child: Text(_rootL10n.continueToHomeAnyway),
                 ),
               ],
             ),
@@ -454,7 +558,7 @@ class _BootAppState extends State<_BootApp> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          context.l10n.offlineWarning,
+                          _rootL10n.offlineWarning,
                           style: const TextStyle(
                             color: LululuColors.cream,
                             fontWeight: FontWeight.w700,
@@ -476,12 +580,12 @@ class _BootAppState extends State<_BootApp> {
                   ),
                   TextButton(
                     onPressed: () => unawaited(_boot()),
-                    child: Text(context.l10n.retry),
+                    child: Text(_rootL10n.retry),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
                     color: LululuColors.mutedTitanium,
-                    tooltip: context.l10n.closeLabel,
+                    tooltip: _rootL10n.closeLabel,
                     onPressed: () => setState(() => _bootError = null),
                   ),
                 ],
